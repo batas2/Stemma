@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Verso">
+  <defs>
+    <linearGradient id="vg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <!-- Document body with rounded corners -->
+  <path d="M8 4 H19 L26 11 V26 A2 2 0 0 1 24 28 H8 A2 2 0 0 1 6 26 V6 A2 2 0 0 1 8 4 Z"
+        fill="url(#vg)"/>
+  <!-- Folded corner: lighter wedge with subtle drop -->
+  <path d="M19 4 V10 A1 1 0 0 0 20 11 H26 L19 4 Z"
+        fill="#a5b4fc"/>
+  <path d="M19 4 L26 11" stroke="#312e81" stroke-opacity="0.18" stroke-width="0.5"/>
+  <!-- "V" inscription on the page -->
+  <path d="M11.5 14 L16 22 L20.5 14"
+        fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+        stroke-opacity="0.92"/>
+</svg>

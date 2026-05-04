@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Search, FolderOpen, Box, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock } from 'lucide-react';
+import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock } from 'lucide-react';
+import { VersoLockup } from './Logo';
 import { useApp } from '@/lib/store';
 import { initWorkspace, openWorkspace, listRecents } from '@/lib/api';
 import { fetchUndoState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
@@ -73,12 +74,11 @@ export function Topbar() {
   }
 
   return (
-    <header className="h-12 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur flex items-center px-4 gap-3">
-      <div className="flex items-center gap-2">
-        <Box className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
-        <span className="font-semibold tracking-tight">Verso</span>
-        <span className="text-[10px] tracking-wider text-zinc-500 italic hidden sm:inline">the living architecture model</span>
-      </div>
+    <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 bg-white/85 dark:bg-zinc-950/85 backdrop-blur flex items-center px-4 gap-3">
+      <a href="/" className="flex items-center pr-3 mr-1 border-r border-zinc-200 dark:border-zinc-800 hover:opacity-90 transition-opacity">
+        <VersoLockup size={22} showTagline={true} className="hidden sm:flex" />
+        <VersoLockup size={22} showTagline={false} className="sm:hidden" />
+      </a>
       <div className="flex-1 flex justify-center items-center gap-3">
         {ws ? (
           <>
