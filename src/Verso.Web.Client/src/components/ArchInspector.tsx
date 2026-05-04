@@ -7,6 +7,9 @@ import { DEFAULT_EDGE_STYLE, type EdgeLineStyle, type EdgeStyle } from '@/lib/ed
 import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle } from '@/lib/nodeStyles';
 import { RESERVED_KEYS, type CustomProps } from '@/lib/customProps';
 import { ALL_FIELD_KEYS, fieldLabel } from './nodes/ArchNodeView';
+
+// Stable singleton — see customPropsSlot below for why this matters.
+const EMPTY_CUSTOM_PROPS: CustomProps = Object.freeze({}) as CustomProps;
 import { fetchElementNarrative } from '@/lib/api';
 import { NotesModal } from './NotesModal';
 import { confirmAction } from './ConfirmDialog';
@@ -54,7 +57,11 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   const nodeStyles = useApp((s) => s.nodeStyles);
   const setNodeStyleFor = useApp((s) => s.setNodeStyleFor);
   const userNodeStyle: NodeStyle = nodeStyles[elementId] ?? DEFAULT_NODE_STYLE;
-  const customProps = useApp((s) => s.customProps[elementId] ?? {});
+  // Select the slot directly — reading `s.customProps[id] ?? {}` returns a
+  // fresh `{}` every snapshot, which trips useSyncExternalStore's reference
+  // check and loops forever ("The result of getSnapshot should be cached").
+  const customPropsSlot = useApp((s) => s.customProps[elementId]);
+  const customProps = customPropsSlot ?? EMPTY_CUSTOM_PROPS;
   const setCustomProp = useApp((s) => s.setCustomProp);
   const removeCustomProp = useApp((s) => s.removeCustomProp);
   const renameCustomProp = useApp((s) => s.renameCustomProp);
