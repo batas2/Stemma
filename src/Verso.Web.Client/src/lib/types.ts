@@ -72,6 +72,18 @@ export interface ArchModel {
 }
 
 export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'engineer';
+export type Mode = 'edit' | 'view';
+
+/** A user-defined named subset of the canonical model. Persisted in localStorage per workspace. */
+export interface CustomView {
+  id: string;
+  name: string;
+  /** Which built-in lens to project through (`all` = no kind filter, just show what's in elementIds). */
+  baseView: ViewKind | 'all';
+  /** Explicit element IDs included in this view. */
+  elementIds: string[];
+  createdAt: string;
+}
 
 export interface OperationEnvelope {
   kind: OperationKind;

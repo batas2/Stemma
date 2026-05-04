@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Topbar } from './components/Topbar';
+import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
 import { ArchCanvas } from './components/ArchCanvas';
 import { Inspector } from './components/Inspector';
@@ -52,6 +53,7 @@ export default function App() {
       <div className="flex-1 flex min-h-0">
         {ws ? (
           <>
+            {view !== 'engineer' && <Sidebar />}
             <main className="flex-1 min-w-0">
               {view === 'engineer' ? <Canvas /> : <ArchCanvas />}
             </main>
