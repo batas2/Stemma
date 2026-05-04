@@ -10,20 +10,19 @@ The name **Verso** comes from bookbinding: the *verso* is the reverse side of a 
 
 ## Status
 
-**Spike 01 complete** — a working web modeler with C# code as the only storage. See `docs/spike-01-status/STATE.md`.
+- **Spike 01 complete** — code-shape modeller with C# files as the only storage. `docs/spike-01-status/STATE.md`.
+- **Spike 02 complete** — model-first canvas with the `Verso.Model` meta-model encoded as a compiling C# DSL. Three modelling views (C4 Context, Module Map, Dependencies) plus an Engineer view. Light/dark themes, custom views, drag-and-drop, two auto-arrange algorithms, editable relationships with line styling, snap-to-grid and align/distribute, sidebar with collapsible categories. `docs/spike-02-status/STATE.md`.
+- **Spike 03 planned** — external-edit watcher, undo/redo, lifecycle and ownership metadata, validation rules, layout sidecar in source. `docs/spike-02-status/NEXT-SPIKE.md`.
+
+Tests: 17/17 green (`./scripts/test.sh`).
 
 To run locally:
 
 ```bash
-./run.sh                                          # dev mode (Vite + backend, HMR)
-./run.sh --prod                                   # production mode (single backend, bundled SPA)
-./run.sh --dev --workspace samples/DemoSolution   # auto-open the demo workspace
-```
-
-Tests:
-
-```bash
-./scripts/test.sh
+./run.sh                                                # dev mode (Vite + backend, HMR)
+./run.sh --prod                                         # production (bundled SPA + backend)
+./run.sh --dev --workspace samples/SupplierNetwork      # arch-modelling demo (Spike 02)
+./run.sh --dev --workspace samples/DemoSolution         # code-shape demo (Spike 01)
 ```
 
 Docker:
@@ -53,10 +52,20 @@ verso/
 │   └── decisions/            — Architecture Decision Records (ADRs)
 └── specs/
     ├── round-trip-fidelity.md — model↔storage preservation contract (per adapter)
-    ├── operations-catalog.md  — supported UI operations
+    ├── operations-catalog.md  — implemented + planned operations
     ├── sync-protocol.md       — UI ↔ backend synchronization
     ├── projections.md         — multi-audience view system
     └── spike-01-web-modeler.md — first spike spec (web canvas + C# storage)
+
+src/
+├── Verso.Engine/              — Roslyn workspace + DSL reader/writer + ops
+├── Verso.Web/                 — ASP.NET Core 10 host + SignalR
+├── Verso.Web.Client/          — React 19 + Vite + xyflow + Tailwind
+└── Verso.Model/               — meta-model package referenced by user workspaces
+
+samples/
+├── SupplierNetwork/           — model-first demo (3 contexts, 9 modules, 9 flows)
+└── DemoSolution/              — code-shape demo (engineer view)
 ```
 
 ## Reading order
@@ -68,8 +77,10 @@ If you are new to the project, read in order:
 3. `docs/ARCHITECTURE.md`
 4. `docs/DOMAIN-MODEL.md`
 5. `specs/round-trip-fidelity.md`
-6. `specs/projections.md`
+6. `specs/operations-catalog.md`
+7. `specs/projections.md`
+8. `docs/spike-02-status/STATE.md` — what's actually built today
 
 ## Next Step
 
-Run the round-trip spike (see `docs/ROADMAP.md`, Phase 0). If round-trip fidelity holds, proceed to Phase 1.
+Spike 03: *Living, governable model* — external-edit watcher, undo/redo, lifecycle and ownership metadata, validation rules, layout sidecar in source. Plan in `docs/spike-02-status/NEXT-SPIKE.md`.
