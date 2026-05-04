@@ -96,6 +96,7 @@ function CanvasInner() {
   const theme = useApp((s) => s.theme);
   const snapEnabled = useApp((s) => s.snapEnabled);
   const edgeStyles = useApp((s) => s.edgeStyles);
+  const nodeStyles = useApp((s) => s.nodeStyles);
   const select = useApp((s) => s.selectElement);
   const selectLink = useApp((s) => s.selectLink);
   const setToast = useApp((s) => s.setToast);
@@ -152,11 +153,11 @@ function CanvasInner() {
           id: e.id,
           type: 'arch',
           position: pos,
-          data: { element: e, tag: tagsById.get(e.id) },
+          data: { element: e, tag: tagsById.get(e.id), nodeStyle: nodeStyles[e.id] },
         } satisfies Node;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles]);
 
   useEffect(() => {
     if (nodes.length > 0) {

@@ -8,7 +8,12 @@ export type TagsByTarget = Record<string, ArchTagInfo>;
 export type ArchNodeData = {
   element: ArchElement;
   tag?: ArchTagInfo;
-  nodeStyle?: { fillColor?: string; borderColor?: string; borderWidth?: number };
+  nodeStyle?: {
+    fillColor?: string;
+    borderColor?: string;
+    borderWidth?: number;
+    borderStyle?: 'solid' | 'dashed' | 'dotted';
+  };
 } & Record<string, unknown>;
 
 export type ArchFlowNode = Node<ArchNodeData, 'arch'>;
@@ -74,7 +79,9 @@ export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
   const inlineStyle: React.CSSProperties = {};
   if (nodeStyle?.fillColor) inlineStyle.background = nodeStyle.fillColor;
   if (nodeStyle?.borderColor) inlineStyle.borderColor = nodeStyle.borderColor;
-  if (nodeStyle?.borderWidth) inlineStyle.borderWidth = `${nodeStyle.borderWidth}px`;
+  if (nodeStyle?.borderWidth !== undefined) inlineStyle.borderWidth = `${nodeStyle.borderWidth}px`;
+  if (nodeStyle?.borderStyle) inlineStyle.borderStyle = nodeStyle.borderStyle;
+  const hasCustomStyle = !!(nodeStyle?.fillColor || nodeStyle?.borderColor || nodeStyle?.borderStyle);
 
   return (
     <div
@@ -82,9 +89,10 @@ export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
       className={clsx(
         'rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg min-w-[180px] max-w-[260px] transition-shadow',
         isPerson ? 'rounded-full px-4 py-2.5 min-w-0' : '',
-        statusClasses.className,
-        selected && (statusClasses.outline ?? 'border-indigo-500 ring-1 ring-indigo-500/40 shadow-indigo-500/20'),
-        !selected && !status && 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-lg dark:hover:shadow-xl'
+        // Status restyling only applies when no custom style is set; user choice wins.
+        !hasCustomStyle && statusClasses.className,
+        selected && (statusClasses.outline ?? 'ring-1 ring-indigo-500/40 shadow-indigo-500/20'),
+        !selected && !status && !hasCustomStyle && 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-lg dark:hover:shadow-xl'
       )}
     >
       <Handle type="target" position={Position.Top} />

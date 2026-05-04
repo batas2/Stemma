@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { ArchModel, CustomView, Mode, ViewKind, WorkspaceModel } from './types';
 import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
+import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
 
 export type Theme = 'dark' | 'light';
 
@@ -27,6 +28,7 @@ interface AppState {
   selectedElementId: string | null;
   selectedLinkId: string | null;
   edgeStyles: Record<string, EdgeStyle>;
+  nodeStyles: Record<string, NodeStyle>;
   snapEnabled: boolean;
   toast: { kind: 'info' | 'error' | 'success'; text: string } | null;
   paletteOpen: boolean;
@@ -49,6 +51,7 @@ interface AppState {
   selectElement: (id: string | null) => void;
   selectLink: (id: string | null) => void;
   setEdgeStyleFor: (linkId: string, style: EdgeStyle) => void;
+  setNodeStyleFor: (nodeId: string, style: NodeStyle) => void;
   toggleSnap: () => void;
   setToast: (t: AppState['toast']) => void;
   setPaletteOpen: (b: boolean) => void;
@@ -68,6 +71,7 @@ export const useApp = create<AppState>((set, get) => ({
   selectedElementId: null,
   selectedLinkId: null,
   edgeStyles: {},
+  nodeStyles: {},
   snapEnabled: typeof window !== 'undefined' && localStorage.getItem('verso.snap') === '1',
   toast: null,
   paletteOpen: false,
@@ -76,10 +80,11 @@ export const useApp = create<AppState>((set, get) => ({
     if (ws) {
       const views = loadViews(ws.rootPath);
       const active = loadActiveView(ws.rootPath);
-      const styles = loadEdgeStyles(ws.rootPath);
-      set({ customViews: views, activeCustomViewId: active, edgeStyles: styles });
+      const eStyles = loadEdgeStyles(ws.rootPath);
+      const nStyles = loadNodeStyles(ws.rootPath);
+      set({ customViews: views, activeCustomViewId: active, edgeStyles: eStyles, nodeStyles: nStyles });
     } else {
-      set({ customViews: [], activeCustomViewId: null, edgeStyles: {} });
+      set({ customViews: [], activeCustomViewId: null, edgeStyles: {}, nodeStyles: {} });
     }
   },
   setArch: (a) => set({ arch: a }),
@@ -158,6 +163,15 @@ export const useApp = create<AppState>((set, get) => ({
     }
     const all = setEdgeStyle(ws.rootPath, linkId, style);
     set({ edgeStyles: all });
+  },
+  setNodeStyleFor: (nodeId, style) => {
+    const ws = get().workspace;
+    if (!ws) {
+      set((s) => ({ nodeStyles: { ...s.nodeStyles, [nodeId]: style } }));
+      return;
+    }
+    const all = setNodeStyle(ws.rootPath, nodeId, style);
+    set({ nodeStyles: all });
   },
   toggleSnap: () => {
     const next = !get().snapEnabled;

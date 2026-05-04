@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { DEFAULT_EDGE_STYLE, type EdgeLineStyle, type EdgeStyle } from '@/lib/edgeStyles';
+import { DEFAULT_NODE_STYLE, type NodeBorderStyle, type NodeStyle } from '@/lib/nodeStyles';
 
 export function ArchInspector() {
   const arch = useApp((s) => s.arch);
@@ -32,7 +33,10 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   const setToast = useApp((s) => s.setToast);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
-  const [tab, setTab] = useState<'props' | 'lifecycle'>('props');
+  const [tab, setTab] = useState<'props' | 'lifecycle' | 'appearance'>('props');
+  const nodeStyles = useApp((s) => s.nodeStyles);
+  const setNodeStyleFor = useApp((s) => s.setNodeStyleFor);
+  const userNodeStyle: NodeStyle = nodeStyles[elementId] ?? DEFAULT_NODE_STYLE;
 
   const e = arch.elements.find((x) => x.id === elementId);
   const tag = arch.tags.find((t) => t.targetId === elementId);
@@ -77,6 +81,14 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
     });
     if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
     else setToast({ kind: 'success', text: 'Ownership saved' });
+  }
+
+  function setStyle(s: Partial<NodeStyle>) {
+    setNodeStyleFor(elementId, { ...userNodeStyle, ...s });
+  }
+
+  function clearStyle() {
+    setNodeStyleFor(elementId, DEFAULT_NODE_STYLE);
   }
 
   async function handleRename() {
@@ -139,7 +151,13 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           onClick={() => setTab('lifecycle')}
           className={clsx('flex-1 py-1 rounded transition-colors',
             tab === 'lifecycle' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
-          Lifecycle & Owner
+          Lifecycle
+        </button>
+        <button
+          onClick={() => setTab('appearance')}
+          className={clsx('flex-1 py-1 rounded transition-colors',
+            tab === 'appearance' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
+          Appearance
         </button>
       </div>
       {tab === 'props' && (
@@ -190,6 +208,66 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           </Section>
         </div>
       )}
+      {tab === 'appearance' && (
+        <div className="flex-1 overflow-auto scrollbar-thin">
+          <Section label="Border">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Style</div>
+              <div className="flex gap-1">
+                {(['solid', 'dashed', 'dotted'] as NodeBorderStyle[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStyle({ borderStyle: s })}
+                    className={clsx(
+                      'flex-1 px-2 py-1.5 text-xs rounded border transition-colors',
+                      userNodeStyle.borderStyle === s
+                        ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                        : 'border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
+                    )}
+                  >
+                    <BorderPreview style={s} />
+                    <span className="block mt-0.5 capitalize">{s}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 flex justify-between">
+                <span>Width</span><span className="font-mono normal-case tracking-normal">{userNodeStyle.borderWidth.toFixed(0)}px</span>
+              </div>
+              <input
+                type="range"
+                min={1} max={5} step={1}
+                value={userNodeStyle.borderWidth}
+                onChange={(ev) => setStyle({ borderWidth: parseInt(ev.target.value, 10) })}
+                className="w-full accent-indigo-500"
+              />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Color</div>
+              <ColorSwatches value={userNodeStyle.borderColor} onChange={(c) => setStyle({ borderColor: c })} />
+            </div>
+          </Section>
+          <Section label="Fill">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Background</div>
+              <ColorSwatches
+                value={userNodeStyle.fillColor}
+                onChange={(c) => setStyle({ fillColor: c })}
+                palette={[undefined, '#eef2ff', '#ecfdf5', '#fef3c7', '#fee2e2', '#ede9fe', '#cffafe', '#fafafa']}
+              />
+            </div>
+          </Section>
+          <Section label="">
+            <button
+              onClick={clearStyle}
+              className="w-full text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1.5 transition-colors"
+            >
+              Reset to default
+            </button>
+          </Section>
+        </div>
+      )}
       <div className="p-3 mt-auto border-t border-zinc-200 dark:border-zinc-800">
         <button
           onClick={handleRemove}
@@ -199,6 +277,42 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
         </button>
       </div>
     </aside>
+  );
+}
+
+function BorderPreview({ style }: { style: NodeBorderStyle }) {
+  return (
+    <div
+      className="h-3 rounded border border-current"
+      style={{ borderStyle: style, borderWidth: 1.5 }}
+    />
+  );
+}
+
+function ColorSwatches({
+  value, onChange, palette = [undefined, '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'],
+}: { value: string | undefined; onChange: (c: string | undefined) => void; palette?: (string | undefined)[] }) {
+  return (
+    <div className="flex gap-1.5 flex-wrap">
+      {palette.map((c, i) => (
+        <button
+          key={i}
+          onClick={() => onChange(c)}
+          title={c ?? 'default'}
+          className={clsx(
+            'w-6 h-6 rounded-full border-2 transition-all',
+            (value ?? null) === (c ?? null)
+              ? 'border-zinc-900 dark:border-zinc-100 scale-110'
+              : 'border-zinc-200 dark:border-zinc-800'
+          )}
+          style={{
+            background: c ?? (value === undefined
+              ? 'repeating-linear-gradient(45deg, #d4d4d8, #d4d4d8 4px, transparent 4px, transparent 8px)'
+              : '#a1a1aa'),
+          }}
+        />
+      ))}
+    </div>
   );
 }
 
