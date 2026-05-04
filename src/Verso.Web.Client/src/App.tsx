@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
@@ -16,6 +16,7 @@ import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
 import { ViolationsPanel } from './components/ViolationsPanel';
 import { DecisionLog } from './components/DecisionLog';
+import { ShortcutHelp } from './components/ShortcutHelp';
 import { bindShortcuts } from './lib/shortcuts';
 
 export default function App() {
@@ -96,8 +97,48 @@ export default function App() {
         handler: () => { if (!tryLayoutRedo()) redoOperation().catch(() => {}); },
       },
       { key: 'k', primary: true, description: 'Command palette', handler: () => setPaletteOpen(true) },
+      { key: '/', description: 'Focus search', handler: () => focusSidebarSearch() },
+      { key: '?', shift: true, description: 'Show keyboard shortcuts', handler: () => setHelpOpen((v) => !v) },
+      { key: 'tab', description: 'Cycle elements', handler: () => cycleElement(1) },
+      { key: 'tab', shift: true, description: 'Cycle elements (back)', handler: () => cycleElement(-1) },
+      { key: 'arrowup', description: 'Nudge up', handler: () => nudgeSelected(0, -10) },
+      { key: 'arrowdown', description: 'Nudge down', handler: () => nudgeSelected(0, 10) },
+      { key: 'arrowleft', description: 'Nudge left', handler: () => nudgeSelected(-10, 0) },
+      { key: 'arrowright', description: 'Nudge right', handler: () => nudgeSelected(10, 0) },
+      { key: 'enter', description: 'Open inspector for selected', handler: () => focusInspectorForSelected() },
     ]);
-  }, [setPaletteOpen]);
+  }, [setPaletteOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function focusSidebarSearch() {
+    const input = document.querySelector('aside input[placeholder*="Search"]') as HTMLInputElement | null;
+    input?.focus();
+  }
+
+  function focusInspectorForSelected() {
+    // Scroll the inspector into view; a no-op if nothing is selected.
+    const aside = document.querySelector('aside.shrink-0') as HTMLElement | null;
+    aside?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function cycleElement(direction: 1 | -1) {
+    const archNow = useApp.getState().arch;
+    if (!archNow || archNow.elements.length === 0) return;
+    const ids = archNow.elements.map((e) => e.id).sort();
+    const cur = useApp.getState().selectedElementId;
+    const idx = cur ? ids.indexOf(cur) : -1;
+    const next = ids[((idx + direction) + ids.length) % ids.length];
+    useApp.getState().selectElement(next);
+    window.dispatchEvent(new CustomEvent('verso:focus-node', { detail: { nodeId: next } }));
+  }
+
+  function nudgeSelected(dx: number, dy: number) {
+    const id = useApp.getState().selectedElementId;
+    const ws = useApp.getState().workspace;
+    if (!id || !ws) return;
+    window.dispatchEvent(new CustomEvent('verso:nudge', { detail: { nodeId: id, dx, dy } }));
+  }
+
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Theme: toggle the `dark` class on <html>; Tailwind reads it.
   const theme = useApp((s) => s.theme);
@@ -136,6 +177,7 @@ export default function App() {
       <ViolationsPanel />
       <StatusBar />
       <CommandPalette />
+      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

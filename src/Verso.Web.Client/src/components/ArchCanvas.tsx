@@ -18,6 +18,7 @@ import {
 import { ArchNodeView } from './nodes/ArchNodeView';
 import { WaypointEdge } from './edges/WaypointEdge';
 import { CanvasToolbar } from './CanvasToolbar';
+import { ContextMenu, ContextIcons, type ContextMenuState } from './ContextMenu';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, type SavedPosition } from '@/lib/layout';
@@ -224,8 +225,31 @@ function CanvasInner() {
       const fresh = loadLayout(workspace.rootPath, layoutKey as ViewKind);
       setNodes((current) => current.map((n) => fresh[n.id] ? { ...n, position: fresh[n.id] } : n));
     }
+    function nudge(ev: Event) {
+      const detail = (ev as CustomEvent).detail as { nodeId: string; dx: number; dy: number };
+      if (!workspace) return;
+      setNodes((current) => {
+        const next = current.map((n) => n.id === detail.nodeId
+          ? { ...n, position: { x: n.position.x + detail.dx, y: n.position.y + detail.dy } }
+          : n);
+        const positions: Record<string, SavedPosition> = {};
+        for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
+        saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+        return next;
+      });
+    }
+    function focusNode(ev: Event) {
+      const detail = (ev as CustomEvent).detail as { nodeId: string };
+      setNodes((current) => current.map((n) => ({ ...n, selected: n.id === detail.nodeId })));
+    }
     window.addEventListener('verso:layout-changed', refreshFromLayout);
-    return () => window.removeEventListener('verso:layout-changed', refreshFromLayout);
+    window.addEventListener('verso:nudge', nudge);
+    window.addEventListener('verso:focus-node', focusNode);
+    return () => {
+      window.removeEventListener('verso:layout-changed', refreshFromLayout);
+      window.removeEventListener('verso:nudge', nudge);
+      window.removeEventListener('verso:focus-node', focusNode);
+    };
   }, [workspace, layoutKey]);
 
   const persistPositions = useCallback((next: Node[]) => {
@@ -276,6 +300,197 @@ function CanvasInner() {
   const onNodeClick: NodeMouseHandler = (_, node) => select(node.id);
   const onEdgeClick: EdgeMouseHandler = (_, edge) => selectLink(edge.id);
   const onPaneClick = () => { select(null); selectLink(null); };
+
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+
+  const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
+    e.preventDefault();
+    select(node.id);
+    if (!arch) return;
+    const elem = arch.elements.find((x) => x.id === node.id);
+    if (!elem) return;
+    setMenu({
+      x: e.clientX, y: e.clientY,
+      items: [
+        {
+          id: 'rename', label: 'Rename…', icon: ContextIcons.Edit3,
+          onClick: async () => {
+            const next = prompt('New name', elem.name)?.trim();
+            if (!next || next === elem.name) return;
+            await applyOperation({ kind: 'RenameElement', opId: `op_${Date.now()}`, elementId: elem.id, newName: next });
+          },
+        },
+        {
+          id: 'copy-id', label: `Copy id (${elem.id})`, icon: ContextIcons.Copy,
+          onClick: () => navigator.clipboard?.writeText(elem.id).catch(() => {}),
+        },
+        {
+          id: 'set-status', label: 'Set status…', icon: ContextIcons.TagIcon,
+          onClick: async () => {
+            const next = prompt('Status (current / target / to-adapt / to-be-created / deprecated / proposed)', '')?.trim();
+            if (next === undefined) return;
+            await applyOperation({
+              kind: 'SetLifecycle', opId: `op_${Date.now()}`,
+              targetId: elem.id, status: next || null, phase: null, validFrom: null, validUntil: null,
+            });
+          },
+        },
+        {
+          id: 'add-decision', label: 'Add decision concerning this…', icon: ContextIcons.Lightbulb,
+          onClick: async () => {
+            const title = prompt(`Decision title (will concern ${elem.name})`)?.trim();
+            if (!title) return;
+            const r = await applyOperation({ kind: 'AddDecision', opId: `op_${Date.now()}`, title });
+            if ('reason' in r) { setToast({ kind: 'error', text: `${r.reason}: ${r.message}` }); return; }
+            // Best-effort: read fresh arch and link the most recent decision.
+            setTimeout(async () => {
+              const fresh = useApp.getState().arch;
+              const lastDec = (fresh?.decisions ?? []).slice().reverse().find((d) => d.title === title);
+              if (lastDec) {
+                await applyOperation({ kind: 'AddDecisionConcerns', opId: `op_${Date.now()}`, decisionId: lastDec.id, elementId: elem.id });
+              }
+            }, 200);
+          },
+        },
+        { id: 'sep', label: '', onClick: () => {}, separator: true },
+        {
+          id: 'delete', label: `Delete ${elem.name}`, icon: ContextIcons.Trash2, destructive: true,
+          onClick: async () => {
+            if (!confirm(`Remove ${elem.name}?`)) return;
+            await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: elem.id });
+          },
+        },
+      ],
+    });
+  }, [arch, select, setToast]);
+
+  const onEdgeContextMenu = useCallback((e: React.MouseEvent, edge: Edge) => {
+    e.preventDefault();
+    selectLink(edge.id);
+    setMenu({
+      x: e.clientX, y: e.clientY,
+      items: [
+        {
+          id: 'copy-id', label: `Copy id (${edge.id})`, icon: ContextIcons.Copy,
+          onClick: () => navigator.clipboard?.writeText(edge.id).catch(() => {}),
+        },
+        {
+          id: 'edit-payload', label: 'Edit payload / kind…', icon: ContextIcons.Edit3,
+          onClick: () => selectLink(edge.id),
+        },
+        { id: 'sep', label: '', onClick: () => {}, separator: true },
+        {
+          id: 'delete', label: 'Delete relationship', icon: ContextIcons.Trash2, destructive: true,
+          onClick: async () => {
+            if (!confirm('Remove this relationship?')) return;
+            await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: edge.id });
+          },
+        },
+      ],
+    });
+  }, [selectLink]);
+
+  const addElementAt = useCallback(async (kind: ArchElementKind, pos: SavedPosition) => {
+    const name = prompt(`Name for the new ${kind}`)?.trim();
+    if (!name) return;
+    const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
+    if ('reason' in r) { setToast({ kind: 'error', text: `${r.reason}: ${r.message}` }); return; }
+    setTimeout(() => {
+      const fresh = useApp.getState().arch;
+      const last = [...(fresh?.elements ?? [])].reverse().find((e) => e.kind === kind && e.name === name);
+      if (last && workspace) {
+        const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
+        positions[last.id] = { x: pos.x, y: pos.y };
+        saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+        setNodes((prev) => prev.map((n) => n.id === last.id ? { ...n, position: pos } : n));
+      }
+    }, 100);
+  }, [workspace, layoutKey, setToast]);
+
+  const templateBoundedContextWithModules = useCallback(async (pos: SavedPosition) => {
+    const name = prompt('Bounded Context name')?.trim();
+    if (!name) return;
+    const moduleNames = (prompt('Module names (comma-separated)', 'Module A, Module B') ?? '')
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    const r1 = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: 'boundedContext', name });
+    if ('reason' in r1) { setToast({ kind: 'error', text: `${r1.reason}: ${r1.message}` }); return; }
+    setTimeout(async () => {
+      const fresh = useApp.getState().arch;
+      const ctx = [...(fresh?.elements ?? [])].reverse().find((e) => e.kind === 'boundedContext' && e.name === name);
+      if (!ctx || !workspace) return;
+      const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
+      positions[ctx.id] = { x: pos.x, y: pos.y };
+      let mx = pos.x + 240;
+      const my = pos.y;
+      for (const mn of moduleNames) {
+        await applyOperation({
+          kind: 'AddElement', opId: `op_${Date.now()}_${mx}`, elementKind: 'module', name: mn, contextId: ctx.id,
+        });
+        await new Promise((r) => setTimeout(r, 80));
+        const refreshed = useApp.getState().arch;
+        const m = [...(refreshed?.elements ?? [])].reverse().find((e) => e.kind === 'module' && e.name === mn);
+        if (m) { positions[m.id] = { x: mx, y: my }; mx += 240; }
+      }
+      saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+      setToast({ kind: 'success', text: `Template applied: ${name} + ${moduleNames.length} modules` });
+    }, 200);
+  }, [workspace, layoutKey, setToast]);
+
+  const templateSystemWithContainer = useCallback(async (pos: SavedPosition) => {
+    const name = prompt('Software System name')?.trim();
+    if (!name) return;
+    await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: 'softwareSystem', name });
+    setTimeout(async () => {
+      const fresh = useApp.getState().arch;
+      const sys = [...(fresh?.elements ?? [])].reverse().find((e) => e.kind === 'softwareSystem' && e.name === name);
+      if (!sys || !workspace) return;
+      const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
+      positions[sys.id] = { x: pos.x, y: pos.y };
+      const cName = `${name} Service`;
+      await applyOperation({
+        kind: 'AddElement', opId: `op_${Date.now() + 1}`, elementKind: 'container', name: cName,
+        systemId: sys.id, containerKind: 'service',
+      });
+      await new Promise((r) => setTimeout(r, 80));
+      const refreshed = useApp.getState().arch;
+      const cn = [...(refreshed?.elements ?? [])].reverse().find((e) => e.kind === 'container' && e.name === cName);
+      if (cn) positions[cn.id] = { x: pos.x + 240, y: pos.y };
+      saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+      setToast({ kind: 'success', text: `Template applied: ${name} system` });
+    }, 200);
+  }, [workspace, layoutKey, setToast]);
+
+  const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
+    e.preventDefault();
+    const me = e as MouseEvent;
+    const dropPos = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+    setMenu({
+      x: me.clientX, y: me.clientY,
+      items: [
+        {
+          id: 'add-module', label: 'Add Module here', icon: ContextIcons.Plus,
+          onClick: async () => addElementAt('module', dropPos),
+        },
+        {
+          id: 'add-bc', label: 'Add Bounded Context here', icon: ContextIcons.Plus,
+          onClick: async () => addElementAt('boundedContext', dropPos),
+        },
+        {
+          id: 'add-system', label: 'Add Software System here', icon: ContextIcons.Plus,
+          onClick: async () => addElementAt('softwareSystem', dropPos),
+        },
+        { id: 'sep', label: '', onClick: () => {}, separator: true },
+        {
+          id: 'tpl-bc-modules', label: 'Template: BC + 2 modules', icon: ContextIcons.Workflow,
+          onClick: async () => templateBoundedContextWithModules(dropPos),
+        },
+        {
+          id: 'tpl-system-container', label: 'Template: System + Container', icon: ContextIcons.Workflow,
+          onClick: async () => templateSystemWithContainer(dropPos),
+        },
+      ],
+    });
+  }, [screenToFlowPosition]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onConnect = async (params: { source: string | null; target: string | null }) => {
     if (mode === 'view') {
@@ -417,6 +632,9 @@ function CanvasInner() {
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onNodeContextMenu={onNodeContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
         onConnect={onConnect}
         proOptions={{ hideAttribution: true }}
         colorMode={isDark ? 'dark' : 'light'}
@@ -425,6 +643,7 @@ function CanvasInner() {
         <Controls />
         <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />
       </ReactFlow>
+      <ContextMenu state={menu} onClose={() => setMenu(null)} />
     </div>
   );
 }
