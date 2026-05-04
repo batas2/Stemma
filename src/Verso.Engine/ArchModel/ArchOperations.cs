@@ -43,3 +43,11 @@ public sealed record SetOwnershipOp(
     string TargetId,
     string? Squad,
     string? Domain) : OperationBase(OpId);
+
+public sealed record AddDecisionOp(string OpId, string Title, string Status = "proposed") : OperationBase(OpId);
+public sealed record RenameDecisionOp(string OpId, string DecisionId, string NewTitle) : OperationBase(OpId);
+public sealed record SetDecisionStatusOp(string OpId, string DecisionId, string Status) : OperationBase(OpId);
+public sealed record RemoveDecisionOp(string OpId, string DecisionId) : OperationBase(OpId);
+public sealed record AddDecisionConcernsOp(string OpId, string DecisionId, string ElementId) : OperationBase(OpId);
+public sealed record SetDecisionNarrativeOp(string OpId, string DecisionId, string Body) : OperationBase(OpId);
+public sealed record SetCapabilityNarrativeOp(string OpId, string ElementId, string Body) : OperationBase(OpId);

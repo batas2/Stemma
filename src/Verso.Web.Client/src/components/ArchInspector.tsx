@@ -5,6 +5,8 @@ import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { DEFAULT_EDGE_STYLE, type EdgeLineStyle, type EdgeStyle } from '@/lib/edgeStyles';
 import { DEFAULT_NODE_STYLE, type NodeBorderStyle, type NodeStyle } from '@/lib/nodeStyles';
+import { fetchElementNarrative } from '@/lib/api';
+import { MarkdownEditor } from './MarkdownEditor';
 
 export function ArchInspector() {
   const arch = useApp((s) => s.arch);
@@ -33,7 +35,9 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   const setToast = useApp((s) => s.setToast);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
-  const [tab, setTab] = useState<'props' | 'lifecycle' | 'appearance'>('props');
+  const [tab, setTab] = useState<'props' | 'lifecycle' | 'appearance' | 'decisions' | 'notes'>('props');
+  const [narrative, setNarrative] = useState('');
+  const [narrativeLoaded, setNarrativeLoaded] = useState(false);
   const nodeStyles = useApp((s) => s.nodeStyles);
   const setNodeStyleFor = useApp((s) => s.setNodeStyleFor);
   const userNodeStyle: NodeStyle = nodeStyles[elementId] ?? DEFAULT_NODE_STYLE;
@@ -91,6 +95,29 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
     setNodeStyleFor(elementId, DEFAULT_NODE_STYLE);
   }
 
+  // Lazy-load narrative the first time the Notes tab is opened.
+  useEffect(() => {
+    if (tab === 'notes' && !narrativeLoaded) {
+      fetchElementNarrative(elementId).then((md) => {
+        setNarrative(md);
+        setNarrativeLoaded(true);
+      }).catch(() => setNarrativeLoaded(true));
+    }
+  }, [tab, elementId, narrativeLoaded]);
+
+  async function saveNotes() {
+    const r = await applyOperation({
+      kind: 'SetCapabilityNarrative', opId: `op_${Date.now()}`,
+      elementId, body: narrative,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    else setToast({ kind: 'success', text: 'Notes saved' });
+  }
+
+  const concerningDecisions = (arch.decisions ?? []).filter((d) =>
+    (arch.decisionConcerns ?? []).some((c) => c.decisionId === d.id && c.elementId === elementId)
+  );
+
   async function handleRename() {
     if (!e || !renameValue.trim() || renameValue === e.name) { setRenaming(false); return; }
     const r = await applyOperation({
@@ -140,25 +167,24 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="px-3 pt-2 flex gap-1 text-xs">
-        <button
-          onClick={() => setTab('props')}
-          className={clsx('flex-1 py-1 rounded transition-colors',
-            tab === 'props' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
-          Properties
-        </button>
-        <button
-          onClick={() => setTab('lifecycle')}
-          className={clsx('flex-1 py-1 rounded transition-colors',
-            tab === 'lifecycle' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
-          Lifecycle
-        </button>
-        <button
-          onClick={() => setTab('appearance')}
-          className={clsx('flex-1 py-1 rounded transition-colors',
-            tab === 'appearance' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
-          Appearance
-        </button>
+      <div className="px-2 pt-2 flex gap-0.5 text-[11px] overflow-x-auto scrollbar-thin">
+        {([
+          ['props', 'Props'],
+          ['lifecycle', 'Lifecycle'],
+          ['appearance', 'Appearance'],
+          ['decisions', `Decisions${concerningDecisions.length > 0 ? ` (${concerningDecisions.length})` : ''}`],
+          ['notes', 'Notes'],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={clsx('px-2 py-1 rounded transition-colors whitespace-nowrap',
+              tab === key
+                ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
+                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
+            {label}
+          </button>
+        ))}
       </div>
       {tab === 'props' && (
         <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 space-y-2 flex-1 overflow-auto">
@@ -266,6 +292,57 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
               Reset to default
             </button>
           </Section>
+        </div>
+      )}
+      {tab === 'decisions' && (
+        <div className="flex-1 overflow-auto scrollbar-thin">
+          <Section label="Concerning this element">
+            {concerningDecisions.length === 0 && (
+              <p className="text-xs text-zinc-500 italic">No decisions concern this element yet.</p>
+            )}
+            <ul className="space-y-1.5">
+              {concerningDecisions.map((d) => (
+                <li
+                  key={d.id}
+                  className="text-xs px-2 py-1.5 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">{d.status}</span>
+                    <span className="font-mono text-[10px] text-zinc-500">{d.id}</span>
+                  </div>
+                  <div className="text-zinc-800 dark:text-zinc-200 mt-1">{d.title}</div>
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={async () => {
+                const decId = prompt('Decision id to link (e.g. dec_001)')?.trim();
+                if (!decId) return;
+                const r = await applyOperation({
+                  kind: 'AddDecisionConcerns', opId: `op_${Date.now()}`,
+                  decisionId: decId, elementId,
+                });
+                if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+                else setToast({ kind: 'success', text: 'Linked to decision' });
+              }}
+              className="mt-2 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10 border border-indigo-500/30 rounded px-2 py-1 w-full"
+            >
+              Link an existing decision
+            </button>
+          </Section>
+        </div>
+      )}
+      {tab === 'notes' && (
+        <div className="flex-1 flex flex-col min-h-0">
+          <MarkdownEditor value={narrative} onChange={setNarrative} />
+          <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
+            <button
+              onClick={saveNotes}
+              className="w-full text-xs px-3 py-1.5 rounded bg-indigo-500 hover:bg-indigo-400 text-white"
+            >
+              Save notes
+            </button>
+          </div>
         </div>
       )}
       <div className="p-3 mt-auto border-t border-zinc-200 dark:border-zinc-800">

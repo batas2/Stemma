@@ -223,6 +223,41 @@ workspaceApi.MapDelete("/views/{viewId}", async (string viewId, EngineHost host,
     return Results.NotFound();
 });
 
+workspaceApi.MapGet("/decisions/{decisionId}/narrative", async (string decisionId, EngineHost host, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var folder = Path.Combine(engine.RootPath, "Decisions");
+    if (!Directory.Exists(folder)) return Results.NotFound();
+    var path = Directory.EnumerateFiles(folder, $"{decisionId}-*.md").FirstOrDefault();
+    if (path is null) return Results.NotFound();
+    var content = await File.ReadAllTextAsync(path, ct);
+    return Results.Text(content, "text/markdown");
+});
+
+workspaceApi.MapGet("/elements/{elementId}/narrative", async (string elementId, EngineHost host, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var arch = await engine.ReadArchModelAsync(ct);
+    var elem = arch?.Elements.FirstOrDefault(e => e.Id == elementId);
+    if (elem is null) return Results.NotFound();
+    var folder = elem.Kind switch
+    {
+        ArchElementKind.Capability => "Capabilities",
+        ArchElementKind.BoundedContext => "BoundedContexts",
+        _ => "Elements",
+    };
+    var slug = string.Concat(elem.Name.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-'))
+        .Trim('-')
+        .Replace("--", "-");
+    while (slug.Contains("--", StringComparison.Ordinal)) slug = slug.Replace("--", "-");
+    var path = Path.Combine(engine.RootPath, folder, slug + ".md");
+    if (!File.Exists(path)) return Results.Text(string.Empty, "text/markdown");
+    var content = await File.ReadAllTextAsync(path, ct);
+    return Results.Text(content, "text/markdown");
+});
+
 workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
 
 workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>

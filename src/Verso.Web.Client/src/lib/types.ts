@@ -46,7 +46,9 @@ export type OperationKind =
   | 'AddImplementation' | 'RemoveImplementation'
   | 'AddElement' | 'RenameElement' | 'RemoveElement'
   | 'SetElementAttribute' | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute'
-  | 'SetLifecycle' | 'SetOwnership';
+  | 'SetLifecycle' | 'SetOwnership'
+  | 'AddDecision' | 'RenameDecision' | 'SetDecisionStatus' | 'RemoveDecision'
+  | 'AddDecisionConcerns' | 'SetDecisionNarrative' | 'SetCapabilityNarrative';
 
 export type ArchElementKind =
   | 'module' | 'boundedContext' | 'softwareSystem'
@@ -72,11 +74,26 @@ export interface ArchTagInfo {
   ownership: { squad: string | null; domain: string | null } | null;
 }
 
+export interface ArchDecisionInfo {
+  id: string;
+  title: string;
+  status: string;
+  date: string | null;
+  chosenOptionId: string | null;
+}
+
+export interface ArchDecisionConcernsInfo { decisionId: string; elementId: string; }
+export interface ArchDecisionSupersedesInfo { newerDecisionId: string; olderDecisionId: string; }
+
 export interface ArchModel {
   filePath: string;
   elements: ArchElement[];
   links: ArchLink[];
   tags: ArchTagInfo[];
+  decisions?: ArchDecisionInfo[] | null;
+  decisionOptions?: { id: string; title: string; decisionId: string }[] | null;
+  decisionConcerns?: ArchDecisionConcernsInfo[] | null;
+  decisionSupersedes?: ArchDecisionSupersedesInfo[] | null;
 }
 
 export interface RecentEntry { rootPath: string; displayName: string; lastOpened: string; }
@@ -90,7 +107,7 @@ export interface Violation {
   linkIds: string[];
 }
 
-export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'engineer';
+export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'decisionLog' | 'engineer';
 export type Mode = 'edit' | 'view';
 
 /** A user-defined named subset of the canonical model. Persisted in localStorage per workspace. */

@@ -15,6 +15,7 @@ import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
 import { ViolationsPanel } from './components/ViolationsPanel';
+import { DecisionLog } from './components/DecisionLog';
 import { bindShortcuts } from './lib/shortcuts';
 
 export default function App() {
@@ -119,11 +120,14 @@ export default function App() {
       <div className="flex-1 flex min-h-0">
         {ws ? (
           <>
-            {view !== 'engineer' && <Sidebar />}
+            {view !== 'engineer' && view !== 'decisionLog' && <Sidebar />}
             <main className="flex-1 min-w-0">
-              {view === 'engineer' ? <Canvas /> : <ArchCanvas />}
+              {view === 'engineer' && <Canvas />}
+              {view === 'decisionLog' && <DecisionLog />}
+              {view !== 'engineer' && view !== 'decisionLog' && <ArchCanvas />}
             </main>
-            {view === 'engineer' ? <Inspector /> : <ArchInspector />}
+            {view === 'engineer' && <Inspector />}
+            {view !== 'engineer' && view !== 'decisionLog' && <ArchInspector />}
           </>
         ) : (
           <EmptyState />

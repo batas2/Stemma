@@ -129,6 +129,12 @@ public sealed class VersoEngine : IAsyncDisposable
             SetOwnershipOp x => await SetOwnershipAsync(x, ct),
             RestoreElementOp x => await RestoreArchElementAsync(x, ct),
             RestoreLinkOp x => await RestoreArchLinkAsync(x, ct),
+            AddDecisionOp x => await AddDecisionAsync(x, ct),
+            SetDecisionStatusOp x => await SetDecisionStatusAsync(x, ct),
+            AddDecisionConcernsOp x => await AddDecisionConcernsAsync(x, ct),
+            RemoveDecisionOp x => await RemoveDecisionAsync(x, ct),
+            SetDecisionNarrativeOp x => await SetDecisionNarrativeAsync(x, ct),
+            SetCapabilityNarrativeOp x => await SetCapabilityNarrativeAsync(x, ct),
             _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
         };
 
@@ -1006,5 +1012,194 @@ public sealed class VersoEngine : IAsyncDisposable
             var candidate = $"{prefix}_{n:000}";
             if (!existing.Contains(candidate)) return candidate;
         }
+    }
+
+    // ---------- Decisions (Spike 04) ----------
+
+    private async Task<OperationResult> AddDecisionAsync(AddDecisionOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+
+        var current = await ReadArchModelAsync(ct);
+        var existing = (current?.Decisions ?? Array.Empty<ArchModel.ArchDecision>()).Select(d => d.Id).ToHashSet();
+        var id = GenerateDecisionId(existing);
+        var decision = new ArchModel.ArchDecision(id, op.Title, op.Status, DateTime.UtcNow.ToString("yyyy-MM-dd"), null);
+        var newRoot = DslWriter.AddDecision(root, decision);
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        var commitResult = await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+
+        if (commitResult is OperationApplied)
+        {
+            // Scaffold the narrative file alongside.
+            await WriteDecisionNarrativeAsync(decision, body: null, ct);
+        }
+        return commitResult;
+    }
+
+    private async Task<OperationResult> SetDecisionStatusAsync(SetDecisionStatusOp op, CancellationToken ct)
+    {
+        var doc = FindDocumentForId(op.DecisionId) ?? FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        var newRoot = DslWriter.SetDecisionStatus(root, op.DecisionId, op.Status);
+        if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "DecisionNotFound", op.DecisionId);
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        var commit = await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
+        if (commit is OperationApplied)
+        {
+            // Mirror status into the Markdown frontmatter.
+            await UpdateDecisionFrontmatterAsync(op.DecisionId, status: op.Status, ct);
+        }
+        return commit;
+    }
+
+    private async Task<OperationResult> AddDecisionConcernsAsync(AddDecisionConcernsOp op, CancellationToken ct)
+    {
+        var doc = FindDocumentForId(op.DecisionId) ?? FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.AddDecisionConcerns(root, op.DecisionId, op.ElementId); }
+        catch (Exception e) { return new OperationFailed(op.OpId, "AddConcernsFailed", e.Message); }
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> RemoveDecisionAsync(RemoveDecisionOp op, CancellationToken ct)
+    {
+        var doc = FindDocumentForId(op.DecisionId) ?? FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.RemoveStatementById(root, op.DecisionId); }
+        catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        var commit = await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
+        if (commit is OperationApplied)
+        {
+            // Best-effort: also remove the narrative file.
+            try
+            {
+                var path = FindDecisionNarrativePath(op.DecisionId);
+                if (path is not null && File.Exists(path)) File.Delete(path);
+            }
+            catch { /* swallow */ }
+        }
+        return commit;
+    }
+
+    private async Task<OperationResult> SetDecisionNarrativeAsync(SetDecisionNarrativeOp op, CancellationToken ct)
+    {
+        var arch = await ReadArchModelAsync(ct);
+        var dec = arch?.Decisions?.FirstOrDefault(d => d.Id == op.DecisionId);
+        if (dec is null) return new OperationFailed(op.OpId, "DecisionNotFound", op.DecisionId);
+        await WriteDecisionNarrativeAsync(dec, op.Body, ct);
+        return new OperationApplied(op.OpId, []);
+    }
+
+    private async Task<OperationResult> SetCapabilityNarrativeAsync(SetCapabilityNarrativeOp op, CancellationToken ct)
+    {
+        var arch = await ReadArchModelAsync(ct);
+        var elem = arch?.Elements.FirstOrDefault(e => e.Id == op.ElementId);
+        if (elem is null) return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
+        await WriteElementNarrativeAsync(elem, op.Body, ct);
+        return new OperationApplied(op.OpId, []);
+    }
+
+    private async Task WriteDecisionNarrativeAsync(ArchModel.ArchDecision decision, string? body, CancellationToken ct)
+    {
+        var slug = Slugify(decision.Title);
+        var folder = Path.Combine(_model.RootPath, "Decisions");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"{decision.Id}-{slug}.md");
+        var existing = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : string.Empty;
+        var doc = Adapters.MarkdownAdapter.Parse(existing);
+        doc.Set("id", decision.Id);
+        doc.Set("title", decision.Title);
+        doc.Set("status", decision.Status);
+        if (decision.Date is not null) doc.Set("date", decision.Date);
+        if (body is not null) doc.Body = body;
+        else if (string.IsNullOrEmpty(doc.Body))
+        {
+            doc.Body = "## Context\n\n_Why this decision was needed._\n\n## Decision\n\n_What was chosen._\n\n## Consequences\n\n_What changes as a result._\n";
+        }
+        await File.WriteAllTextAsync(path, Adapters.MarkdownAdapter.Render(doc), ct);
+    }
+
+    private async Task UpdateDecisionFrontmatterAsync(string decisionId, string? status, CancellationToken ct)
+    {
+        var path = FindDecisionNarrativePath(decisionId);
+        if (path is null) return;
+        var existing = await File.ReadAllTextAsync(path, ct);
+        var doc = Adapters.MarkdownAdapter.Parse(existing);
+        if (status is not null) doc.Set("status", status);
+        await File.WriteAllTextAsync(path, Adapters.MarkdownAdapter.Render(doc), ct);
+    }
+
+    private string? FindDecisionNarrativePath(string decisionId)
+    {
+        var folder = Path.Combine(_model.RootPath, "Decisions");
+        if (!Directory.Exists(folder)) return null;
+        return Directory.EnumerateFiles(folder, $"{decisionId}-*.md").FirstOrDefault();
+    }
+
+    private async Task WriteElementNarrativeAsync(ArchModel.ArchElement elem, string body, CancellationToken ct)
+    {
+        var folder = elem.Kind switch
+        {
+            ArchElementKind.Capability => "Capabilities",
+            ArchElementKind.BoundedContext => "BoundedContexts",
+            _ => "Elements",
+        };
+        var dir = Path.Combine(_model.RootPath, folder);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, $"{Slugify(elem.Name)}.md");
+        var existing = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : string.Empty;
+        var doc = Adapters.MarkdownAdapter.Parse(existing);
+        doc.Set("id", elem.Id);
+        doc.Set("title", elem.Name);
+        doc.Set("kind", elem.Kind.ToString());
+        doc.Body = body;
+        await File.WriteAllTextAsync(path, Adapters.MarkdownAdapter.Render(doc), ct);
+    }
+
+    private static string GenerateDecisionId(HashSet<string> existing)
+    {
+        for (var n = 1; ; n++)
+        {
+            var candidate = $"dec_{n:000}";
+            if (!existing.Contains(candidate)) return candidate;
+        }
+    }
+
+    private static string Slugify(string s)
+    {
+        var sb = new System.Text.StringBuilder();
+        var dashNext = false;
+        foreach (var ch in s)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                if (dashNext && sb.Length > 0) sb.Append('-');
+                sb.Append(char.ToLowerInvariant(ch));
+                dashNext = false;
+            }
+            else
+            {
+                dashNext = true;
+            }
+        }
+        return sb.Length > 0 ? sb.ToString() : "untitled";
     }
 }

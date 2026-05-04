@@ -8,7 +8,11 @@ public sealed record ArchModel(
     string FilePath,
     IReadOnlyList<ArchElement> Elements,
     IReadOnlyList<ArchLink> Links,
-    IReadOnlyList<ArchTag> Tags);
+    IReadOnlyList<ArchTag> Tags,
+    IReadOnlyList<ArchDecision>? Decisions = null,
+    IReadOnlyList<ArchDecisionOption>? DecisionOptions = null,
+    IReadOnlyList<ArchDecisionConcerns>? DecisionConcerns = null,
+    IReadOnlyList<ArchDecisionSupersedes>? DecisionSupersedes = null);
 
 public enum ArchElementKind { Module, BoundedContext, SoftwareSystem, Container, Person, UseCase, Capability }
 public enum ArchLinkKind { DataFlow, Dependency }

@@ -1,4 +1,4 @@
-import { Boxes, GitBranch, Network, Code2 } from 'lucide-react';
+import { Boxes, GitBranch, Network, Code2, Lightbulb } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import type { ViewKind } from '@/lib/types';
@@ -7,6 +7,7 @@ const views: { id: ViewKind; label: string; icon: typeof Network }[] = [
   { id: 'c4Context', label: 'C4 Context', icon: Network },
   { id: 'moduleMap', label: 'Module Map', icon: Boxes },
   { id: 'dependencyGraph', label: 'Dependencies', icon: GitBranch },
+  { id: 'decisionLog', label: 'Decisions', icon: Lightbulb },
   { id: 'engineer', label: 'Engineer', icon: Code2 },
 ];
 

@@ -58,6 +58,38 @@ public sealed record Ownership(
     IReadOnlyList<string>? Decide = null);
 
 /// <summary>
+/// An architecture decision (ADR). Structured fields live in Architecture.cs; the long-form
+/// context, consequences, and rationale live in `Decisions/&lt;id&gt;-&lt;slug&gt;.md`.
+/// Status is open-enum: `proposed`, `accepted`, `rejected`, `superseded`, `deprecated`.
+/// </summary>
+public sealed record Decision(
+    string Id,
+    string Title,
+    string Status = "proposed",
+    string? Date = null,
+    string? ChosenOptionId = null) : ModelElement(Id, Title)
+{
+    /// <summary>
+    /// Marker call: declares that this Decision concerns one or more model elements.
+    /// Verso reads it from the DSL syntax tree; the runtime body is intentionally empty.
+    /// </summary>
+    public static void Concerns(Decision decision, params ModelElement[] elements) { }
+
+    /// <summary>
+    /// Marker call: `newer` supersedes `older`. Read from the DSL syntax tree.
+    /// </summary>
+    public static void Supersedes(Decision newer, Decision older) { }
+}
+
+/// <summary>
+/// A candidate resolution to a Decision. Options live alongside their Decision in the DSL.
+/// </summary>
+public sealed record DecisionOption(
+    string Id,
+    string Title,
+    string? DecisionId = null) : ModelElement(Id, Title);
+
+/// <summary>
 /// A user-defined view: a named subset of the canonical model with an optional base lens
 /// (`c4Context`, `moduleMap`, `dependencyGraph`, or `all`). Encoded as `Views/<Name>.cs`
 /// files in the workspace.

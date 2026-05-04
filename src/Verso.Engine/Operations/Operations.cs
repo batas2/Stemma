@@ -25,6 +25,13 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.SetOwnershipOp), "SetOwnership")]
 [JsonDerivedType(typeof(Verso.Engine.Workspace.RestoreElementOp), "RestoreElement")]
 [JsonDerivedType(typeof(Verso.Engine.Workspace.RestoreLinkOp), "RestoreLink")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.AddDecisionOp), "AddDecision")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.RenameDecisionOp), "RenameDecision")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.SetDecisionStatusOp), "SetDecisionStatus")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.RemoveDecisionOp), "RemoveDecision")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.AddDecisionConcernsOp), "AddDecisionConcerns")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.SetDecisionNarrativeOp), "SetDecisionNarrative")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.SetCapabilityNarrativeOp), "SetCapabilityNarrative")]
 public abstract record OperationBase(string OpId);
 
 public sealed record AddTypeOp(

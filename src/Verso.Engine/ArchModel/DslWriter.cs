@@ -42,6 +42,98 @@ public static class DslWriter
         return RemoveFromReturn(newRoot, varName);
     }
 
+    /// <summary>
+    /// Append a new Decision local declaration to Build() and add it to Model.Of(...).
+    /// </summary>
+    public static SyntaxNode AddDecision(SyntaxNode root, ArchDecision decision)
+    {
+        var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");
+        var varName = "dec" + SanitiseForVarName(decision.Title);
+        var argList = $"\"{decision.Id}\", \"{decision.Title.Replace("\"", "\\\"")}\", \"{decision.Status}\"";
+        var src = $"        var {varName} = new Decision({argList});\n";
+        var stmt = SyntaxFactory.ParseStatement(src);
+        var newBuild = InsertBeforeReturn(build, stmt);
+        return AddToReturn(root.ReplaceNode(build, newBuild), varName);
+    }
+
+    /// <summary>
+    /// Update the Status argument of an existing Decision declaration in place.
+    /// </summary>
+    public static SyntaxNode SetDecisionStatus(SyntaxNode root, string decisionId, string status)
+    {
+        var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");
+        foreach (var stmt in build.Statements.OfType<LocalDeclarationStatementSyntax>())
+        {
+            foreach (var v in stmt.Declaration.Variables)
+            {
+                if (v.Initializer?.Value is not BaseObjectCreationExpressionSyntax oc) continue;
+                if (oc is not ObjectCreationExpressionSyntax explicitOc) continue;
+                if (GetSimpleTypeName(explicitOc.Type) != "Decision") continue;
+                if (oc.ArgumentList is null || oc.ArgumentList.Arguments.Count < 1) continue;
+                if (!FirstArgIsLiteral(oc, decisionId)) continue;
+
+                var args = oc.ArgumentList.Arguments;
+                var newLit = SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(status));
+                if (args.Count >= 3)
+                {
+                    var newArg = args[2].WithExpression(newLit);
+                    var newArgs = args.Replace(args[2], newArg);
+                    return root.ReplaceNode(oc, explicitOc.WithArgumentList(oc.ArgumentList.WithArguments(newArgs)));
+                }
+                else
+                {
+                    var newArgs = args.Add(SyntaxFactory.Argument(newLit));
+                    return root.ReplaceNode(oc, explicitOc.WithArgumentList(oc.ArgumentList.WithArguments(newArgs)));
+                }
+            }
+        }
+        return root;
+    }
+
+    /// <summary>
+    /// Append a `Decision.Concerns(decVar, elemVar)` call after the decision's declaration.
+    /// </summary>
+    public static SyntaxNode AddDecisionConcerns(SyntaxNode root, string decisionId, string elementId)
+    {
+        var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");
+        string? decVar = null, elemVar = null;
+        foreach (var stmt in build.Statements.OfType<LocalDeclarationStatementSyntax>())
+        {
+            foreach (var v in stmt.Declaration.Variables)
+            {
+                if (v.Initializer?.Value is not BaseObjectCreationExpressionSyntax oc) continue;
+                if (FirstArgIsLiteral(oc, decisionId)) decVar = v.Identifier.Text;
+                else if (FirstArgIsLiteral(oc, elementId)) elemVar = v.Identifier.Text;
+            }
+        }
+        if (decVar is null || elemVar is null)
+            throw new InvalidOperationException("Could not resolve decision or element variable for Concerns call");
+
+        var src = $"        Decision.Concerns({decVar}, {elemVar});\n";
+        var call = SyntaxFactory.ParseStatement(src);
+        var ret = build.Statements.OfType<ReturnStatementSyntax>().FirstOrDefault();
+        var newBuild = ret is null
+            ? build.AddStatements(call)
+            : build.WithStatements(build.Statements.Insert(build.Statements.IndexOf(ret), call));
+        return root.ReplaceNode(build, newBuild);
+    }
+
+    private static string SanitiseForVarName(string title)
+    {
+        var sb = new System.Text.StringBuilder();
+        var capNext = true;
+        foreach (var ch in title)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(capNext ? char.ToUpperInvariant(ch) : ch);
+                capNext = false;
+            }
+            else { capNext = true; }
+        }
+        return sb.Length > 0 ? sb.ToString() : "Item";
+    }
+
     public static SyntaxNode SetLinkAttribute(SyntaxNode root, ArchLink updatedLink)
     {
         var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");

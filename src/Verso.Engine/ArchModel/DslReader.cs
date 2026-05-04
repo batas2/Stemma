@@ -23,6 +23,9 @@ public static class DslReader
         "DataFlow", "Dependency"
     };
 
+    private const string DecisionTypeName = "Decision";
+    private const string OptionTypeName = "DecisionOption";
+
     public static ArchModel? TryRead(string filePath, SyntaxNode root)
     {
         var buildBody = FindBuildMethodBody(root);
@@ -31,9 +34,14 @@ public static class DslReader
         var elements = new List<ArchElement>();
         var links = new List<ArchLink>();
         var tags = new List<ArchTag>();
+        var decisions = new List<ArchDecision>();
+        var options = new List<ArchDecisionOption>();
+        var concerns = new List<ArchDecisionConcerns>();
+        var supersedes = new List<ArchDecisionSupersedes>();
         var varToId = new Dictionary<string, string>();
+        var lastDecisionVar = (string?)null; // for `var opt = new DecisionOption(...)` to attach to recent Decision
 
-        // First pass: locals (elements + links).
+        // First pass: locals (elements, links, decisions, options).
         foreach (var statement in buildBody.Statements.OfType<LocalDeclarationStatementSyntax>())
         {
             foreach (var v in statement.Declaration.Variables)
@@ -61,6 +69,25 @@ public static class DslReader
                     {
                         links.Add(new ArchLink(id, fromId, toId, kind, attrs));
                         varToId[v.Identifier.Text] = id;
+                    }
+                }
+                else if (typeName == DecisionTypeName)
+                {
+                    var dec = ParseDecisionArgs(args);
+                    if (dec is not null)
+                    {
+                        decisions.Add(dec);
+                        varToId[v.Identifier.Text] = dec.Id;
+                        lastDecisionVar = v.Identifier.Text;
+                    }
+                }
+                else if (typeName == OptionTypeName)
+                {
+                    var opt = ParseOptionArgs(args, fallbackDecisionId: lastDecisionVar is not null && varToId.TryGetValue(lastDecisionVar, out var did) ? did : null);
+                    if (opt is not null)
+                    {
+                        options.Add(opt);
+                        varToId[v.Identifier.Text] = opt.Id;
                     }
                 }
             }
@@ -96,7 +123,75 @@ public static class DslReader
             tags.Add(new ArchTag(targetId, lifecycle, ownership));
         }
 
-        return new ArchModel(filePath, elements, links, tags);
+        // Third pass: Decision.Concerns / Decision.Supersedes invocations.
+        foreach (var statement in buildBody.Statements.OfType<ExpressionStatementSyntax>())
+        {
+            if (statement.Expression is not InvocationExpressionSyntax inv) continue;
+            if (inv.Expression is not MemberAccessExpressionSyntax mae) continue;
+            if (mae.Expression is not IdentifierNameSyntax recv || recv.Identifier.Text != "Decision") continue;
+            var args2 = inv.ArgumentList.Arguments;
+            if (args2.Count < 2) continue;
+
+            string? FirstArgVarToId() =>
+                args2[0].Expression is IdentifierNameSyntax aId && varToId.TryGetValue(aId.Identifier.Text, out var id) ? id : null;
+
+            if (mae.Name.Identifier.Text == "Concerns")
+            {
+                var decId = FirstArgVarToId();
+                if (decId is null) continue;
+                for (var i = 1; i < args2.Count; i++)
+                {
+                    if (args2[i].Expression is IdentifierNameSyntax e && varToId.TryGetValue(e.Identifier.Text, out var elemId))
+                        concerns.Add(new ArchDecisionConcerns(decId, elemId));
+                }
+            }
+            else if (mae.Name.Identifier.Text == "Supersedes")
+            {
+                var newerId = FirstArgVarToId();
+                var olderId = args2[1].Expression is IdentifierNameSyntax o && varToId.TryGetValue(o.Identifier.Text, out var oid) ? oid : null;
+                if (newerId is not null && olderId is not null)
+                    supersedes.Add(new ArchDecisionSupersedes(newerId, olderId));
+            }
+        }
+
+        return new ArchModel(filePath, elements, links, tags, decisions, options, concerns, supersedes);
+    }
+
+    private static ArchDecision? ParseDecisionArgs(IReadOnlyList<(string? Name, string? Value)> args)
+    {
+        var positional = new[] { "id", "title", "status", "date", "chosenOptionId" };
+        string? id = null, title = null, status = "proposed", date = null, chosen = null;
+        for (var i = 0; i < args.Count; i++)
+        {
+            var key = args[i].Name ?? (i < positional.Length ? positional[i] : $"arg{i}");
+            switch (key.ToLowerInvariant())
+            {
+                case "id": id = args[i].Value; break;
+                case "title": title = args[i].Value; break;
+                case "status": status = args[i].Value ?? "proposed"; break;
+                case "date": date = args[i].Value; break;
+                case "chosenoptionid": chosen = args[i].Value; break;
+            }
+        }
+        return (id is not null && title is not null) ? new ArchDecision(id, title, status ?? "proposed", date, chosen) : null;
+    }
+
+    private static ArchDecisionOption? ParseOptionArgs(IReadOnlyList<(string? Name, string? Value)> args, string? fallbackDecisionId)
+    {
+        var positional = new[] { "id", "title", "decisionId" };
+        string? id = null, title = null, decId = null;
+        for (var i = 0; i < args.Count; i++)
+        {
+            var key = args[i].Name ?? (i < positional.Length ? positional[i] : $"arg{i}");
+            switch (key.ToLowerInvariant())
+            {
+                case "id": id = args[i].Value; break;
+                case "title": title = args[i].Value; break;
+                case "decisionid": decId = args[i].Value; break;
+            }
+        }
+        decId ??= fallbackDecisionId;
+        return (id is not null && title is not null && decId is not null) ? new ArchDecisionOption(id, title, decId) : null;
     }
 
     private static ArchLifecycle ParseLifecycleFromCreation(BaseObjectCreationExpressionSyntax oc)

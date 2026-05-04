@@ -72,6 +72,18 @@ export async function deleteServerView(viewId: string): Promise<void> {
   if (!r.ok && r.status !== 404) throw new Error(`view delete failed: ${r.status}`);
 }
 
+export async function fetchDecisionNarrative(decisionId: string): Promise<string> {
+  const r = await fetch(`${BASE}/api/workspace/decisions/${encodeURIComponent(decisionId)}/narrative`);
+  if (!r.ok) return '';
+  return r.text();
+}
+
+export async function fetchElementNarrative(elementId: string): Promise<string> {
+  const r = await fetch(`${BASE}/api/workspace/elements/${encodeURIComponent(elementId)}/narrative`);
+  if (!r.ok) return '';
+  return r.text();
+}
+
 export async function exportDrawio(): Promise<string> {
   const r = await fetch(`${BASE}/api/workspace/export/drawio`);
   if (!r.ok) throw new Error(`drawio export failed: ${r.status}`);
