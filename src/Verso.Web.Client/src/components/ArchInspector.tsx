@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { DEFAULT_EDGE_STYLE, type EdgeLineStyle, type EdgeStyle } from '@/lib/edgeStyles';
-import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle, type NodeFieldKey } from '@/lib/nodeStyles';
+import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle } from '@/lib/nodeStyles';
+import { RESERVED_KEYS, type CustomProps } from '@/lib/customProps';
 import { ALL_FIELD_KEYS, fieldLabel } from './nodes/ArchNodeView';
 import { fetchElementNarrative } from '@/lib/api';
 import { NotesModal } from './NotesModal';
@@ -53,6 +54,10 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   const nodeStyles = useApp((s) => s.nodeStyles);
   const setNodeStyleFor = useApp((s) => s.setNodeStyleFor);
   const userNodeStyle: NodeStyle = nodeStyles[elementId] ?? DEFAULT_NODE_STYLE;
+  const customProps = useApp((s) => s.customProps[elementId] ?? {});
+  const setCustomProp = useApp((s) => s.setCustomProp);
+  const removeCustomProp = useApp((s) => s.removeCustomProp);
+  const renameCustomProp = useApp((s) => s.renameCustomProp);
 
   const e = arch.elements.find((x) => x.id === elementId);
   const tag = arch.tags.find((t) => t.targetId === elementId);
@@ -287,12 +292,25 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           </button>
         </Section>
 
+        <Section label="Custom properties" persistKey="element.customProps" defaultOpen={Object.keys(customProps).length > 0}>
+          <p className="text-[11px] text-faint mb-2 leading-snug">
+            Free-form key/value tags attached to this element. Tick a key in "Fields shown" below to render it inside the box.
+          </p>
+          <CustomPropsEditor
+            props={customProps}
+            onSet={(k, v) => setCustomProp(elementId, k, v)}
+            onRemove={(k) => removeCustomProp(elementId, k)}
+            onRename={(oldK, newK) => renameCustomProp(elementId, oldK, newK)}
+          />
+        </Section>
+
         <Section label="Fields shown on canvas" persistKey="element.fields" defaultOpen={false}>
           <p className="text-[11px] text-faint mb-2 leading-snug">
             Pick which properties this node displays inside its box. Affects only this element.
           </p>
           <FieldChecklist
             visible={userNodeStyle.visibleFields ?? DEFAULT_VISIBLE_FIELDS}
+            customKeys={Object.keys(customProps)}
             onChange={(next) => setStyle({ visibleFields: next })}
           />
           <button
@@ -718,30 +736,183 @@ function LabeledInput({ label, value, onChange, onCommit, placeholder }: {
   );
 }
 
-function FieldChecklist({ visible, onChange }: { visible: NodeFieldKey[]; onChange: (next: NodeFieldKey[]) => void }) {
+function FieldChecklist({
+  visible, customKeys, onChange,
+}: {
+  visible: string[];
+  customKeys: string[];
+  onChange: (next: string[]) => void;
+}) {
   const set = new Set(visible);
-  function toggle(k: NodeFieldKey) {
+  function toggle(k: string) {
     const next = new Set(set);
     if (next.has(k)) next.delete(k); else next.add(k);
-    // Preserve a stable ordering (ALL_FIELD_KEYS is the canonical order).
-    onChange(ALL_FIELD_KEYS.filter((x) => next.has(x)));
+    // Preserve order: built-ins first (canonical ALL_FIELD_KEYS order), then
+    // custom keys in the order the user added them.
+    const ordered = [
+      ...ALL_FIELD_KEYS.filter((x) => next.has(x)),
+      ...customKeys.filter((x) => next.has(x)),
+    ];
+    onChange(ordered);
   }
   return (
-    <ul className="space-y-1">
-      {ALL_FIELD_KEYS.map((k) => (
-        <li key={k}>
-          <label className="flex items-center gap-2 text-xs cursor-pointer text-body hover:text-zinc-900 dark:hover:text-zinc-100">
-            <input
-              type="checkbox"
-              checked={set.has(k)}
-              onChange={() => toggle(k)}
-              className="accent-indigo-500"
+    <div className="space-y-3">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Built-in</div>
+        <ul className="space-y-1">
+          {ALL_FIELD_KEYS.map((k) => (
+            <li key={k}>
+              <label className="flex items-center gap-2 text-xs cursor-pointer text-body">
+                <input
+                  type="checkbox"
+                  checked={set.has(k)}
+                  onChange={() => toggle(k)}
+                  className="accent-indigo-500"
+                />
+                <span>{fieldLabel(k)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {customKeys.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Custom</div>
+          <ul className="space-y-1">
+            {customKeys.map((k) => (
+              <li key={k}>
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-body">
+                  <input
+                    type="checkbox"
+                    checked={set.has(k)}
+                    onChange={() => toggle(k)}
+                    className="accent-indigo-500"
+                  />
+                  <span className="font-mono">{k}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomPropsEditor({
+  props, onSet, onRemove, onRename,
+}: {
+  props: CustomProps;
+  onSet: (key: string, value: string) => void;
+  onRemove: (key: string) => void;
+  onRename: (oldKey: string, newKey: string) => void;
+}) {
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  function tryAdd() {
+    const k = newKey.trim();
+    const v = newValue.trim();
+    if (!k) { setError('Key is required'); return; }
+    if (RESERVED_KEYS.has(k)) { setError(`"${k}" is a built-in field — pick another key`); return; }
+    if (k in props) { setError(`"${k}" already exists`); return; }
+    onSet(k, v);
+    setNewKey('');
+    setNewValue('');
+    setError(null);
+  }
+
+  const entries = Object.entries(props);
+
+  return (
+    <div className="space-y-2">
+      {entries.length > 0 && (
+        <ul className="space-y-1">
+          {entries.map(([k, v]) => (
+            <PropRow
+              key={k}
+              propKey={k}
+              propValue={v}
+              onSetValue={(next) => onSet(k, next)}
+              onRename={(next) => onRename(k, next)}
+              onRemove={() => onRemove(k)}
+              forbid={(candidate) => RESERVED_KEYS.has(candidate) || (candidate !== k && candidate in props)}
             />
-            <span>{fieldLabel(k)}</span>
-          </label>
-        </li>
-      ))}
-    </ul>
+          ))}
+        </ul>
+      )}
+      <div className="flex gap-1.5">
+        <input
+          value={newKey}
+          placeholder="key (e.g. Owner)"
+          onChange={(e) => { setNewKey(e.target.value); if (error) setError(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryAdd(); } }}
+          className="input-base flex-1 min-w-0"
+        />
+        <input
+          value={newValue}
+          placeholder="value"
+          onChange={(e) => setNewValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryAdd(); } }}
+          className="input-base flex-1 min-w-0"
+        />
+        <button onClick={tryAdd} aria-label="Add property" className="btn btn-md btn-secondary px-2">
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-rose-600 dark:text-rose-400">{error}</p>}
+    </div>
+  );
+}
+
+function PropRow({
+  propKey, propValue, onSetValue, onRename, onRemove, forbid,
+}: {
+  propKey: string;
+  propValue: string;
+  onSetValue: (v: string) => void;
+  onRename: (k: string) => void;
+  onRemove: () => void;
+  forbid: (candidate: string) => boolean;
+}) {
+  const [k, setK] = useState(propKey);
+  const [v, setV] = useState(propValue);
+  useEffect(() => { setK(propKey); }, [propKey]);
+  useEffect(() => { setV(propValue); }, [propValue]);
+
+  function commitKey() {
+    const next = k.trim();
+    if (!next || next === propKey) { setK(propKey); return; }
+    if (forbid(next)) { setK(propKey); return; }
+    onRename(next);
+  }
+  function commitValue() {
+    if (v === propValue) return;
+    onSetValue(v);
+  }
+
+  return (
+    <li className="flex items-center gap-1 text-xs">
+      <input
+        value={k}
+        onChange={(e) => setK(e.target.value)}
+        onBlur={commitKey}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setK(propKey); (e.target as HTMLInputElement).blur(); } }}
+        className="input-base flex-1 min-w-0 font-mono text-[11px]"
+      />
+      <span className="text-faint shrink-0">:</span>
+      <input
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={commitValue}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setV(propValue); (e.target as HTMLInputElement).blur(); } }}
+        className="input-base flex-[1.2] min-w-0"
+      />
+      <button onClick={onRemove} aria-label={`Remove ${propKey}`} className="p-1 rounded text-faint hover:text-rose-500 hover:bg-rose-500/10">
+        <Trash2 className="w-3 h-3" />
+      </button>
+    </li>
   );
 }
 

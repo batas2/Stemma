@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Box, Cuboid, Layers, Package, User, Server, Target, BookOpen } from 'lucide-react';
 import clsx from 'clsx';
@@ -16,12 +17,19 @@ export type ArchNodeData = {
     borderStyle?: 'solid' | 'dashed' | 'dotted';
     width?: number;
     height?: number;
-    visibleFields?: NodeFieldKey[];
+    // visibleFields is a list of string keys: built-in NodeFieldKey values
+    // OR custom property names (anything in customProps). The renderer tries
+    // built-in first and falls back to customProps[key].
+    visibleFields?: string[];
   };
+  customProps?: Record<string, string>;
   violationSeverity?: 'info' | 'warning' | 'error';
-  // Editable mode passes a callback so the resize gesture can be persisted.
   onResize?: (id: string, w: number, h: number) => void;
   resizable?: boolean;
+  // Inline-edit support — when `editing` is true the name renders as an input.
+  editing?: boolean;
+  onCommitName?: (id: string, next: string) => void;
+  onCancelEdit?: () => void;
 } & Record<string, unknown>;
 
 export type ArchFlowNode = Node<ArchNodeData, 'arch'>;
@@ -94,10 +102,16 @@ export const ALL_FIELD_KEYS: NodeFieldKey[] = [
 
 export function fieldLabel(k: NodeFieldKey): string { return FIELD_LABEL[k] ?? k; }
 
+const BUILTIN_KEYS = new Set<string>([
+  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind',
+  'squad', 'domain', 'status', 'phase', 'narrativePreview',
+]);
+
 export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   const e = data.element;
   const tag = data.tag;
   const nodeStyle = data.nodeStyle;
+  const customProps = data.customProps ?? {};
   const Icon = iconForKind[e.kind] ?? Box;
   const accent = accentForKind[e.kind] ?? 'text-indigo-500';
   const isPerson = e.kind === 'person';
@@ -105,7 +119,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   const statusClasses = statusStyle(status);
   const violationSeverity = data.violationSeverity;
   const visible = nodeStyle?.visibleFields ?? DEFAULT_VISIBLE_FIELDS;
-  const showField = (k: NodeFieldKey) => visible.includes(k);
+  const showField = (k: string) => visible.includes(k);
+  const visibleCustomKeys = visible.filter((k) => !BUILTIN_KEYS.has(k) && k in customProps);
 
   const inlineStyle: React.CSSProperties = {};
   if (nodeStyle?.fillColor) inlineStyle.background = nodeStyle.fillColor;
@@ -160,7 +175,11 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         {isPerson ? (
           <div className="flex items-center gap-2 h-full">
             <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
-            {showField('name') && <span className="text-zinc-900 dark:text-zinc-100 text-sm">{e.name}</span>}
+            {showField('name') && (
+              data.editing
+                ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
+                : <span className="text-zinc-900 dark:text-zinc-100 text-sm">{e.name}</span>
+            )}
             {showField('status') && status && <StatusBadge status={status} />}
           </div>
         ) : (
@@ -178,7 +197,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
             )}
             <div className="px-3 py-2 space-y-0.5">
               {showField('name') && (
-                <div className="font-medium text-zinc-900 dark:text-zinc-100 text-sm truncate" title={e.name}>{e.name}</div>
+                data.editing
+                  ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
+                  : <div className="font-medium text-zinc-900 dark:text-zinc-100 text-sm truncate" title={e.name}>{e.name}</div>
               )}
               {showField('id') && (
                 <div className="text-[10px] text-zinc-500 font-mono truncate">{e.id}</div>
@@ -201,6 +222,16 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
               {showField('phase') && tag?.lifecycle?.phase && (
                 <div className="text-[10px] text-zinc-500 truncate">⏱ {tag.lifecycle.phase}</div>
               )}
+              {visibleCustomKeys.length > 0 && (
+                <div className="pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 space-y-0.5">
+                  {visibleCustomKeys.map((k) => (
+                    <div key={k} className="text-[10px] flex gap-1.5 text-zinc-600 dark:text-zinc-400">
+                      <span className="text-zinc-500 truncate shrink-0">{k}:</span>
+                      <span className="truncate text-zinc-800 dark:text-zinc-200" title={customProps[k]}>{customProps[k]}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -218,6 +249,42 @@ const STATUS_GLYPH: Record<string, string> = {
   'deprecated': '━',
   'proposed': '◇',
 };
+
+function NameEditor({ id, initial, onCommit, onCancel }: {
+  id: string;
+  initial: string;
+  onCommit?: (id: string, next: string) => void;
+  onCancel?: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  function commit() {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === initial) { onCancel?.(); return; }
+    onCommit?.(id, trimmed);
+  }
+  return (
+    <input
+      ref={ref}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        // Stop xyflow from interpreting these as canvas shortcuts.
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); onCancel?.(); }
+      }}
+      onBlur={commit}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      className="nodrag w-full bg-white dark:bg-zinc-900 border border-indigo-500 rounded px-1.5 py-0.5 text-sm font-medium text-zinc-900 dark:text-zinc-100 outline-none"
+    />
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {

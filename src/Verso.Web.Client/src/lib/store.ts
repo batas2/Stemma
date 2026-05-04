@@ -3,6 +3,10 @@ import type { ArchModel, CustomView, Mode, ViewKind, Violation, WorkspaceModel }
 import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
+import {
+  loadCustomProps, setCustomProp as setCP, removeCustomProp as rmCP,
+  renameCustomProp as renameCP, type CustomProps,
+} from './customProps';
 import { saveServerView, deleteServerView, listServerViews } from './api';
 
 export type Theme = 'dark' | 'light';
@@ -30,6 +34,7 @@ interface AppState {
   selectedLinkId: string | null;
   edgeStyles: Record<string, EdgeStyle>;
   nodeStyles: Record<string, NodeStyle>;
+  customProps: Record<string, CustomProps>;
   violations: Violation[];
   violationsOpen: boolean;
   snapEnabled: boolean;
@@ -55,6 +60,9 @@ interface AppState {
   selectLink: (id: string | null) => void;
   setEdgeStyleFor: (linkId: string, style: EdgeStyle) => void;
   setNodeStyleFor: (nodeId: string, style: NodeStyle) => void;
+  setCustomProp: (nodeId: string, key: string, value: string) => void;
+  removeCustomProp: (nodeId: string, key: string) => void;
+  renameCustomProp: (nodeId: string, oldKey: string, newKey: string) => void;
   setViolations: (v: Violation[]) => void;
   setViolationsOpen: (b: boolean) => void;
   toggleSnap: () => void;
@@ -77,6 +85,7 @@ export const useApp = create<AppState>((set, get) => ({
   selectedLinkId: null,
   edgeStyles: {},
   nodeStyles: {},
+  customProps: {},
   violations: [],
   violationsOpen: false,
   snapEnabled: typeof window !== 'undefined' && localStorage.getItem('verso.snap') === '1',
@@ -89,7 +98,8 @@ export const useApp = create<AppState>((set, get) => ({
       const active = loadActiveView(ws.rootPath);
       const eStyles = loadEdgeStyles(ws.rootPath);
       const nStyles = loadNodeStyles(ws.rootPath);
-      set({ customViews: views, activeCustomViewId: active, edgeStyles: eStyles, nodeStyles: nStyles });
+      const cProps = loadCustomProps(ws.rootPath);
+      set({ customViews: views, activeCustomViewId: active, edgeStyles: eStyles, nodeStyles: nStyles, customProps: cProps });
       // Merge in source-stored views (Views/<Name>.cs). Server-side wins on conflict so the
       // checked-in code is canonical.
       listServerViews().then((server) => {
@@ -102,7 +112,7 @@ export const useApp = create<AppState>((set, get) => ({
         saveViews(ws.rootPath, merged);
       }).catch(() => {});
     } else {
-      set({ customViews: [], activeCustomViewId: null, edgeStyles: {}, nodeStyles: {} });
+      set({ customViews: [], activeCustomViewId: null, edgeStyles: {}, nodeStyles: {}, customProps: {} });
     }
   },
   setArch: (a) => set({ arch: a }),
@@ -197,6 +207,39 @@ export const useApp = create<AppState>((set, get) => ({
     }
     const all = setNodeStyle(ws.rootPath, nodeId, style);
     set({ nodeStyles: all });
+  },
+  setCustomProp: (nodeId, k, v) => {
+    const ws = get().workspace;
+    if (!ws) {
+      set((s) => ({
+        customProps: { ...s.customProps, [nodeId]: { ...(s.customProps[nodeId] ?? {}), [k]: v } },
+      }));
+      return;
+    }
+    const all = setCP(ws.rootPath, nodeId, k, v);
+    set({ customProps: all });
+  },
+  removeCustomProp: (nodeId, k) => {
+    const ws = get().workspace;
+    if (!ws) {
+      set((s) => {
+        const cur = { ...(s.customProps[nodeId] ?? {}) };
+        delete cur[k];
+        const next = { ...s.customProps };
+        if (Object.keys(cur).length === 0) delete next[nodeId];
+        else next[nodeId] = cur;
+        return { customProps: next };
+      });
+      return;
+    }
+    const all = rmCP(ws.rootPath, nodeId, k);
+    set({ customProps: all });
+  },
+  renameCustomProp: (nodeId, oldKey, newKey) => {
+    const ws = get().workspace;
+    if (!ws) return;
+    const all = renameCP(ws.rootPath, nodeId, oldKey, newKey);
+    set({ customProps: all });
   },
   setViolations: (v) => set({ violations: v }),
   setViolationsOpen: (b) => set({ violationsOpen: b }),

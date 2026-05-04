@@ -25,7 +25,9 @@ export interface NodeStyle {
   borderStyle: NodeBorderStyle;
   width?: number;         // px, persisted from NodeResizer drag
   height?: number;
-  visibleFields?: NodeFieldKey[]; // omit → DEFAULT_VISIBLE_FIELDS
+  // Built-in NodeFieldKey values OR custom property names. Renderer falls
+  // through built-in field handling first, then customProps[name] for the rest.
+  visibleFields?: string[];
 }
 
 export const DEFAULT_NODE_STYLE: NodeStyle = { borderWidth: 1, borderStyle: 'solid' };

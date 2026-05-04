@@ -106,6 +106,7 @@ function CanvasInner() {
   const snapEnabled = useApp((s) => s.snapEnabled);
   const edgeStyles = useApp((s) => s.edgeStyles);
   const nodeStyles = useApp((s) => s.nodeStyles);
+  const customProps = useApp((s) => s.customProps);
   const violations = useApp((s) => s.violations);
   const select = useApp((s) => s.selectElement);
   const selectLink = useApp((s) => s.selectLink);
@@ -187,6 +188,29 @@ function CanvasInner() {
     useApp.getState().setNodeStyleFor(nodeId, { ...current, width: w, height: h });
   }, []);
 
+  // Inline edit (Q "puting text into box on canvas") — double-click a node to
+  // edit its name. We carry the editing id in component state and pass the
+  // commit/cancel callbacks down through node data so the renderer stays
+  // dumb.
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+
+  const onNodeDoubleClick: NodeMouseHandler = useCallback((_, node) => {
+    if (mode === 'view') return;
+    if (node.type !== 'arch') return;
+    setEditingNodeId(node.id);
+  }, [mode]);
+
+  const handleCommitName = useCallback(async (nodeId: string, next: string) => {
+    setEditingNodeId(null);
+    const r = await applyOperation({
+      kind: 'RenameElement', opId: `op_${Date.now()}`, elementId: nodeId, newName: next,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    else setToast({ kind: 'success', text: 'Renamed' });
+  }, [setToast]);
+
+  const handleCancelEdit = useCallback(() => setEditingNodeId(null), []);
+
   useEffect(() => {
     if (!workspace || !arch) {
       setNodes([]);
@@ -212,23 +236,29 @@ function CanvasInner() {
         const existing = prevById.get(e.id);
         const pos = existing?.position ?? merged[e.id] ?? { x: 0, y: 0 };
         const ns = nodeStyles[e.id];
+        const editing = editingNodeId === e.id;
         return {
           id: e.id,
           type: 'arch',
           position: pos,
+          draggable: !editing && (mode === 'edit' || activeCustomView !== null),
           ...(ns?.width && ns?.height ? { style: { width: ns.width, height: ns.height } } : {}),
           data: {
             element: e,
             tag: tagsById.get(e.id),
             nodeStyle: ns,
+            customProps: customProps[e.id],
             violationSeverity: sevByElement.get(e.id),
-            resizable: mode === 'edit',
+            resizable: mode === 'edit' && !editing,
             onResize: handleNodeResize,
+            editing,
+            onCommitName: handleCommitName,
+            onCancelEdit: handleCancelEdit,
           },
         } satisfies Node;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, violations, mode, handleNodeResize]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, mode, handleNodeResize, editingNodeId, handleCommitName, handleCancelEdit, activeCustomView]);
 
   useEffect(() => {
     if (nodes.length > 0) {
@@ -771,6 +801,7 @@ function CanvasInner() {
         snapGrid={[20, 20]}
         onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
         onNodeContextMenu={onNodeContextMenu}
