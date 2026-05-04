@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+out/
+dist/
+build/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Node
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# .NET
+*.dll
+*.exe
+*.pdb
+*.cache
+*.csproj.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Verso runtime
+*.verso.local.json
+.verso/
