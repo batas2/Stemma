@@ -81,6 +81,15 @@ export interface ArchModel {
 
 export interface RecentEntry { rootPath: string; displayName: string; lastOpened: string; }
 
+export type Severity = 'info' | 'warning' | 'error';
+export interface Violation {
+  ruleId: string;
+  severity: Severity;
+  message: string;
+  elementIds: string[];
+  linkIds: string[];
+}
+
 export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'engineer';
 export type Mode = 'edit' | 'view';
 

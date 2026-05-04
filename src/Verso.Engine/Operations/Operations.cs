@@ -23,6 +23,8 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.SetLinkAttributeOp), "SetLinkAttribute")]
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.SetLifecycleOp), "SetLifecycle")]
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.SetOwnershipOp), "SetOwnership")]
+[JsonDerivedType(typeof(Verso.Engine.Workspace.RestoreElementOp), "RestoreElement")]
+[JsonDerivedType(typeof(Verso.Engine.Workspace.RestoreLinkOp), "RestoreLink")]
 public abstract record OperationBase(string OpId);
 
 public sealed record AddTypeOp(

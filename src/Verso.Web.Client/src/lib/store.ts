@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ArchModel, CustomView, Mode, ViewKind, WorkspaceModel } from './types';
+import type { ArchModel, CustomView, Mode, ViewKind, Violation, WorkspaceModel } from './types';
 import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
@@ -29,6 +29,8 @@ interface AppState {
   selectedLinkId: string | null;
   edgeStyles: Record<string, EdgeStyle>;
   nodeStyles: Record<string, NodeStyle>;
+  violations: Violation[];
+  violationsOpen: boolean;
   snapEnabled: boolean;
   toast: { kind: 'info' | 'error' | 'success'; text: string } | null;
   paletteOpen: boolean;
@@ -52,6 +54,8 @@ interface AppState {
   selectLink: (id: string | null) => void;
   setEdgeStyleFor: (linkId: string, style: EdgeStyle) => void;
   setNodeStyleFor: (nodeId: string, style: NodeStyle) => void;
+  setViolations: (v: Violation[]) => void;
+  setViolationsOpen: (b: boolean) => void;
   toggleSnap: () => void;
   setToast: (t: AppState['toast']) => void;
   setPaletteOpen: (b: boolean) => void;
@@ -72,6 +76,8 @@ export const useApp = create<AppState>((set, get) => ({
   selectedLinkId: null,
   edgeStyles: {},
   nodeStyles: {},
+  violations: [],
+  violationsOpen: false,
   snapEnabled: typeof window !== 'undefined' && localStorage.getItem('verso.snap') === '1',
   toast: null,
   paletteOpen: false,
@@ -173,6 +179,8 @@ export const useApp = create<AppState>((set, get) => ({
     const all = setNodeStyle(ws.rootPath, nodeId, style);
     set({ nodeStyles: all });
   },
+  setViolations: (v) => set({ violations: v }),
+  setViolationsOpen: (b) => set({ violationsOpen: b }),
   toggleSnap: () => {
     const next = !get().snapEnabled;
     if (typeof window !== 'undefined') localStorage.setItem('verso.snap', next ? '1' : '0');

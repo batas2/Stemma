@@ -97,6 +97,7 @@ function CanvasInner() {
   const snapEnabled = useApp((s) => s.snapEnabled);
   const edgeStyles = useApp((s) => s.edgeStyles);
   const nodeStyles = useApp((s) => s.nodeStyles);
+  const violations = useApp((s) => s.violations);
   const select = useApp((s) => s.selectElement);
   const selectLink = useApp((s) => s.selectLink);
   const setToast = useApp((s) => s.setToast);
@@ -146,6 +147,15 @@ function CanvasInner() {
     setNodes((prev) => {
       const prevById = new Map(prev.map((n) => [n.id, n]));
       const tagsById = new Map((arch?.tags ?? []).map((t) => [t.targetId, t]));
+      // Build per-element worst-severity map.
+      const sevByElement = new Map<string, 'info' | 'warning' | 'error'>();
+      const sevRank = (s: string) => s === 'error' ? 3 : s === 'warning' ? 2 : 1;
+      for (const v of violations) {
+        for (const id of v.elementIds) {
+          const cur = sevByElement.get(id);
+          if (!cur || sevRank(v.severity) > sevRank(cur)) sevByElement.set(id, v.severity);
+        }
+      }
       return filtered.elements.map((e) => {
         const existing = prevById.get(e.id);
         const pos = existing?.position ?? merged[e.id] ?? { x: 0, y: 0 };
@@ -153,11 +163,11 @@ function CanvasInner() {
           id: e.id,
           type: 'arch',
           position: pos,
-          data: { element: e, tag: tagsById.get(e.id), nodeStyle: nodeStyles[e.id] },
+          data: { element: e, tag: tagsById.get(e.id), nodeStyle: nodeStyles[e.id], violationSeverity: sevByElement.get(e.id) },
         } satisfies Node;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, violations]);
 
   useEffect(() => {
     if (nodes.length > 0) {

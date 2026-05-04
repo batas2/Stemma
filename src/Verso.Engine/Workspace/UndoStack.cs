@@ -65,9 +65,8 @@ public sealed class UndoStack
     {
         switch (op)
         {
-            case AddElementOp add when archBefore is not null:
-                // We cannot know the generated id ahead of time; the engine will fill it in
-                // post-apply by attaching the new id. Placeholder used only after enrichment.
+            case AddElementOp:
+                // Forward op succeeded; engine enriches the inverse with the new id post-apply.
                 return null;
 
             case RenameElementOp rename when archBefore is not null:
@@ -77,16 +76,33 @@ public sealed class UndoStack
             }
 
             case RemoveElementOp remove when archBefore is not null:
-                // Inverse requires preserving the full element + tags, which the basic op
-                // surface cannot recreate verbatim (kind, attributes). Skip for v1; users get
-                // a forward "redo" but no automatic restore of removed elements.
-                return null;
+            {
+                var prior = archBefore.Elements.FirstOrDefault(e => e.Id == remove.ElementId);
+                if (prior is null) return null;
+                prior.Attributes.TryGetValue("contextId", out var ctx);
+                prior.Attributes.TryGetValue("systemId", out var sys);
+                prior.Attributes.TryGetValue("kind", out var ckind);
+                prior.Attributes.TryGetValue("role", out var role);
+                // The inverse re-adds the element; engine handles the regenerated ID gracefully
+                // because new elements get a fresh id. To preserve the original id we use a
+                // dedicated RestoreElementOp that bypasses id generation (declared below).
+                return new RestoreElementOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.Name, prior.Kind,
+                    ctx, sys, ckind, role);
+            }
 
-            case AddLinkOp _:
-                return null; // Same caveat as AddElement.
+            case AddLinkOp:
+                return null; // engine fills in a RemoveLinkOp post-apply with the generated id
 
-            case RemoveLinkOp:
-                return null;
+            case RemoveLinkOp removeLink when archBefore is not null:
+            {
+                var prior = archBefore.Links.FirstOrDefault(l => l.Id == removeLink.LinkId);
+                if (prior is null) return null;
+                prior.Attributes.TryGetValue("payload", out var payload);
+                prior.Attributes.TryGetValue("direction", out var direction);
+                prior.Attributes.TryGetValue("kind", out var kind);
+                return new RestoreLinkOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.FromId, prior.ToId, prior.Kind,
+                    payload, direction, kind);
+            }
 
             case SetLinkAttributeOp set when archBefore is not null:
             {
@@ -114,4 +130,51 @@ public sealed class UndoStack
                 return null;
         }
     }
+
+    /// <summary>
+    /// Augments the just-recorded undo entry with an enriched inverse for AddElement/AddLink
+    /// once the engine has the post-apply state with the generated id.
+    /// </summary>
+    public void EnrichLastInverseAfterAdd(string newElementId, OperationBase forward)
+    {
+        if (_undo.Last is null) return;
+        var entry = _undo.Last.Value;
+        if (forward is AddElementOp)
+        {
+            _undo.RemoveLast();
+            _undo.AddLast(new Entry(forward, new RemoveElementOp($"undo_{Guid.NewGuid():N}", newElementId), entry.Description));
+        }
+        else if (forward is AddLinkOp)
+        {
+            _undo.RemoveLast();
+            _undo.AddLast(new Entry(forward, new RemoveLinkOp($"undo_{Guid.NewGuid():N}", newElementId), entry.Description));
+        }
+    }
 }
+
+/// <summary>
+/// Internal op used by the undo stack to restore a removed element with its original id.
+/// Behaves identically to AddElement but skips id generation.
+/// </summary>
+public sealed record RestoreElementOp(
+    string OpId,
+    string ElementId,
+    string Name,
+    ArchElementKind ElementKind,
+    string? ContextId = null,
+    string? SystemId = null,
+    string? ContainerKind = null,
+    string? Role = null) : OperationBase(OpId);
+
+/// <summary>
+/// Internal op used by the undo stack to restore a removed link with its original id.
+/// </summary>
+public sealed record RestoreLinkOp(
+    string OpId,
+    string LinkId,
+    string FromId,
+    string ToId,
+    ArchLinkKind LinkKind,
+    string? Payload = null,
+    string? Direction = null,
+    string? DependencyKind = null) : OperationBase(OpId);

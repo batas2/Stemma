@@ -6,6 +6,7 @@ import { fetchUndoState, undoOperation, redoOperation, type UndoState } from '@/
 import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
 import type { RecentEntry } from '@/lib/types';
 import { ViewSwitcher } from './ViewSwitcher';
+import { ExportMenu } from './ExportMenu';
 
 export function Topbar() {
   const ws = useApp((s) => s.workspace);
@@ -102,12 +103,13 @@ export function Topbar() {
             </div>
             <button
               onClick={() => setOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors w-56"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors w-44"
             >
               <Search className="w-3.5 h-3.5" />
               <span className="flex-1 text-left">Search…</span>
               <kbd className="text-[10px] font-mono bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{primaryKeyLabel}K</kbd>
             </button>
+            <ExportMenu />
           </>
         ) : (
           <div className="flex items-center gap-2 w-[640px]">

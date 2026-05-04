@@ -1,4 +1,4 @@
-import type { ArchModel, RecentEntry, WorkspaceModel } from './types';
+import type { ArchModel, RecentEntry, Violation, WorkspaceModel } from './types';
 
 const BASE = '';
 
@@ -39,6 +39,19 @@ export async function archModel(): Promise<ArchModel | null> {
 export async function exportMermaid(view: 'c4Context' | 'moduleMap' | 'dependencyGraph'): Promise<string> {
   const r = await fetch(`${BASE}/api/workspace/export/mermaid?view=${view}`);
   if (!r.ok) throw new Error(`Mermaid export failed: ${r.status}`);
+  return r.text();
+}
+
+export async function listViolations(): Promise<Violation[]> {
+  const r = await fetch(`${BASE}/api/workspace/violations`);
+  if (r.status === 404) return [];
+  if (!r.ok) return [];
+  return r.json();
+}
+
+export async function exportDrawio(): Promise<string> {
+  const r = await fetch(`${BASE}/api/workspace/export/drawio`);
+  if (!r.ok) throw new Error(`drawio export failed: ${r.status}`);
   return r.text();
 }
 

@@ -157,7 +157,23 @@ workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, Canc
     return Results.Text(text, "text/plain");
 });
 
+workspaceApi.MapGet("/export/drawio", async (EngineHost host, CancellationToken ct) =>
+{
+    var arch = await host.ReadArchAsync(ct);
+    if (arch is null) return Results.NotFound();
+    var xml = DrawioExporter.Export(arch);
+    return Results.Text(xml, "application/xml");
+});
+
 workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
+
+workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var violations = await engine.RunValidationAsync(ct);
+    return Results.Ok(violations);
+});
 
 workspaceApi.MapGet("/layout", (EngineHost host) =>
 {

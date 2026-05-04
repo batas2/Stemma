@@ -256,6 +256,92 @@ public class ArchModelTests
     }
 
     [Fact]
+    public async Task UndoStack_reverses_AddElement_via_RemoveElement()
+    {
+        await using var ws = await CreateAsync("""
+            var ctx = new BoundedContext("ctx_001", "C");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var add = await engine.ApplyAsync(new AddElementOp("op1", ArchElementKind.Module, "Onboarding", ContextId: "ctx_001"));
+        if (add is Operations.OperationFailed f) throw new Xunit.Sdk.XunitException($"Add failed: {f.Reason} {f.Message}");
+        engine.Undo.CanUndo.Should().BeTrue();
+
+        var arch = await engine.ReadArchModelAsync();
+        arch!.Elements.Should().Contain(e => e.Name == "Onboarding");
+
+        var undo = await engine.UndoAsync("undo1");
+        if (undo is Operations.OperationFailed f2) throw new Xunit.Sdk.XunitException($"Undo failed: {f2.Reason} {f2.Message}");
+
+        var afterUndo = await engine.ReadArchModelAsync();
+        afterUndo!.Elements.Should().NotContain(e => e.Name == "Onboarding");
+    }
+
+    [Fact]
+    public async Task UndoStack_reverses_RemoveElement_via_RestoreElement()
+    {
+        await using var ws = await CreateAsync("""
+            var ctx = new BoundedContext("ctx_001", "C");
+            var a = new Module("mod_a", "A", "ctx_001");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var remove = await engine.ApplyAsync(new RemoveElementOp("op1", "mod_a"));
+        if (remove is Operations.OperationFailed f) throw new Xunit.Sdk.XunitException($"Remove failed: {f.Reason} {f.Message}");
+
+        var afterRemove = await engine.ReadArchModelAsync();
+        afterRemove!.Elements.Should().NotContain(e => e.Id == "mod_a");
+
+        var undo = await engine.UndoAsync("undo1");
+        if (undo is Operations.OperationFailed f2) throw new Xunit.Sdk.XunitException($"Undo failed: {f2.Reason} {f2.Message}");
+
+        var afterUndo = await engine.ReadArchModelAsync();
+        var restored = afterUndo!.Elements.FirstOrDefault(e => e.Id == "mod_a");
+        restored.Should().NotBeNull();
+        restored!.Name.Should().Be("A");
+        restored.Attributes["contextId"].Should().Be("ctx_001");
+    }
+
+    [Fact]
+    public async Task UndoStack_reverses_RemoveLink_via_RestoreLink()
+    {
+        await using var ws = await CreateAsync("""
+            var a = new Module("mod_a", "A");
+            var b = new Module("mod_b", "B");
+            var f = new DataFlow("flow_1", "mod_a", "mod_b", "Event");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var remove = await engine.ApplyAsync(new RemoveLinkOp("op1", "flow_1"));
+        if (remove is Operations.OperationFailed f) throw new Xunit.Sdk.XunitException($"Remove failed: {f.Reason} {f.Message}");
+
+        var undo = await engine.UndoAsync("undo1");
+        if (undo is Operations.OperationFailed f2) throw new Xunit.Sdk.XunitException($"Undo failed: {f2.Reason} {f2.Message}");
+
+        var arch = await engine.ReadArchModelAsync();
+        var restored = arch!.Links.FirstOrDefault(l => l.Id == "flow_1");
+        restored.Should().NotBeNull();
+        restored!.Attributes["payload"].Should().Be("Event");
+    }
+
+    [Fact]
+    public async Task DrawioExporter_emits_valid_mxgraph_xml()
+    {
+        await using var ws = await CreateAsync("""
+            var ctx = new BoundedContext("ctx_001", "Buyer");
+            var a = new Module("mod_a", "Onboarding", "ctx_001");
+            var b = new Module("mod_b", "Risk", "ctx_001");
+            var flow = new DataFlow("flow_1", "mod_a", "mod_b", "OnboardedSupplier");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var arch = await engine.ReadArchModelAsync();
+        var xml = DrawioExporter.Export(arch!);
+        xml.Should().StartWith("<?xml");
+        xml.Should().Contain("<mxfile");
+        xml.Should().Contain("<mxGraphModel");
+        xml.Should().Contain("id=\"mod_a\"");
+        xml.Should().Contain("id=\"flow_1\"");
+        xml.Should().Contain("OnboardedSupplier");
+    }
+
+    [Fact]
     public async Task Mermaid_module_map_groups_modules_under_context()
     {
         await using var ws = await CreateAsync("""

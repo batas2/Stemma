@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis.Rename;
 using Verso.Engine.ArchModel;
 using Verso.Engine.Models;
 using Verso.Engine.Operations;
+using Verso.Engine.Validation;
 using TypeKind = Verso.Engine.Models.TypeKind;
 
 namespace Verso.Engine.Workspace;
@@ -117,6 +118,8 @@ public sealed class VersoEngine : IAsyncDisposable
             SetLinkAttributeOp x => await SetLinkAttributeAsync(x, ct),
             SetLifecycleOp x => await SetLifecycleAsync(x, ct),
             SetOwnershipOp x => await SetOwnershipAsync(x, ct),
+            RestoreElementOp x => await RestoreArchElementAsync(x, ct),
+            RestoreLinkOp x => await RestoreArchLinkAsync(x, ct),
             _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
         };
 
@@ -126,6 +129,34 @@ public sealed class VersoEngine : IAsyncDisposable
             if (inverse is not null)
             {
                 _undo.Push(op, inverse, DescribeOp(op));
+            }
+            else
+            {
+                // For Add* ops we defer the inverse until we know the new id.
+                if (op is AddElementOp addEl)
+                {
+                    var fresh = await ReadArchModelAsync(ct);
+                    var added = fresh?.Elements
+                        .Where(e => e.Kind == addEl.ElementKind && e.Name == addEl.Name)
+                        .OrderByDescending(e => e.Id)
+                        .FirstOrDefault();
+                    if (added is not null)
+                    {
+                        _undo.Push(op, new RemoveElementOp($"undo_{Guid.NewGuid():N}", added.Id), DescribeOp(op));
+                    }
+                }
+                else if (op is AddLinkOp addLink)
+                {
+                    var fresh = await ReadArchModelAsync(ct);
+                    var added = fresh?.Links
+                        .Where(l => l.Kind == addLink.LinkKind && l.FromId == addLink.FromId && l.ToId == addLink.ToId)
+                        .OrderByDescending(l => l.Id)
+                        .FirstOrDefault();
+                    if (added is not null)
+                    {
+                        _undo.Push(op, new RemoveLinkOp($"undo_{Guid.NewGuid():N}", added.Id), DescribeOp(op));
+                    }
+                }
             }
         }
         return result;
@@ -598,6 +629,14 @@ public sealed class VersoEngine : IAsyncDisposable
         return DslReader.TryRead(doc.FilePath!, root);
     }
 
+    public async Task<IReadOnlyList<Violation>> RunValidationAsync(CancellationToken ct = default)
+    {
+        var arch = await ReadArchModelAsync(ct);
+        if (arch is null) return [];
+        var engine = RuleEngine.Default(_model.RootPath);
+        return engine.Run(arch);
+    }
+
     private async Task<OperationResult> AddArchElementAsync(AddElementOp op, CancellationToken ct)
     {
         var doc = FindArchitectureDocument();
@@ -719,6 +758,45 @@ public sealed class VersoEngine : IAsyncDisposable
         SyntaxNode newRoot;
         try { newRoot = DslWriter.RemoveStatementById(root, op.LinkId); }
         catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> RestoreArchElementAsync(RestoreElementOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+
+        var attrs = new Dictionary<string, string?>();
+        if (op.ContextId is not null) attrs["contextId"] = op.ContextId;
+        if (op.SystemId is not null) attrs["systemId"] = op.SystemId;
+        if (op.ContainerKind is not null) attrs["kind"] = op.ContainerKind;
+        if (op.Role is not null) attrs["role"] = op.Role;
+        var element = new ArchModel.ArchElement(op.ElementId, op.Name, op.ElementKind, attrs);
+        var newRoot = DslWriter.AddElement(root, element);
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> RestoreArchLinkAsync(RestoreLinkOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+
+        var attrs = new Dictionary<string, string?>();
+        if (op.Payload is not null) attrs["payload"] = op.Payload;
+        if (op.Direction is not null) attrs["direction"] = op.Direction;
+        if (op.DependencyKind is not null) attrs["kind"] = op.DependencyKind;
+        var link = new ArchModel.ArchLink(op.LinkId, op.FromId, op.ToId, op.LinkKind, attrs);
+        var newRoot = DslWriter.AddLink(root, link);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,

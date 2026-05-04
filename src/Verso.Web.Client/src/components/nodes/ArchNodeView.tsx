@@ -14,6 +14,7 @@ export type ArchNodeData = {
     borderWidth?: number;
     borderStyle?: 'solid' | 'dashed' | 'dotted';
   };
+  violationSeverity?: 'info' | 'warning' | 'error';
 } & Record<string, unknown>;
 
 export type ArchFlowNode = Node<ArchNodeData, 'arch'>;
@@ -74,6 +75,7 @@ export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
   const isPerson = e.kind === 'person';
   const status = tag?.lifecycle?.status;
   const statusClasses = statusStyle(status);
+  const violationSeverity = data.violationSeverity;
 
   // Custom node style overrides take priority over status / theme defaults.
   const inlineStyle: React.CSSProperties = {};
@@ -87,7 +89,7 @@ export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
     <div
       style={inlineStyle}
       className={clsx(
-        'rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg min-w-[180px] max-w-[260px] transition-shadow',
+        'relative rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg min-w-[180px] max-w-[260px] transition-shadow',
         isPerson ? 'rounded-full px-4 py-2.5 min-w-0' : '',
         // Status restyling only applies when no custom style is set; user choice wins.
         !hasCustomStyle && statusClasses.className,
@@ -96,6 +98,17 @@ export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
       )}
     >
       <Handle type="target" position={Position.Top} />
+      {violationSeverity && (
+        <span
+          className={clsx(
+            'absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow',
+            violationSeverity === 'error' && 'bg-rose-500',
+            violationSeverity === 'warning' && 'bg-amber-500',
+            violationSeverity === 'info' && 'bg-sky-500'
+          )}
+          title={`${violationSeverity[0].toUpperCase()}${violationSeverity.slice(1)} validation`}
+        />
+      )}
       {isPerson ? (
         <div className="flex items-center gap-2">
           <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />

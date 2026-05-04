@@ -323,17 +323,48 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   const edgeStyles = useApp((s) => s.edgeStyles);
   const setEdgeStyleFor = useApp((s) => s.setEdgeStyleFor);
   const link = arch.links.find((x) => x.id === linkId);
+  const tag = arch.tags.find((t) => t.targetId === linkId);
   const userStyle: EdgeStyle = edgeStyles[linkId] ?? DEFAULT_EDGE_STYLE;
 
   const [payloadEdit, setPayloadEdit] = useState('');
   const [kindEdit, setKindEdit] = useState('');
+  const [linkStatus, setLinkStatus] = useState(tag?.lifecycle?.status ?? '');
+  const [linkPhase, setLinkPhase] = useState(tag?.lifecycle?.phase ?? '');
+  const [linkSquad, setLinkSquad] = useState(tag?.ownership?.squad ?? '');
 
   useEffect(() => {
     if (link) {
       setPayloadEdit(link.attributes.payload ?? '');
       setKindEdit(link.attributes.kind ?? 'uses');
     }
-  }, [link]);
+    setLinkStatus(tag?.lifecycle?.status ?? '');
+    setLinkPhase(tag?.lifecycle?.phase ?? '');
+    setLinkSquad(tag?.ownership?.squad ?? '');
+  }, [link, tag?.targetId, tag?.lifecycle?.status, tag?.lifecycle?.phase, tag?.ownership?.squad]);
+
+  async function commitLinkLifecycle(status: string, phase: string) {
+    const r = await applyOperation({
+      kind: 'SetLifecycle', opId: `op_${Date.now()}`,
+      targetId: linkId,
+      status: status || null,
+      phase: phase || null,
+      validFrom: null,
+      validUntil: null,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    else setToast({ kind: 'success', text: 'Lifecycle saved' });
+  }
+
+  async function commitLinkOwnership(squad: string) {
+    const r = await applyOperation({
+      kind: 'SetOwnership', opId: `op_${Date.now()}`,
+      targetId: linkId,
+      squad: squad || null,
+      domain: null,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    else setToast({ kind: 'success', text: 'Ownership saved' });
+  }
 
   if (!link) {
     return (
@@ -418,6 +449,33 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
               placeholder="uses, calls, reads…"
             />
           )}
+        </Section>
+
+        <Section label="Lifecycle & Owner">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
+            <select
+              value={linkStatus}
+              onChange={(ev) => { setLinkStatus(ev.target.value); commitLinkLifecycle(ev.target.value, linkPhase); }}
+              className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
+            >
+              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
+            </select>
+          </div>
+          <LabeledInput
+            label="Phase"
+            value={linkPhase}
+            onChange={setLinkPhase}
+            onCommit={() => commitLinkLifecycle(linkStatus, linkPhase)}
+            placeholder="e.g. Q4 2026"
+          />
+          <LabeledInput
+            label="Squad"
+            value={linkSquad}
+            onChange={setLinkSquad}
+            onCommit={() => commitLinkOwnership(linkSquad)}
+            placeholder="e.g. Onboarding Squad"
+          />
         </Section>
 
         <Section label="Appearance">

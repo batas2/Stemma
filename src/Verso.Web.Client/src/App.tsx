@@ -10,7 +10,8 @@ import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
 import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation } from './lib/signalr';
-import { archModel, snapshot } from './lib/api';
+import { archModel, listViolations, snapshot } from './lib/api';
+import { ViolationsPanel } from './components/ViolationsPanel';
 import { bindShortcuts } from './lib/shortcuts';
 
 export default function App() {
@@ -20,20 +21,26 @@ export default function App() {
   const setWs = useApp((s) => s.setWorkspace);
   const setArch = useApp((s) => s.setArch);
   const setView = useApp((s) => s.setView);
+  const setViolations = useApp((s) => s.setViolations);
 
   useEffect(() => {
     ensureConnection().catch(() => {});
     snapshot().then((s) => { if (s) setWs(s); }).catch(() => {});
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
     async function refresh() {
-      const [s, a] = await Promise.all([snapshot(), archModel().catch(() => null)]);
+      const [s, a, v] = await Promise.all([
+        snapshot(),
+        archModel().catch(() => null),
+        listViolations().catch(() => []),
+      ]);
       if (s) setWs(s);
       setArch(a);
+      setViolations(v);
     }
     const offOp = onOperationApplied(refresh);
     const offExt = onExternalChange(refresh);
     return () => { offOp(); offExt(); };
-  }, [setWs, setArch]);
+  }, [setWs, setArch, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
   useEffect(() => {
@@ -76,6 +83,7 @@ export default function App() {
           <EmptyState />
         )}
       </div>
+      <ViolationsPanel />
       <StatusBar />
       <CommandPalette />
     </div>
