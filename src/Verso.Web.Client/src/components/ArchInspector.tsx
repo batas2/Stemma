@@ -301,31 +301,17 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
 
         <Section label="Custom properties" persistKey="element.customProps" defaultOpen={Object.keys(customProps).length > 0}>
           <p className="text-[11px] text-faint mb-2 leading-snug">
-            Free-form key/value tags attached to this element. Tick a key in "Fields shown" below to render it inside the box.
+            Tick a row to render it inside the box on the canvas. Custom rows take a free-form key + value; built-in fields read from the element itself.
           </p>
-          <CustomPropsEditor
+          <CustomPropsPanel
+            visible={userNodeStyle.visibleFields ?? DEFAULT_VISIBLE_FIELDS}
+            onVisibleChange={(next) => setStyle({ visibleFields: next })}
+            onResetVisible={() => setStyle({ visibleFields: DEFAULT_VISIBLE_FIELDS })}
             props={customProps}
             onSet={(k, v) => setCustomProp(elementId, k, v)}
             onRemove={(k) => removeCustomProp(elementId, k)}
             onRename={(oldK, newK) => renameCustomProp(elementId, oldK, newK)}
           />
-        </Section>
-
-        <Section label="Fields shown on canvas" persistKey="element.fields" defaultOpen={false}>
-          <p className="text-[11px] text-faint mb-2 leading-snug">
-            Pick which properties this node displays inside its box. Affects only this element.
-          </p>
-          <FieldChecklist
-            visible={userNodeStyle.visibleFields ?? DEFAULT_VISIBLE_FIELDS}
-            customKeys={Object.keys(customProps)}
-            onChange={(next) => setStyle({ visibleFields: next })}
-          />
-          <button
-            onClick={() => setStyle({ visibleFields: DEFAULT_VISIBLE_FIELDS })}
-            className="mt-2 btn btn-md btn-ghost border-default w-full"
-          >
-            Reset to default fields
-          </button>
         </Section>
 
         <Section
@@ -743,77 +729,34 @@ function LabeledInput({ label, value, onChange, onCommit, placeholder }: {
   );
 }
 
-function FieldChecklist({
-  visible, customKeys, onChange,
-}: {
-  visible: string[];
-  customKeys: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const set = new Set(visible);
-  function toggle(k: string) {
-    const next = new Set(set);
-    if (next.has(k)) next.delete(k); else next.add(k);
-    // Preserve order: built-ins first (canonical ALL_FIELD_KEYS order), then
-    // custom keys in the order the user added them.
-    const ordered = [
-      ...ALL_FIELD_KEYS.filter((x) => next.has(x)),
-      ...customKeys.filter((x) => next.has(x)),
-    ];
-    onChange(ordered);
-  }
-  return (
-    <div className="space-y-3">
-      <div>
-        <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Built-in</div>
-        <ul className="space-y-1">
-          {ALL_FIELD_KEYS.map((k) => (
-            <li key={k}>
-              <label className="flex items-center gap-2 text-xs cursor-pointer text-body">
-                <input
-                  type="checkbox"
-                  checked={set.has(k)}
-                  onChange={() => toggle(k)}
-                  className="accent-indigo-500"
-                />
-                <span>{fieldLabel(k)}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      </div>
-      {customKeys.length > 0 && (
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Custom</div>
-          <ul className="space-y-1">
-            {customKeys.map((k) => (
-              <li key={k}>
-                <label className="flex items-center gap-2 text-xs cursor-pointer text-body">
-                  <input
-                    type="checkbox"
-                    checked={set.has(k)}
-                    onChange={() => toggle(k)}
-                    className="accent-indigo-500"
-                  />
-                  <span className="font-mono">{k}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CustomPropsEditor({
+function CustomPropsPanel({
+  visible, onVisibleChange, onResetVisible,
   props, onSet, onRemove, onRename,
 }: {
+  visible: string[];
+  onVisibleChange: (next: string[]) => void;
+  onResetVisible: () => void;
   props: CustomProps;
   onSet: (key: string, value: string) => void;
   onRemove: (key: string) => void;
   onRename: (oldKey: string, newKey: string) => void;
 }) {
+  const customKeys = Object.keys(props);
+  const set = new Set(visible);
+
+  function toggle(k: string) {
+    const next = new Set(set);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    // Preserve canonical order: built-ins first, then custom keys in their
+    // original add order.
+    const ordered = [
+      ...ALL_FIELD_KEYS.filter((x) => next.has(x)),
+      ...customKeys.filter((x) => next.has(x)),
+    ];
+    onVisibleChange(ordered);
+  }
+
+  // Add row state lives at the bottom of the panel.
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -830,54 +773,86 @@ function CustomPropsEditor({
     setError(null);
   }
 
-  const entries = Object.entries(props);
-
   return (
-    <div className="space-y-2">
-      {entries.length > 0 && (
+    <div className="space-y-3">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Built-in fields</div>
         <ul className="space-y-1">
-          {entries.map(([k, v]) => (
-            <PropRow
-              key={k}
-              propKey={k}
-              propValue={v}
-              onSetValue={(next) => onSet(k, next)}
-              onRename={(next) => onRename(k, next)}
-              onRemove={() => onRemove(k)}
-              forbid={(candidate) => RESERVED_KEYS.has(candidate) || (candidate !== k && candidate in props)}
-            />
+          {ALL_FIELD_KEYS.map((k) => (
+            <li key={k}>
+              <label className="flex items-center gap-2 text-xs cursor-pointer text-body">
+                <input
+                  type="checkbox"
+                  checked={set.has(k)}
+                  onChange={() => toggle(k)}
+                  className="accent-indigo-500"
+                />
+                <span>{fieldLabel(k)}</span>
+              </label>
+            </li>
           ))}
         </ul>
-      )}
-      <div className="flex gap-1.5">
-        <input
-          value={newKey}
-          placeholder="key (e.g. Owner)"
-          onChange={(e) => { setNewKey(e.target.value); if (error) setError(null); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryAdd(); } }}
-          className="input-base flex-1 min-w-0"
-        />
-        <input
-          value={newValue}
-          placeholder="value"
-          onChange={(e) => setNewValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryAdd(); } }}
-          className="input-base flex-1 min-w-0"
-        />
-        <button onClick={tryAdd} aria-label="Add property" className="btn btn-md btn-secondary px-2">
-          <Plus className="w-3.5 h-3.5" />
-        </button>
       </div>
-      {error && <p className="text-[11px] text-rose-600 dark:text-rose-400">{error}</p>}
+
+      {customKeys.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Custom</div>
+          <ul className="space-y-1">
+            {customKeys.map((k) => (
+              <PropRow
+                key={k}
+                propKey={k}
+                propValue={props[k]}
+                checked={set.has(k)}
+                onToggle={() => toggle(k)}
+                onSetValue={(next) => onSet(k, next)}
+                onRename={(next) => onRename(k, next)}
+                onRemove={() => onRemove(k)}
+                forbid={(candidate) => RESERVED_KEYS.has(candidate) || (candidate !== k && candidate in props)}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Add custom property</div>
+        <div className="flex gap-1.5">
+          <input
+            value={newKey}
+            placeholder="key (e.g. Owner)"
+            onChange={(e) => { setNewKey(e.target.value); if (error) setError(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryAdd(); } }}
+            className="input-base flex-1 min-w-0 font-mono text-[11px]"
+          />
+          <input
+            value={newValue}
+            placeholder="value"
+            onChange={(e) => setNewValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryAdd(); } }}
+            className="input-base flex-[1.2] min-w-0"
+          />
+          <button onClick={tryAdd} aria-label="Add property" className="btn btn-md btn-secondary px-2">
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        {error && <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{error}</p>}
+      </div>
+
+      <button onClick={onResetVisible} className="btn btn-md btn-ghost border-default w-full">
+        Reset visible fields to default
+      </button>
     </div>
   );
 }
 
 function PropRow({
-  propKey, propValue, onSetValue, onRename, onRemove, forbid,
+  propKey, propValue, checked, onToggle, onSetValue, onRename, onRemove, forbid,
 }: {
   propKey: string;
   propValue: string;
+  checked: boolean;
+  onToggle: () => void;
   onSetValue: (v: string) => void;
   onRename: (k: string) => void;
   onRemove: () => void;
@@ -901,6 +876,13 @@ function PropRow({
 
   return (
     <li className="flex items-center gap-1 text-xs">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        aria-label={`Show ${propKey} on canvas`}
+        className="accent-indigo-500 shrink-0"
+      />
       <input
         value={k}
         onChange={(e) => setK(e.target.value)}
