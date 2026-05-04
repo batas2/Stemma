@@ -30,8 +30,28 @@ var workspaceApi = app.MapGroup("/api/workspace");
 
 workspaceApi.MapPost("/open", async (OpenWorkspaceRequest req, EngineHost host, CancellationToken ct) =>
 {
-    var snapshot = await host.OpenAsync(req.RootPath, ct);
-    return Results.Ok(snapshot);
+    if (string.IsNullOrWhiteSpace(req.RootPath))
+        return Results.BadRequest(new { error = "rootPath is required" });
+
+    var resolved = Path.GetFullPath(req.RootPath);
+    if (!Directory.Exists(resolved))
+        return Results.BadRequest(new { error = $"Directory not found: {resolved}" });
+
+    var hasSln = Directory.EnumerateFiles(resolved, "*.sln", SearchOption.TopDirectoryOnly).Any()
+              || Directory.EnumerateFiles(resolved, "*.slnx", SearchOption.TopDirectoryOnly).Any();
+    var hasProj = Directory.EnumerateFiles(resolved, "*.csproj", SearchOption.AllDirectories).Any();
+    if (!hasSln && !hasProj)
+        return Results.BadRequest(new { error = $"No .sln or .csproj found under {resolved}" });
+
+    try
+    {
+        var snapshot = await host.OpenAsync(resolved, ct);
+        return Results.Ok(snapshot);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 workspaceApi.MapGet("/snapshot", (EngineHost host) =>

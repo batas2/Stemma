@@ -53,12 +53,19 @@ echo "==> Frontend (Vite) on http://localhost:5173"
 FRONT_PID=$!
 
 if [ -n "$WORKSPACE" ]; then
-  sleep 3
-  echo "==> Auto-opening workspace: $WORKSPACE"
-  curl -sS -X POST http://localhost:5050/api/workspace/open \
-    -H 'content-type: application/json' \
-    -d "{\"rootPath\":\"$WORKSPACE\"}" | head -c 200 || true
-  echo
+  # Resolve to absolute path; the backend's working directory differs from this script's.
+  if [ ! -d "$WORKSPACE" ]; then
+    echo "==> ERROR: workspace path does not exist: $WORKSPACE" >&2
+    echo "==> (resolved from script cwd: $(pwd))" >&2
+  else
+    ABS_WORKSPACE="$(cd "$WORKSPACE" && pwd)"
+    sleep 3
+    echo "==> Auto-opening workspace: $ABS_WORKSPACE"
+    curl -sS -X POST http://localhost:5050/api/workspace/open \
+      -H 'content-type: application/json' \
+      -d "{\"rootPath\":\"$ABS_WORKSPACE\"}" -w "\nHTTP %{http_code}\n" | head -c 400 || true
+    echo
+  fi
 fi
 
 echo "==> Open http://localhost:5173 in your browser"
