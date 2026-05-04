@@ -346,11 +346,12 @@ function CanvasInner() {
     });
   }, [persistPositions, workspace, layoutKey]);
 
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+
   const onNodeClick: NodeMouseHandler = (_, node) => select(node.id);
   const onEdgeClick: EdgeMouseHandler = (_, edge) => selectLink(edge.id);
-  const onPaneClick = () => { select(null); selectLink(null); };
-
-  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const onPaneClick = () => { select(null); selectLink(null); setMenu(null); };
+  const onCanvasMove = useCallback(() => setMenu(null), []);
 
   const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
     e.preventDefault();
@@ -362,7 +363,8 @@ function CanvasInner() {
       x: e.clientX, y: e.clientY,
       items: [
         {
-          id: 'rename', label: 'Rename…', icon: ContextIcons.Edit3,
+          id: 'rename', label: 'Rename', icon: ContextIcons.Edit3, opensDialog: true,
+          hint: 'dbl-click',
           onClick: async () => {
             const next = await promptText({
               title: `Rename ${elem.name}`,
@@ -374,11 +376,14 @@ function CanvasInner() {
           },
         },
         {
-          id: 'copy-id', label: `Copy id (${elem.id})`, icon: ContextIcons.Copy,
-          onClick: () => navigator.clipboard?.writeText(elem.id).catch(() => {}),
+          id: 'copy-id', label: 'Copy id', icon: ContextIcons.Copy, hint: elem.id,
+          onClick: () => {
+            navigator.clipboard?.writeText(elem.id).catch(() => {});
+            setToast({ kind: 'success', text: `Copied ${elem.id}` });
+          },
         },
         {
-          id: 'set-status', label: 'Set status…', icon: ContextIcons.TagIcon,
+          id: 'set-status', label: 'Set status', icon: ContextIcons.TagIcon, opensDialog: true,
           onClick: async () => {
             const next = await pickFromList<string>({
               title: `Set status — ${elem.name}`,
@@ -401,7 +406,7 @@ function CanvasInner() {
           },
         },
         {
-          id: 'add-decision', label: 'Add decision concerning this…', icon: ContextIcons.Lightbulb,
+          id: 'add-decision', label: 'Add decision about this', icon: ContextIcons.Lightbulb, opensDialog: true,
           onClick: async () => {
             const title = await promptText({
               title: 'New decision',
@@ -441,11 +446,14 @@ function CanvasInner() {
       x: e.clientX, y: e.clientY,
       items: [
         {
-          id: 'copy-id', label: `Copy id (${edge.id})`, icon: ContextIcons.Copy,
-          onClick: () => navigator.clipboard?.writeText(edge.id).catch(() => {}),
+          id: 'copy-id', label: 'Copy id', icon: ContextIcons.Copy, hint: edge.id,
+          onClick: () => {
+            navigator.clipboard?.writeText(edge.id).catch(() => {});
+            setToast({ kind: 'success', text: `Copied ${edge.id}` });
+          },
         },
         {
-          id: 'edit-payload', label: 'Edit payload / kind…', icon: ContextIcons.Edit3,
+          id: 'edit-payload', label: 'Edit payload / kind', icon: ContextIcons.Edit3, opensDialog: true,
           onClick: () => selectLink(edge.id),
         },
         { id: 'sep', label: '', onClick: () => {}, separator: true },
@@ -555,16 +563,18 @@ function CanvasInner() {
         },
         { id: 'sep', label: '', onClick: () => {}, separator: true },
         {
-          id: 'tpl-bc-modules', label: 'Template: BC + 2 modules', icon: ContextIcons.Workflow,
+          id: 'tpl-bc-modules', label: 'BC + 2 modules', icon: ContextIcons.Workflow,
+          hint: 'template',
           onClick: async () => templateBoundedContextWithModules(dropPos),
         },
         {
-          id: 'tpl-system-container', label: 'Template: System + Container', icon: ContextIcons.Workflow,
+          id: 'tpl-system-container', label: 'System + Container', icon: ContextIcons.Workflow,
+          hint: 'template',
           onClick: async () => templateSystemWithContainer(dropPos),
         },
       ],
     });
-  }, [screenToFlowPosition]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [screenToFlowPosition, addElementAt, templateBoundedContextWithModules, templateSystemWithContainer]);
 
   const onConnect = async (params: { source: string | null; target: string | null }) => {
     if (mode === 'view') {
@@ -804,6 +814,7 @@ function CanvasInner() {
         onNodeDoubleClick={onNodeDoubleClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onMove={onCanvasMove}
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
