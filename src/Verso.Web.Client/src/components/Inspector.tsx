@@ -15,7 +15,7 @@ export function Inspector() {
 
   if (!ws || !id) {
     return (
-      <aside className="w-[320px] shrink-0 border-l border-zinc-800 bg-zinc-950/60 p-4 hidden lg:block">
+      <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 hidden lg:block">
         <p className="text-xs text-zinc-500">Select a type on the canvas to inspect.</p>
       </aside>
     );
@@ -24,7 +24,7 @@ export function Inspector() {
   const t = all.find((x) => x.id === id);
   if (!t) {
     return (
-      <aside className="w-[320px] shrink-0 border-l border-zinc-800 bg-zinc-950/60 p-4 hidden lg:block">
+      <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 hidden lg:block">
         <p className="text-xs text-zinc-500">Type no longer exists.</p>
       </aside>
     );
@@ -79,8 +79,8 @@ export function Inspector() {
   }
 
   return (
-    <aside className="w-[320px] shrink-0 border-l border-zinc-800 bg-zinc-950/60 flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-zinc-800 flex items-center gap-2">
+    <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 flex flex-col overflow-hidden">
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
         {renaming ? (
           <input
             autoFocus
@@ -91,13 +91,13 @@ export function Inspector() {
               if (e.key === 'Enter') handleRename();
               if (e.key === 'Escape') setRenaming(false);
             }}
-            className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm flex-1 outline-none focus:border-indigo-500"
+            className="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1 text-sm flex-1 outline-none focus:border-indigo-500"
           />
         ) : (
           <>
             <h2 className="text-sm font-semibold flex-1 truncate">{t.name}</h2>
             <button
-              className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100"
+              className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               onClick={() => { setRenameValue(t.name); setRenaming(true); }}
               title="Rename"
             >
@@ -106,18 +106,18 @@ export function Inspector() {
           </>
         )}
         <button
-          className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100"
+          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
           onClick={() => select(null)}
           title="Close"
         >
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="px-4 py-3 border-b border-zinc-800 text-[11px] text-zinc-500 space-y-1">
-        <div><span className="text-zinc-400">Kind</span> · {t.kind}</div>
-        <div><span className="text-zinc-400">Namespace</span> · <span className="font-mono">{t.namespace || '(global)'}</span></div>
+      <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-500 space-y-1">
+        <div><span className="text-zinc-600 dark:text-zinc-400">Kind</span> · {t.kind}</div>
+        <div><span className="text-zinc-600 dark:text-zinc-400">Namespace</span> · <span className="font-mono">{t.namespace || '(global)'}</span></div>
         <div className="truncate" title={t.filePath}>
-          <span className="text-zinc-400">File</span> · <span className="font-mono">{t.filePath.split('/').slice(-1)[0]}</span>
+          <span className="text-zinc-600 dark:text-zinc-400">File</span> · <span className="font-mono">{t.filePath.split('/').slice(-1)[0]}</span>
         </div>
       </div>
 
@@ -127,9 +127,9 @@ export function Inspector() {
           {t.properties.length === 0 && <p className="text-xs text-zinc-600 mb-2">No properties yet.</p>}
           <ul className="space-y-1 mb-3">
             {t.properties.map((p) => (
-              <li key={p.name} className="group flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded bg-zinc-900/40 border border-zinc-800">
+              <li key={p.name} className="group flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800">
                 <div className="min-w-0">
-                  <div className="text-zinc-200 truncate">{p.name}</div>
+                  <div className="text-zinc-800 dark:text-zinc-200 truncate">{p.name}</div>
                   <div className="text-[10px] font-mono text-zinc-500 truncate">{p.type.fullyQualifiedName}</div>
                 </div>
                 <button
@@ -147,17 +147,17 @@ export function Inspector() {
               placeholder="name"
               value={propName}
               onChange={(e) => setPropName(e.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs flex-1 min-w-0 outline-none focus:border-indigo-500"
+              className="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 rounded px-2 py-1 text-xs flex-1 min-w-0 outline-none focus:border-indigo-500"
             />
             <input
               placeholder="type"
               value={propType}
               onChange={(e) => setPropType(e.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs w-20 outline-none focus:border-indigo-500 font-mono"
+              className="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 rounded px-2 py-1 text-xs w-20 outline-none focus:border-indigo-500 font-mono"
             />
             <button
               onClick={handleAddProperty}
-              className="px-2 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-xs"
+              className="px-2 rounded bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-xs"
               title="Add property"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -166,11 +166,11 @@ export function Inspector() {
         </section>
 
         {t.baseTypes.length > 0 && (
-          <section className="p-4 border-t border-zinc-800">
+          <section className="p-4 border-t border-zinc-200 dark:border-zinc-800">
             <h3 className="text-[11px] uppercase tracking-wider text-zinc-500 mb-2">Inherits / Implements</h3>
             <ul className="space-y-1">
               {t.baseTypes.map((b) => (
-                <li key={b.fullyQualifiedName} className="text-xs px-2 py-1 font-mono text-zinc-300 bg-zinc-900/40 rounded border border-zinc-800">
+                <li key={b.fullyQualifiedName} className="text-xs px-2 py-1 font-mono text-zinc-700 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-900/40 rounded border border-zinc-200 dark:border-zinc-800">
                   {b.fullyQualifiedName}
                 </li>
               ))}
@@ -179,7 +179,7 @@ export function Inspector() {
         )}
       </div>
 
-      <div className="p-3 border-t border-zinc-800">
+      <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
         <button
           onClick={handleRemoveType}
           className="w-full text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/30 rounded px-2 py-1.5 flex items-center justify-center gap-1.5"

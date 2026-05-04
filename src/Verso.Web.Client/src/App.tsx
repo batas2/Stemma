@@ -31,6 +31,14 @@ export default function App() {
     return () => { off(); };
   }, [setWs, setArch]);
 
+  // Theme: toggle the `dark` class on <html>; Tailwind reads it.
+  const theme = useApp((s) => s.theme);
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.body.style.backgroundColor = theme === 'dark' ? 'rgb(9 9 11)' : 'rgb(250 250 250)';
+    document.body.style.color = theme === 'dark' ? 'rgb(244 244 245)' : 'rgb(24 24 27)';
+  }, [theme]);
+
   // Auto-pick a sensible default view based on workspace contents.
   useEffect(() => {
     if (!ws) return;

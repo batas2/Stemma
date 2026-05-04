@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
@@ -6,6 +6,8 @@ import {
   MiniMap,
   type Node,
   type Edge,
+  type NodeChange,
+  applyNodeChanges,
   ConnectionMode,
   ReactFlowProvider,
   useReactFlow,
@@ -14,6 +16,7 @@ import {
 import { ArchNodeView } from './nodes/ArchNodeView';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
+import { loadLayout, saveLayout, mergePositions, type SavedPosition } from '@/lib/layout';
 import type { ArchElement, ArchLink, ArchModel, ViewKind } from '@/lib/types';
 
 const nodeTypes = { arch: ArchNodeView };
@@ -56,8 +59,7 @@ function filterByView(arch: ArchModel, view: ViewKind): FilteredView {
   }
 }
 
-function gridLayout(elements: ArchElement[]): Node[] {
-  // Group modules by their bounded context for a tidy two-row layout per context.
+function defaultPositions(elements: ArchElement[]): Record<string, SavedPosition> {
   const ctxOf = new Map<string, ArchElement[]>();
   const standalone: ArchElement[] = [];
   for (const e of elements) {
@@ -70,55 +72,34 @@ function gridLayout(elements: ArchElement[]): Node[] {
     }
   }
 
-  const nodes: Node[] = [];
+  const out: Record<string, SavedPosition> = {};
   let yCursor = 40;
   const COL_W = 240;
   const ROW_H = 130;
 
+  let standaloneIdx = 0;
   for (const e of standalone) {
     if (e.kind === 'boundedContext') continue;
-    nodes.push({
-      id: e.id,
-      type: 'arch',
-      position: { x: 40 + nodes.length * COL_W, y: yCursor },
-      data: { element: e },
-    });
+    out[e.id] = { x: 40 + standaloneIdx * COL_W, y: yCursor };
+    standaloneIdx++;
   }
-  if (nodes.length > 0) yCursor += ROW_H + 40;
+  if (standaloneIdx > 0) yCursor += ROW_H + 40;
 
   for (const [ctxId, modules] of ctxOf) {
     const ctx = elements.find((x) => x.id === ctxId);
-    if (ctx) {
-      nodes.push({
-        id: ctx.id,
-        type: 'arch',
-        position: { x: 40, y: yCursor },
-        data: { element: ctx },
-      });
-    }
+    if (ctx) out[ctx.id] = { x: 40, y: yCursor };
     modules.forEach((m, i) => {
-      nodes.push({
-        id: m.id,
-        type: 'arch',
-        position: { x: 320 + i * COL_W, y: yCursor },
-        data: { element: m },
-      });
+      out[m.id] = { x: 320 + i * COL_W, y: yCursor };
     });
     yCursor += ROW_H + 60;
   }
 
-  // Standalone bounded contexts not used above.
   for (const e of elements.filter((x) => x.kind === 'boundedContext' && !ctxOf.has(x.id))) {
-    nodes.push({
-      id: e.id,
-      type: 'arch',
-      position: { x: 40, y: yCursor },
-      data: { element: e },
-    });
+    out[e.id] = { x: 40, y: yCursor };
     yCursor += ROW_H;
   }
 
-  return nodes;
+  return out;
 }
 
 function buildEdges(links: ArchLink[]): Edge[] {
@@ -131,8 +112,6 @@ function buildEdges(links: ArchLink[]): Edge[] {
       target: l.toId,
       type: 'smoothstep',
       label,
-      labelStyle: { fill: 'rgb(161 161 170)', fontSize: 10 },
-      labelBgStyle: { fill: 'rgb(24 24 27)', fillOpacity: 0.85 },
       animated: !isDataFlow,
       style: !isDataFlow ? { strokeDasharray: '4 4' } : undefined,
     };
@@ -142,22 +121,63 @@ function buildEdges(links: ArchLink[]): Edge[] {
 function CanvasInner() {
   const arch = useApp((s) => s.arch);
   const view = useApp((s) => s.view);
+  const workspace = useApp((s) => s.workspace);
+  const theme = useApp((s) => s.theme);
   const select = useApp((s) => s.selectElement);
   const setToast = useApp((s) => s.setToast);
   const { fitView } = useReactFlow();
 
-  const { nodes, edges } = useMemo(() => {
-    if (!arch) return { nodes: [] as Node[], edges: [] as Edge[] };
-    const filtered = filterByView(arch, view);
-    return { nodes: gridLayout(filtered.elements), edges: buildEdges(filtered.links) };
-  }, [arch, view]);
+  const filtered = useMemo(() => arch ? filterByView(arch, view) : { elements: [], links: [] }, [arch, view]);
+  const edges = useMemo(() => buildEdges(filtered.links), [filtered.links]);
 
+  const [nodes, setNodes] = useState<Node[]>([]);
+
+  // Sync nodes when arch/view changes: keep saved positions, layout new ones, drop removed.
+  useEffect(() => {
+    if (!workspace || !arch) {
+      setNodes([]);
+      return;
+    }
+    const saved = loadLayout(workspace.rootPath, view);
+    const defaults = defaultPositions(filtered.elements);
+    const merged = mergePositions(defaults, saved);
+
+    setNodes((prev) => {
+      const prevById = new Map(prev.map((n) => [n.id, n]));
+      return filtered.elements.map((e) => {
+        const existing = prevById.get(e.id);
+        const pos = existing?.position ?? merged[e.id] ?? { x: 0, y: 0 };
+        return {
+          id: e.id,
+          type: 'arch',
+          position: pos,
+          data: { element: e },
+        } satisfies Node;
+      });
+    });
+  }, [arch, view, workspace, filtered.elements]);
+
+  // Fit view once after nodes appear; not on every change so dragging doesn't jump.
   useEffect(() => {
     if (nodes.length > 0) {
-      const id = setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 60);
+      const id = setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 80);
       return () => clearTimeout(id);
     }
-  }, [nodes.length, fitView]);
+  }, [view, arch?.filePath, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes((current) => {
+      const next = applyNodeChanges(changes, current);
+      // Persist any position changes immediately.
+      const positionChanged = changes.some((c) => c.type === 'position' && c.position && !c.dragging);
+      if (positionChanged && workspace) {
+        const positions: Record<string, SavedPosition> = {};
+        for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
+        saveLayout(workspace.rootPath, view, positions);
+      }
+      return next;
+    });
+  }, [workspace, view]);
 
   const onNodeClick: NodeMouseHandler = (_, node) => select(node.id);
 
@@ -174,27 +194,29 @@ function CanvasInner() {
     else setToast({ kind: 'success', text: 'Link added' });
   };
 
+  const isDark = theme === 'dark';
+  const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(250 250 250)';
+  const dotColor = isDark ? 'rgb(39 39 42)' : 'rgb(228 228 231)';
+
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full" style={{ background: bgColor }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         connectionMode={ConnectionMode.Loose}
+        nodesDraggable
+        nodesConnectable
+        elementsSelectable
+        onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
         onConnect={onConnect}
-        fitView
         proOptions={{ hideAttribution: true }}
+        colorMode={isDark ? 'dark' : 'light'}
       >
-        <Background gap={24} size={1} color="rgb(39 39 42)" />
-        <Controls className="!bg-zinc-900 !border-zinc-800 !text-zinc-200" />
-        <MiniMap
-          pannable
-          zoomable
-          className="!bg-zinc-900 !border !border-zinc-800"
-          nodeColor={() => 'rgb(99 102 241)'}
-          maskColor="rgba(9, 9, 11, 0.7)"
-        />
+        <Background gap={24} size={1} color={dotColor} />
+        <Controls />
+        <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />
       </ReactFlow>
     </div>
   );

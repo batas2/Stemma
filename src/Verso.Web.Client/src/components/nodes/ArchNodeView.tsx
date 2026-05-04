@@ -43,29 +43,29 @@ export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
   return (
     <div
       className={clsx(
-        'rounded-lg border bg-zinc-900/95 backdrop-blur shadow-lg min-w-[180px] max-w-[260px] transition-shadow',
+        'rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg min-w-[180px] max-w-[260px] transition-shadow',
         isPerson ? 'rounded-full px-4 py-2.5 min-w-0' : '',
         selected
           ? 'border-indigo-500 shadow-indigo-500/20 ring-1 ring-indigo-500/40'
-          : 'border-zinc-800 hover:border-zinc-700 hover:shadow-xl'
+          : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-lg dark:hover:shadow-xl'
       )}
     >
       <Handle type="target" position={Position.Top} />
       {isPerson ? (
         <div className="flex items-center gap-2">
           <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
-          <span className="text-zinc-100 text-sm">{e.name}</span>
+          <span className="text-zinc-900 dark:text-zinc-100 text-sm">{e.name}</span>
         </div>
       ) : (
         <>
-          <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
+          <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
             <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
             <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
               {labelForKind[e.kind]}
             </span>
           </div>
           <div className="px-3 py-2">
-            <div className="font-medium text-zinc-100 text-sm truncate" title={e.name}>{e.name}</div>
+            <div className="font-medium text-zinc-900 dark:text-zinc-100 text-sm truncate" title={e.name}>{e.name}</div>
             {e.attributes.contextId && (
               <div className="text-[10px] text-zinc-500 mt-0.5 font-mono truncate">in {e.attributes.contextId}</div>
             )}

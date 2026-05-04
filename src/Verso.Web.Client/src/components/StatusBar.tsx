@@ -23,9 +23,9 @@ export function StatusBar() {
   const totalTypes = ws?.projects.reduce((s, p) => s + p.types.length, 0) ?? 0;
 
   return (
-    <footer className="h-7 border-t border-zinc-800 bg-zinc-950/80 backdrop-blur px-3 flex items-center text-[11px] text-zinc-500 gap-4">
+    <footer className="h-7 border-t border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur px-3 flex items-center text-[11px] text-zinc-500 dark:text-zinc-500 gap-4">
       <span className="flex items-center gap-1.5">
-        <span className={`w-1.5 h-1.5 rounded-full ${conn === 'Connected' ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
+        <span className={`w-1.5 h-1.5 rounded-full ${conn === 'Connected' ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-600'}`} />
         {conn}
       </span>
       {ws && (
@@ -38,9 +38,9 @@ export function StatusBar() {
         {toast && (
           <span
             className={
-              toast.kind === 'error' ? 'text-rose-400' :
-              toast.kind === 'success' ? 'text-emerald-400' :
-              'text-zinc-300'
+              toast.kind === 'error' ? 'text-rose-600 dark:text-rose-400' :
+              toast.kind === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
+              'text-zinc-700 dark:text-zinc-300'
             }
           >
             {toast.text}
