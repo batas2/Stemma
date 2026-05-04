@@ -43,7 +43,35 @@ export type OperationKind =
   | 'AddType' | 'RenameType' | 'RemoveType'
   | 'AddProperty' | 'RenameProperty' | 'RemoveProperty'
   | 'AddInheritance' | 'RemoveInheritance'
-  | 'AddImplementation' | 'RemoveImplementation';
+  | 'AddImplementation' | 'RemoveImplementation'
+  | 'AddElement' | 'RenameElement' | 'RemoveElement'
+  | 'SetElementAttribute' | 'AddLink' | 'RemoveLink';
+
+export type ArchElementKind =
+  | 'module' | 'boundedContext' | 'softwareSystem'
+  | 'container' | 'person' | 'useCase' | 'capability';
+export type ArchLinkKind = 'dataFlow' | 'dependency';
+
+export interface ArchElement {
+  id: string;
+  name: string;
+  kind: ArchElementKind;
+  attributes: Record<string, string | null>;
+}
+export interface ArchLink {
+  id: string;
+  fromId: string;
+  toId: string;
+  kind: ArchLinkKind;
+  attributes: Record<string, string | null>;
+}
+export interface ArchModel {
+  filePath: string;
+  elements: ArchElement[];
+  links: ArchLink[];
+}
+
+export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'engineer';
 
 export interface OperationEnvelope {
   kind: OperationKind;

@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Rename;
+using Verso.Engine.ArchModel;
 using Verso.Engine.Models;
 using Verso.Engine.Operations;
 using TypeKind = Verso.Engine.Models.TypeKind;
@@ -47,6 +48,11 @@ public sealed class VersoEngine : IAsyncDisposable
                 RemoveInheritanceOp x => await RemoveInheritanceAsync(x, ct),
                 AddImplementationOp x => await AddImplementationAsync(x, ct),
                 RemoveImplementationOp x => await RemoveImplementationAsync(x, ct),
+                AddElementOp x => await AddArchElementAsync(x, ct),
+                RenameElementOp x => await RenameArchElementAsync(x, ct),
+                RemoveElementOp x => await RemoveArchElementAsync(x, ct),
+                AddLinkOp x => await AddArchLinkAsync(x, ct),
+                RemoveLinkOp x => await RemoveArchLinkAsync(x, ct),
                 _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
             };
         }
@@ -447,4 +453,171 @@ public sealed class VersoEngine : IAsyncDisposable
         Visibility.Private => "private",
         _ => "internal"
     };
+
+    // ----- Architecture-model surface (Spike 02) -----
+
+    /// <summary>
+    /// Locate the document whose root contains a `static class Architecture { Build() {...} }`.
+    /// Returns null if the workspace is not a model workspace (i.e. has no Architecture/).
+    /// </summary>
+    public Document? FindArchitectureDocument()
+    {
+        foreach (var project in _workspace.CurrentSolution.Projects)
+        {
+            foreach (var doc in project.Documents)
+            {
+                if (doc.FilePath is null) continue;
+                if (!doc.FilePath.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) continue;
+                var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
+                if (root is null) continue;
+                if (root.DescendantNodes().OfType<ClassDeclarationSyntax>()
+                        .Any(c => c.Identifier.Text == "Architecture"
+                                  && c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build")))
+                    return doc;
+            }
+        }
+        return null;
+    }
+
+    public async Task<ArchModel.ArchModel?> ReadArchModelAsync(CancellationToken ct = default)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return null;
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return null;
+        return DslReader.TryRead(doc.FilePath!, root);
+    }
+
+    private async Task<OperationResult> AddArchElementAsync(AddElementOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture/Architecture.cs found");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse Architecture file");
+
+        var current = DslReader.TryRead(doc.FilePath!, root);
+        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Architecture.Build() body not found");
+
+        var id = GenerateId(op.ElementKind, current);
+        var attrs = new Dictionary<string, string?>();
+        if (op.ContextId is not null) attrs["contextId"] = op.ContextId;
+        if (op.SystemId is not null) attrs["systemId"] = op.SystemId;
+        if (op.ContainerKind is not null) attrs["kind"] = op.ContainerKind;
+        if (op.Role is not null) attrs["role"] = op.Role;
+
+        var element = new ArchModel.ArchElement(id, op.Name, op.ElementKind, attrs);
+        var newRoot = DslWriter.AddElement(root, element);
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> RenameArchElementAsync(RenameElementOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture/Architecture.cs found");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+
+        var newRoot = DslWriter.RenameElement(root, op.ElementId, op.NewName);
+        if (ReferenceEquals(newRoot, root))
+            return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> RemoveArchElementAsync(RemoveElementOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.RemoveStatementById(root, op.ElementId); }
+        catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> AddArchLinkAsync(AddLinkOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        var current = DslReader.TryRead(doc.FilePath!, root);
+        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
+
+        if (!current.Elements.Any(e => e.Id == op.FromId))
+            return new OperationFailed(op.OpId, "FromNotFound", op.FromId);
+        if (!current.Elements.Any(e => e.Id == op.ToId))
+            return new OperationFailed(op.OpId, "ToNotFound", op.ToId);
+
+        var id = GenerateLinkId(op.LinkKind, current);
+        var attrs = new Dictionary<string, string?>();
+        if (op.Payload is not null) attrs["payload"] = op.Payload;
+        if (op.Direction is not null) attrs["direction"] = op.Direction;
+        if (op.DependencyKind is not null) attrs["kind"] = op.DependencyKind;
+
+        var link = new ArchModel.ArchLink(id, op.FromId, op.ToId, op.LinkKind, attrs);
+        var newRoot = DslWriter.AddLink(root, link);
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> RemoveArchLinkAsync(RemoveLinkOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.RemoveStatementById(root, op.LinkId); }
+        catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private static string GenerateId(ArchElementKind kind, ArchModel.ArchModel current)
+    {
+        var prefix = kind switch
+        {
+            ArchElementKind.Module => "mod",
+            ArchElementKind.BoundedContext => "ctx",
+            ArchElementKind.SoftwareSystem => "sys",
+            ArchElementKind.Container => "cnt",
+            ArchElementKind.Person => "per",
+            ArchElementKind.UseCase => "uc",
+            ArchElementKind.Capability => "cap",
+            _ => "elem"
+        };
+        var existing = current.Elements.Select(e => e.Id).ToHashSet();
+        for (var n = 1; ; n++)
+        {
+            var candidate = $"{prefix}_{n:000}";
+            if (!existing.Contains(candidate)) return candidate;
+        }
+    }
+
+    private static string GenerateLinkId(ArchLinkKind kind, ArchModel.ArchModel current)
+    {
+        var prefix = kind == ArchLinkKind.DataFlow ? "flow" : "dep";
+        var existing = current.Links.Select(l => l.Id).ToHashSet();
+        for (var n = 1; ; n++)
+        {
+            var candidate = $"{prefix}_{n:000}";
+            if (!existing.Contains(candidate)) return candidate;
+        }
+    }
 }

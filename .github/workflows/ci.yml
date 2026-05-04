@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  backend:
+    name: Backend (.NET 10)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore Verso.slnx
+      - name: Build
+        run: dotnet build Verso.slnx --no-restore -c Release
+      - name: Test
+        run: dotnet test Verso.slnx --no-build -c Release --logger "console;verbosity=normal"
+
+  frontend:
+    name: Frontend (Vite + React)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Verso.Web.Client
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/Verso.Web.Client/package-lock.json
+      - name: Install
+        run: npm ci --no-fund --no-audit
+      - name: Build
+        run: npm run build

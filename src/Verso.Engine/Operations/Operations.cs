@@ -14,6 +14,12 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(RemoveInheritanceOp), "RemoveInheritance")]
 [JsonDerivedType(typeof(AddImplementationOp), "AddImplementation")]
 [JsonDerivedType(typeof(RemoveImplementationOp), "RemoveImplementation")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.AddElementOp), "AddElement")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.RenameElementOp), "RenameElement")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.RemoveElementOp), "RemoveElement")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.SetElementAttributeOp), "SetElementAttribute")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.AddLinkOp), "AddLink")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.RemoveLinkOp), "RemoveLink")]
 public abstract record OperationBase(string OpId);
 
 public sealed record AddTypeOp(

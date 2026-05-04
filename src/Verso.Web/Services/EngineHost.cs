@@ -1,3 +1,4 @@
+using Verso.Engine.ArchModel;
 using Verso.Engine.Models;
 using Verso.Engine.Operations;
 using Verso.Engine.Workspace;
@@ -30,6 +31,12 @@ public sealed class EngineHost : IAsyncDisposable
     {
         if (_engine is null) return new OperationFailed(op.OpId, "WorkspaceNotOpen", "Open a workspace first");
         return await _engine.ApplyAsync(op, ct);
+    }
+
+    public async Task<ArchModel?> ReadArchAsync(CancellationToken ct = default)
+    {
+        if (_engine is null) return null;
+        return await _engine.ReadArchModelAsync(ct);
     }
 
     public async Task CloseAsync()
