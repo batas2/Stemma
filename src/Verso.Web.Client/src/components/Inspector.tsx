@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Plus, Trash2, Edit3 } from 'lucide-react';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
+import { confirmAction } from './ConfirmDialog';
 
 export function Inspector() {
   const ws = useApp((s) => s.workspace);
@@ -70,7 +71,8 @@ export function Inspector() {
 
   async function handleRemoveType() {
     if (!t) return;
-    if (!confirm(`Remove ${t.name}?`)) return;
+    const ok = await confirmAction({ title: `Remove ${t.name}?`, confirmLabel: 'Remove', destructive: true });
+    if (!ok) return;
     const r = await applyOperation({
       kind: 'RemoveType', opId: `op_${Date.now()}`, typeId: t.id,
     });

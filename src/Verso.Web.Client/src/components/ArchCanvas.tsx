@@ -16,9 +16,14 @@ import {
   type EdgeMouseHandler,
 } from '@xyflow/react';
 import { ArchNodeView } from './nodes/ArchNodeView';
+import { BcBackdrop } from './nodes/BcBackdrop';
 import { WaypointEdge } from './edges/WaypointEdge';
 import { CanvasToolbar } from './CanvasToolbar';
 import { ContextMenu, ContextIcons, type ContextMenuState } from './ContextMenu';
+import { MultiSelectBar } from './MultiSelectBar';
+import { confirmAction } from './ConfirmDialog';
+import { promptText, pickFromList } from './PromptDialog';
+import { suggestElementName } from '@/lib/naming';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, type SavedPosition } from '@/lib/layout';
@@ -30,7 +35,7 @@ import {
 import { dashArrayFor, DEFAULT_EDGE_STYLE } from '@/lib/edgeStyles';
 import type { ArchElement, ArchElementKind, ArchLink, ArchModel, ViewKind, CustomView } from '@/lib/types';
 
-const nodeTypes = { arch: ArchNodeView };
+const nodeTypes = { arch: ArchNodeView, bcBackdrop: BcBackdrop };
 const edgeTypes = { waypointed: WaypointEdge };
 
 interface FilteredView {
@@ -177,6 +182,11 @@ function CanvasInner() {
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
+  const handleNodeResize = useCallback((nodeId: string, w: number, h: number) => {
+    const current = useApp.getState().nodeStyles[nodeId] ?? { borderWidth: 1, borderStyle: 'solid' as const };
+    useApp.getState().setNodeStyleFor(nodeId, { ...current, width: w, height: h });
+  }, []);
+
   useEffect(() => {
     if (!workspace || !arch) {
       setNodes([]);
@@ -201,15 +211,24 @@ function CanvasInner() {
       return filtered.elements.map((e) => {
         const existing = prevById.get(e.id);
         const pos = existing?.position ?? merged[e.id] ?? { x: 0, y: 0 };
+        const ns = nodeStyles[e.id];
         return {
           id: e.id,
           type: 'arch',
           position: pos,
-          data: { element: e, tag: tagsById.get(e.id), nodeStyle: nodeStyles[e.id], violationSeverity: sevByElement.get(e.id) },
+          ...(ns?.width && ns?.height ? { style: { width: ns.width, height: ns.height } } : {}),
+          data: {
+            element: e,
+            tag: tagsById.get(e.id),
+            nodeStyle: ns,
+            violationSeverity: sevByElement.get(e.id),
+            resizable: mode === 'edit',
+            onResize: handleNodeResize,
+          },
         } satisfies Node;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, violations]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, violations, mode, handleNodeResize]);
 
   useEffect(() => {
     if (nodes.length > 0) {
@@ -315,7 +334,11 @@ function CanvasInner() {
         {
           id: 'rename', label: 'Rename…', icon: ContextIcons.Edit3,
           onClick: async () => {
-            const next = prompt('New name', elem.name)?.trim();
+            const next = await promptText({
+              title: `Rename ${elem.name}`,
+              initialValue: elem.name,
+              confirmLabel: 'Rename',
+            });
             if (!next || next === elem.name) return;
             await applyOperation({ kind: 'RenameElement', opId: `op_${Date.now()}`, elementId: elem.id, newName: next });
           },
@@ -327,8 +350,20 @@ function CanvasInner() {
         {
           id: 'set-status', label: 'Set status…', icon: ContextIcons.TagIcon,
           onClick: async () => {
-            const next = prompt('Status (current / target / to-adapt / to-be-created / deprecated / proposed)', '')?.trim();
-            if (next === undefined) return;
+            const next = await pickFromList<string>({
+              title: `Set status — ${elem.name}`,
+              searchable: false,
+              options: [
+                { value: '', label: '(none)' },
+                { value: 'current', label: 'Current', hint: '●' },
+                { value: 'target', label: 'Target', hint: '◆' },
+                { value: 'to-adapt', label: 'To adapt', hint: '◇' },
+                { value: 'to-be-created', label: 'To be created', hint: '○' },
+                { value: 'deprecated', label: 'Deprecated', hint: '━' },
+                { value: 'proposed', label: 'Proposed', hint: '◇' },
+              ],
+            });
+            if (next === null) return;
             await applyOperation({
               kind: 'SetLifecycle', opId: `op_${Date.now()}`,
               targetId: elem.id, status: next || null, phase: null, validFrom: null, validUntil: null,
@@ -338,11 +373,15 @@ function CanvasInner() {
         {
           id: 'add-decision', label: 'Add decision concerning this…', icon: ContextIcons.Lightbulb,
           onClick: async () => {
-            const title = prompt(`Decision title (will concern ${elem.name})`)?.trim();
+            const title = await promptText({
+              title: 'New decision',
+              body: `The decision will concern ${elem.name}.`,
+              initialValue: `Decision about ${elem.name}`,
+              confirmLabel: 'Create',
+            });
             if (!title) return;
             const r = await applyOperation({ kind: 'AddDecision', opId: `op_${Date.now()}`, title });
             if ('reason' in r) { setToast({ kind: 'error', text: `${r.reason}: ${r.message}` }); return; }
-            // Best-effort: read fresh arch and link the most recent decision.
             setTimeout(async () => {
               const fresh = useApp.getState().arch;
               const lastDec = (fresh?.decisions ?? []).slice().reverse().find((d) => d.title === title);
@@ -356,7 +395,8 @@ function CanvasInner() {
         {
           id: 'delete', label: `Delete ${elem.name}`, icon: ContextIcons.Trash2, destructive: true,
           onClick: async () => {
-            if (!confirm(`Remove ${elem.name}?`)) return;
+            const ok = await confirmAction({ title: `Remove ${elem.name}?`, confirmLabel: 'Remove', destructive: true });
+            if (!ok) return;
             await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: elem.id });
           },
         },
@@ -382,7 +422,8 @@ function CanvasInner() {
         {
           id: 'delete', label: 'Delete relationship', icon: ContextIcons.Trash2, destructive: true,
           onClick: async () => {
-            if (!confirm('Remove this relationship?')) return;
+            const ok = await confirmAction({ title: 'Remove this relationship?', confirmLabel: 'Remove', destructive: true });
+            if (!ok) return;
             await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: edge.id });
           },
         },
@@ -391,58 +432,61 @@ function CanvasInner() {
   }, [selectLink]);
 
   const addElementAt = useCallback(async (kind: ArchElementKind, pos: SavedPosition) => {
-    const name = prompt(`Name for the new ${kind}`)?.trim();
-    if (!name) return;
+    const fresh = useApp.getState().arch;
+    const name = suggestElementName(kind, fresh?.elements ?? []);
     const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
     if ('reason' in r) { setToast({ kind: 'error', text: `${r.reason}: ${r.message}` }); return; }
     setTimeout(() => {
-      const fresh = useApp.getState().arch;
-      const last = [...(fresh?.elements ?? [])].reverse().find((e) => e.kind === kind && e.name === name);
+      const refreshed = useApp.getState().arch;
+      const last = [...(refreshed?.elements ?? [])].reverse().find((e) => e.kind === kind && e.name === name);
       if (last && workspace) {
         const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
         positions[last.id] = { x: pos.x, y: pos.y };
         saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
         setNodes((prev) => prev.map((n) => n.id === last.id ? { ...n, position: pos } : n));
+        useApp.getState().selectElement(last.id);
       }
     }, 100);
+    setToast({ kind: 'success', text: `Added ${name}` });
   }, [workspace, layoutKey, setToast]);
 
   const templateBoundedContextWithModules = useCallback(async (pos: SavedPosition) => {
-    const name = prompt('Bounded Context name')?.trim();
-    if (!name) return;
-    const moduleNames = (prompt('Module names (comma-separated)', 'Module A, Module B') ?? '')
-      .split(',').map((s) => s.trim()).filter(Boolean);
+    const fresh = useApp.getState().arch;
+    const name = suggestElementName('boundedContext', fresh?.elements ?? []);
     const r1 = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: 'boundedContext', name });
     if ('reason' in r1) { setToast({ kind: 'error', text: `${r1.reason}: ${r1.message}` }); return; }
     setTimeout(async () => {
-      const fresh = useApp.getState().arch;
-      const ctx = [...(fresh?.elements ?? [])].reverse().find((e) => e.kind === 'boundedContext' && e.name === name);
+      const fresh2 = useApp.getState().arch;
+      const ctx = [...(fresh2?.elements ?? [])].reverse().find((e) => e.kind === 'boundedContext' && e.name === name);
       if (!ctx || !workspace) return;
       const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
       positions[ctx.id] = { x: pos.x, y: pos.y };
       let mx = pos.x + 240;
       const my = pos.y;
-      for (const mn of moduleNames) {
+      // Two pre-seeded modules with names that won't collide with anything.
+      let modelSnapshot = useApp.getState().arch?.elements ?? [];
+      for (let i = 0; i < 2; i++) {
+        const mn = suggestElementName('module', modelSnapshot);
         await applyOperation({
           kind: 'AddElement', opId: `op_${Date.now()}_${mx}`, elementKind: 'module', name: mn, contextId: ctx.id,
         });
         await new Promise((r) => setTimeout(r, 80));
-        const refreshed = useApp.getState().arch;
-        const m = [...(refreshed?.elements ?? [])].reverse().find((e) => e.kind === 'module' && e.name === mn);
+        modelSnapshot = useApp.getState().arch?.elements ?? [];
+        const m = [...modelSnapshot].reverse().find((e) => e.kind === 'module' && e.name === mn);
         if (m) { positions[m.id] = { x: mx, y: my }; mx += 240; }
       }
       saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
-      setToast({ kind: 'success', text: `Template applied: ${name} + ${moduleNames.length} modules` });
+      setToast({ kind: 'success', text: `Template applied: ${name} + 2 modules` });
     }, 200);
   }, [workspace, layoutKey, setToast]);
 
   const templateSystemWithContainer = useCallback(async (pos: SavedPosition) => {
-    const name = prompt('Software System name')?.trim();
-    if (!name) return;
+    const fresh = useApp.getState().arch;
+    const name = suggestElementName('softwareSystem', fresh?.elements ?? []);
     await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: 'softwareSystem', name });
     setTimeout(async () => {
-      const fresh = useApp.getState().arch;
-      const sys = [...(fresh?.elements ?? [])].reverse().find((e) => e.kind === 'softwareSystem' && e.name === name);
+      const fresh2 = useApp.getState().arch;
+      const sys = [...(fresh2?.elements ?? [])].reverse().find((e) => e.kind === 'softwareSystem' && e.name === name);
       if (!sys || !workspace) return;
       const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
       positions[sys.id] = { x: pos.x, y: pos.y };
@@ -511,7 +555,8 @@ function CanvasInner() {
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/verso-palette')
-        || e.dataTransfer.types.includes('application/verso-element')) {
+        || e.dataTransfer.types.includes('application/verso-element')
+        || e.dataTransfer.types.includes('application/verso-template')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     }
@@ -520,31 +565,45 @@ function CanvasInner() {
   const onDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     const paletteKind = e.dataTransfer.getData('application/verso-palette') as ArchElementKind | '';
+    const template = e.dataTransfer.getData('application/verso-template');
     const elementId = e.dataTransfer.getData('application/verso-element');
     const dropPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
 
+    if (template === 'bcWithModules') {
+      if (mode === 'view') { setToast({ kind: 'info', text: 'Switch to Edit mode to add elements.' }); return; }
+      templateBoundedContextWithModules(dropPos);
+      return;
+    }
+    if (template === 'systemWithContainer') {
+      if (mode === 'view') { setToast({ kind: 'info', text: 'Switch to Edit mode to add elements.' }); return; }
+      templateSystemWithContainer(dropPos);
+      return;
+    }
+
     if (paletteKind) {
       if (mode === 'view') { setToast({ kind: 'info', text: 'Switch to Edit mode to add new elements.' }); return; }
-      const name = prompt(`Name for the new ${paletteKind}`)?.trim();
-      if (!name) return;
+      const fresh = useApp.getState().arch;
+      const name = suggestElementName(paletteKind, fresh?.elements ?? []);
       const result = await applyOperation({
         kind: 'AddElement', opId: `op_${Date.now()}`,
         elementKind: paletteKind, name,
       });
       if ('reason' in result) { setToast({ kind: 'error', text: `${result.reason}: ${result.message}` }); return; }
       setTimeout(() => {
-        const fresh = useApp.getState().arch;
-        if (!fresh) return;
-        const last = [...fresh.elements].reverse().find((el) => el.kind === paletteKind && el.name === name);
+        const refreshed = useApp.getState().arch;
+        if (!refreshed) return;
+        const last = [...refreshed.elements].reverse().find((el) => el.kind === paletteKind && el.name === name);
         if (last && workspace) {
           const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
           positions[last.id] = { x: dropPos.x, y: dropPos.y };
           saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
           setNodes((prev) => prev.map((n) => n.id === last.id ? { ...n, position: dropPos } : n));
           if (activeCustomView) addElementToActiveView(last.id);
+          // Auto-select new node so the user can rename inline in the inspector.
+          useApp.getState().selectElement(last.id);
         }
       }, 100);
-      setToast({ kind: 'success', text: `Added ${name}` });
+      setToast({ kind: 'success', text: `Added ${name} — rename in the inspector` });
       return;
     }
 
@@ -561,7 +620,7 @@ function CanvasInner() {
       }
       setToast({ kind: 'success', text: `Added to "${activeCustomView.name}"` });
     }
-  }, [mode, screenToFlowPosition, setToast, activeCustomView, workspace, layoutKey, addElementToActiveView]);
+  }, [mode, screenToFlowPosition, setToast, activeCustomView, workspace, layoutKey, addElementToActiveView, templateBoundedContextWithModules, templateSystemWithContainer]);
 
   const handleAutoLayout = useCallback((algo: LayoutAlgorithm) => {
     setNodes((current) => {
@@ -591,6 +650,42 @@ function CanvasInner() {
     });
   }, [persistPositions]);
 
+  const handleFitSelection = useCallback(() => {
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length === 0) {
+      fitView({ padding: 0.2, duration: 400 });
+      return;
+    }
+    fitView({ nodes: selected.map((n) => ({ id: n.id })), padding: 0.3, duration: 400 });
+  }, [nodes, fitView]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'f' && e.key !== 'F') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      handleFitSelection();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleFitSelection]);
+
+  const handleDeleteSelected = useCallback(async () => {
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    const ok = await confirmAction({
+      title: `Remove ${selected.length} element${selected.length === 1 ? '' : 's'}?`,
+      body: 'Linked relationships will be detached.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
+    for (const n of selected) {
+      await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}_${n.id}`, elementId: n.id });
+    }
+  }, [nodes]);
+
   const handleDistribute = useCallback((axis: 'horizontal' | 'vertical') => {
     setNodes((current) => {
       const selected = current.filter((n) => n.selected).map((n) => n.id);
@@ -604,6 +699,51 @@ function CanvasInner() {
     });
   }, [persistPositions]);
 
+  // Q114: derive backdrop nodes for Bounded Contexts that contain modules in the
+  // current view. We render them as non-selectable nodes with a lower z so the
+  // contained modules sit on top. Only meaningful when the view shows both BCs
+  // and modules together.
+  const renderedNodes = useMemo<Node[]>(() => {
+    const showBackdrop = view === 'moduleMap' || activeCustomView !== null;
+    if (!showBackdrop) return nodes;
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const modulesByCtx = new Map<string, Node[]>();
+    for (const n of nodes) {
+      const data = n.data as { element?: { kind: string; attributes: { contextId?: string } } };
+      const el = data.element;
+      if (!el || el.kind !== 'module') continue;
+      const ctxId = el.attributes.contextId;
+      if (!ctxId || !byId.has(ctxId)) continue;
+      const arr = modulesByCtx.get(ctxId) ?? [];
+      arr.push(n);
+      modulesByCtx.set(ctxId, arr);
+    }
+    if (modulesByCtx.size === 0) return nodes;
+    const backdrops: Node[] = [];
+    for (const [ctxId, mods] of modulesByCtx) {
+      const ctxNode = byId.get(ctxId)!;
+      const ctxData = ctxNode.data as { element?: { name: string } };
+      const points = [ctxNode, ...mods];
+      const xs = points.map((n) => n.position.x);
+      const ys = points.map((n) => n.position.y);
+      const left = Math.min(...xs) - 24;
+      const top = Math.min(...ys) - 32;
+      const right = Math.max(...xs) + 260;
+      const bottom = Math.max(...ys) + 100;
+      backdrops.push({
+        id: `__bcbg__${ctxId}`,
+        type: 'bcBackdrop',
+        position: { x: left, y: top },
+        data: { width: right - left, height: bottom - top, label: ctxData.element?.name ?? '' },
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        zIndex: -1,
+      });
+    }
+    return [...backdrops, ...nodes];
+  }, [nodes, view, activeCustomView]);
+
   const selectedCount = nodes.filter((n) => n.selected).length;
   const isDark = theme === 'dark';
   const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(248 250 252)';
@@ -615,10 +755,11 @@ function CanvasInner() {
         onAutoLayout={handleAutoLayout}
         onAlign={handleAlign}
         onDistribute={handleDistribute}
+        onFitSelection={handleFitSelection}
         selectedCount={selectedCount}
       />
       <ReactFlow
-        nodes={nodes}
+        nodes={renderedNodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -643,6 +784,12 @@ function CanvasInner() {
         <Controls />
         <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />
       </ReactFlow>
+      <MultiSelectBar
+        count={selectedCount}
+        onAlign={handleAlign}
+        onDistribute={handleDistribute}
+        onDelete={handleDeleteSelected}
+      />
       <ContextMenu state={menu} onClose={() => setMenu(null)} />
     </div>
   );

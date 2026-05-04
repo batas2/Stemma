@@ -4,9 +4,13 @@ import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { DEFAULT_EDGE_STYLE, type EdgeLineStyle, type EdgeStyle } from '@/lib/edgeStyles';
-import { DEFAULT_NODE_STYLE, type NodeBorderStyle, type NodeStyle } from '@/lib/nodeStyles';
+import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle, type NodeFieldKey } from '@/lib/nodeStyles';
+import { ALL_FIELD_KEYS, fieldLabel } from './nodes/ArchNodeView';
 import { fetchElementNarrative } from '@/lib/api';
-import { MarkdownEditor } from './MarkdownEditor';
+import { NotesModal } from './NotesModal';
+import { confirmAction } from './ConfirmDialog';
+import { pickFromList } from './PromptDialog';
+import { ResizableAside } from './ResizableAside';
 
 export function ArchInspector() {
   const arch = useApp((s) => s.arch);
@@ -15,10 +19,19 @@ export function ArchInspector() {
 
   if (!arch || (!elementId && !linkId)) {
     return (
-      <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-6 hidden lg:flex flex-col items-center justify-center text-center">
-        <Activity className="w-6 h-6 text-zinc-300 dark:text-zinc-700 mb-2" />
-        <p className="text-xs text-zinc-500 dark:text-zinc-500">Select an element or relationship<br />to inspect and edit.</p>
-      </aside>
+      <ResizableAside className="hidden lg:flex">
+        <div className="p-6 text-center mt-8">
+          <Activity className="w-7 h-7 text-zinc-300 dark:text-zinc-700 mb-3 mx-auto" />
+          <p className="text-sm font-medium text-body mb-1">Inspector</p>
+          <p className="text-xs text-faint mb-4">Select an element or relationship to inspect and edit.</p>
+          <ul className="text-[11px] text-muted space-y-1.5 text-left max-w-[220px] mx-auto">
+            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Click a node or edge on the canvas.</span></li>
+            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Right-click for quick actions.</span></li>
+            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Press <kbd className="px-1 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 font-mono text-[10px]">Tab</kbd> to cycle elements.</span></li>
+            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Drag the left edge to resize this panel.</span></li>
+          </ul>
+        </div>
+      </ResizableAside>
     );
   }
 
@@ -36,6 +49,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [narrative, setNarrative] = useState('');
+  const [notesOpen, setNotesOpen] = useState(false);
   const nodeStyles = useApp((s) => s.nodeStyles);
   const setNodeStyleFor = useApp((s) => s.setNodeStyleFor);
   const userNodeStyle: NodeStyle = nodeStyles[elementId] ?? DEFAULT_NODE_STYLE;
@@ -55,7 +69,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
 
   if (!e) {
     return (
-      <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 hidden lg:block">
+      <aside className="w-[320px] shrink-0 border-l border-default bg-white dark:bg-zinc-950/60 p-4 hidden lg:block">
         <p className="text-xs text-zinc-500">No longer in model.</p>
       </aside>
     );
@@ -101,10 +115,12 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
       .catch(() => setNarrative(''));
   }, [elementId]);
 
-  async function saveNotes() {
+  async function saveNotes(value?: string) {
+    const body = value ?? narrative;
+    if (value !== undefined) setNarrative(value);
     const r = await applyOperation({
       kind: 'SetCapabilityNarrative', opId: `op_${Date.now()}`,
-      elementId, body: narrative,
+      elementId, body,
     });
     if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
     else setToast({ kind: 'success', text: 'Notes saved' });
@@ -126,15 +142,21 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
 
   async function handleRemove() {
     if (!e) return;
-    if (!confirm(`Remove ${e.name}?`)) return;
+    const ok = await confirmAction({
+      title: `Remove ${e.name}?`,
+      body: 'This element will be removed from the model. Linked relationships and decisions will be detached.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
     const r = await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: e.id });
     if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
     else { setToast({ kind: 'success', text: 'Removed' }); select(null); }
   }
 
   return (
-    <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 flex flex-col overflow-hidden">
-      <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
+    <ResizableAside>
+      <div className="px-4 py-3 border-b border-default flex items-center gap-2">
         {renaming ? (
           <input
             autoFocus
@@ -254,11 +276,30 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
               palette={[undefined, '#eef2ff', '#ecfdf5', '#fef3c7', '#fee2e2', '#ede9fe', '#cffafe', '#fafafa']}
             />
           </div>
+          {(userNodeStyle.width || userNodeStyle.height) && (
+            <div className="text-[10px] text-faint flex justify-between font-mono">
+              <span>Size</span>
+              <span>{userNodeStyle.width ?? '—'} × {userNodeStyle.height ?? '—'} px</span>
+            </div>
+          )}
+          <button onClick={clearStyle} className="mt-1 btn btn-md btn-ghost border-default w-full">
+            Reset appearance
+          </button>
+        </Section>
+
+        <Section label="Fields shown on canvas" persistKey="element.fields" defaultOpen={false}>
+          <p className="text-[11px] text-faint mb-2 leading-snug">
+            Pick which properties this node displays inside its box. Affects only this element.
+          </p>
+          <FieldChecklist
+            visible={userNodeStyle.visibleFields ?? DEFAULT_VISIBLE_FIELDS}
+            onChange={(next) => setStyle({ visibleFields: next })}
+          />
           <button
-            onClick={clearStyle}
-            className="mt-1 w-full text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1.5 transition-colors"
+            onClick={() => setStyle({ visibleFields: DEFAULT_VISIBLE_FIELDS })}
+            className="mt-2 btn btn-md btn-ghost border-default w-full"
           >
-            Reset to default
+            Reset to default fields
           </button>
         </Section>
 
@@ -286,7 +327,18 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           </ul>
           <button
             onClick={async () => {
-              const decId = prompt('Decision id to link (e.g. dec_001)')?.trim();
+              const all = arch.decisions ?? [];
+              const linked = new Set(concerningDecisions.map((d) => d.id));
+              const candidates = all.filter((d) => !linked.has(d.id));
+              if (candidates.length === 0) {
+                setToast({ kind: 'info', text: all.length === 0 ? 'No decisions in the workspace yet.' : 'All decisions are already linked.' });
+                return;
+              }
+              const decId = await pickFromList<string>({
+                title: 'Link a decision',
+                body: `Pick a decision to associate with this element.`,
+                options: candidates.map((d) => ({ value: d.id, label: d.title, hint: d.id })),
+              });
               if (!decId) return;
               const r = await applyOperation({
                 kind: 'AddDecisionConcerns', opId: `op_${Date.now()}`,
@@ -295,33 +347,37 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
               if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
               else setToast({ kind: 'success', text: 'Linked to decision' });
             }}
-            className="mt-2 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10 border border-indigo-500/30 rounded px-2 py-1 w-full"
+            className="mt-2 btn btn-md btn-secondary w-full"
           >
             Link an existing decision
           </button>
         </Section>
 
         <Section label="Notes" persistKey="element.notes" defaultOpen={false}>
-          <div style={{ height: 280 }} className="border border-zinc-200 dark:border-zinc-800 rounded overflow-hidden">
-            <MarkdownEditor value={narrative} onChange={setNarrative} />
+          <p className="text-[11px] text-faint mb-2 leading-snug">
+            Capability narrative or design notes — opens in a full editor with Markdown support.
+          </p>
+          <div style={{ maxHeight: 120 }} className="border border-default rounded overflow-hidden bg-zinc-50 dark:bg-zinc-900/40 p-2 text-[11px] text-muted whitespace-pre-wrap line-clamp-5">
+            {narrative.trim() ? narrative.split('\n').slice(0, 5).join('\n') : <span className="italic text-faint">No notes yet.</span>}
           </div>
-          <button
-            onClick={saveNotes}
-            className="mt-2 w-full text-xs px-3 py-1.5 rounded bg-indigo-500 hover:bg-indigo-400 text-white"
-          >
-            Save notes
+          <button onClick={() => setNotesOpen(true)} className="mt-2 w-full btn btn-md btn-secondary">
+            <Edit3 className="w-3 h-3" /> Open editor
           </button>
         </Section>
       </div>
-      <div className="p-3 mt-auto border-t border-zinc-200 dark:border-zinc-800">
-        <button
-          onClick={handleRemove}
-          className="w-full text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 border border-rose-500/40 dark:border-rose-500/30 rounded px-2 py-1.5 flex items-center justify-center gap-1.5 transition-colors"
-        >
+      <div className="p-3 mt-auto border-t border-default">
+        <button onClick={handleRemove} className="btn btn-md btn-destructive w-full">
           <Trash2 className="w-3.5 h-3.5" /> Remove element
         </button>
       </div>
-    </aside>
+      <NotesModal
+        open={notesOpen}
+        title={`Notes — ${e.name}`}
+        initialValue={narrative}
+        onClose={() => setNotesOpen(false)}
+        onSave={saveNotes}
+      />
+    </ResizableAside>
   );
 }
 
@@ -413,7 +469,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
   if (!link) {
     return (
-      <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 hidden lg:block">
+      <aside className="w-[320px] shrink-0 border-l border-default bg-white dark:bg-zinc-950/60 p-4 hidden lg:block">
         <p className="text-xs text-zinc-500">Relationship no longer in model.</p>
       </aside>
     );
@@ -447,7 +503,12 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
   async function handleRemove() {
     if (!link) return;
-    if (!confirm(`Remove this ${isDataFlow ? 'data flow' : 'dependency'}?`)) return;
+    const ok = await confirmAction({
+      title: `Remove this ${isDataFlow ? 'data flow' : 'dependency'}?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
     const r = await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: link.id });
     if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
     else { setToast({ kind: 'success', text: 'Removed' }); selectLink(null); }
@@ -458,8 +519,8 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   }
 
   return (
-    <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 flex flex-col overflow-hidden">
-      <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
+    <ResizableAside>
+      <div className="px-4 py-3 border-b border-default flex items-center gap-2">
         <Workflow className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
         <h2 className="text-sm font-semibold flex-1 truncate">
           {isDataFlow ? 'Data Flow' : 'Dependency'}
@@ -584,15 +645,12 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
         </Section>
       </div>
 
-      <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
-        <button
-          onClick={handleRemove}
-          className="w-full text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 border border-rose-500/40 dark:border-rose-500/30 rounded px-2 py-1.5 flex items-center justify-center gap-1.5 transition-colors"
-        >
+      <div className="p-3 border-t border-default">
+        <button onClick={handleRemove} className="btn btn-md btn-destructive w-full">
           <Trash2 className="w-3.5 h-3.5" /> Remove relationship
         </button>
       </div>
-    </aside>
+    </ResizableAside>
   );
 }
 
@@ -657,6 +715,33 @@ function LabeledInput({ label, value, onChange, onCommit, placeholder }: {
         className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
       />
     </div>
+  );
+}
+
+function FieldChecklist({ visible, onChange }: { visible: NodeFieldKey[]; onChange: (next: NodeFieldKey[]) => void }) {
+  const set = new Set(visible);
+  function toggle(k: NodeFieldKey) {
+    const next = new Set(set);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    // Preserve a stable ordering (ALL_FIELD_KEYS is the canonical order).
+    onChange(ALL_FIELD_KEYS.filter((x) => next.has(x)));
+  }
+  return (
+    <ul className="space-y-1">
+      {ALL_FIELD_KEYS.map((k) => (
+        <li key={k}>
+          <label className="flex items-center gap-2 text-xs cursor-pointer text-body hover:text-zinc-900 dark:hover:text-zinc-100">
+            <input
+              type="checkbox"
+              checked={set.has(k)}
+              onChange={() => toggle(k)}
+              className="accent-indigo-500"
+            />
+            <span>{fieldLabel(k)}</span>
+          </label>
+        </li>
+      ))}
+    </ul>
   );
 }
 

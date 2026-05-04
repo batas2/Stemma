@@ -74,8 +74,8 @@ export function Topbar() {
   }
 
   return (
-    <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 bg-white/85 dark:bg-zinc-950/85 backdrop-blur flex items-center px-4 gap-3">
-      <a href="/" className="flex items-center pr-3 mr-1 border-r border-zinc-200 dark:border-zinc-800 hover:opacity-90 transition-opacity">
+    <header role="banner" className="h-14 border-b border-default bg-white/85 dark:bg-zinc-950/85 backdrop-blur flex items-center px-4 gap-3 z-chrome relative">
+      <a href="/" aria-label="Verso home" className="flex items-center pr-3 mr-1 border-r border-default hover:opacity-90 transition-opacity">
         <VersoLockup size={22} showTagline={true} className="hidden sm:flex" />
         <VersoLockup size={22} showTagline={false} className="sm:hidden" />
       </a>
@@ -87,23 +87,26 @@ export function Topbar() {
               <button
                 onClick={handleUndo}
                 disabled={!undoState.canUndo}
+                aria-label={undoState.undoDescription ? `Undo: ${undoState.undoDescription}` : 'Undo'}
                 title={undoState.undoDescription ? `Undo: ${undoState.undoDescription} (${format({ key: 'z', primary: true, description: '', handler: () => {} })})` : `Undo (${format({ key: 'z', primary: true, description: '', handler: () => {} })})`}
-                className="p-1.5 rounded text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="p-1.5 rounded text-muted hover:text-body hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <Undo2 className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={handleRedo}
                 disabled={!undoState.canRedo}
+                aria-label={undoState.redoDescription ? `Redo: ${undoState.redoDescription}` : 'Redo'}
                 title={undoState.redoDescription ? `Redo: ${undoState.redoDescription} (${primaryKeyLabel}${shiftKeyLabel}Z)` : `Redo (${primaryKeyLabel}${shiftKeyLabel}Z)`}
-                className="p-1.5 rounded text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="p-1.5 rounded text-muted hover:text-body hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <Redo2 className="w-3.5 h-3.5" />
               </button>
             </div>
             <button
               onClick={() => setOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors w-44"
+              aria-label="Open command palette"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-default text-xs text-muted hover:text-body transition-colors w-44"
             >
               <Search className="w-3.5 h-3.5" />
               <span className="flex-1 text-left">Search…</span>
@@ -113,25 +116,28 @@ export function Topbar() {
           </>
         ) : (
           <div className="flex items-center gap-2 w-[640px]">
-            <FolderOpen className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+            <FolderOpen className="w-3.5 h-3.5 text-faint shrink-0" />
             <input
               value={pathInput}
               onChange={(e) => setPathInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') openPath(pathInput.trim()); }}
               placeholder="/absolute/path/to/your/workspace"
-              className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 rounded px-3 py-1.5 text-xs outline-none focus:border-indigo-500 dark:focus:border-indigo-500"
+              aria-label="Workspace path"
+              className="input-base flex-1"
             />
             <div className="relative">
               <button
                 onClick={() => setRecentsOpen((v) => !v)}
-                title="Recent workspaces"
-                className="text-xs px-2.5 py-1.5 rounded bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 flex items-center gap-1"
+                aria-haspopup="menu"
+                aria-expanded={recentsOpen}
+                aria-label="Recent workspaces"
+                className="btn btn-md btn-ghost border-default bg-zinc-100 dark:bg-zinc-900"
               >
                 <Clock className="w-3 h-3" /> Recent <ChevronDown className="w-3 h-3" />
               </button>
               {recentsOpen && (
                 <div
-                  className="absolute right-0 top-full mt-1 w-80 max-h-80 overflow-auto rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg z-50"
+                  className="absolute right-0 top-full mt-1 w-80 max-h-80 overflow-auto rounded surface-overlay z-popover"
                   onMouseLeave={() => setRecentsOpen(false)}
                 >
                   {recents.length === 0 && <div className="px-3 py-3 text-xs text-zinc-500">No recent workspaces yet.</div>}
@@ -148,16 +154,14 @@ export function Topbar() {
                 </div>
               )}
             </div>
-            <button
-              onClick={() => openPath(pathInput.trim())}
-              className="text-xs px-3 py-1.5 rounded bg-indigo-500 hover:bg-indigo-400 text-white"
-            >
+            <button onClick={() => openPath(pathInput.trim())} className="btn btn-md btn-primary">
               Open
             </button>
             <button
               onClick={handleInit}
               title="Scaffold a new model workspace at this path"
-              className="text-xs px-3 py-1.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center gap-1"
+              aria-label="Create new workspace"
+              className="btn btn-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
             >
               <Sparkles className="w-3 h-3" />
               Create
@@ -167,8 +171,9 @@ export function Topbar() {
       </div>
       <button
         onClick={toggleTheme}
+        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
         title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-        className="p-1.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="p-1.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted hover:text-body"
       >
         {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
       </button>

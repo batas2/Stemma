@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
@@ -15,9 +15,15 @@ import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
 import { ViolationsPanel } from './components/ViolationsPanel';
-import { DecisionLog } from './components/DecisionLog';
-import { ShortcutHelp } from './components/ShortcutHelp';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { PromptDialog } from './components/PromptDialog';
+import { ToastQueue } from './components/ToastQueue';
+import { TopProgressBar } from './components/LoadingOverlay';
+import { FirstRunHints } from './components/FirstRunHints';
 import { bindShortcuts } from './lib/shortcuts';
+
+const DecisionLog = lazy(() => import('./components/DecisionLog').then((m) => ({ default: m.DecisionLog })));
+const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
 export default function App() {
   const ws = useApp((s) => s.workspace);
@@ -157,14 +163,20 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col">
+      <a href="#verso-canvas" className="skip-link">Skip to canvas</a>
+      <TopProgressBar />
       <Topbar />
       <div className="flex-1 flex min-h-0">
         {ws ? (
           <>
             {view !== 'engineer' && view !== 'decisionLog' && <Sidebar />}
-            <main className="flex-1 min-w-0">
+            <main id="verso-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0">
               {view === 'engineer' && <Canvas />}
-              {view === 'decisionLog' && <DecisionLog />}
+              {view === 'decisionLog' && (
+                <Suspense fallback={<div className="h-full flex items-center justify-center text-xs text-faint">Loading decisions…</div>}>
+                  <DecisionLog />
+                </Suspense>
+              )}
               {view !== 'engineer' && view !== 'decisionLog' && <ArchCanvas />}
             </main>
             {view === 'engineer' && <Inspector />}
@@ -177,7 +189,13 @@ export default function App() {
       <ViolationsPanel />
       <StatusBar />
       <CommandPalette />
-      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <Suspense fallback={null}>
+        <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      </Suspense>
+      <ConfirmDialog />
+      <PromptDialog />
+      <ToastQueue />
+      <FirstRunHints />
     </div>
   );
 }

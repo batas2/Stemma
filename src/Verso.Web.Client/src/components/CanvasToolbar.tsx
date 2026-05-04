@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Wand2, Network, ChevronDown, Magnet, AlignLeft, AlignRight, AlignCenterHorizontal,
   AlignStartVertical, AlignEndVertical, AlignCenterVertical,
-  StretchHorizontal, StretchVertical,
+  StretchHorizontal, StretchVertical, Maximize2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
@@ -12,10 +12,11 @@ interface Props {
   onAutoLayout: (algorithm: LayoutAlgorithm) => void;
   onAlign: (axis: 'left' | 'right' | 'centerX' | 'top' | 'bottom' | 'centerY') => void;
   onDistribute: (axis: 'horizontal' | 'vertical') => void;
+  onFitSelection: () => void;
   selectedCount: number;
 }
 
-export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, selectedCount }: Props) {
+export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelection, selectedCount }: Props) {
   const snap = useApp((s) => s.snapEnabled);
   const toggleSnap = useApp((s) => s.toggleSnap);
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
@@ -80,6 +81,9 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, selectedCou
       <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
       <Btn onClick={toggleSnap} title="Snap to grid (20px)" active={snap}>
         <Magnet className="w-3.5 h-3.5" />
+      </Btn>
+      <Btn onClick={onFitSelection} title="Fit to selection (f)" disabled={selectedCount === 0}>
+        <Maximize2 className="w-3.5 h-3.5" />
       </Btn>
       <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
       <Btn onClick={() => onAlign('left')} title="Align left" disabled={selectedCount < 2}>

@@ -1,10 +1,31 @@
 export type NodeBorderStyle = 'solid' | 'dashed' | 'dotted';
 
+// Keys of the data we may render inside a node body (Q from "adjustable list of properties").
+// Names map cleanly to ArchElement attribute paths so the renderer can look them up
+// by key without a switch per kind.
+export type NodeFieldKey =
+  | 'kind'         // header label (Module / Bounded Context / …)
+  | 'name'         // primary heading
+  | 'id'           // raw id, mono
+  | 'contextId'    // "in <ctx>" for modules
+  | 'systemId'     // "in <sys>" for containers
+  | 'containerKind'
+  | 'squad'
+  | 'domain'
+  | 'status'       // status badge (lifecycle)
+  | 'phase'
+  | 'narrativePreview'; // first line of the capability narrative if loaded elsewhere
+
+export const DEFAULT_VISIBLE_FIELDS: NodeFieldKey[] = ['kind', 'name', 'contextId', 'squad', 'status'];
+
 export interface NodeStyle {
   fillColor?: string;     // CSS color (rgb / hex), undefined = theme default
   borderColor?: string;
   borderWidth: number;    // px, 1–5
   borderStyle: NodeBorderStyle;
+  width?: number;         // px, persisted from NodeResizer drag
+  height?: number;
+  visibleFields?: NodeFieldKey[]; // omit → DEFAULT_VISIBLE_FIELDS
 }
 
 export const DEFAULT_NODE_STYLE: NodeStyle = { borderWidth: 1, borderStyle: 'solid' };

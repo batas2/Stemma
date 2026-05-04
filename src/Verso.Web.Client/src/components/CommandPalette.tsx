@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { Command } from 'cmdk';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
+import { pickFromList } from './PromptDialog';
+import { suggestElementName } from '@/lib/naming';
 import type { ArchElementKind } from '@/lib/types';
 
 export function CommandPalette() {
@@ -27,17 +29,23 @@ export function CommandPalette() {
   }, [open, setOpen]);
 
   async function addArchElement(kind: ArchElementKind, defaults?: { contextId?: string }) {
-    const name = prompt(`New ${kind} name`)?.trim();
-    if (!name) return;
+    const name = suggestElementName(kind, arch?.elements ?? []);
     let contextId = defaults?.contextId;
     if ((kind === 'module' || kind === 'capability') && !contextId && arch) {
       const contexts = arch.elements.filter((e) => e.kind === 'boundedContext');
       if (contexts.length > 0) {
-        const choice = prompt(
-          `Context id (existing: ${contexts.map((c) => c.id).join(', ')}; leave empty for none)`,
-          contexts[0].id
-        )?.trim();
-        if (choice) contextId = choice;
+        // Close the palette first so the picker takes the foreground.
+        setOpen(false);
+        const choice = await pickFromList<string>({
+          title: `Pick a Bounded Context for the new ${kind}`,
+          body: 'Or skip to create at the top level.',
+          options: [
+            { value: '__none__', label: '(no context — top level)' },
+            ...contexts.map((c) => ({ value: c.id, label: c.name, hint: c.id })),
+          ],
+        });
+        if (choice === null) return;
+        if (choice && choice !== '__none__') contextId = choice;
       }
     }
     const r = await applyOperation({
@@ -45,7 +53,15 @@ export function CommandPalette() {
       elementKind: kind, name, contextId,
     });
     if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
-    else { setToast({ kind: 'success', text: `Added ${name}` }); setOpen(false); }
+    else {
+      setToast({ kind: 'success', text: `Added ${name} — rename in the inspector` });
+      setOpen(false);
+      setTimeout(() => {
+        const fresh = useApp.getState().arch;
+        const last = [...(fresh?.elements ?? [])].reverse().find((el) => el.kind === kind && el.name === name);
+        if (last) useApp.getState().selectElement(last.id);
+      }, 100);
+    }
   }
 
   if (!open) return null;

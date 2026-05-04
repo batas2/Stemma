@@ -2,11 +2,14 @@ import { useMemo, useState } from 'react';
 import {
   Box, Boxes, Cuboid, Layers, Package, User, Server, Target, BookOpen,
   Search, Plus, Trash2, Eye, Edit3, Pencil, ChevronsLeft, ChevronsRight, Wand2, X,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Workflow,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { newCustomView } from '@/lib/views';
+import { confirmAction } from './ConfirmDialog';
+import { promptText } from './PromptDialog';
+import { suggestViewName } from '@/lib/naming';
 import type { ArchElement, ArchElementKind } from '@/lib/types';
 
 type Tab = 'elements' | 'views';
@@ -57,8 +60,6 @@ export function Sidebar() {
   const upsert = useApp((s) => s.upsertCustomView);
   const remove = useApp((s) => s.removeCustomView);
   const removeElementFromActiveView = useApp((s) => s.removeElementFromActiveView);
-  const view = useApp((s) => s.view);
-  const setView = useApp((s) => s.setView);
   const setToast = useApp((s) => s.setToast);
 
   const [tab, setTab] = useState<Tab>('elements');
@@ -98,18 +99,44 @@ export function Sidebar() {
     });
   }
 
-  function onPaletteDragStart(e: React.DragEvent, kind: ArchElementKind) {
+  function makeDragChip(label: string): HTMLElement {
+    const el = document.createElement('div');
+    el.textContent = label;
+    el.style.cssText = [
+      'position:absolute', 'top:-1000px', 'left:-1000px',
+      'padding:4px 10px', 'border-radius:6px',
+      'background:rgba(99,102,241,0.95)', 'color:white',
+      'font:500 12px ui-sans-serif,system-ui,sans-serif',
+      'box-shadow:0 4px 12px rgba(0,0,0,0.25)', 'pointer-events:none',
+      'border:1px solid rgba(255,255,255,0.25)',
+    ].join(';');
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 0);
+    return el;
+  }
+
+  function onPaletteDragStart(e: React.DragEvent, kind: ArchElementKind, label: string) {
     e.dataTransfer.setData('application/verso-palette', kind);
     e.dataTransfer.effectAllowed = 'copy';
+    const chip = makeDragChip(`+ ${label}`);
+    e.dataTransfer.setDragImage(chip, 16, 16);
   }
 
-  function onElementDragStart(e: React.DragEvent, elementId: string) {
+  function onElementDragStart(e: React.DragEvent, elementId: string, name: string) {
     e.dataTransfer.setData('application/verso-element', elementId);
     e.dataTransfer.effectAllowed = 'copyMove';
+    const chip = makeDragChip(name);
+    e.dataTransfer.setDragImage(chip, 16, 16);
   }
 
-  function handleNewView() {
-    const name = prompt('Name for the new view')?.trim();
+  async function handleNewView() {
+    const suggestion = suggestViewName(customViews);
+    const name = await promptText({
+      title: 'New view',
+      body: 'Group elements into a custom view. You can drag elements onto the canvas afterwards to add them.',
+      initialValue: suggestion,
+      confirmLabel: 'Create',
+    });
     if (!name) return;
     const v = newCustomView(name, 'all');
     upsert(v);
@@ -118,15 +145,25 @@ export function Sidebar() {
     setToast({ kind: 'success', text: `Created view "${name}"` });
   }
 
-  function handleRenameView(id: string, currentName: string) {
-    const next = prompt('Rename view', currentName)?.trim();
+  async function handleRenameView(id: string, currentName: string) {
+    const next = await promptText({
+      title: `Rename "${currentName}"`,
+      initialValue: currentName,
+      confirmLabel: 'Rename',
+    });
     if (!next || next === currentName) return;
     const v = customViews.find((x) => x.id === id);
     if (v) upsert({ ...v, name: next });
   }
 
-  function handleRemoveView(id: string, name: string) {
-    if (!confirm(`Delete view "${name}"?`)) return;
+  async function handleRemoveView(id: string, name: string) {
+    const ok = await confirmAction({
+      title: `Delete view "${name}"?`,
+      body: 'The custom view will be removed from the workspace. Elements themselves are not affected.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     remove(id);
   }
 
@@ -163,7 +200,8 @@ export function Sidebar() {
       <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
         <button
           onClick={toggleMode}
-          title={mode === 'edit' ? 'Switch to View mode (read-only)' : 'Switch to Edit mode'}
+          title={mode === 'edit' ? 'Switch to Read-only mode' : 'Switch to Edit mode'}
+          aria-label={mode === 'edit' ? 'Switch to Read-only mode' : 'Switch to Edit mode'}
           className={clsx(
             'flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors',
             mode === 'edit'
@@ -172,7 +210,7 @@ export function Sidebar() {
           )}
         >
           {mode === 'edit' ? <Pencil className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-          {mode === 'edit' ? 'Edit Model' : 'View'}
+          {mode === 'edit' ? 'Edit' : 'Read-only'}
         </button>
         <div className="flex-1" />
         <button
@@ -215,9 +253,32 @@ export function Sidebar() {
       </div>
 
       {tab === 'elements' && (
-        <div className="flex-1 overflow-auto scrollbar-thin">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-3 pt-2 pb-2 sticky top-0 z-chrome bg-zinc-50/90 dark:bg-zinc-950/80 backdrop-blur border-b border-subtle">
+            <div className="flex items-center gap-2 px-2 py-1 rounded border border-default bg-white dark:bg-zinc-900/50 focus-within:border-indigo-400 dark:focus-within:border-indigo-500">
+              <Search className="w-3 h-3 text-faint shrink-0" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search elements…"
+                aria-label="Search elements"
+                className="flex-1 bg-transparent outline-none text-xs placeholder:text-zinc-400 dark:placeholder:text-zinc-600 min-w-0"
+              />
+              {query && (
+                <button onClick={() => setQuery('')} aria-label="Clear search" className="text-faint hover:text-body">
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            {query && (
+              <div className="text-[10px] text-muted mt-1.5 px-1">
+                {totalCount} result{totalCount === 1 ? '' : 's'}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 overflow-auto scrollbar-thin">
           <section className="px-3 pt-3">
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2 flex items-center gap-1">
+            <div className="text-[10px] uppercase tracking-wider text-faint mb-2 flex items-center gap-1">
               <Wand2 className="w-3 h-3" /> Add new
             </div>
             <div className="grid grid-cols-2 gap-1.5">
@@ -227,9 +288,10 @@ export function Sidebar() {
                   <div
                     key={p.kind}
                     draggable
-                    onDragStart={(e) => onPaletteDragStart(e, p.kind)}
+                    onDragStart={(e) => onPaletteDragStart(e, p.kind, p.label)}
                     title={`Drag to canvas to add a ${p.label}`}
-                    className="group flex items-center gap-1.5 px-2 py-1.5 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
+                    aria-label={`Drag to canvas to add a ${p.label}`}
+                    className="group flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
                   >
                     <Icon className={clsx('w-3.5 h-3.5 shrink-0', p.accent)} />
                     <span className="truncate">{p.label}</span>
@@ -239,22 +301,38 @@ export function Sidebar() {
             </div>
           </section>
 
-          <section className="px-3 pt-4 pb-3">
-            <div className="flex items-center gap-2 mb-2 px-2 py-1 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 focus-within:border-indigo-400 dark:focus-within:border-indigo-500">
-              <Search className="w-3 h-3 text-zinc-500 shrink-0" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search…"
-                className="flex-1 bg-transparent outline-none text-xs placeholder:text-zinc-400 dark:placeholder:text-zinc-600 min-w-0"
-              />
-              {query && (
-                <button onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
-                  <X className="w-3 h-3" />
-                </button>
-              )}
+          <section className="px-3 pt-4">
+            <div className="text-[10px] uppercase tracking-wider text-faint mb-2 flex items-center gap-1">
+              <Workflow className="w-3 h-3" /> Templates
             </div>
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">
+            <ul className="space-y-1">
+              <li>
+                <button
+                  draggable
+                  onDragStart={(e) => { e.dataTransfer.setData('application/verso-template', 'bcWithModules'); e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setDragImage(makeDragChip('Template: BC + 2 modules'), 16, 16); }}
+                  title="Drag to canvas — Bounded Context with two modules"
+                  className="w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
+                >
+                  <Layers className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+                  <span className="flex-1 truncate">BC + 2 modules</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  draggable
+                  onDragStart={(e) => { e.dataTransfer.setData('application/verso-template', 'systemWithContainer'); e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setDragImage(makeDragChip('Template: System + Container'), 16, 16); }}
+                  title="Drag to canvas — System with one container"
+                  className="w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
+                >
+                  <Server className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span className="flex-1 truncate">System + Container</span>
+                </button>
+              </li>
+            </ul>
+          </section>
+
+          <section className="px-3 pt-4 pb-3">
+            <div className="text-[10px] uppercase tracking-wider text-faint mb-2">
               Existing ({totalCount})
             </div>
             {totalCount === 0 && (
@@ -284,7 +362,7 @@ export function Sidebar() {
                             <li
                               key={e.id}
                               draggable
-                              onDragStart={(ev) => onElementDragStart(ev, e.id)}
+                              onDragStart={(ev) => onElementDragStart(ev, e.id, e.name)}
                               title={`Drag to canvas${activeView ? ` to add to "${activeView.name}"` : ''}`}
                               className={clsx(
                                 'group flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-grab active:cursor-grabbing transition-colors',
@@ -314,6 +392,7 @@ export function Sidebar() {
               })}
             </div>
           </section>
+          </div>
         </div>
       )}
 
@@ -328,26 +407,10 @@ export function Sidebar() {
             </button>
           </section>
           <section className="px-3 pt-3 pb-3">
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Built-in</div>
-            <ul className="space-y-0.5 mb-3">
-              {(['c4Context', 'moduleMap', 'dependencyGraph'] as const).map((v) => (
-                <li
-                  key={v}
-                  onClick={() => { setView(v); }}
-                  className={clsx(
-                    'cursor-pointer px-2 py-1 rounded text-xs transition-colors',
-                    !activeId && view === v
-                      ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-200'
-                      : 'hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300'
-                  )}
-                >
-                  {v === 'c4Context' && 'C4 Context'}
-                  {v === 'moduleMap' && 'Module Map'}
-                  {v === 'dependencyGraph' && 'Dependencies'}
-                </li>
-              ))}
-            </ul>
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Custom</div>
+            <div className="text-[10px] uppercase tracking-wider text-faint mb-2">Custom views</div>
+            <p className="text-[10px] text-faint mb-2 leading-snug">
+              Built-in views (Context, Module Map, Dependencies, Decisions) live in the topbar. Custom views below filter the model down to a curated subset.
+            </p>
             {customViews.length === 0 && (
               <p className="text-xs text-zinc-500 px-1">No custom views yet. Click "New View" above.</p>
             )}

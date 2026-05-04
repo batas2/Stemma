@@ -1,7 +1,8 @@
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
+import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Box, Cuboid, Layers, Package, User, Server, Target, BookOpen } from 'lucide-react';
 import clsx from 'clsx';
 import type { ArchElement, ArchElementKind, ArchTagInfo } from '@/lib/types';
+import { DEFAULT_VISIBLE_FIELDS, type NodeFieldKey } from '@/lib/nodeStyles';
 
 export type TagsByTarget = Record<string, ArchTagInfo>;
 
@@ -13,8 +14,14 @@ export type ArchNodeData = {
     borderColor?: string;
     borderWidth?: number;
     borderStyle?: 'solid' | 'dashed' | 'dotted';
+    width?: number;
+    height?: number;
+    visibleFields?: NodeFieldKey[];
   };
   violationSeverity?: 'info' | 'warning' | 'error';
+  // Editable mode passes a callback so the resize gesture can be persisted.
+  onResize?: (id: string, w: number, h: number) => void;
+  resizable?: boolean;
 } & Record<string, unknown>;
 
 export type ArchFlowNode = Node<ArchNodeData, 'arch'>;
@@ -66,7 +73,28 @@ function statusStyle(status: string | null | undefined): { className: string; ou
   }
 }
 
-export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
+const FIELD_LABEL: Record<NodeFieldKey, string> = {
+  kind: 'Kind',
+  name: 'Name',
+  id: 'Id',
+  contextId: 'Context',
+  systemId: 'System',
+  containerKind: 'Container kind',
+  squad: 'Squad',
+  domain: 'Domain',
+  status: 'Status',
+  phase: 'Phase',
+  narrativePreview: 'Narrative',
+};
+
+export const ALL_FIELD_KEYS: NodeFieldKey[] = [
+  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind',
+  'squad', 'domain', 'status', 'phase',
+];
+
+export function fieldLabel(k: NodeFieldKey): string { return FIELD_LABEL[k] ?? k; }
+
+export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   const e = data.element;
   const tag = data.tag;
   const nodeStyle = data.nodeStyle;
@@ -76,69 +104,120 @@ export function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
   const status = tag?.lifecycle?.status;
   const statusClasses = statusStyle(status);
   const violationSeverity = data.violationSeverity;
+  const visible = nodeStyle?.visibleFields ?? DEFAULT_VISIBLE_FIELDS;
+  const showField = (k: NodeFieldKey) => visible.includes(k);
 
-  // Custom node style overrides take priority over status / theme defaults.
   const inlineStyle: React.CSSProperties = {};
   if (nodeStyle?.fillColor) inlineStyle.background = nodeStyle.fillColor;
   if (nodeStyle?.borderColor) inlineStyle.borderColor = nodeStyle.borderColor;
   if (nodeStyle?.borderWidth !== undefined) inlineStyle.borderWidth = `${nodeStyle.borderWidth}px`;
   if (nodeStyle?.borderStyle) inlineStyle.borderStyle = nodeStyle.borderStyle;
+  if (nodeStyle?.width) inlineStyle.width = nodeStyle.width;
+  if (nodeStyle?.height) inlineStyle.height = nodeStyle.height;
   const hasCustomStyle = !!(nodeStyle?.fillColor || nodeStyle?.borderColor || nodeStyle?.borderStyle);
 
+  // Default size hints — kept on the wrapper so the NodeResizer respects min sizes.
+  const minWidth = isPerson ? 120 : 180;
+  const minHeight = isPerson ? 40 : 80;
+
   return (
-    <div
-      style={inlineStyle}
-      className={clsx(
-        'relative rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg min-w-[180px] max-w-[260px] transition-shadow',
-        isPerson ? 'rounded-full px-4 py-2.5 min-w-0' : '',
-        // Status restyling only applies when no custom style is set; user choice wins.
-        !hasCustomStyle && statusClasses.className,
-        selected && (statusClasses.outline ?? 'ring-1 ring-indigo-500/40 shadow-indigo-500/20'),
-        !selected && !status && !hasCustomStyle && 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-lg dark:hover:shadow-xl'
-      )}
-    >
-      <Handle type="target" position={Position.Top} />
-      {violationSeverity && (
-        <span
-          className={clsx(
-            'absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow',
-            violationSeverity === 'error' && 'bg-rose-500',
-            violationSeverity === 'warning' && 'bg-amber-500',
-            violationSeverity === 'info' && 'bg-sky-500'
-          )}
-          title={`${violationSeverity[0].toUpperCase()}${violationSeverity.slice(1)} validation`}
+    <>
+      {data.resizable && (
+        <NodeResizer
+          color="rgb(99 102 241)"
+          isVisible={selected}
+          minWidth={minWidth}
+          minHeight={minHeight}
+          handleStyle={{ width: 8, height: 8, borderRadius: 2 }}
+          lineStyle={{ borderWidth: 1 }}
+          onResizeEnd={(_, params) => data.onResize?.(id, Math.round(params.width), Math.round(params.height))}
         />
       )}
-      {isPerson ? (
-        <div className="flex items-center gap-2">
-          <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
-          <span className="text-zinc-900 dark:text-zinc-100 text-sm">{e.name}</span>
-          {status && <StatusBadge status={status} />}
-        </div>
-      ) : (
-        <>
-          <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
+      <div
+        style={inlineStyle}
+        className={clsx(
+          'relative rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg transition-shadow h-full',
+          !nodeStyle?.width && 'min-w-[180px] max-w-[260px]',
+          isPerson && !nodeStyle?.width ? 'rounded-full px-4 py-2.5 min-w-0' : '',
+          isPerson && nodeStyle?.width ? 'rounded-full px-4 py-2.5' : '',
+          !hasCustomStyle && statusClasses.className,
+          selected && (statusClasses.outline ?? 'ring-1 ring-indigo-500/40 shadow-indigo-500/20'),
+          !selected && !status && !hasCustomStyle && 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-lg dark:hover:shadow-xl'
+        )}
+      >
+        <Handle type="target" position={Position.Top} />
+        {violationSeverity && (
+          <span
+            className={clsx(
+              'absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 shadow',
+              violationSeverity === 'error' && 'bg-rose-500',
+              violationSeverity === 'warning' && 'bg-amber-500',
+              violationSeverity === 'info' && 'bg-sky-500'
+            )}
+            title={`${violationSeverity[0].toUpperCase()}${violationSeverity.slice(1)} validation`}
+          />
+        )}
+        {isPerson ? (
+          <div className="flex items-center gap-2 h-full">
             <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
-              {labelForKind[e.kind]}
-            </span>
-            {status && <StatusBadge status={status} />}
+            {showField('name') && <span className="text-zinc-900 dark:text-zinc-100 text-sm">{e.name}</span>}
+            {showField('status') && status && <StatusBadge status={status} />}
           </div>
-          <div className="px-3 py-2">
-            <div className="font-medium text-zinc-900 dark:text-zinc-100 text-sm truncate" title={e.name}>{e.name}</div>
-            {e.attributes.contextId && (
-              <div className="text-[10px] text-zinc-500 mt-0.5 font-mono truncate">in {e.attributes.contextId}</div>
+        ) : (
+          <>
+            {(showField('kind') || (showField('status') && status)) && (
+              <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
+                <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
+                {showField('kind') && (
+                  <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
+                    {labelForKind[e.kind]}
+                  </span>
+                )}
+                {showField('status') && status && <StatusBadge status={status} />}
+              </div>
             )}
-            {tag?.ownership?.squad && (
-              <div className="text-[10px] text-zinc-500 mt-0.5 truncate">👥 {tag.ownership.squad}</div>
-            )}
-          </div>
-        </>
-      )}
-      <Handle type="source" position={Position.Bottom} />
-    </div>
+            <div className="px-3 py-2 space-y-0.5">
+              {showField('name') && (
+                <div className="font-medium text-zinc-900 dark:text-zinc-100 text-sm truncate" title={e.name}>{e.name}</div>
+              )}
+              {showField('id') && (
+                <div className="text-[10px] text-zinc-500 font-mono truncate">{e.id}</div>
+              )}
+              {showField('contextId') && e.attributes.contextId && (
+                <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.contextId}</div>
+              )}
+              {showField('systemId') && e.attributes.systemId && (
+                <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.systemId}</div>
+              )}
+              {showField('containerKind') && e.attributes.containerKind && (
+                <div className="text-[10px] text-zinc-500 truncate">{e.attributes.containerKind}</div>
+              )}
+              {showField('squad') && tag?.ownership?.squad && (
+                <div className="text-[10px] text-zinc-500 truncate">👥 {tag.ownership.squad}</div>
+              )}
+              {showField('domain') && tag?.ownership?.domain && (
+                <div className="text-[10px] text-zinc-500 truncate">🏷️ {tag.ownership.domain}</div>
+              )}
+              {showField('phase') && tag?.lifecycle?.phase && (
+                <div className="text-[10px] text-zinc-500 truncate">⏱ {tag.lifecycle.phase}</div>
+              )}
+            </div>
+          </>
+        )}
+        <Handle type="source" position={Position.Bottom} />
+      </div>
+    </>
   );
 }
+
+const STATUS_GLYPH: Record<string, string> = {
+  'current': '●',
+  'target': '◆',
+  'to-be-created': '○',
+  'to-adapt': '◇',
+  'deprecated': '━',
+  'proposed': '◇',
+};
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -150,8 +229,10 @@ function StatusBadge({ status }: { status: string }) {
     'proposed': 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
   };
   const cls = colors[status] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/30';
+  const glyph = STATUS_GLYPH[status];
   return (
-    <span className={clsx('ml-auto px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border font-medium', cls)}>
+    <span className={clsx('ml-auto px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border font-medium flex items-center gap-1', cls)}>
+      {glyph && <span aria-hidden="true">{glyph}</span>}
       {status}
     </span>
   );

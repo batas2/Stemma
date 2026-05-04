@@ -22,15 +22,13 @@ export function ViolationsPanel() {
   const select = useApp((s) => s.selectElement);
   const selectLink = useApp((s) => s.selectLink);
 
-  if (violations.length === 0 && !open) return null;
-
   const counts = violations.reduce<Record<Severity, number>>(
     (acc, v) => ({ ...acc, [v.severity]: (acc[v.severity] ?? 0) + 1 }),
     { error: 0, warning: 0, info: 0 }
   );
 
   return (
-    <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/80 backdrop-blur">
+    <div role="region" aria-label="Validation status" className="border-t border-default bg-white dark:bg-zinc-950/80 backdrop-blur">
       <button
         onClick={() => setOpen(!open)}
         className="w-full px-3 py-1.5 flex items-center gap-3 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-900/40 transition-colors"

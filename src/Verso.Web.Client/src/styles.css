@@ -6,11 +6,103 @@
   html, body, #root { height: 100%; }
   :root {
     --accent: 99 102 241;
+
+    /* Z-index ladder (Q99). Single source of truth — every floating surface
+       picks the layer it belongs to instead of inventing magic numbers. */
+    --z-canvas: 1;
+    --z-chrome: 20;
+    --z-popover: 40;
+    --z-menu: 50;
+    --z-modal: 70;
+    --z-toast: 90;
+  }
+
+  /* Visible focus ring across every interactive element (Q120). */
+  *:focus-visible {
+    outline: 2px solid rgb(99 102 241 / 0.7);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 }
 
-.react-flow__node {
-  font-size: 13px;
+@layer components {
+  /* Surfaces */
+  .surface         { @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800; }
+  .surface-elevated { @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-md; }
+  .surface-overlay { @apply bg-white/95 dark:bg-zinc-900/95 backdrop-blur border border-zinc-200 dark:border-zinc-800 shadow-xl; }
+
+  /* Z-index utilities mirroring the CSS variables */
+  .z-chrome   { z-index: var(--z-chrome); }
+  .z-popover  { z-index: var(--z-popover); }
+  .z-menu     { z-index: var(--z-menu); }
+  .z-modal    { z-index: var(--z-modal); }
+  .z-toast    { z-index: var(--z-toast); }
+
+  /* Text colours (Q104) */
+  .text-body  { @apply text-zinc-900 dark:text-zinc-100; }
+  .text-muted { @apply text-zinc-600 dark:text-zinc-400; }
+  .text-faint { @apply text-zinc-500 dark:text-zinc-500; }
+
+  /* Borders */
+  .border-subtle  { @apply border-zinc-100 dark:border-zinc-800/60; }
+  .border-default { @apply border-zinc-200 dark:border-zinc-800; }
+  .border-strong  { @apply border-zinc-300 dark:border-zinc-700; }
+
+  /* Buttons (Q105) — four variants × two sizes. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded font-medium
+           transition-colors focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-sm { @apply text-xs px-2.5 py-1; }
+  .btn-md { @apply text-xs px-3 py-1.5; }
+
+  .btn-primary {
+    @apply bg-indigo-500 hover:bg-indigo-400 text-white border border-transparent;
+  }
+  .btn-secondary {
+    @apply bg-indigo-500/15 hover:bg-indigo-500/25
+           border border-indigo-500/40 dark:border-indigo-500/30
+           text-indigo-700 dark:text-indigo-300;
+  }
+  .btn-ghost {
+    @apply bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/60
+           text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100
+           border border-transparent;
+  }
+  .btn-destructive {
+    @apply bg-transparent hover:bg-rose-500/10
+           border border-rose-500/40 dark:border-rose-500/30
+           text-rose-600 dark:text-rose-400;
+  }
+
+  /* Inputs (Q104) */
+  .input-base {
+    @apply w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700
+           rounded px-2 py-1.5 text-xs outline-none
+           focus:border-indigo-500 dark:focus:border-indigo-500
+           placeholder:text-zinc-400 dark:placeholder:text-zinc-600;
+  }
+
+  /* Badge */
+  .badge {
+    @apply text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border font-medium;
+  }
+}
+
+.react-flow__node { font-size: 13px; }
+
+/* Q116: connection handles enlarge on node hover so they're easier to grab.
+   Default xyflow handles are 6px; we boost to 9px (1.5x) when the node is
+   hovered or selected. */
+.react-flow__handle {
+  width: 6px;
+  height: 6px;
+  transition: transform 120ms ease, background 120ms ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle {
+  transform: scale(1.5);
+  background: rgb(99 102 241);
 }
 
 .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -18,7 +110,20 @@
   background: rgb(212 212 216);
   border-radius: 3px;
 }
-.dark .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgb(63 63 70);
-}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb { background: rgb(63 63 70); }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* Skip-to-canvas link (Q119) — visually hidden until focused. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: var(--z-modal);
+  padding: 8px 16px;
+  background: white;
+  color: rgb(24 24 27);
+  border: 2px solid rgb(99 102 241);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.skip-link:focus { left: 8px; }

@@ -53,8 +53,9 @@ export function ContextMenu({ state, onClose }: Props) {
   return (
     <div
       ref={ref}
-      style={{ position: 'fixed', left: x, top: y, zIndex: 100 }}
-      className="min-w-[180px] rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl py-1 text-xs"
+      role="menu"
+      style={{ position: 'fixed', left: x, top: y }}
+      className="z-menu min-w-[180px] rounded-md surface-overlay py-1 text-xs"
     >
       {state.items.map((item) =>
         item.separator
@@ -62,15 +63,16 @@ export function ContextMenu({ state, onClose }: Props) {
           : (
             <button
               key={item.id}
+              role="menuitem"
               disabled={item.disabled}
               onClick={() => { item.onClick(); onClose(); }}
               className={clsx(
                 'w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors',
                 item.disabled
-                  ? 'text-zinc-400 dark:text-zinc-600 cursor-not-allowed'
+                  ? 'text-faint cursor-not-allowed'
                   : item.destructive
                     ? 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10'
-                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'
+                    : 'text-body hover:bg-zinc-100 dark:hover:bg-zinc-800/60'
               )}
             >
               {item.icon ? <item.icon className="w-3 h-3 shrink-0" /> : <span className="w-3" />}
