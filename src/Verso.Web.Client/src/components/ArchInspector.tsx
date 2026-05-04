@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Edit3, Trash2, Activity, Workflow } from 'lucide-react';
+import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
@@ -35,9 +35,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   const setToast = useApp((s) => s.setToast);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
-  const [tab, setTab] = useState<'props' | 'lifecycle' | 'appearance' | 'decisions' | 'notes'>('props');
   const [narrative, setNarrative] = useState('');
-  const [narrativeLoaded, setNarrativeLoaded] = useState(false);
   const nodeStyles = useApp((s) => s.nodeStyles);
   const setNodeStyleFor = useApp((s) => s.setNodeStyleFor);
   const userNodeStyle: NodeStyle = nodeStyles[elementId] ?? DEFAULT_NODE_STYLE;
@@ -95,15 +93,13 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
     setNodeStyleFor(elementId, DEFAULT_NODE_STYLE);
   }
 
-  // Lazy-load narrative the first time the Notes tab is opened.
+  // Load narrative whenever the selected element changes — small text fetch, fine to do
+  // eagerly so the Notes section is ready when the user expands it.
   useEffect(() => {
-    if (tab === 'notes' && !narrativeLoaded) {
-      fetchElementNarrative(elementId).then((md) => {
-        setNarrative(md);
-        setNarrativeLoaded(true);
-      }).catch(() => setNarrativeLoaded(true));
-    }
-  }, [tab, elementId, narrativeLoaded]);
+    fetchElementNarrative(elementId)
+      .then((md) => setNarrative(md))
+      .catch(() => setNarrative(''));
+  }, [elementId]);
 
   async function saveNotes() {
     const r = await applyOperation({
@@ -167,184 +163,156 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="px-2 pt-2 flex gap-0.5 text-[11px] overflow-x-auto scrollbar-thin">
-        {([
-          ['props', 'Props'],
-          ['lifecycle', 'Lifecycle'],
-          ['appearance', 'Appearance'],
-          ['decisions', `Decisions${concerningDecisions.length > 0 ? ` (${concerningDecisions.length})` : ''}`],
-          ['notes', 'Notes'],
-        ] as const).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={clsx('px-2 py-1 rounded transition-colors whitespace-nowrap',
-              tab === key
-                ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
-                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === 'props' && (
-        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 space-y-2 flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto scrollbar-thin">
+        <Section label="Properties" persistKey="element.properties" defaultOpen>
           <Field label="Kind" value={e.kind} />
           <Field label="Id" value={e.id} mono />
           {Object.entries(e.attributes).map(([k, v]) =>
             v ? <Field key={k} label={k} value={v} mono /> : null
           )}
-        </div>
-      )}
-      {tab === 'lifecycle' && (
-        <div className="flex-1 overflow-auto scrollbar-thin">
-          <Section label="Lifecycle">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
-              <select
-                value={status}
-                onChange={(ev) => { setStatus(ev.target.value); commitLifecycle(ev.target.value, phase); }}
-                className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
-              >
-                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
-              </select>
-            </div>
-            <LabeledInput
-              label="Phase"
-              value={phase}
-              onChange={setPhase}
-              onCommit={() => commitLifecycle(status, phase)}
-              placeholder="e.g. Q4 2026"
-            />
-          </Section>
-          <Section label="Ownership">
-            <LabeledInput
-              label="Squad"
-              value={squad}
-              onChange={setSquad}
-              onCommit={() => commitOwnership(squad, domain)}
-              placeholder="e.g. Onboarding Squad"
-            />
-            <LabeledInput
-              label="Domain"
-              value={domain}
-              onChange={setDomain}
-              onCommit={() => commitOwnership(squad, domain)}
-              placeholder="e.g. Buyer"
-            />
-          </Section>
-        </div>
-      )}
-      {tab === 'appearance' && (
-        <div className="flex-1 overflow-auto scrollbar-thin">
-          <Section label="Border">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Style</div>
-              <div className="flex gap-1">
-                {(['solid', 'dashed', 'dotted'] as NodeBorderStyle[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setStyle({ borderStyle: s })}
-                    className={clsx(
-                      'flex-1 px-2 py-1.5 text-xs rounded border transition-colors',
-                      userNodeStyle.borderStyle === s
-                        ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
-                        : 'border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
-                    )}
-                  >
-                    <BorderPreview style={s} />
-                    <span className="block mt-0.5 capitalize">{s}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 flex justify-between">
-                <span>Width</span><span className="font-mono normal-case tracking-normal">{userNodeStyle.borderWidth.toFixed(0)}px</span>
-              </div>
-              <input
-                type="range"
-                min={1} max={5} step={1}
-                value={userNodeStyle.borderWidth}
-                onChange={(ev) => setStyle({ borderWidth: parseInt(ev.target.value, 10) })}
-                className="w-full accent-indigo-500"
-              />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Color</div>
-              <ColorSwatches value={userNodeStyle.borderColor} onChange={(c) => setStyle({ borderColor: c })} />
-            </div>
-          </Section>
-          <Section label="Fill">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Background</div>
-              <ColorSwatches
-                value={userNodeStyle.fillColor}
-                onChange={(c) => setStyle({ fillColor: c })}
-                palette={[undefined, '#eef2ff', '#ecfdf5', '#fef3c7', '#fee2e2', '#ede9fe', '#cffafe', '#fafafa']}
-              />
-            </div>
-          </Section>
-          <Section label="">
-            <button
-              onClick={clearStyle}
-              className="w-full text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1.5 transition-colors"
+        </Section>
+
+        <Section label="Lifecycle" persistKey="element.lifecycle">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
+            <select
+              value={status}
+              onChange={(ev) => { setStatus(ev.target.value); commitLifecycle(ev.target.value, phase); }}
+              className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
             >
-              Reset to default
-            </button>
-          </Section>
-        </div>
-      )}
-      {tab === 'decisions' && (
-        <div className="flex-1 overflow-auto scrollbar-thin">
-          <Section label="Concerning this element">
-            {concerningDecisions.length === 0 && (
-              <p className="text-xs text-zinc-500 italic">No decisions concern this element yet.</p>
-            )}
-            <ul className="space-y-1.5">
-              {concerningDecisions.map((d) => (
-                <li
-                  key={d.id}
-                  className="text-xs px-2 py-1.5 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">{d.status}</span>
-                    <span className="font-mono text-[10px] text-zinc-500">{d.id}</span>
-                  </div>
-                  <div className="text-zinc-800 dark:text-zinc-200 mt-1">{d.title}</div>
-                </li>
-              ))}
-            </ul>
-            <button
-              onClick={async () => {
-                const decId = prompt('Decision id to link (e.g. dec_001)')?.trim();
-                if (!decId) return;
-                const r = await applyOperation({
-                  kind: 'AddDecisionConcerns', opId: `op_${Date.now()}`,
-                  decisionId: decId, elementId,
-                });
-                if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
-                else setToast({ kind: 'success', text: 'Linked to decision' });
-              }}
-              className="mt-2 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10 border border-indigo-500/30 rounded px-2 py-1 w-full"
-            >
-              Link an existing decision
-            </button>
-          </Section>
-        </div>
-      )}
-      {tab === 'notes' && (
-        <div className="flex-1 flex flex-col min-h-0">
-          <MarkdownEditor value={narrative} onChange={setNarrative} />
-          <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
-            <button
-              onClick={saveNotes}
-              className="w-full text-xs px-3 py-1.5 rounded bg-indigo-500 hover:bg-indigo-400 text-white"
-            >
-              Save notes
-            </button>
+              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
+            </select>
           </div>
-        </div>
-      )}
+          <LabeledInput
+            label="Phase"
+            value={phase}
+            onChange={setPhase}
+            onCommit={() => commitLifecycle(status, phase)}
+            placeholder="e.g. Q4 2026"
+          />
+        </Section>
+
+        <Section label="Ownership" persistKey="element.ownership" defaultOpen={false}>
+          <LabeledInput
+            label="Squad"
+            value={squad}
+            onChange={setSquad}
+            onCommit={() => commitOwnership(squad, domain)}
+            placeholder="e.g. Onboarding Squad"
+          />
+          <LabeledInput
+            label="Domain"
+            value={domain}
+            onChange={setDomain}
+            onCommit={() => commitOwnership(squad, domain)}
+            placeholder="e.g. Buyer"
+          />
+        </Section>
+
+        <Section label="Appearance" persistKey="element.appearance" defaultOpen={false}>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Border style</div>
+            <div className="flex gap-1">
+              {(['solid', 'dashed', 'dotted'] as NodeBorderStyle[]).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStyle({ borderStyle: s })}
+                  className={clsx(
+                    'flex-1 px-2 py-1.5 text-xs rounded border transition-colors',
+                    userNodeStyle.borderStyle === s
+                      ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                      : 'border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
+                  )}
+                >
+                  <BorderPreview style={s} />
+                  <span className="block mt-0.5 capitalize">{s}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 flex justify-between">
+              <span>Border width</span><span className="font-mono normal-case tracking-normal">{userNodeStyle.borderWidth.toFixed(0)}px</span>
+            </div>
+            <input
+              type="range"
+              min={1} max={5} step={1}
+              value={userNodeStyle.borderWidth}
+              onChange={(ev) => setStyle({ borderWidth: parseInt(ev.target.value, 10) })}
+              className="w-full accent-indigo-500"
+            />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Border color</div>
+            <ColorSwatches value={userNodeStyle.borderColor} onChange={(c) => setStyle({ borderColor: c })} />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Background</div>
+            <ColorSwatches
+              value={userNodeStyle.fillColor}
+              onChange={(c) => setStyle({ fillColor: c })}
+              palette={[undefined, '#eef2ff', '#ecfdf5', '#fef3c7', '#fee2e2', '#ede9fe', '#cffafe', '#fafafa']}
+            />
+          </div>
+          <button
+            onClick={clearStyle}
+            className="mt-1 w-full text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1.5 transition-colors"
+          >
+            Reset to default
+          </button>
+        </Section>
+
+        <Section
+          label={`Decisions${concerningDecisions.length > 0 ? ` (${concerningDecisions.length})` : ''}`}
+          persistKey="element.decisions"
+          defaultOpen={concerningDecisions.length > 0}
+        >
+          {concerningDecisions.length === 0 && (
+            <p className="text-xs text-zinc-500 italic">No decisions concern this element yet.</p>
+          )}
+          <ul className="space-y-1.5">
+            {concerningDecisions.map((d) => (
+              <li
+                key={d.id}
+                className="text-xs px-2 py-1.5 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">{d.status}</span>
+                  <span className="font-mono text-[10px] text-zinc-500">{d.id}</span>
+                </div>
+                <div className="text-zinc-800 dark:text-zinc-200 mt-1">{d.title}</div>
+              </li>
+            ))}
+          </ul>
+          <button
+            onClick={async () => {
+              const decId = prompt('Decision id to link (e.g. dec_001)')?.trim();
+              if (!decId) return;
+              const r = await applyOperation({
+                kind: 'AddDecisionConcerns', opId: `op_${Date.now()}`,
+                decisionId: decId, elementId,
+              });
+              if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+              else setToast({ kind: 'success', text: 'Linked to decision' });
+            }}
+            className="mt-2 text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10 border border-indigo-500/30 rounded px-2 py-1 w-full"
+          >
+            Link an existing decision
+          </button>
+        </Section>
+
+        <Section label="Notes" persistKey="element.notes" defaultOpen={false}>
+          <div style={{ height: 280 }} className="border border-zinc-200 dark:border-zinc-800 rounded overflow-hidden">
+            <MarkdownEditor value={narrative} onChange={setNarrative} />
+          </div>
+          <button
+            onClick={saveNotes}
+            className="mt-2 w-full text-xs px-3 py-1.5 rounded bg-indigo-500 hover:bg-indigo-400 text-white"
+          >
+            Save notes
+          </button>
+        </Section>
+      </div>
       <div className="p-3 mt-auto border-t border-zinc-200 dark:border-zinc-800">
         <button
           onClick={handleRemove}
@@ -502,13 +470,13 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
       </div>
 
       <div className="flex-1 overflow-auto scrollbar-thin">
-        <Section label="Endpoints">
+        <Section label="Endpoints" persistKey="link.endpoints" defaultOpen>
           <Field label="From" value={from?.name ?? link.fromId} />
           <Field label="To" value={to?.name ?? link.toId} />
           <Field label="Id" value={link.id} mono />
         </Section>
 
-        <Section label="Properties">
+        <Section label="Properties" persistKey="link.properties" defaultOpen>
           {isDataFlow ? (
             <LabeledInput
               label="Payload"
@@ -528,7 +496,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
           )}
         </Section>
 
-        <Section label="Lifecycle & Owner">
+        <Section label="Lifecycle & Owner" persistKey="link.lifecycle" defaultOpen={false}>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
             <select
@@ -555,7 +523,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
           />
         </Section>
 
-        <Section label="Appearance">
+        <Section label="Appearance" persistKey="link.appearance" defaultOpen={false}>
           <div className="space-y-2.5">
             <div>
               <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Line style</div>
@@ -628,11 +596,39 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({ label, children, defaultOpen = true, persistKey }: {
+  label: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  persistKey?: string;
+}) {
+  // Per-section open/closed state persisted in localStorage so each user keeps the
+  // sections they actually use unfolded on next visit.
+  const storageKey = persistKey ? `verso.inspector.section:${persistKey}` : null;
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || !storageKey) return defaultOpen;
+    const v = localStorage.getItem(storageKey);
+    return v === null ? defaultOpen : v === '1';
+  });
+  function toggle() {
+    setOpen((prev) => {
+      const next = !prev;
+      if (storageKey) localStorage.setItem(storageKey, next ? '1' : '0');
+      return next;
+    });
+  }
   return (
-    <section className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
-      <h3 className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">{label}</h3>
-      <div className="space-y-1.5">{children}</div>
+    <section className="border-b border-zinc-100 dark:border-zinc-800">
+      <button
+        onClick={toggle}
+        className="w-full px-4 py-2.5 flex items-center gap-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-900/40 transition-colors"
+      >
+        {open
+          ? <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />
+          : <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />}
+        <h3 className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">{label}</h3>
+      </button>
+      {open && <div className="px-4 pb-3 space-y-1.5">{children}</div>}
     </section>
   );
 }
