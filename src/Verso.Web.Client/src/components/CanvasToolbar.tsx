@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Wand2, Network, ChevronDown, Magnet, AlignLeft, AlignRight, AlignCenterHorizontal,
   AlignStartVertical, AlignEndVertical, AlignCenterVertical,
-  StretchHorizontal, StretchVertical, Maximize2,
+  StretchHorizontal, StretchVertical, Maximize2, Trash2, MousePointerSquareDashed,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
@@ -13,10 +13,11 @@ interface Props {
   onAlign: (axis: 'left' | 'right' | 'centerX' | 'top' | 'bottom' | 'centerY') => void;
   onDistribute: (axis: 'horizontal' | 'vertical') => void;
   onFitSelection: () => void;
+  onDeleteSelected: () => void;
   selectedCount: number;
 }
 
-export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelection, selectedCount }: Props) {
+export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelection, onDeleteSelected, selectedCount }: Props) {
   const snap = useApp((s) => s.snapEnabled);
   const toggleSnap = useApp((s) => s.toggleSnap);
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
@@ -86,32 +87,50 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelect
         <Maximize2 className="w-3.5 h-3.5" />
       </Btn>
       <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
-      <Btn onClick={() => onAlign('left')} title="Align left" disabled={selectedCount < 2}>
+      <Btn onClick={() => onAlign('left')} title={selectedCount < 2 ? 'Align left — select 2+ nodes (Shift+drag or Ctrl+click)' : 'Align left'} disabled={selectedCount < 2}>
         <AlignLeft className="w-3.5 h-3.5" />
       </Btn>
-      <Btn onClick={() => onAlign('centerX')} title="Align center (X)" disabled={selectedCount < 2}>
+      <Btn onClick={() => onAlign('centerX')} title={selectedCount < 2 ? 'Align center (X) — select 2+ nodes' : 'Align center (X)'} disabled={selectedCount < 2}>
         <AlignCenterHorizontal className="w-3.5 h-3.5" />
       </Btn>
-      <Btn onClick={() => onAlign('right')} title="Align right" disabled={selectedCount < 2}>
+      <Btn onClick={() => onAlign('right')} title={selectedCount < 2 ? 'Align right — select 2+ nodes' : 'Align right'} disabled={selectedCount < 2}>
         <AlignRight className="w-3.5 h-3.5" />
       </Btn>
       <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
-      <Btn onClick={() => onAlign('top')} title="Align top" disabled={selectedCount < 2}>
+      <Btn onClick={() => onAlign('top')} title={selectedCount < 2 ? 'Align top — select 2+ nodes' : 'Align top'} disabled={selectedCount < 2}>
         <AlignStartVertical className="w-3.5 h-3.5" />
       </Btn>
-      <Btn onClick={() => onAlign('centerY')} title="Align center (Y)" disabled={selectedCount < 2}>
+      <Btn onClick={() => onAlign('centerY')} title={selectedCount < 2 ? 'Align center (Y) — select 2+ nodes' : 'Align center (Y)'} disabled={selectedCount < 2}>
         <AlignCenterVertical className="w-3.5 h-3.5" />
       </Btn>
-      <Btn onClick={() => onAlign('bottom')} title="Align bottom" disabled={selectedCount < 2}>
+      <Btn onClick={() => onAlign('bottom')} title={selectedCount < 2 ? 'Align bottom — select 2+ nodes' : 'Align bottom'} disabled={selectedCount < 2}>
         <AlignEndVertical className="w-3.5 h-3.5" />
       </Btn>
       <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
-      <Btn onClick={() => onDistribute('horizontal')} title="Distribute horizontally" disabled={selectedCount < 3}>
+      <Btn onClick={() => onDistribute('horizontal')} title="Distribute horizontally (needs 3+)" disabled={selectedCount < 3}>
         <StretchHorizontal className="w-3.5 h-3.5" />
       </Btn>
-      <Btn onClick={() => onDistribute('vertical')} title="Distribute vertically" disabled={selectedCount < 3}>
+      <Btn onClick={() => onDistribute('vertical')} title="Distribute vertically (needs 3+)" disabled={selectedCount < 3}>
         <StretchVertical className="w-3.5 h-3.5" />
       </Btn>
+      {selectedCount > 0 && (
+        <>
+          <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
+          <span
+            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-indigo-500/15 text-indigo-700 dark:text-indigo-200 font-medium"
+            title="Shift+drag to marquee, Ctrl/Cmd+click to add"
+          >
+            <MousePointerSquareDashed className="w-3 h-3" />
+            {selectedCount} selected
+          </span>
+          <Btn
+            onClick={onDeleteSelected}
+            title={selectedCount === 1 ? 'Delete selected' : `Delete ${selectedCount} selected`}
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+          </Btn>
+        </>
+      )}
     </div>
   );
 }

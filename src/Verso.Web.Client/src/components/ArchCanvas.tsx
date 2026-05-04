@@ -20,7 +20,6 @@ import { BcBackdrop } from './nodes/BcBackdrop';
 import { WaypointEdge } from './edges/WaypointEdge';
 import { CanvasToolbar } from './CanvasToolbar';
 import { ContextMenu, ContextIcons, type ContextMenuState } from './ContextMenu';
-import { MultiSelectBar } from './MultiSelectBar';
 import { confirmAction } from './ConfirmDialog';
 import { promptText, pickFromList } from './PromptDialog';
 import { suggestElementName } from '@/lib/naming';
@@ -796,6 +795,7 @@ function CanvasInner() {
         onAlign={handleAlign}
         onDistribute={handleDistribute}
         onFitSelection={handleFitSelection}
+        onDeleteSelected={handleDeleteSelected}
         selectedCount={selectedCount}
       />
       <ReactFlow
@@ -807,6 +807,11 @@ function CanvasInner() {
         nodesDraggable={mode === 'edit' || activeCustomView !== null}
         nodesConnectable={mode === 'edit'}
         elementsSelectable
+        // Shift+drag on the pane = marquee selection of a group of nodes.
+        selectionKeyCode="Shift"
+        // Ctrl/Cmd+click on a node = additive selection of specific nodes.
+        // Both keys are accepted so the same gesture works on Linux/Win and Mac.
+        multiSelectionKeyCode={['Control', 'Meta']}
         snapToGrid={snapEnabled}
         snapGrid={[20, 20]}
         onNodesChange={onNodesChange}
@@ -826,12 +831,6 @@ function CanvasInner() {
         <Controls />
         <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />
       </ReactFlow>
-      <MultiSelectBar
-        count={selectedCount}
-        onAlign={handleAlign}
-        onDistribute={handleDistribute}
-        onDelete={handleDeleteSelected}
-      />
       <ContextMenu state={menu} onClose={() => setMenu(null)} />
     </div>
   );
