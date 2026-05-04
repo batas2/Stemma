@@ -20,6 +20,7 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.SetElementAttributeOp), "SetElementAttribute")]
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.AddLinkOp), "AddLink")]
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.RemoveLinkOp), "RemoveLink")]
+[JsonDerivedType(typeof(Verso.Engine.ArchModel.SetLinkAttributeOp), "SetLinkAttribute")]
 public abstract record OperationBase(string OpId);
 
 public sealed record AddTypeOp(

@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import {
   Box, Boxes, Cuboid, Layers, Package, User, Server, Target, BookOpen,
   Search, Plus, Trash2, Eye, Edit3, Pencil, ChevronsLeft, ChevronsRight, Wand2, X,
+  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { newCustomView } from '@/lib/views';
-import type { ArchElementKind } from '@/lib/types';
+import type { ArchElement, ArchElementKind } from '@/lib/types';
 
 type Tab = 'elements' | 'views';
 
@@ -30,6 +31,20 @@ const elementIcon: Record<ArchElementKind, typeof Box> = {
   capability: BookOpen,
 };
 
+const elementLabel: Record<ArchElementKind, string> = {
+  module: 'Modules',
+  boundedContext: 'Bounded Contexts',
+  softwareSystem: 'Software Systems',
+  container: 'Containers',
+  person: 'People',
+  useCase: 'Use Cases',
+  capability: 'Capabilities',
+};
+
+const CATEGORY_ORDER: ArchElementKind[] = [
+  'boundedContext', 'module', 'softwareSystem', 'container', 'person', 'useCase', 'capability',
+];
+
 export function Sidebar() {
   const open = useApp((s) => s.sidebarOpen);
   const setOpen = useApp((s) => s.setSidebarOpen);
@@ -48,17 +63,40 @@ export function Sidebar() {
 
   const [tab, setTab] = useState<Tab>('elements');
   const [query, setQuery] = useState('');
+  const [collapsedCats, setCollapsedCats] = useState<Set<ArchElementKind>>(new Set());
 
   const activeView = customViews.find((v) => v.id === activeId);
 
-  const elements = useMemo(() => {
-    if (!arch) return [];
+  const groups = useMemo(() => {
+    const m = new Map<ArchElementKind, ArchElement[]>();
+    if (!arch) return m;
     const q = query.trim().toLowerCase();
-    return arch.elements
-      .filter((e) => !q || e.name.toLowerCase().includes(q) || e.kind.toLowerCase().includes(q))
-      .slice()
-      .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+    const filtered = arch.elements.filter((e) =>
+      !q || e.name.toLowerCase().includes(q) || e.kind.toLowerCase().includes(q)
+    );
+    for (const kind of CATEGORY_ORDER) {
+      const items = filtered
+        .filter((e) => e.kind === kind)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (items.length > 0) m.set(kind, items);
+    }
+    return m;
   }, [arch, query]);
+
+  const totalCount = useMemo(() => {
+    let n = 0;
+    for (const items of groups.values()) n += items.length;
+    return n;
+  }, [groups]);
+
+  function toggleCategory(kind: ArchElementKind) {
+    setCollapsedCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) next.delete(kind); else next.add(kind);
+      return next;
+    });
+  }
 
   function onPaletteDragStart(e: React.DragEvent, kind: ArchElementKind) {
     e.dataTransfer.setData('application/verso-palette', kind);
@@ -202,13 +240,13 @@ export function Sidebar() {
           </section>
 
           <section className="px-3 pt-4 pb-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Search className="w-3 h-3 text-zinc-500" />
+            <div className="flex items-center gap-2 mb-2 px-2 py-1 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 focus-within:border-indigo-400 dark:focus-within:border-indigo-500">
+              <Search className="w-3 h-3 text-zinc-500 shrink-0" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search elements"
-                className="flex-1 bg-transparent outline-none text-xs placeholder:text-zinc-500"
+                placeholder="Search…"
+                className="flex-1 bg-transparent outline-none text-xs placeholder:text-zinc-400 dark:placeholder:text-zinc-600 min-w-0"
               />
               {query && (
                 <button onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
@@ -217,46 +255,64 @@ export function Sidebar() {
               )}
             </div>
             <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">
-              Existing ({elements.length})
+              Existing ({totalCount})
             </div>
-            {elements.length === 0 && (
+            {totalCount === 0 && (
               <p className="text-xs text-zinc-500 px-1">{arch ? 'No elements yet.' : 'Open a workspace.'}</p>
             )}
-            <ul className="space-y-0.5">
-              {elements.map((e) => {
-                const Icon = elementIcon[e.kind] ?? Box;
-                const inActiveView = activeView ? activeView.elementIds.includes(e.id) : false;
+            <div className="space-y-2">
+              {Array.from(groups.entries()).map(([kind, items]) => {
+                const Icon = elementIcon[kind];
+                const collapsed = collapsedCats.has(kind);
                 return (
-                  <li
-                    key={e.id}
-                    draggable
-                    onDragStart={(ev) => onElementDragStart(ev, e.id)}
-                    title={`Drag to canvas${activeView ? ` to add to "${activeView.name}"` : ''}`}
-                    className={clsx(
-                      'group flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-grab active:cursor-grabbing transition-colors',
-                      inActiveView
-                        ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-200'
-                        : 'hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300'
+                  <div key={kind}>
+                    <button
+                      onClick={() => toggleCategory(kind)}
+                      className="w-full flex items-center gap-1 px-1 py-0.5 rounded text-[11px] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/40 dark:hover:bg-zinc-800/40"
+                    >
+                      {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      <Icon className="w-3 h-3 ml-0.5 text-zinc-500" />
+                      <span className="font-medium ml-0.5">{elementLabel[kind]}</span>
+                      <span className="ml-auto text-[10px] text-zinc-500">{items.length}</span>
+                    </button>
+                    {!collapsed && (
+                      <ul className="mt-0.5 ml-4 space-y-0.5">
+                        {items.map((e) => {
+                          const ElIcon = elementIcon[e.kind] ?? Box;
+                          const inActiveView = activeView ? activeView.elementIds.includes(e.id) : false;
+                          return (
+                            <li
+                              key={e.id}
+                              draggable
+                              onDragStart={(ev) => onElementDragStart(ev, e.id)}
+                              title={`Drag to canvas${activeView ? ` to add to "${activeView.name}"` : ''}`}
+                              className={clsx(
+                                'group flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-grab active:cursor-grabbing transition-colors',
+                                inActiveView
+                                  ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-200'
+                                  : 'hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300'
+                              )}
+                            >
+                              <ElIcon className="w-3 h-3 shrink-0 text-zinc-500" />
+                              <span className="flex-1 truncate">{e.name}</span>
+                              {inActiveView && (
+                                <button
+                                  onClick={(ev) => { ev.stopPropagation(); removeElementFromActiveView(e.id); }}
+                                  title="Remove from view"
+                                  className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-500"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
                     )}
-                  >
-                    <Icon className="w-3 h-3 shrink-0 text-zinc-500" />
-                    <span className="flex-1 truncate">{e.name}</span>
-                    <span className="text-[9px] uppercase tracking-wider text-zinc-500 hidden group-hover:inline">
-                      {e.kind}
-                    </span>
-                    {inActiveView && (
-                      <button
-                        onClick={(ev) => { ev.stopPropagation(); removeElementFromActiveView(e.id); }}
-                        title="Remove from view"
-                        className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-500"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </li>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           </section>
         </div>
       )}

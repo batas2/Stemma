@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { ArchModel, CustomView, Mode, ViewKind, WorkspaceModel } from './types';
 import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
+import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 
 export type Theme = 'dark' | 'light';
 
@@ -24,6 +25,9 @@ interface AppState {
   loading: boolean;
   selectedTypeId: string | null;
   selectedElementId: string | null;
+  selectedLinkId: string | null;
+  edgeStyles: Record<string, EdgeStyle>;
+  snapEnabled: boolean;
   toast: { kind: 'info' | 'error' | 'success'; text: string } | null;
   paletteOpen: boolean;
   setWorkspace: (ws: WorkspaceModel | null) => void;
@@ -43,6 +47,9 @@ interface AppState {
   setLoading: (b: boolean) => void;
   selectType: (id: string | null) => void;
   selectElement: (id: string | null) => void;
+  selectLink: (id: string | null) => void;
+  setEdgeStyleFor: (linkId: string, style: EdgeStyle) => void;
+  toggleSnap: () => void;
   setToast: (t: AppState['toast']) => void;
   setPaletteOpen: (b: boolean) => void;
 }
@@ -59,6 +66,9 @@ export const useApp = create<AppState>((set, get) => ({
   loading: false,
   selectedTypeId: null,
   selectedElementId: null,
+  selectedLinkId: null,
+  edgeStyles: {},
+  snapEnabled: typeof window !== 'undefined' && localStorage.getItem('verso.snap') === '1',
   toast: null,
   paletteOpen: false,
   setWorkspace: (ws) => {
@@ -66,9 +76,10 @@ export const useApp = create<AppState>((set, get) => ({
     if (ws) {
       const views = loadViews(ws.rootPath);
       const active = loadActiveView(ws.rootPath);
-      set({ customViews: views, activeCustomViewId: active });
+      const styles = loadEdgeStyles(ws.rootPath);
+      set({ customViews: views, activeCustomViewId: active, edgeStyles: styles });
     } else {
-      set({ customViews: [], activeCustomViewId: null });
+      set({ customViews: [], activeCustomViewId: null, edgeStyles: {} });
     }
   },
   setArch: (a) => set({ arch: a }),
@@ -137,7 +148,22 @@ export const useApp = create<AppState>((set, get) => ({
   },
   setLoading: (b) => set({ loading: b }),
   selectType: (id) => set({ selectedTypeId: id }),
-  selectElement: (id) => set({ selectedElementId: id }),
+  selectElement: (id) => set({ selectedElementId: id, selectedLinkId: null }),
+  selectLink: (id) => set({ selectedLinkId: id, selectedElementId: null }),
+  setEdgeStyleFor: (linkId, style) => {
+    const ws = get().workspace;
+    if (!ws) {
+      set((s) => ({ edgeStyles: { ...s.edgeStyles, [linkId]: style } }));
+      return;
+    }
+    const all = setEdgeStyle(ws.rootPath, linkId, style);
+    set({ edgeStyles: all });
+  },
+  toggleSnap: () => {
+    const next = !get().snapEnabled;
+    if (typeof window !== 'undefined') localStorage.setItem('verso.snap', next ? '1' : '0');
+    set({ snapEnabled: next });
+  },
   setToast: (t) => set({ toast: t }),
   setPaletteOpen: (b) => set({ paletteOpen: b }),
 }));

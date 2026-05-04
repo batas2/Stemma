@@ -146,6 +146,27 @@ public class ArchModelTests
     }
 
     [Fact]
+    public async Task SetLinkAttribute_updates_payload_and_preserves_endpoints()
+    {
+        await using var ws = await CreateAsync("""
+            var modA = new Module("mod_001", "A");
+            var modB = new Module("mod_002", "B");
+            var flow = new DataFlow("flow_001", "mod_001", "mod_002", "OldPayload");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var result = await engine.ApplyAsync(new SetLinkAttributeOp("op1", "flow_001", "payload", "NewPayload"));
+        if (result is Operations.OperationFailed f)
+            throw new Xunit.Sdk.XunitException($"Failed: {f.Reason} {f.Message}");
+        result.Should().BeOfType<Operations.OperationApplied>();
+
+        var newSource = await ws.ReadArchAsync();
+        newSource.Should().Contain("\"NewPayload\"");
+        newSource.Should().NotContain("\"OldPayload\"");
+        newSource.Should().Contain("\"mod_001\"");
+        newSource.Should().Contain("\"mod_002\"");
+    }
+
+    [Fact]
     public async Task Mermaid_module_map_groups_modules_under_context()
     {
         await using var ws = await CreateAsync("""

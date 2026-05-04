@@ -2,6 +2,7 @@ import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import {
   ReactFlow,
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
   type Node,
@@ -12,11 +13,18 @@ import {
   ReactFlowProvider,
   useReactFlow,
   type NodeMouseHandler,
+  type EdgeMouseHandler,
 } from '@xyflow/react';
 import { ArchNodeView } from './nodes/ArchNodeView';
+import { CanvasToolbar } from './CanvasToolbar';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { loadLayout, saveLayout, type SavedPosition } from '@/lib/layout';
+import {
+  layoutHierarchical, layoutForceDirected, alignSelected, distributeSelected,
+  type LayoutAlgorithm,
+} from '@/lib/autoLayout';
+import { dashArrayFor, DEFAULT_EDGE_STYLE } from '@/lib/edgeStyles';
 import type { ArchElement, ArchElementKind, ArchLink, ArchModel, ViewKind, CustomView } from '@/lib/types';
 
 const nodeTypes = { arch: ArchNodeView };
@@ -27,7 +35,6 @@ interface FilteredView {
 }
 
 function filterByView(arch: ArchModel, view: ViewKind, customView: CustomView | null): FilteredView {
-  // Custom view overrides — only elements explicitly added to it (then optionally narrowed by baseView).
   if (customView) {
     const inView = arch.elements.filter((e) => customView.elementIds.includes(e.id));
     let elements = inView;
@@ -76,62 +83,7 @@ function applyBuiltIn(arch: ArchModel, view: ViewKind): FilteredView {
 }
 
 function defaultPositions(elements: ArchElement[]): Record<string, SavedPosition> {
-  const ctxOf = new Map<string, ArchElement[]>();
-  const standalone: ArchElement[] = [];
-  for (const e of elements) {
-    const ctxId = e.attributes.contextId ?? null;
-    if (e.kind === 'module' && ctxId) {
-      if (!ctxOf.has(ctxId)) ctxOf.set(ctxId, []);
-      ctxOf.get(ctxId)!.push(e);
-    } else {
-      standalone.push(e);
-    }
-  }
-
-  const out: Record<string, SavedPosition> = {};
-  let yCursor = 40;
-  const COL_W = 240;
-  const ROW_H = 130;
-
-  let standaloneIdx = 0;
-  for (const e of standalone) {
-    if (e.kind === 'boundedContext') continue;
-    out[e.id] = { x: 40 + standaloneIdx * COL_W, y: yCursor };
-    standaloneIdx++;
-  }
-  if (standaloneIdx > 0) yCursor += ROW_H + 40;
-
-  for (const [ctxId, modules] of ctxOf) {
-    const ctx = elements.find((x) => x.id === ctxId);
-    if (ctx) out[ctx.id] = { x: 40, y: yCursor };
-    modules.forEach((m, i) => {
-      out[m.id] = { x: 320 + i * COL_W, y: yCursor };
-    });
-    yCursor += ROW_H + 60;
-  }
-
-  for (const e of elements.filter((x) => x.kind === 'boundedContext' && !ctxOf.has(x.id))) {
-    out[e.id] = { x: 40, y: yCursor };
-    yCursor += ROW_H;
-  }
-
-  return out;
-}
-
-function buildEdges(links: ArchLink[]): Edge[] {
-  return links.map((l) => {
-    const isDataFlow = l.kind === 'dataFlow';
-    const label = isDataFlow ? l.attributes.payload ?? '' : l.attributes.kind ?? 'uses';
-    return {
-      id: l.id,
-      source: l.fromId,
-      target: l.toId,
-      type: 'smoothstep',
-      label,
-      animated: !isDataFlow,
-      style: !isDataFlow ? { strokeDasharray: '4 4' } : undefined,
-    };
-  });
+  return layoutHierarchical(elements, []);
 }
 
 function CanvasInner() {
@@ -142,7 +94,10 @@ function CanvasInner() {
   const activeId = useApp((s) => s.activeCustomViewId);
   const workspace = useApp((s) => s.workspace);
   const theme = useApp((s) => s.theme);
+  const snapEnabled = useApp((s) => s.snapEnabled);
+  const edgeStyles = useApp((s) => s.edgeStyles);
   const select = useApp((s) => s.selectElement);
+  const selectLink = useApp((s) => s.selectLink);
   const setToast = useApp((s) => s.setToast);
   const addElementToActiveView = useApp((s) => s.addElementToActiveView);
   const { fitView, screenToFlowPosition } = useReactFlow();
@@ -155,7 +110,26 @@ function CanvasInner() {
     () => arch ? filterByView(arch, view, activeCustomView) : { elements: [], links: [] },
     [arch, view, activeCustomView]
   );
-  const edges = useMemo(() => buildEdges(filtered.links), [filtered.links]);
+
+  const edges = useMemo<Edge[]>(() => filtered.links.map((l) => {
+    const isDataFlow = l.kind === 'dataFlow';
+    const label = isDataFlow ? l.attributes.payload ?? '' : l.attributes.kind ?? 'uses';
+    const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
+    const dash = dashArrayFor(userStyle.lineStyle) ?? (isDataFlow ? undefined : '4 4');
+    return {
+      id: l.id,
+      source: l.fromId,
+      target: l.toId,
+      type: 'smoothstep',
+      label,
+      animated: !isDataFlow && userStyle.lineStyle === 'solid',
+      style: {
+        strokeWidth: userStyle.thickness,
+        strokeDasharray: dash,
+        stroke: userStyle.color,
+      },
+    };
+  }), [filtered.links, edgeStyles]);
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
@@ -190,20 +164,25 @@ function CanvasInner() {
     }
   }, [view, activeId, arch?.filePath, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const persistPositions = useCallback((next: Node[]) => {
+    if (!workspace) return;
+    const positions: Record<string, SavedPosition> = {};
+    for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
+    saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+  }, [workspace, layoutKey]);
+
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
       const next = applyNodeChanges(changes, current);
       const positionChanged = changes.some((c) => c.type === 'position' && c.position && !c.dragging);
-      if (positionChanged && workspace) {
-        const positions: Record<string, SavedPosition> = {};
-        for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
-        saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
-      }
+      if (positionChanged) persistPositions(next);
       return next;
     });
-  }, [workspace, layoutKey]);
+  }, [persistPositions]);
 
   const onNodeClick: NodeMouseHandler = (_, node) => select(node.id);
+  const onEdgeClick: EdgeMouseHandler = (_, edge) => selectLink(edge.id);
+  const onPaneClick = () => { select(null); selectLink(null); };
 
   const onConnect = async (params: { source: string | null; target: string | null }) => {
     if (mode === 'view') {
@@ -237,22 +216,14 @@ function CanvasInner() {
     const dropPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
 
     if (paletteKind) {
-      if (mode === 'view') {
-        setToast({ kind: 'info', text: 'Switch to Edit mode to add new elements.' });
-        return;
-      }
+      if (mode === 'view') { setToast({ kind: 'info', text: 'Switch to Edit mode to add new elements.' }); return; }
       const name = prompt(`Name for the new ${paletteKind}`)?.trim();
       if (!name) return;
       const result = await applyOperation({
         kind: 'AddElement', opId: `op_${Date.now()}`,
         elementKind: paletteKind, name,
       });
-      if ('reason' in result) {
-        setToast({ kind: 'error', text: `${result.reason}: ${result.message}` });
-        return;
-      }
-      // Find the newly created element after the snapshot refresh and place it at the drop position.
-      // Add to active custom view automatically if one is active.
+      if ('reason' in result) { setToast({ kind: 'error', text: `${result.reason}: ${result.message}` }); return; }
       setTimeout(() => {
         const fresh = useApp.getState().arch;
         if (!fresh) return;
@@ -284,12 +255,60 @@ function CanvasInner() {
     }
   }, [mode, screenToFlowPosition, setToast, activeCustomView, workspace, layoutKey, addElementToActiveView]);
 
+  const handleAutoLayout = useCallback((algo: LayoutAlgorithm) => {
+    setNodes((current) => {
+      const seed: Record<string, SavedPosition> = {};
+      for (const n of current) seed[n.id] = { x: n.position.x, y: n.position.y };
+      const fresh = algo === 'hierarchical'
+        ? layoutHierarchical(filtered.elements, filtered.links)
+        : layoutForceDirected(filtered.elements, filtered.links, seed);
+      const next = current.map((n) => ({ ...n, position: fresh[n.id] ?? n.position }));
+      persistPositions(next);
+      setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50);
+      return next;
+    });
+    setToast({ kind: 'success', text: `Applied ${algo === 'hierarchical' ? 'hierarchical' : 'force-directed'} layout` });
+  }, [filtered, persistPositions, fitView, setToast]);
+
+  const handleAlign = useCallback((axis: 'left' | 'right' | 'centerX' | 'top' | 'bottom' | 'centerY') => {
+    setNodes((current) => {
+      const selected = current.filter((n) => n.selected).map((n) => n.id);
+      if (selected.length < 2) return current;
+      const positions: Record<string, SavedPosition> = {};
+      for (const n of current) positions[n.id] = { x: n.position.x, y: n.position.y };
+      const aligned = alignSelected(positions, selected, axis);
+      const next = current.map((n) => ({ ...n, position: aligned[n.id] ?? n.position }));
+      persistPositions(next);
+      return next;
+    });
+  }, [persistPositions]);
+
+  const handleDistribute = useCallback((axis: 'horizontal' | 'vertical') => {
+    setNodes((current) => {
+      const selected = current.filter((n) => n.selected).map((n) => n.id);
+      if (selected.length < 3) return current;
+      const positions: Record<string, SavedPosition> = {};
+      for (const n of current) positions[n.id] = { x: n.position.x, y: n.position.y };
+      const distributed = distributeSelected(positions, selected, axis);
+      const next = current.map((n) => ({ ...n, position: distributed[n.id] ?? n.position }));
+      persistPositions(next);
+      return next;
+    });
+  }, [persistPositions]);
+
+  const selectedCount = nodes.filter((n) => n.selected).length;
   const isDark = theme === 'dark';
-  const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(250 250 250)';
-  const dotColor = isDark ? 'rgb(39 39 42)' : 'rgb(228 228 231)';
+  const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(248 250 252)';
+  const dotColor = isDark ? 'rgb(45 45 50)' : 'rgb(212 217 224)';
 
   return (
-    <div className="h-full w-full" style={{ background: bgColor }} ref={wrapperRef} onDragOver={onDragOver} onDrop={onDrop}>
+    <div className="h-full w-full relative" style={{ background: bgColor }} ref={wrapperRef} onDragOver={onDragOver} onDrop={onDrop}>
+      <CanvasToolbar
+        onAutoLayout={handleAutoLayout}
+        onAlign={handleAlign}
+        onDistribute={handleDistribute}
+        selectedCount={selectedCount}
+      />
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -298,13 +317,17 @@ function CanvasInner() {
         nodesDraggable={mode === 'edit' || activeCustomView !== null}
         nodesConnectable={mode === 'edit'}
         elementsSelectable
+        snapToGrid={snapEnabled}
+        snapGrid={[20, 20]}
         onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
+        onPaneClick={onPaneClick}
         onConnect={onConnect}
         proOptions={{ hideAttribution: true }}
         colorMode={isDark ? 'dark' : 'light'}
       >
-        <Background gap={24} size={1} color={dotColor} />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={dotColor} />
         <Controls />
         <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />
       </ReactFlow>

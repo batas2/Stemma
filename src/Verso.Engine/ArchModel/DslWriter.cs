@@ -42,6 +42,29 @@ public static class DslWriter
         return RemoveFromReturn(newRoot, varName);
     }
 
+    public static SyntaxNode SetLinkAttribute(SyntaxNode root, ArchLink updatedLink)
+    {
+        var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");
+        foreach (var stmt in build.Statements.OfType<LocalDeclarationStatementSyntax>())
+        {
+            foreach (var v in stmt.Declaration.Variables)
+            {
+                if (v.Initializer?.Value is not BaseObjectCreationExpressionSyntax oc) continue;
+                if (oc.ArgumentList is null || oc.ArgumentList.Arguments.Count == 0) continue;
+                if (!FirstArgIsLiteral(oc, updatedLink.Id)) continue;
+                var newStmt = BuildLocalForLink(updatedLink) as LocalDeclarationStatementSyntax;
+                if (newStmt is null) return root;
+                // Preserve the original variable name.
+                var origVarName = v.Identifier.Text;
+                var origDeclarator = newStmt.Declaration.Variables.First();
+                var renamedDeclarator = origDeclarator.WithIdentifier(SyntaxFactory.Identifier(origVarName));
+                var renamed = newStmt.WithDeclaration(newStmt.Declaration.WithVariables(SyntaxFactory.SingletonSeparatedList(renamedDeclarator)));
+                return root.ReplaceNode(stmt, renamed);
+            }
+        }
+        return root;
+    }
+
     public static SyntaxNode RenameElement(SyntaxNode root, string id, string newName)
     {
         var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");

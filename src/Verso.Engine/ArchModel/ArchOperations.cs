@@ -27,3 +27,5 @@ public sealed record AddLinkOp(
     string? Direction = null) : OperationBase(OpId);
 
 public sealed record RemoveLinkOp(string OpId, string LinkId) : OperationBase(OpId);
+
+public sealed record SetLinkAttributeOp(string OpId, string LinkId, string AttributeName, string? Value) : OperationBase(OpId);

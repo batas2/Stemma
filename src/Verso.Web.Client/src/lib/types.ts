@@ -45,7 +45,7 @@ export type OperationKind =
   | 'AddInheritance' | 'RemoveInheritance'
   | 'AddImplementation' | 'RemoveImplementation'
   | 'AddElement' | 'RenameElement' | 'RemoveElement'
-  | 'SetElementAttribute' | 'AddLink' | 'RemoveLink';
+  | 'SetElementAttribute' | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute';
 
 export type ArchElementKind =
   | 'module' | 'boundedContext' | 'softwareSystem'

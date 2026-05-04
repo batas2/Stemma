@@ -53,6 +53,7 @@ public sealed class VersoEngine : IAsyncDisposable
                 RemoveElementOp x => await RemoveArchElementAsync(x, ct),
                 AddLinkOp x => await AddArchLinkAsync(x, ct),
                 RemoveLinkOp x => await RemoveArchLinkAsync(x, ct),
+                SetLinkAttributeOp x => await SetLinkAttributeAsync(x, ct),
                 _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
             };
         }
@@ -567,6 +568,32 @@ public sealed class VersoEngine : IAsyncDisposable
 
         var link = new ArchModel.ArchLink(id, op.FromId, op.ToId, op.LinkKind, attrs);
         var newRoot = DslWriter.AddLink(root, link);
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> SetLinkAttributeAsync(SetLinkAttributeOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        var current = DslReader.TryRead(doc.FilePath!, root);
+        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
+
+        var link = current.Links.FirstOrDefault(l => l.Id == op.LinkId);
+        if (link is null) return new OperationFailed(op.OpId, "LinkNotFound", op.LinkId);
+
+        var attrs = new Dictionary<string, string?>(link.Attributes);
+        if (op.Value is null) attrs.Remove(op.AttributeName);
+        else attrs[op.AttributeName] = op.Value;
+
+        var updated = link with { Attributes = attrs };
+        var newRoot = DslWriter.SetLinkAttribute(root, updated);
+        if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "No change");
+
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
