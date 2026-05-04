@@ -136,9 +136,11 @@ public static class DslReader
 
     private static BlockSyntax? FindBuildMethodBody(SyntaxNode root)
     {
+        // Multi-file workspaces have additional `static class XxxArchitecture { Build() }` files;
+        // we accept any class that exposes a Build method body (the convention is: one class per
+        // file, each contributing a partial Model).
         foreach (var cls in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
         {
-            if (cls.Identifier.Text != "Architecture") continue;
             var build = cls.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(m => m.Identifier.Text == "Build");
             if (build?.Body is not null) return build.Body;
         }

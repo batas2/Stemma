@@ -11,6 +11,7 @@ import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
 import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation } from './lib/signalr';
 import { archModel, listViolations, snapshot } from './lib/api';
+import { primeLayoutSidecar } from './lib/layout';
 import { ViolationsPanel } from './components/ViolationsPanel';
 import { bindShortcuts } from './lib/shortcuts';
 
@@ -25,7 +26,12 @@ export default function App() {
 
   useEffect(() => {
     ensureConnection().catch(() => {});
-    snapshot().then((s) => { if (s) setWs(s); }).catch(() => {});
+    snapshot().then((s) => {
+      if (s) {
+        setWs(s);
+        primeLayoutSidecar(s.rootPath).catch(() => {});
+      }
+    }).catch(() => {});
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
     async function refresh() {
       const [s, a, v] = await Promise.all([
@@ -33,7 +39,10 @@ export default function App() {
         archModel().catch(() => null),
         listViolations().catch(() => []),
       ]);
-      if (s) setWs(s);
+      if (s) {
+        setWs(s);
+        primeLayoutSidecar(s.rootPath).catch(() => {});
+      }
       setArch(a);
       setViolations(v);
     }

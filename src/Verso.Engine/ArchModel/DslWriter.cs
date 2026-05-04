@@ -266,7 +266,6 @@ public static class DslWriter
     {
         foreach (var cls in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
         {
-            if (cls.Identifier.Text != "Architecture") continue;
             var build = cls.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(m => m.Identifier.Text == "Build");
             if (build?.Body is not null) return build.Body;
         }

@@ -19,6 +19,8 @@ public sealed class VersoEngine : IAsyncDisposable
     private readonly UndoStack _undo = new();
     private ExternalWatcher? _watcher;
     private ArchModel.ArchModel? _archBeforeOp;
+    private readonly Dictionary<string, DateTime> _lastSelfWriteAt = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan SelfWriteEchoWindow = TimeSpan.FromSeconds(1.5);
 
     public WorkspaceModel Model => _model;
     public string RootPath => _model.RootPath;
@@ -49,6 +51,13 @@ public sealed class VersoEngine : IAsyncDisposable
 
     private async void OnExternalChange(string path)
     {
+        // Suppress the engine's own write echo: file events that arrive shortly after Verso wrote
+        // the same file via TryApplyChanges are not user edits.
+        lock (_lastSelfWriteAt)
+        {
+            if (_lastSelfWriteAt.TryGetValue(path, out var ts) && DateTime.UtcNow - ts < SelfWriteEchoWindow)
+                return;
+        }
         await _gate.WaitAsync();
         try
         {
@@ -242,6 +251,14 @@ public sealed class VersoEngine : IAsyncDisposable
         foreach (var path in touchedPaths.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             backups[path] = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
+        }
+
+        // Mark touched paths as self-writes so the file watcher's echo doesn't trigger a
+        // spurious ExternalChange round-trip when MSBuildWorkspace persists the new content.
+        lock (_lastSelfWriteAt)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var path in touchedPaths) _lastSelfWriteAt[path] = now;
         }
 
         if (!_workspace.TryApplyChanges(newSolution))
@@ -598,8 +615,8 @@ public sealed class VersoEngine : IAsyncDisposable
     // ----- Architecture-model surface (Spike 02) -----
 
     /// <summary>
-    /// Locate the document whose root contains a `static class Architecture { Build() {...} }`.
-    /// Returns null if the workspace is not a model workspace (i.e. has no Architecture/).
+    /// Locate the primary document whose root contains a `static class Architecture { Build() {...} }`.
+    /// Returns null if the workspace is not a model workspace.
     /// </summary>
     public Document? FindArchitectureDocument()
     {
@@ -620,14 +637,120 @@ public sealed class VersoEngine : IAsyncDisposable
         return null;
     }
 
+    /// <summary>
+    /// Returns every document under the workspace's `Architecture/` folder that contains a
+    /// `static class XYZ { Build(...) }` method body. Order: primary `Architecture` class first,
+    /// then alphabetical by file path.
+    /// </summary>
+    public IReadOnlyList<Document> FindArchitectureDocuments()
+    {
+        var matches = new List<Document>();
+        foreach (var project in _workspace.CurrentSolution.Projects)
+        {
+            foreach (var doc in project.Documents)
+            {
+                if (doc.FilePath is null) continue;
+                if (!doc.FilePath.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) continue;
+                var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
+                if (root is null) continue;
+                var hasBuild = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
+                    .Any(c => c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build"));
+                if (hasBuild) matches.Add(doc);
+            }
+        }
+        return matches
+            .OrderBy(d => d.FilePath!.EndsWith("Architecture.cs", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(d => d.FilePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public async Task<ArchModel.ArchModel?> ReadArchModelAsync(CancellationToken ct = default)
     {
-        var doc = FindArchitectureDocument();
-        if (doc is null) return null;
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return null;
-        return DslReader.TryRead(doc.FilePath!, root);
+        var docs = FindArchitectureDocuments();
+        if (docs.Count == 0) return null;
+        if (docs.Count == 1)
+        {
+            var root = await docs[0].GetSyntaxRootAsync(ct);
+            if (root is null) return null;
+            return DslReader.TryRead(docs[0].FilePath!, root);
+        }
+        // Merge multi-file model: aggregate elements/links/tags from every file.
+        var elements = new List<ArchModel.ArchElement>();
+        var links = new List<ArchModel.ArchLink>();
+        var tags = new List<ArchModel.ArchTag>();
+        var seen = new HashSet<string>();
+        var primaryPath = docs[0].FilePath ?? "Architecture.cs";
+        foreach (var doc in docs)
+        {
+            var root = await doc.GetSyntaxRootAsync(ct);
+            if (root is null) continue;
+            var partial = DslReader.TryRead(doc.FilePath!, root);
+            if (partial is null) continue;
+            foreach (var e in partial.Elements) if (seen.Add($"e:{e.Id}")) elements.Add(e);
+            foreach (var l in partial.Links) if (seen.Add($"l:{l.Id}")) links.Add(l);
+            foreach (var t in partial.Tags) tags.Add(t);
+        }
+        return new ArchModel.ArchModel(primaryPath, elements, links, tags);
     }
+
+    /// <summary>
+    /// Find the document that declares the given element/link id, falling back to the primary
+    /// Architecture document if the id is not yet present (i.e. for AddElement / AddLink ops).
+    /// </summary>
+    public Document? FindDocumentForId(string id)
+    {
+        foreach (var doc in FindArchitectureDocuments())
+        {
+            var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            if (root is null) continue;
+            var hit = root.DescendantNodes().OfType<LocalDeclarationStatementSyntax>()
+                .Any(s => s.Declaration.Variables.Any(v =>
+                    v.Initializer?.Value is BaseObjectCreationExpressionSyntax oc
+                    && oc.ArgumentList?.Arguments.Count > 0
+                    && oc.ArgumentList.Arguments[0].Expression is LiteralExpressionSyntax lit
+                    && lit.Token.ValueText == id));
+            if (hit) return doc;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Snapshot every document's filepath + syntax root in the workspace. Used by adapters
+    /// (Views, Decisions) that scan files outside the Architecture/ folder.
+    /// </summary>
+    public async Task<IReadOnlyList<(string FilePath, SyntaxNode Root)>> CollectAllDocumentsAsync(CancellationToken ct = default)
+    {
+        var result = new List<(string, SyntaxNode)>();
+        foreach (var project in _workspace.CurrentSolution.Projects)
+        {
+            foreach (var doc in project.Documents)
+            {
+                if (doc.FilePath is null) continue;
+                var root = await doc.GetSyntaxRootAsync(ct);
+                if (root is null) continue;
+                result.Add((doc.FilePath, root));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Best-effort namespace name to use for new files (Views, etc.). Picks the namespace of
+    /// the primary Architecture file; falls back to the project name; last resort "Architecture".
+    /// </summary>
+    public string NamespaceForViews()
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
+        var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
+        if (root is null) return _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
+        var fsns = root.DescendantNodes().OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
+        if (fsns is not null) return fsns.Name.ToString();
+        var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
+        return ns?.Name.ToString() ?? _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
+    }
+
+    public IEnumerable<Project> AllProjects() => _workspace.CurrentSolution.Projects;
 
     public async Task<IReadOnlyList<Violation>> RunValidationAsync(CancellationToken ct = default)
     {
@@ -644,7 +767,8 @@ public sealed class VersoEngine : IAsyncDisposable
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse Architecture file");
 
-        var current = DslReader.TryRead(doc.FilePath!, root);
+        // Read merged model so generated id avoids collisions across multi-file workspaces.
+        var current = await ReadArchModelAsync(ct) ?? DslReader.TryRead(doc.FilePath!, root);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Architecture.Build() body not found");
 
         var id = GenerateId(op.ElementKind, current);
@@ -664,7 +788,7 @@ public sealed class VersoEngine : IAsyncDisposable
 
     private async Task<OperationResult> RenameArchElementAsync(RenameElementOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = FindDocumentForId(op.ElementId) ?? FindArchitectureDocument();
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture/Architecture.cs found");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
@@ -680,7 +804,7 @@ public sealed class VersoEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveArchElementAsync(RemoveElementOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = FindDocumentForId(op.ElementId) ?? FindArchitectureDocument();
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
@@ -724,11 +848,11 @@ public sealed class VersoEngine : IAsyncDisposable
 
     private async Task<OperationResult> SetLinkAttributeAsync(SetLinkAttributeOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = FindDocumentForId(op.LinkId) ?? FindArchitectureDocument();
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var current = DslReader.TryRead(doc.FilePath!, root);
+        var current = await ReadArchModelAsync(ct);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
 
         var link = current.Links.FirstOrDefault(l => l.Id == op.LinkId);
@@ -750,7 +874,7 @@ public sealed class VersoEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveArchLinkAsync(RemoveLinkOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = FindDocumentForId(op.LinkId) ?? FindArchitectureDocument();
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
@@ -805,11 +929,11 @@ public sealed class VersoEngine : IAsyncDisposable
 
     private async Task<OperationResult> SetLifecycleAsync(SetLifecycleOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = FindDocumentForId(op.TargetId) ?? FindArchitectureDocument();
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var current = DslReader.TryRead(doc.FilePath!, root);
+        var current = await ReadArchModelAsync(ct);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
         var existingTag = current.Tags.FirstOrDefault(t => t.TargetId == op.TargetId);
         var existingOwnership = existingTag?.Ownership;
@@ -830,11 +954,11 @@ public sealed class VersoEngine : IAsyncDisposable
 
     private async Task<OperationResult> SetOwnershipAsync(SetOwnershipOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = FindDocumentForId(op.TargetId) ?? FindArchitectureDocument();
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var current = DslReader.TryRead(doc.FilePath!, root);
+        var current = await ReadArchModelAsync(ct);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
         var existingTag = current.Tags.FirstOrDefault(t => t.TargetId == op.TargetId);
         var existingLifecycle = existingTag?.Lifecycle;

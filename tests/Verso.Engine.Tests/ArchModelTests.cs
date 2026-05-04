@@ -322,6 +322,147 @@ public class ArchModelTests
     }
 
     [Fact]
+    public async Task MultiFile_reader_aggregates_elements_across_files()
+    {
+        var modelProj = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Verso.Model", "Verso.Model.csproj"));
+        var csproj = $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+                <Nullable>enable</Nullable>
+                <ImplicitUsings>enable</ImplicitUsings>
+                <LangVersion>latest</LangVersion>
+              </PropertyGroup>
+              <ItemGroup>
+                <ProjectReference Include="{modelProj}" />
+              </ItemGroup>
+            </Project>
+            """;
+        var primary = """
+            using Verso.Model;
+            namespace Sample;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var ctx = new BoundedContext("ctx_001", "Buyer");
+                    var modA = new Module("mod_001", "A", "ctx_001");
+                    return Model.Of(ctx, modA);
+                }
+            }
+            """;
+        var secondary = """
+            using Verso.Model;
+            namespace Sample;
+            public static class FlowsArchitecture
+            {
+                public static Model Build()
+                {
+                    var modB = new Module("mod_002", "B", "ctx_001");
+                    var f = new DataFlow("flow_001", "mod_001", "mod_002", "Event");
+                    return Model.Of(modB, f);
+                }
+            }
+            """;
+        var root = Path.Combine(Path.GetTempPath(), $"verso-multi-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "Architecture"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), csproj);
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"), primary);
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Flows.cs"), secondary);
+        try
+        {
+            await using var engine = await VersoEngine.OpenAsync(root);
+            var arch = await engine.ReadArchModelAsync();
+            arch.Should().NotBeNull();
+            arch!.Elements.Should().Contain(e => e.Id == "mod_001");
+            arch.Elements.Should().Contain(e => e.Id == "mod_002");
+            arch.Links.Should().Contain(l => l.Id == "flow_001");
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch { } }
+    }
+
+    [Fact]
+    public async Task MultiFile_writer_routes_op_to_correct_file()
+    {
+        var modelProj = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Verso.Model", "Verso.Model.csproj"));
+        var csproj = $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net8.0</TargetFramework>
+                <Nullable>enable</Nullable>
+                <ImplicitUsings>enable</ImplicitUsings>
+                <LangVersion>latest</LangVersion>
+              </PropertyGroup>
+              <ItemGroup>
+                <ProjectReference Include="{modelProj}" />
+              </ItemGroup>
+            </Project>
+            """;
+        var primary = """
+            using Verso.Model;
+            namespace Sample;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var ctx = new BoundedContext("ctx_001", "Buyer");
+                    return Model.Of(ctx);
+                }
+            }
+            """;
+        var secondary = """
+            using Verso.Model;
+            namespace Sample;
+            public static class ModulesArchitecture
+            {
+                public static Model Build()
+                {
+                    var modA = new Module("mod_001", "A", "ctx_001");
+                    return Model.Of(modA);
+                }
+            }
+            """;
+        var root = Path.Combine(Path.GetTempPath(), $"verso-multi-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "Architecture"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.csproj"), csproj);
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"), primary);
+        var modulesPath = Path.Combine(root, "Architecture", "Modules.cs");
+        await File.WriteAllTextAsync(modulesPath, secondary);
+        try
+        {
+            await using var engine = await VersoEngine.OpenAsync(root);
+            var result = await engine.ApplyAsync(new RenameElementOp("op1", "mod_001", "Onboarding"));
+            if (result is Operations.OperationFailed f) throw new Xunit.Sdk.XunitException($"{f.Reason} {f.Message}");
+
+            var primaryAfter = await File.ReadAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"));
+            var secondaryAfter = await File.ReadAllTextAsync(modulesPath);
+            primaryAfter.Should().NotContain("\"Onboarding\"");
+            secondaryAfter.Should().Contain("\"Onboarding\"");
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch { } }
+    }
+
+    [Fact]
+    public async Task ViewsAdapter_round_trips_a_view_definition()
+    {
+        var view = new ArchView("view_abc", "Buyer Journey", "moduleMap", new[] { "mod_001", "mod_002" });
+        var (path, content) = ViewsAdapter.Render("/tmp", "Sample", view);
+        path.Should().EndWith(Path.Combine("Views", "BuyerJourney.cs"));
+        content.Should().Contain("public static class BuyerJourney");
+        content.Should().Contain("Id: \"view_abc\"");
+        content.Should().Contain("\"mod_001\"");
+
+        // Round-trip: parse the rendered C# and recover the view.
+        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content);
+        var roundTripped = ViewsAdapter.ReadAllFrom(new[] { ("/tmp/Views/BuyerJourney.cs", (Microsoft.CodeAnalysis.SyntaxNode)tree.GetRoot()) });
+        roundTripped.Should().HaveCount(1);
+        roundTripped[0].Id.Should().Be("view_abc");
+        roundTripped[0].Name.Should().Be("Buyer Journey");
+        roundTripped[0].BaseView.Should().Be("moduleMap");
+        roundTripped[0].ElementIds.Should().BeEquivalentTo(new[] { "mod_001", "mod_002" });
+    }
+
+    [Fact]
     public async Task DrawioExporter_emits_valid_mxgraph_xml()
     {
         await using var ws = await CreateAsync("""

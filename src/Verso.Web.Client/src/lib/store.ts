@@ -3,6 +3,7 @@ import type { ArchModel, CustomView, Mode, ViewKind, Violation, WorkspaceModel }
 import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
+import { saveServerView, deleteServerView, listServerViews } from './api';
 
 export type Theme = 'dark' | 'light';
 
@@ -89,6 +90,17 @@ export const useApp = create<AppState>((set, get) => ({
       const eStyles = loadEdgeStyles(ws.rootPath);
       const nStyles = loadNodeStyles(ws.rootPath);
       set({ customViews: views, activeCustomViewId: active, edgeStyles: eStyles, nodeStyles: nStyles });
+      // Merge in source-stored views (Views/<Name>.cs). Server-side wins on conflict so the
+      // checked-in code is canonical.
+      listServerViews().then((server) => {
+        if (server.length === 0) return;
+        const merged = [
+          ...server.map((s) => ({ id: s.id, name: s.name, baseView: s.baseView as 'all', elementIds: s.elementIds, createdAt: new Date().toISOString() })),
+          ...views.filter((v) => !server.some((s) => s.id === v.id)),
+        ];
+        set({ customViews: merged });
+        saveViews(ws.rootPath, merged);
+      }).catch(() => {});
     } else {
       set({ customViews: [], activeCustomViewId: null, edgeStyles: {}, nodeStyles: {} });
     }
@@ -109,6 +121,8 @@ export const useApp = create<AppState>((set, get) => ({
     set({ customViews: next });
     const ws = get().workspace;
     if (ws) saveViews(ws.rootPath, next);
+    // Mirror to source as Views/<Name>.cs (best-effort; localStorage stays the in-flight cache).
+    saveServerView({ id: v.id, name: v.name, baseView: v.baseView, elementIds: v.elementIds }).catch(() => {});
   },
   removeCustomView: (id) => {
     const next = get().customViews.filter((v) => v.id !== id);
@@ -119,6 +133,7 @@ export const useApp = create<AppState>((set, get) => ({
       saveViews(ws.rootPath, next);
       if (get().activeCustomViewId === id) saveActiveView(ws.rootPath, null);
     }
+    deleteServerView(id).catch(() => {});
   },
   setActiveCustomView: (id) => {
     set({ activeCustomViewId: id, selectedElementId: null });
@@ -135,6 +150,8 @@ export const useApp = create<AppState>((set, get) => ({
     );
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
+    const updated = next.find((v) => v.id === activeCustomViewId);
+    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds }).catch(() => {});
   },
   removeElementFromActiveView: (elementId) => {
     const { activeCustomViewId, customViews, workspace } = get();
@@ -146,6 +163,8 @@ export const useApp = create<AppState>((set, get) => ({
     );
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
+    const updated = next.find((v) => v.id === activeCustomViewId);
+    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds }).catch(() => {});
   },
   setSidebarOpen: (b) => set({ sidebarOpen: b }),
   setTheme: (t) => {

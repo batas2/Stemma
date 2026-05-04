@@ -58,6 +58,17 @@ public sealed record Ownership(
     IReadOnlyList<string>? Decide = null);
 
 /// <summary>
+/// A user-defined view: a named subset of the canonical model with an optional base lens
+/// (`c4Context`, `moduleMap`, `dependencyGraph`, or `all`). Encoded as `Views/<Name>.cs`
+/// files in the workspace.
+/// </summary>
+public sealed record View(
+    string Id,
+    string Name,
+    string BaseView,
+    IReadOnlyList<string> ElementIds);
+
+/// <summary>
 /// A tag attaches a Lifecycle and/or Ownership to an existing element or link by id.
 /// Encoded in the DSL as `Tag.For(elem, lifecycle: ..., ownership: ...)` calls.
 /// </summary>

@@ -165,6 +165,64 @@ workspaceApi.MapGet("/export/drawio", async (EngineHost host, CancellationToken 
     return Results.Text(xml, "application/xml");
 });
 
+workspaceApi.MapGet("/views", async (EngineHost host, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var viewsDir = Path.Combine(engine.RootPath, "Views");
+    if (!Directory.Exists(viewsDir)) return Results.Ok(Array.Empty<ArchView>());
+    var docs = new List<(string, Microsoft.CodeAnalysis.SyntaxNode)>();
+    foreach (var path in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
+    {
+        var content = await File.ReadAllTextAsync(path, ct);
+        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content);
+        docs.Add((path, tree.GetRoot()));
+    }
+    return Results.Ok(ViewsAdapter.ReadAllFrom(docs));
+});
+
+workspaceApi.MapPut("/views", async (ArchView view, EngineHost host, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+    var ns = engine.NamespaceForViews();
+    var (path, content) = ViewsAdapter.Render(engine.RootPath, ns, view);
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    // Remove any existing file for this view id first (in case the name changed).
+    var viewsDir = Path.GetDirectoryName(path)!;
+    if (Directory.Exists(viewsDir))
+    {
+        foreach (var existing in Directory.EnumerateFiles(viewsDir, "*.cs"))
+        {
+            if (existing == path) continue;
+            try
+            {
+                var existingContent = await File.ReadAllTextAsync(existing, ct);
+                if (existingContent.Contains($"\"{view.Id}\"")) File.Delete(existing);
+            }
+            catch { /* ignore */ }
+        }
+    }
+    await File.WriteAllTextAsync(path, content, ct);
+    return Results.NoContent();
+});
+
+workspaceApi.MapDelete("/views/{viewId}", async (string viewId, EngineHost host, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+    var viewsDir = Path.Combine(engine.RootPath, "Views");
+    if (!Directory.Exists(viewsDir)) return Results.NotFound();
+    foreach (var filePath in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
+    {
+        var content = await File.ReadAllTextAsync(filePath, ct);
+        if (!content.Contains($"\"{viewId}\"")) continue;
+        File.Delete(filePath);
+        return Results.NoContent();
+    }
+    return Results.NotFound();
+});
+
 workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
 
 workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
