@@ -676,18 +676,37 @@ function CanvasInner() {
     setToast({ kind: 'success', text: `Applied ${algo === 'hierarchical' ? 'hierarchical' : 'force-directed'} layout` });
   }, [filtered, persistPositions, fitView, setToast]);
 
+  // Build a per-node bounds map. Width / height come from the rendered DOM
+  // size (`measured`), falling back to any explicit style override (set when
+  // the user resized the node), then to a kind-specific default. Without
+  // dimensions, "Align right" would just align left edges and "Center"
+  // would only look right when every box is the same width.
+  const nodeBounds = useCallback((list: Node[]): Record<string, { x: number; y: number; w: number; h: number }> => {
+    const out: Record<string, { x: number; y: number; w: number; h: number }> = {};
+    for (const n of list) {
+      const measured = (n as { measured?: { width?: number; height?: number } }).measured;
+      const styleW = (n.style as React.CSSProperties | undefined)?.width;
+      const styleH = (n.style as React.CSSProperties | undefined)?.height;
+      const elKind = (n.data as { element?: { kind?: string } })?.element?.kind;
+      const defaultW = elKind === 'person' ? 140 : 220;
+      const defaultH = elKind === 'person' ? 44 : 100;
+      const w = (typeof styleW === 'number' ? styleW : measured?.width) ?? defaultW;
+      const h = (typeof styleH === 'number' ? styleH : measured?.height) ?? defaultH;
+      out[n.id] = { x: n.position.x, y: n.position.y, w, h };
+    }
+    return out;
+  }, []);
+
   const handleAlign = useCallback((axis: 'left' | 'right' | 'centerX' | 'top' | 'bottom' | 'centerY') => {
     setNodes((current) => {
       const selected = current.filter((n) => n.selected).map((n) => n.id);
       if (selected.length < 2) return current;
-      const positions: Record<string, SavedPosition> = {};
-      for (const n of current) positions[n.id] = { x: n.position.x, y: n.position.y };
-      const aligned = alignSelected(positions, selected, axis);
+      const aligned = alignSelected(nodeBounds(current), selected, axis);
       const next = current.map((n) => ({ ...n, position: aligned[n.id] ?? n.position }));
       persistPositions(next);
       return next;
     });
-  }, [persistPositions]);
+  }, [persistPositions, nodeBounds]);
 
   const handleFitSelection = useCallback(() => {
     const selected = nodes.filter((n) => n.selected);
@@ -729,14 +748,12 @@ function CanvasInner() {
     setNodes((current) => {
       const selected = current.filter((n) => n.selected).map((n) => n.id);
       if (selected.length < 3) return current;
-      const positions: Record<string, SavedPosition> = {};
-      for (const n of current) positions[n.id] = { x: n.position.x, y: n.position.y };
-      const distributed = distributeSelected(positions, selected, axis);
+      const distributed = distributeSelected(nodeBounds(current), selected, axis);
       const next = current.map((n) => ({ ...n, position: distributed[n.id] ?? n.position }));
       persistPositions(next);
       return next;
     });
-  }, [persistPositions]);
+  }, [persistPositions, nodeBounds]);
 
   // Q114: derive backdrop nodes for Bounded Contexts that contain modules in the
   // current view. We render them as non-selectable nodes with a lower z so the
