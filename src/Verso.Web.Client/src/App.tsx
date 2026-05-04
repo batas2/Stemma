@@ -11,7 +11,9 @@ import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
 import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation } from './lib/signalr';
 import { archModel, listViolations, snapshot } from './lib/api';
-import { primeLayoutSidecar } from './lib/layout';
+import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
+import { layoutUndo } from './lib/layoutUndo';
+import type { ViewKind } from './lib/types';
 import { ViolationsPanel } from './components/ViolationsPanel';
 import { bindShortcuts } from './lib/shortcuts';
 
@@ -52,11 +54,46 @@ export default function App() {
   }, [setWs, setArch, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
+
+  function applyLayoutEntry(entry: { workspaceRoot: string; viewKey: string; positions: Record<string, { x: number; y: number }> }) {
+    // Merge into existing layout for the view, then write back through the layout module
+    // so localStorage and the verso.layout.json sidecar stay in sync.
+    const current = loadLayout(entry.workspaceRoot, entry.viewKey as ViewKind);
+    const merged = { ...current, ...entry.positions };
+    saveLayout(entry.workspaceRoot, entry.viewKey as ViewKind, merged);
+    // Notify the canvas to refresh by emitting a synthetic storage event; ArchCanvas listens
+    // to view changes and re-reads layout when it's the active key.
+    window.dispatchEvent(new CustomEvent('verso:layout-changed', { detail: { viewKey: entry.viewKey } }));
+  }
+
+  function tryLayoutUndo(): boolean {
+    const entry = layoutUndo.popUndo();
+    if (!entry) return false;
+    applyLayoutEntry({ workspaceRoot: entry.workspaceRoot, viewKey: entry.viewKey, positions: entry.before });
+    return true;
+  }
+
+  function tryLayoutRedo(): boolean {
+    const entry = layoutUndo.popRedo();
+    if (!entry) return false;
+    applyLayoutEntry({ workspaceRoot: entry.workspaceRoot, viewKey: entry.viewKey, positions: entry.after });
+    return true;
+  }
+
   useEffect(() => {
     return bindShortcuts([
-      { key: 'z', primary: true, description: 'Undo', handler: () => undoOperation().catch(() => {}) },
-      { key: 'z', primary: true, shift: true, description: 'Redo', handler: () => redoOperation().catch(() => {}) },
-      { key: 'y', primary: true, description: 'Redo', handler: () => redoOperation().catch(() => {}) },
+      {
+        key: 'z', primary: true, description: 'Undo',
+        handler: () => { if (!tryLayoutUndo()) undoOperation().catch(() => {}); },
+      },
+      {
+        key: 'z', primary: true, shift: true, description: 'Redo',
+        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(() => {}); },
+      },
+      {
+        key: 'y', primary: true, description: 'Redo',
+        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(() => {}); },
+      },
       { key: 'k', primary: true, description: 'Command palette', handler: () => setPaletteOpen(true) },
     ]);
   }, [setPaletteOpen]);

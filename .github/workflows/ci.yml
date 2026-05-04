@@ -39,5 +39,7 @@ jobs:
           cache-dependency-path: src/Verso.Web.Client/package-lock.json
       - name: Install
         run: npm ci --no-fund --no-audit
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build

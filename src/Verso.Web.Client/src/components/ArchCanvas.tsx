@@ -16,10 +16,12 @@ import {
   type EdgeMouseHandler,
 } from '@xyflow/react';
 import { ArchNodeView } from './nodes/ArchNodeView';
+import { WaypointEdge } from './edges/WaypointEdge';
 import { CanvasToolbar } from './CanvasToolbar';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
-import { loadLayout, saveLayout, type SavedPosition } from '@/lib/layout';
+import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, type SavedPosition } from '@/lib/layout';
+import { layoutUndo, diffPositions, isEmptyDiff } from '@/lib/layoutUndo';
 import {
   layoutHierarchical, layoutForceDirected, alignSelected, distributeSelected,
   type LayoutAlgorithm,
@@ -28,6 +30,7 @@ import { dashArrayFor, DEFAULT_EDGE_STYLE } from '@/lib/edgeStyles';
 import type { ArchElement, ArchElementKind, ArchLink, ArchModel, ViewKind, CustomView } from '@/lib/types';
 
 const nodeTypes = { arch: ArchNodeView };
+const edgeTypes = { waypointed: WaypointEdge };
 
 interface FilteredView {
   elements: ArchElement[];
@@ -113,25 +116,63 @@ function CanvasInner() {
     [arch, view, activeCustomView]
   );
 
+  const [edgeWaypoints, setEdgeWaypoints] = useState<Record<string, SavedPosition[]>>({});
+  useEffect(() => {
+    if (!workspace) { setEdgeWaypoints({}); return; }
+    setEdgeWaypoints(loadEdgeWaypoints(workspace.rootPath, layoutKey as ViewKind));
+    function refresh() {
+      if (!workspace) return;
+      setEdgeWaypoints(loadEdgeWaypoints(workspace.rootPath, layoutKey as ViewKind));
+    }
+    window.addEventListener('verso:layout-changed', refresh);
+    return () => window.removeEventListener('verso:layout-changed', refresh);
+  }, [workspace, layoutKey, view, activeId]);
+
+  const handleAddWaypoint = useCallback((edgeId: string, point: SavedPosition) => {
+    if (!workspace) return;
+    setEdgeWaypoints((prev) => {
+      const current = prev[edgeId] ?? [];
+      const next = [...current, point];
+      saveEdgeWaypoints(workspace.rootPath, layoutKey as ViewKind, edgeId, next);
+      return { ...prev, [edgeId]: next };
+    });
+  }, [workspace, layoutKey]);
+
+  const handleRemoveWaypoint = useCallback((edgeId: string, index: number) => {
+    if (!workspace) return;
+    setEdgeWaypoints((prev) => {
+      const current = prev[edgeId] ?? [];
+      const next = current.filter((_, i) => i !== index);
+      saveEdgeWaypoints(workspace.rootPath, layoutKey as ViewKind, edgeId, next);
+      return { ...prev, [edgeId]: next };
+    });
+  }, [workspace, layoutKey]);
+
   const edges = useMemo<Edge[]>(() => filtered.links.map((l) => {
     const isDataFlow = l.kind === 'dataFlow';
     const label = isDataFlow ? l.attributes.payload ?? '' : l.attributes.kind ?? 'uses';
     const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
     const dash = dashArrayFor(userStyle.lineStyle) ?? (isDataFlow ? undefined : '4 4');
+    const waypoints = edgeWaypoints[l.id];
     return {
       id: l.id,
       source: l.fromId,
       target: l.toId,
-      type: 'smoothstep',
+      type: 'waypointed',
       label,
-      animated: !isDataFlow && userStyle.lineStyle === 'solid',
+      animated: !isDataFlow && userStyle.lineStyle === 'solid' && (!waypoints || waypoints.length === 0),
       style: {
         strokeWidth: userStyle.thickness,
         strokeDasharray: dash,
         stroke: userStyle.color,
       },
+      data: {
+        waypoints,
+        onAddWaypoint: handleAddWaypoint,
+        onRemoveWaypoint: handleRemoveWaypoint,
+      },
     };
-  }), [filtered.links, edgeStyles]);
+  }), [filtered.links, edgeStyles, edgeWaypoints, handleAddWaypoint, handleRemoveWaypoint]);
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
@@ -176,6 +217,17 @@ function CanvasInner() {
     }
   }, [view, activeId, arch?.filePath, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-read layout when an external event (layout undo/redo) signals it changed.
+  useEffect(() => {
+    function refreshFromLayout() {
+      if (!workspace) return;
+      const fresh = loadLayout(workspace.rootPath, layoutKey as ViewKind);
+      setNodes((current) => current.map((n) => fresh[n.id] ? { ...n, position: fresh[n.id] } : n));
+    }
+    window.addEventListener('verso:layout-changed', refreshFromLayout);
+    return () => window.removeEventListener('verso:layout-changed', refreshFromLayout);
+  }, [workspace, layoutKey]);
+
   const persistPositions = useCallback((next: Node[]) => {
     if (!workspace) return;
     const positions: Record<string, SavedPosition> = {};
@@ -183,14 +235,43 @@ function CanvasInner() {
     saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
   }, [workspace, layoutKey]);
 
+  const dragStartPositions = useRef<Record<string, SavedPosition> | null>(null);
+
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
+      // Capture pre-drag positions on the first `dragging: true` change of a session.
+      const startedDragging = changes.some((c) => c.type === 'position' && c.dragging);
+      if (startedDragging && dragStartPositions.current === null) {
+        const snap: Record<string, SavedPosition> = {};
+        for (const n of current) snap[n.id] = { x: n.position.x, y: n.position.y };
+        dragStartPositions.current = snap;
+      }
+
       const next = applyNodeChanges(changes, current);
-      const positionChanged = changes.some((c) => c.type === 'position' && c.position && !c.dragging);
-      if (positionChanged) persistPositions(next);
+      const positionEnded = changes.some((c) => c.type === 'position' && c.position && !c.dragging);
+      if (positionEnded) {
+        persistPositions(next);
+        if (workspace && dragStartPositions.current) {
+          const after: Record<string, SavedPosition> = {};
+          for (const n of next) after[n.id] = { x: n.position.x, y: n.position.y };
+          const diff = diffPositions(dragStartPositions.current, after);
+          if (!isEmptyDiff(diff)) {
+            const movedCount = Object.keys(diff.after).length;
+            layoutUndo.push({
+              workspaceRoot: workspace.rootPath,
+              viewKey: String(layoutKey),
+              before: diff.before,
+              after: diff.after,
+              description: movedCount === 1 ? 'Move node' : `Move ${movedCount} nodes`,
+              ts: Date.now(),
+            });
+          }
+          dragStartPositions.current = null;
+        }
+      }
       return next;
     });
-  }, [persistPositions]);
+  }, [persistPositions, workspace, layoutKey]);
 
   const onNodeClick: NodeMouseHandler = (_, node) => select(node.id);
   const onEdgeClick: EdgeMouseHandler = (_, edge) => selectLink(edge.id);
@@ -325,6 +406,7 @@ function CanvasInner() {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         connectionMode={ConnectionMode.Loose}
         nodesDraggable={mode === 'edit' || activeCustomView !== null}
         nodesConnectable={mode === 'edit'}

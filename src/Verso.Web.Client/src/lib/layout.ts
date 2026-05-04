@@ -67,6 +67,53 @@ export function mergePositions(
 }
 
 /**
+ * Read edge waypoints for a given view from the sidecar cache. Returns an empty map if
+ * the sidecar isn't primed yet or the view has no edge entries.
+ */
+export function loadEdgeWaypoints(workspaceRoot: string, view: ViewKind | string): Record<string, SavedPosition[]> {
+  if (sidecarCache?.rootPath !== workspaceRoot) return {};
+  const v = sidecarCache.sidecar.views?.[view];
+  if (!v?.edges) return {};
+  const out: Record<string, SavedPosition[]> = {};
+  for (const [edgeId, entry] of Object.entries(v.edges)) {
+    const e = entry as { waypoints?: SavedPosition[] };
+    if (e?.waypoints && e.waypoints.length > 0) out[edgeId] = e.waypoints;
+  }
+  return out;
+}
+
+/**
+ * Persist a single edge's waypoints into the sidecar (debounced PUT, parallel to saveLayout).
+ */
+export function saveEdgeWaypoints(
+  workspaceRoot: string,
+  view: ViewKind | string,
+  edgeId: string,
+  waypoints: SavedPosition[]
+): void {
+  if (typeof window === 'undefined') return;
+  if (!sidecarCache || sidecarCache.rootPath !== workspaceRoot) {
+    sidecarCache = { rootPath: workspaceRoot, sidecar: { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} } };
+  }
+  if (!sidecarCache.sidecar.views) sidecarCache.sidecar.views = {};
+  const v = sidecarCache.sidecar.views[view] ?? {};
+  const edges = v.edges ?? {};
+  if (waypoints.length === 0) {
+    delete edges[edgeId];
+  } else {
+    edges[edgeId] = { ...(edges[edgeId] as object | undefined), waypoints };
+  }
+  sidecarCache.sidecar.views[view] = { ...v, edges };
+
+  if (pendingWrite?.rootPath === workspaceRoot) clearTimeout(pendingWrite.timer);
+  const timer = setTimeout(() => {
+    saveLayoutSidecar(sidecarCache!.sidecar).catch(() => {});
+    pendingWrite = null;
+  }, 400);
+  pendingWrite = { rootPath: workspaceRoot, sidecar: sidecarCache.sidecar, timer };
+}
+
+/**
  * Fetch the verso.layout.json sidecar on workspace open. If the sidecar is empty
  * but localStorage has positions for known views, migrate them into the sidecar
  * and write it back so layouts travel with the workspace in Git from now on.
