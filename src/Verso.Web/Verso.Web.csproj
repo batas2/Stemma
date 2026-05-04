@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Verso.Web</RootNamespace>
+    <AssemblyName>Verso.Web</AssemblyName>
+    <SpaRoot>..\Verso.Web.Client\</SpaRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Verso.Engine\Verso.Engine.csproj" />
+  </ItemGroup>
+</Project>

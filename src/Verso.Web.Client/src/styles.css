@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  :root {
+    --accent: 99 102 241;
+  }
+}
+
+.react-flow__node {
+  font-size: 13px;
+}
+
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgb(63 63 70);
+  background: rgb(24 24 27);
+}
+
+.react-flow__edge-path {
+  stroke: rgb(113 113 122);
+  stroke-width: 1.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path {
+  stroke: rgb(99 102 241);
+  stroke-width: 2;
+}
+
+.react-flow__background {
+  background-color: rgb(9 9 11) !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgb(63 63 70); border-radius: 3px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }

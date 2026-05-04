@@ -1,0 +1,17 @@
+services:
+  verso:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: verso:local
+    container_name: verso
+    ports:
+      - "5050:5050"
+    volumes:
+      # Mount a local C# workspace into the container so Verso can model it.
+      # Override WORKSPACE_PATH in your .env or shell to point elsewhere.
+      - ${WORKSPACE_PATH:-../samples/DemoSolution}:/workspace:rw
+    environment:
+      - ASPNETCORE_URLS=http://+:5050
+      - DOTNET_RUNNING_IN_CONTAINER=true
+    restart: unless-stopped

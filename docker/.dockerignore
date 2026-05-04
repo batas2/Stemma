@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/.git
+**/.vscode
+**/.idea
+**/*.log
+**/wwwroot/assets
+samples/*/bin
+samples/*/obj

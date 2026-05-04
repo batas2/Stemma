@@ -32,3 +32,19 @@ Thumbs.db
 # Verso runtime
 *.verso.local.json
 .verso/
+
+# Frontend bundle output (rebuilt from src/Verso.Web.Client)
+src/Verso.Web/wwwroot/assets/
+src/Verso.Web/wwwroot/index.html
+src/Verso.Web/wwwroot/*.svg
+src/Verso.Web/wwwroot/*.png
+
+# Editor / tool caches
+.tsbuildinfo
+*.tsbuildinfo
+
+# tsc -b output for vite config
+src/Verso.Web.Client/vite.config.d.ts
+src/Verso.Web.Client/vite.config.js
+src/Verso.Web.Client/tsconfig.node.tsbuildinfo
+src/Verso.Web.Client/tsconfig.tsbuildinfo

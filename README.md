@@ -10,7 +10,27 @@ The name **Verso** comes from bookbinding: the *verso* is the reverse side of a 
 
 ## Status
 
-Pre-spike. This repository currently holds only the specification and planning documents. No production code yet.
+**Spike 01 complete** — a working web modeler with C# code as the only storage. See `docs/spike-01-status/STATE.md`.
+
+To run locally:
+
+```bash
+./run.sh                                          # dev mode (Vite + backend, HMR)
+./run.sh --prod                                   # production mode (single backend, bundled SPA)
+./run.sh --dev --workspace samples/DemoSolution   # auto-open the demo workspace
+```
+
+Tests:
+
+```bash
+./scripts/test.sh
+```
+
+Docker:
+
+```bash
+docker compose -f docker/docker-compose.yml up --build
+```
 
 ## Why
 

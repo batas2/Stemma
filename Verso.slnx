@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Verso.Engine/Verso.Engine.csproj" />
+    <Project Path="src/Verso.Web/Verso.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Verso.Engine.Tests/Verso.Engine.Tests.csproj" />
+  </Folder>
+</Solution>
