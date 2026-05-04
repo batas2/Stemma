@@ -35,7 +35,8 @@ verso/
     ├── round-trip-fidelity.md — model↔storage preservation contract (per adapter)
     ├── operations-catalog.md  — supported UI operations
     ├── sync-protocol.md       — UI ↔ backend synchronization
-    └── projections.md         — multi-audience view system
+    ├── projections.md         — multi-audience view system
+    └── spike-01-web-modeler.md — first spike spec (web canvas + C# storage)
 ```
 
 ## Reading order
