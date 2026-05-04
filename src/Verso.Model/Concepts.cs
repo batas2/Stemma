@@ -32,3 +32,40 @@ public sealed record DataFlow(string Id, string FromId, string ToId, string Payl
 
 /// <summary>A dependency between two model elements (uses, calls, owns...).</summary>
 public sealed record Dependency(string Id, string FromId, string ToId, string Kind = "uses") : ModelLink(Id, FromId, ToId);
+
+/// <summary>
+/// Lifecycle metadata attachable to any element or relationship. Status is open-enum:
+/// `current`, `target`, `to-adapt`, `to-be-created`, `deprecated`, `proposed`, or any
+/// user-defined string.
+/// </summary>
+public sealed record Lifecycle(
+    string? Status = null,
+    string? Phase = null,
+    string? ValidFrom = null,
+    string? ValidUntil = null);
+
+/// <summary>
+/// Ownership metadata attachable to any element or relationship. RAPID role lists are
+/// strings of names (multiple people allowed per role).
+/// </summary>
+public sealed record Ownership(
+    string? Squad = null,
+    string? Domain = null,
+    IReadOnlyList<string>? Recommend = null,
+    IReadOnlyList<string>? Agree = null,
+    IReadOnlyList<string>? Perform = null,
+    IReadOnlyList<string>? Input = null,
+    IReadOnlyList<string>? Decide = null);
+
+/// <summary>
+/// A tag attaches a Lifecycle and/or Ownership to an existing element or link by id.
+/// Encoded in the DSL as `Tag.For(elem, lifecycle: ..., ownership: ...)` calls.
+/// </summary>
+public sealed record Tag(string TargetId, Lifecycle? Lifecycle = null, Ownership? Ownership = null)
+{
+    public static Tag For(ModelElement target, Lifecycle? lifecycle = null, Ownership? ownership = null)
+        => new(target.Id, lifecycle, ownership);
+
+    public static Tag For(ModelLink target, Lifecycle? lifecycle = null, Ownership? ownership = null)
+        => new(target.Id, lifecycle, ownership);
+}

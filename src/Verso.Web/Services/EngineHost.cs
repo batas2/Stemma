@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.SignalR;
 using Verso.Engine.ArchModel;
 using Verso.Engine.Models;
 using Verso.Engine.Operations;
 using Verso.Engine.Workspace;
+using Verso.Web.Hubs;
 
 namespace Verso.Web.Services;
 
@@ -9,6 +11,9 @@ public sealed class EngineHost : IAsyncDisposable
 {
     private VersoEngine? _engine;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly IHubContext<WorkspaceHub>? _hub;
+
+    public EngineHost(IHubContext<WorkspaceHub>? hub = null) { _hub = hub; }
 
     public async Task<WorkspaceModel> OpenAsync(string rootPath, CancellationToken ct = default)
     {
@@ -17,6 +22,13 @@ public sealed class EngineHost : IAsyncDisposable
         {
             if (_engine is not null) await _engine.DisposeAsync();
             _engine = await VersoEngine.OpenAsync(rootPath, ct);
+            _engine.ExternalChange += async path =>
+            {
+                if (_hub is null) return;
+                try { await _hub.Clients.All.SendAsync("ExternalChange", new { path }); } catch { }
+            };
+            _engine.StartWatching();
+            RecentWorkspaces.Touch(rootPath);
             return _engine.Model;
         }
         finally
@@ -24,6 +36,8 @@ public sealed class EngineHost : IAsyncDisposable
             _gate.Release();
         }
     }
+
+    public VersoEngine? Engine => _engine;
 
     public WorkspaceModel? Snapshot() => _engine?.Model;
 

@@ -65,9 +65,13 @@ public static class DslWriter
         return root;
     }
 
-    public static SyntaxNode RenameElement(SyntaxNode root, string id, string newName)
+    public static SyntaxNode RenameElement(SyntaxNode root, string id, string newName, bool renameVariable = true)
     {
         var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");
+        LocalDeclarationStatementSyntax? targetStmt = null;
+        BaseObjectCreationExpressionSyntax? targetOc = null;
+        VariableDeclaratorSyntax? targetVar = null;
+        string? typeName = null;
         foreach (var stmt in build.Statements.OfType<LocalDeclarationStatementSyntax>())
         {
             foreach (var v in stmt.Declaration.Variables)
@@ -75,29 +79,187 @@ public static class DslWriter
                 if (v.Initializer?.Value is not BaseObjectCreationExpressionSyntax oc) continue;
                 if (oc.ArgumentList is null || oc.ArgumentList.Arguments.Count < 2) continue;
                 if (!FirstArgIsLiteral(oc, id)) continue;
-
-                var args = oc.ArgumentList.Arguments;
-                var nameArgIndex = args[1].NameColon is null
-                    ? 1
-                    : args.Select((a, i) => (a, i)).FirstOrDefault(x => x.a.NameColon?.Name.Identifier.Text == "name").i;
-                if (nameArgIndex < 0 || nameArgIndex >= args.Count) return root;
-
-                var newLiteral = SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression,
-                    SyntaxFactory.Literal(newName));
-                var newArg = args[nameArgIndex].WithExpression(newLiteral);
-                var newArgs = args.Replace(args[nameArgIndex], newArg);
-                var newOc = oc switch
-                {
-                    ObjectCreationExpressionSyntax explicitOc =>
-                        (BaseObjectCreationExpressionSyntax)explicitOc.WithArgumentList(oc.ArgumentList.WithArguments(newArgs)),
-                    ImplicitObjectCreationExpressionSyntax implicitOc =>
-                        implicitOc.WithArgumentList(oc.ArgumentList.WithArguments(newArgs)),
-                    _ => oc
-                };
-                return root.ReplaceNode(oc, newOc);
+                targetStmt = stmt;
+                targetOc = oc;
+                targetVar = v;
+                typeName = oc is ObjectCreationExpressionSyntax e ? GetSimpleTypeName(e.Type) : null;
+                break;
             }
+            if (targetOc is not null) break;
         }
-        return root;
+        if (targetOc is null || targetVar is null || targetStmt is null) return root;
+
+        var args = targetOc.ArgumentList!.Arguments;
+        var nameArgIndex = args[1].NameColon is null
+            ? 1
+            : args.Select((a, i) => (a, i)).FirstOrDefault(x => x.a.NameColon?.Name.Identifier.Text == "name").i;
+        if (nameArgIndex < 0 || nameArgIndex >= args.Count) return root;
+
+        var newLiteral = SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(newName));
+        var newNameArg = args[nameArgIndex].WithExpression(newLiteral);
+        var newArgs = args.Replace(args[nameArgIndex], newNameArg);
+        BaseObjectCreationExpressionSyntax ocWithNewName = targetOc switch
+        {
+            ObjectCreationExpressionSyntax e => e.WithArgumentList(targetOc.ArgumentList.WithArguments(newArgs)),
+            ImplicitObjectCreationExpressionSyntax i => i.WithArgumentList(targetOc.ArgumentList.WithArguments(newArgs)),
+            _ => targetOc
+        };
+
+        if (!renameVariable || typeName is null)
+        {
+            return root.ReplaceNode(targetOc, ocWithNewName);
+        }
+
+        var newVarName = VarNameFromElementName(typeName, newName);
+        var oldVarName = targetVar.Identifier.Text;
+        if (newVarName == oldVarName)
+        {
+            return root.ReplaceNode(targetOc, ocWithNewName);
+        }
+
+        // First, replace the declaration itself with the renamed local + new name string.
+        var newStmt = BuildRenamedLocal(targetStmt, newVarName, ocWithNewName);
+        var afterReplace = root.ReplaceNode(targetStmt, newStmt);
+        // Then walk every identifier reference and rewrite the *uses* of the old variable name.
+        // The IdentifierRewriter only visits IdentifierNameSyntax, so declarators are untouched.
+        var rewriter = new IdentifierRewriter(oldVarName, newVarName);
+        return rewriter.Visit(afterReplace) ?? afterReplace;
+    }
+
+    private static LocalDeclarationStatementSyntax BuildRenamedLocal(LocalDeclarationStatementSyntax stmt, string newVarName, BaseObjectCreationExpressionSyntax newOc)
+    {
+        var oldDeclarator = stmt.Declaration.Variables.First();
+        var oldId = oldDeclarator.Identifier;
+        // Preserve original initializer trivia (the `=` token's leading/trailing whitespace).
+        var oldInit = oldDeclarator.Initializer ?? SyntaxFactory.EqualsValueClause(newOc);
+        var newInit = oldInit.WithValue(newOc);
+        var newDeclarator = oldDeclarator
+            .WithIdentifier(SyntaxFactory.Identifier(oldId.LeadingTrivia, newVarName, oldId.TrailingTrivia))
+            .WithInitializer(newInit);
+        var newDeclaration = stmt.Declaration.WithVariables(SyntaxFactory.SingletonSeparatedList(newDeclarator));
+        return stmt.WithDeclaration(newDeclaration);
+    }
+
+    /// <summary>
+    /// Insert or replace an `Architecture.Tag(varName, lifecycle: ..., ownership: ...)` call after the
+    /// declaration of the targeted element/link. Removes the call when both lifecycle and ownership are null.
+    /// </summary>
+    public static SyntaxNode SetTag(SyntaxNode root, string targetId, ArchLifecycle? lifecycle, ArchOwnership? ownership)
+    {
+        var build = FindBuildBody(root) ?? throw new InvalidOperationException("Architecture.Build() body not found");
+
+        string? varName = null;
+        LocalDeclarationStatementSyntax? targetDecl = null;
+        foreach (var stmt in build.Statements.OfType<LocalDeclarationStatementSyntax>())
+        {
+            foreach (var v in stmt.Declaration.Variables)
+            {
+                if (v.Initializer?.Value is BaseObjectCreationExpressionSyntax oc && FirstArgIsLiteral(oc, targetId))
+                {
+                    varName = v.Identifier.Text;
+                    targetDecl = stmt;
+                    break;
+                }
+            }
+            if (varName is not null) break;
+        }
+        if (varName is null || targetDecl is null) throw new InvalidOperationException($"No declaration with id {targetId}");
+
+        var existingTag = build.Statements.OfType<ExpressionStatementSyntax>()
+            .FirstOrDefault(s => s.Expression is InvocationExpressionSyntax inv
+                && inv.Expression is MemberAccessExpressionSyntax mae
+                && mae.Name.Identifier.Text == "For"
+                && mae.Expression is IdentifierNameSyntax tagId && tagId.Identifier.Text == "Tag"
+                && inv.ArgumentList.Arguments.Count > 0
+                && inv.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax argId && argId.Identifier.Text == varName);
+
+        if (lifecycle is null && ownership is null)
+        {
+            if (existingTag is null) return root;
+            var removed = root.RemoveNode(existingTag, SyntaxRemoveOptions.KeepNoTrivia);
+            return removed ?? root;
+        }
+
+        var tagStmt = BuildTagStatement(varName, lifecycle, ownership);
+        if (existingTag is not null)
+        {
+            return root.ReplaceNode(existingTag, tagStmt);
+        }
+
+        var newBuild = build.WithStatements(build.Statements.Insert(build.Statements.IndexOf(targetDecl) + 1, tagStmt));
+        return root.ReplaceNode(build, newBuild);
+    }
+
+    private static ExpressionStatementSyntax BuildTagStatement(string varName, ArchLifecycle? lifecycle, ArchOwnership? ownership)
+    {
+        var parts = new List<string> { varName };
+        if (lifecycle is not null)
+        {
+            var inner = new List<string>();
+            if (lifecycle.Status is not null) inner.Add($"Status: {Quote(lifecycle.Status)}");
+            if (lifecycle.Phase is not null) inner.Add($"Phase: {Quote(lifecycle.Phase)}");
+            if (lifecycle.ValidFrom is not null) inner.Add($"ValidFrom: {Quote(lifecycle.ValidFrom)}");
+            if (lifecycle.ValidUntil is not null) inner.Add($"ValidUntil: {Quote(lifecycle.ValidUntil)}");
+            parts.Add($"lifecycle: new Lifecycle({string.Join(", ", inner)})");
+        }
+        if (ownership is not null)
+        {
+            var inner = new List<string>();
+            if (ownership.Squad is not null) inner.Add($"Squad: {Quote(ownership.Squad)}");
+            if (ownership.Domain is not null) inner.Add($"Domain: {Quote(ownership.Domain)}");
+            parts.Add($"ownership: new Ownership({string.Join(", ", inner)})");
+        }
+        var src = $"        Tag.For({string.Join(", ", parts)});\n";
+        return (ExpressionStatementSyntax)SyntaxFactory.ParseStatement(src);
+    }
+
+    private static string Quote(string s) => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+    private static string VarNameFromElementName(string typeName, string elementName)
+    {
+        var prefix = typeName switch
+        {
+            "Module" => "mod",
+            "BoundedContext" => "ctx",
+            "SoftwareSystem" => "sys",
+            "Container" => "cnt",
+            "Person" => "per",
+            "UseCase" => "uc",
+            "Capability" => "cap",
+            "DataFlow" => "flow",
+            "Dependency" => "dep",
+            _ => "v"
+        };
+        var sanitized = new System.Text.StringBuilder();
+        var capNext = true;
+        foreach (var ch in elementName)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sanitized.Append(capNext ? char.ToUpperInvariant(ch) : ch);
+                capNext = false;
+            }
+            else { capNext = true; }
+        }
+        return prefix + (sanitized.Length > 0 ? sanitized.ToString() : "Item");
+    }
+
+    private static string? GetSimpleTypeName(TypeSyntax? type) => type switch
+    {
+        IdentifierNameSyntax id => id.Identifier.Text,
+        QualifiedNameSyntax q => GetSimpleTypeName(q.Right),
+        _ => null
+    };
+
+    private sealed class IdentifierRewriter : CSharpSyntaxRewriter
+    {
+        private readonly string _from;
+        private readonly string _to;
+        public IdentifierRewriter(string from, string to) { _from = from; _to = to; }
+        public override SyntaxNode? VisitIdentifierName(IdentifierNameSyntax node)
+            => node.Identifier.Text == _from
+                ? node.WithIdentifier(SyntaxFactory.Identifier(node.Identifier.LeadingTrivia, _to, node.Identifier.TrailingTrivia))
+                : base.VisitIdentifierName(node);
     }
 
     private static BlockSyntax? FindBuildBody(SyntaxNode root)

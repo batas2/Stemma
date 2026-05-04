@@ -7,7 +7,8 @@ namespace Verso.Engine.ArchModel;
 public sealed record ArchModel(
     string FilePath,
     IReadOnlyList<ArchElement> Elements,
-    IReadOnlyList<ArchLink> Links);
+    IReadOnlyList<ArchLink> Links,
+    IReadOnlyList<ArchTag> Tags);
 
 public enum ArchElementKind { Module, BoundedContext, SoftwareSystem, Container, Person, UseCase, Capability }
 public enum ArchLinkKind { DataFlow, Dependency }
@@ -24,3 +25,16 @@ public sealed record ArchLink(
     string ToId,
     ArchLinkKind Kind,
     IReadOnlyDictionary<string, string?> Attributes);
+
+public sealed record ArchLifecycle(string? Status = null, string? Phase = null, string? ValidFrom = null, string? ValidUntil = null);
+
+public sealed record ArchOwnership(
+    string? Squad = null,
+    string? Domain = null,
+    IReadOnlyList<string>? Recommend = null,
+    IReadOnlyList<string>? Agree = null,
+    IReadOnlyList<string>? Perform = null,
+    IReadOnlyList<string>? Input = null,
+    IReadOnlyList<string>? Decide = null);
+
+public sealed record ArchTag(string TargetId, ArchLifecycle? Lifecycle, ArchOwnership? Ownership);

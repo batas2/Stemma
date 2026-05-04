@@ -30,7 +30,10 @@ public static class DslReader
 
         var elements = new List<ArchElement>();
         var links = new List<ArchLink>();
+        var tags = new List<ArchTag>();
+        var varToId = new Dictionary<string, string>();
 
+        // First pass: locals (elements + links).
         foreach (var statement in buildBody.Statements.OfType<LocalDeclarationStatementSyntax>())
         {
             foreach (var v in statement.Declaration.Variables)
@@ -45,19 +48,90 @@ public static class DslReader
                     var kind = (ArchElementKind)Enum.Parse(typeof(ArchElementKind), typeName);
                     var (id, name, attrs) = ParseElementArgs(kind, args);
                     if (id is not null && name is not null)
+                    {
                         elements.Add(new ArchElement(id, name, kind, attrs));
+                        varToId[v.Identifier.Text] = id;
+                    }
                 }
                 else if (LinkTypeNames.Contains(typeName))
                 {
                     var kind = typeName == "DataFlow" ? ArchLinkKind.DataFlow : ArchLinkKind.Dependency;
                     var (id, fromId, toId, attrs) = ParseLinkArgs(kind, args);
                     if (id is not null && fromId is not null && toId is not null)
+                    {
                         links.Add(new ArchLink(id, fromId, toId, kind, attrs));
+                        varToId[v.Identifier.Text] = id;
+                    }
                 }
             }
         }
 
-        return new ArchModel(filePath, elements, links);
+        // Second pass: Tag.For(...) statements.
+        foreach (var statement in buildBody.Statements.OfType<ExpressionStatementSyntax>())
+        {
+            if (statement.Expression is not InvocationExpressionSyntax inv) continue;
+            if (inv.Expression is not MemberAccessExpressionSyntax mae) continue;
+            if (mae.Name.Identifier.Text != "For") continue;
+            if (mae.Expression is not IdentifierNameSyntax tagId || tagId.Identifier.Text != "Tag") continue;
+            if (inv.ArgumentList.Arguments.Count == 0) continue;
+
+            var firstArg = inv.ArgumentList.Arguments[0].Expression;
+            string? targetId = firstArg switch
+            {
+                IdentifierNameSyntax id when varToId.TryGetValue(id.Identifier.Text, out var resolved) => resolved,
+                _ => null
+            };
+            if (targetId is null) continue;
+
+            ArchLifecycle? lifecycle = null;
+            ArchOwnership? ownership = null;
+            foreach (var arg in inv.ArgumentList.Arguments.Skip(1))
+            {
+                var name = arg.NameColon?.Name.Identifier.Text;
+                if (name == "lifecycle" && arg.Expression is BaseObjectCreationExpressionSyntax lcOc)
+                    lifecycle = ParseLifecycleFromCreation(lcOc);
+                else if (name == "ownership" && arg.Expression is BaseObjectCreationExpressionSyntax owOc)
+                    ownership = ParseOwnershipFromCreation(owOc);
+            }
+            tags.Add(new ArchTag(targetId, lifecycle, ownership));
+        }
+
+        return new ArchModel(filePath, elements, links, tags);
+    }
+
+    private static ArchLifecycle ParseLifecycleFromCreation(BaseObjectCreationExpressionSyntax oc)
+    {
+        var args = ExtractArgs(oc);
+        var positional = new[] { "Status", "Phase", "ValidFrom", "ValidUntil" };
+        string? status = null, phase = null, from = null, until = null;
+        for (var i = 0; i < args.Count; i++)
+        {
+            var key = args[i].Name ?? (i < positional.Length ? positional[i] : $"arg{i}");
+            switch (key.ToLowerInvariant())
+            {
+                case "status": status = args[i].Value; break;
+                case "phase": phase = args[i].Value; break;
+                case "validfrom": from = args[i].Value; break;
+                case "validuntil": until = args[i].Value; break;
+            }
+        }
+        return new ArchLifecycle(status, phase, from, until);
+    }
+
+    private static ArchOwnership ParseOwnershipFromCreation(BaseObjectCreationExpressionSyntax oc)
+    {
+        // For Spike 03, only Squad and Domain (single-string properties) are read; RAPID lists
+        // are placeholders. The DSL writer below still accepts and persists them; the reader will
+        // be extended in a follow-up pass.
+        var args = ExtractArgs(oc);
+        string? squad = null, domain = null;
+        for (var i = 0; i < args.Count; i++)
+        {
+            var key = args[i].Name?.ToLowerInvariant();
+            if (key == "squad") squad = args[i].Value;
+            else if (key == "domain") domain = args[i].Value;
+        }
+        return new ArchOwnership(squad, domain);
     }
 
     private static BlockSyntax? FindBuildMethodBody(SyntaxNode root)

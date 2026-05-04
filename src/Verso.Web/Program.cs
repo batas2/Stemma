@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Verso.Engine.ArchModel;
+using Verso.Engine.Workspace;
 using Verso.Web.Hubs;
 using Verso.Web.Services;
 
@@ -154,6 +155,25 @@ workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, Canc
     };
     var text = MermaidExporter.Export(arch, viewKind);
     return Results.Text(text, "text/plain");
+});
+
+workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
+
+workspaceApi.MapGet("/layout", (EngineHost host) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var sidecar = LayoutSidecar.Read(engine.RootPath);
+    return Results.Ok(sidecar);
+});
+
+workspaceApi.MapPut("/layout", async (LayoutSidecar sidecar, EngineHost host) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+    sidecar.Write(engine.RootPath);
+    await Task.CompletedTask;
+    return Results.NoContent();
 });
 
 app.MapHub<WorkspaceHub>("/hubs/workspace");

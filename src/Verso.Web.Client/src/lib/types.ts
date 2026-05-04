@@ -45,7 +45,8 @@ export type OperationKind =
   | 'AddInheritance' | 'RemoveInheritance'
   | 'AddImplementation' | 'RemoveImplementation'
   | 'AddElement' | 'RenameElement' | 'RemoveElement'
-  | 'SetElementAttribute' | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute';
+  | 'SetElementAttribute' | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute'
+  | 'SetLifecycle' | 'SetOwnership';
 
 export type ArchElementKind =
   | 'module' | 'boundedContext' | 'softwareSystem'
@@ -65,11 +66,20 @@ export interface ArchLink {
   kind: ArchLinkKind;
   attributes: Record<string, string | null>;
 }
+export interface ArchTagInfo {
+  targetId: string;
+  lifecycle: { status: string | null; phase: string | null; validFrom: string | null; validUntil: string | null } | null;
+  ownership: { squad: string | null; domain: string | null } | null;
+}
+
 export interface ArchModel {
   filePath: string;
   elements: ArchElement[];
   links: ArchLink[];
+  tags: ArchTagInfo[];
 }
+
+export interface RecentEntry { rootPath: string; displayName: string; lastOpened: string; }
 
 export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'engineer';
 export type Mode = 'edit' | 'view';

@@ -146,6 +146,95 @@ public class ArchModelTests
     }
 
     [Fact]
+    public async Task SetLifecycle_inserts_tag_and_RoundTrips()
+    {
+        await using var ws = await CreateAsync("""
+            var modA = new Module("mod_001", "A");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+
+        var result = await engine.ApplyAsync(new SetLifecycleOp("op1", "mod_001", "current", "Q4 2026", null, null));
+        if (result is Operations.OperationFailed f)
+            throw new Xunit.Sdk.XunitException($"Failed: {f.Reason} {f.Message}\n{await ws.ReadArchAsync()}");
+        result.Should().BeOfType<Operations.OperationApplied>();
+
+        var src = await ws.ReadArchAsync();
+        src.Should().Contain("Tag.For(modA");
+        src.Should().Contain("Status: \"current\"");
+        src.Should().Contain("Phase: \"Q4 2026\"");
+
+        var arch = await engine.ReadArchModelAsync();
+        arch.Should().NotBeNull();
+        var tag = arch!.Tags.FirstOrDefault(t => t.TargetId == "mod_001");
+        tag.Should().NotBeNull();
+        tag!.Lifecycle.Should().NotBeNull();
+        tag.Lifecycle!.Status.Should().Be("current");
+    }
+
+    [Fact]
+    public async Task SetOwnership_inserts_tag_alongside_lifecycle()
+    {
+        await using var ws = await CreateAsync("""
+            var modA = new Module("mod_001", "A");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+
+        await engine.ApplyAsync(new SetLifecycleOp("op1", "mod_001", "target", null, null, null));
+        var result = await engine.ApplyAsync(new SetOwnershipOp("op2", "mod_001", "Onboarding Squad", "Buyer"));
+        if (result is Operations.OperationFailed f)
+            throw new Xunit.Sdk.XunitException($"Failed: {f.Reason} {f.Message}\n{await ws.ReadArchAsync()}");
+
+        var src = await ws.ReadArchAsync();
+        src.Should().Contain("Status: \"target\"");
+        src.Should().Contain("Squad: \"Onboarding Squad\"");
+        src.Should().Contain("Domain: \"Buyer\"");
+    }
+
+    [Fact]
+    public async Task RenameElement_realigns_variable_name()
+    {
+        await using var ws = await CreateAsync("""
+            var modOnboarding = new Module("mod_001", "Onboarding");
+            var flow = new DataFlow("flow_001", "mod_001", "mod_001", "X");
+            Tag.For(modOnboarding, lifecycle: new Lifecycle(Status: "current"));
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+
+        var result = await engine.ApplyAsync(new RenameElementOp("op1", "mod_001", "Procurement"));
+        if (result is Operations.OperationFailed f)
+            throw new Xunit.Sdk.XunitException($"Failed: {f.Reason} {f.Message}\n{await ws.ReadArchAsync()}");
+        result.Should().BeOfType<Operations.OperationApplied>();
+
+        var src = await ws.ReadArchAsync();
+        src.Should().Contain("var modProcurement = new Module");
+        src.Should().Contain("\"Procurement\"");
+        src.Should().NotContain("modOnboarding");
+        src.Should().Contain("Tag.For(modProcurement");
+    }
+
+    [Fact]
+    public async Task UndoStack_reverses_RenameElement()
+    {
+        await using var ws = await CreateAsync("""
+            var modA = new Module("mod_001", "Onboarding");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+
+        await engine.ApplyAsync(new RenameElementOp("op1", "mod_001", "Procurement"));
+        engine.Undo.CanUndo.Should().BeTrue();
+
+        var undo = await engine.UndoAsync("undo1");
+        if (undo is Operations.OperationFailed f)
+            throw new Xunit.Sdk.XunitException($"Undo failed: {f.Reason} {f.Message}");
+
+        var src = await ws.ReadArchAsync();
+        src.Should().Contain("\"Onboarding\"");
+        src.Should().NotContain("\"Procurement\"");
+        engine.Undo.CanRedo.Should().BeTrue();
+        engine.Undo.CanUndo.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SetLinkAttribute_updates_payload_and_preserves_endpoints()
     {
         await using var ws = await CreateAsync("""

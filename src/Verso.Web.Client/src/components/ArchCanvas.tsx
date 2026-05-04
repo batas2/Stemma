@@ -144,6 +144,7 @@ function CanvasInner() {
 
     setNodes((prev) => {
       const prevById = new Map(prev.map((n) => [n.id, n]));
+      const tagsById = new Map((arch?.tags ?? []).map((t) => [t.targetId, t]));
       return filtered.elements.map((e) => {
         const existing = prevById.get(e.id);
         const pos = existing?.position ?? merged[e.id] ?? { x: 0, y: 0 };
@@ -151,7 +152,7 @@ function CanvasInner() {
           id: e.id,
           type: 'arch',
           position: pos,
-          data: { element: e },
+          data: { element: e, tag: tagsById.get(e.id) },
         } satisfies Node;
       });
     });

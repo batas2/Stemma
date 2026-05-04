@@ -24,20 +24,59 @@ export function ArchInspector() {
   return null;
 }
 
+const STATUS_OPTIONS = ['', 'current', 'target', 'to-adapt', 'to-be-created', 'deprecated', 'proposed'];
+
 function ElementInspectorBody({ elementId }: { elementId: string }) {
   const arch = useApp((s) => s.arch)!;
   const select = useApp((s) => s.selectElement);
   const setToast = useApp((s) => s.setToast);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const [tab, setTab] = useState<'props' | 'lifecycle'>('props');
 
   const e = arch.elements.find((x) => x.id === elementId);
+  const tag = arch.tags.find((t) => t.targetId === elementId);
+  const [status, setStatus] = useState(tag?.lifecycle?.status ?? '');
+  const [phase, setPhase] = useState(tag?.lifecycle?.phase ?? '');
+  const [squad, setSquad] = useState(tag?.ownership?.squad ?? '');
+  const [domain, setDomain] = useState(tag?.ownership?.domain ?? '');
+  useEffect(() => {
+    setStatus(tag?.lifecycle?.status ?? '');
+    setPhase(tag?.lifecycle?.phase ?? '');
+    setSquad(tag?.ownership?.squad ?? '');
+    setDomain(tag?.ownership?.domain ?? '');
+  }, [tag?.targetId, tag?.lifecycle?.status, tag?.lifecycle?.phase, tag?.ownership?.squad, tag?.ownership?.domain]);
+
   if (!e) {
     return (
       <aside className="w-[320px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 hidden lg:block">
         <p className="text-xs text-zinc-500">No longer in model.</p>
       </aside>
     );
+  }
+
+  async function commitLifecycle(newStatus: string, newPhase: string) {
+    const r = await applyOperation({
+      kind: 'SetLifecycle', opId: `op_${Date.now()}`,
+      targetId: elementId,
+      status: newStatus || null,
+      phase: newPhase || null,
+      validFrom: null,
+      validUntil: null,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    else setToast({ kind: 'success', text: 'Lifecycle saved' });
+  }
+
+  async function commitOwnership(newSquad: string, newDomain: string) {
+    const r = await applyOperation({
+      kind: 'SetOwnership', opId: `op_${Date.now()}`,
+      targetId: elementId,
+      squad: newSquad || null,
+      domain: newDomain || null,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    else setToast({ kind: 'success', text: 'Ownership saved' });
   }
 
   async function handleRename() {
@@ -89,13 +128,68 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 space-y-2">
-        <Field label="Kind" value={e.kind} />
-        <Field label="Id" value={e.id} mono />
-        {Object.entries(e.attributes).map(([k, v]) =>
-          v ? <Field key={k} label={k} value={v} mono /> : null
-        )}
+      <div className="px-3 pt-2 flex gap-1 text-xs">
+        <button
+          onClick={() => setTab('props')}
+          className={clsx('flex-1 py-1 rounded transition-colors',
+            tab === 'props' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
+          Properties
+        </button>
+        <button
+          onClick={() => setTab('lifecycle')}
+          className={clsx('flex-1 py-1 rounded transition-colors',
+            tab === 'lifecycle' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}>
+          Lifecycle & Owner
+        </button>
       </div>
+      {tab === 'props' && (
+        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 space-y-2 flex-1 overflow-auto">
+          <Field label="Kind" value={e.kind} />
+          <Field label="Id" value={e.id} mono />
+          {Object.entries(e.attributes).map(([k, v]) =>
+            v ? <Field key={k} label={k} value={v} mono /> : null
+          )}
+        </div>
+      )}
+      {tab === 'lifecycle' && (
+        <div className="flex-1 overflow-auto scrollbar-thin">
+          <Section label="Lifecycle">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
+              <select
+                value={status}
+                onChange={(ev) => { setStatus(ev.target.value); commitLifecycle(ev.target.value, phase); }}
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
+              >
+                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
+              </select>
+            </div>
+            <LabeledInput
+              label="Phase"
+              value={phase}
+              onChange={setPhase}
+              onCommit={() => commitLifecycle(status, phase)}
+              placeholder="e.g. Q4 2026"
+            />
+          </Section>
+          <Section label="Ownership">
+            <LabeledInput
+              label="Squad"
+              value={squad}
+              onChange={setSquad}
+              onCommit={() => commitOwnership(squad, domain)}
+              placeholder="e.g. Onboarding Squad"
+            />
+            <LabeledInput
+              label="Domain"
+              value={domain}
+              onChange={setDomain}
+              onCommit={() => commitOwnership(squad, domain)}
+              placeholder="e.g. Buyer"
+            />
+          </Section>
+        </div>
+      )}
       <div className="p-3 mt-auto border-t border-zinc-200 dark:border-zinc-800">
         <button
           onClick={handleRemove}

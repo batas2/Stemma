@@ -1,4 +1,4 @@
-import type { ArchModel, WorkspaceModel } from './types';
+import type { ArchModel, RecentEntry, WorkspaceModel } from './types';
 
 const BASE = '';
 
@@ -40,4 +40,26 @@ export async function exportMermaid(view: 'c4Context' | 'moduleMap' | 'dependenc
   const r = await fetch(`${BASE}/api/workspace/export/mermaid?view=${view}`);
   if (!r.ok) throw new Error(`Mermaid export failed: ${r.status}`);
   return r.text();
+}
+
+export async function listRecents(): Promise<RecentEntry[]> {
+  const r = await fetch(`${BASE}/api/workspace/recents`);
+  if (!r.ok) return [];
+  return r.json();
+}
+
+export async function fetchLayout(): Promise<unknown> {
+  const r = await fetch(`${BASE}/api/workspace/layout`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`Layout fetch failed: ${r.status}`);
+  return r.json();
+}
+
+export async function saveLayoutSidecar(sidecar: unknown): Promise<void> {
+  const r = await fetch(`${BASE}/api/workspace/layout`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(sidecar),
+  });
+  if (!r.ok) throw new Error(`Layout save failed: ${r.status}`);
 }

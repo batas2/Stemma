@@ -9,8 +9,9 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation } from './lib/signalr';
 import { archModel, snapshot } from './lib/api';
+import { bindShortcuts } from './lib/shortcuts';
 
 export default function App() {
   const ws = useApp((s) => s.workspace);
@@ -24,13 +25,25 @@ export default function App() {
     ensureConnection().catch(() => {});
     snapshot().then((s) => { if (s) setWs(s); }).catch(() => {});
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
-    const off = onOperationApplied(async () => {
+    async function refresh() {
       const [s, a] = await Promise.all([snapshot(), archModel().catch(() => null)]);
       if (s) setWs(s);
       setArch(a);
-    });
-    return () => { off(); };
+    }
+    const offOp = onOperationApplied(refresh);
+    const offExt = onExternalChange(refresh);
+    return () => { offOp(); offExt(); };
   }, [setWs, setArch]);
+
+  const setPaletteOpen = useApp((s) => s.setPaletteOpen);
+  useEffect(() => {
+    return bindShortcuts([
+      { key: 'z', primary: true, description: 'Undo', handler: () => undoOperation().catch(() => {}) },
+      { key: 'z', primary: true, shift: true, description: 'Redo', handler: () => redoOperation().catch(() => {}) },
+      { key: 'y', primary: true, description: 'Redo', handler: () => redoOperation().catch(() => {}) },
+      { key: 'k', primary: true, description: 'Command palette', handler: () => setPaletteOpen(true) },
+    ]);
+  }, [setPaletteOpen]);
 
   // Theme: toggle the `dark` class on <html>; Tailwind reads it.
   const theme = useApp((s) => s.theme);

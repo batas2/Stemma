@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { Search, FolderOpen, Box, Sparkles, Sun, Moon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Search, FolderOpen, Box, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock } from 'lucide-react';
 import { useApp } from '@/lib/store';
-import { initWorkspace, openWorkspace } from '@/lib/api';
+import { initWorkspace, openWorkspace, listRecents } from '@/lib/api';
+import { fetchUndoState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
+import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
+import type { RecentEntry } from '@/lib/types';
 import { ViewSwitcher } from './ViewSwitcher';
 
 export function Topbar() {
@@ -13,10 +16,24 @@ export function Topbar() {
   const theme = useApp((s) => s.theme);
   const toggleTheme = useApp((s) => s.toggleTheme);
   const [pathInput, setPathInput] = useState('');
+  const [recents, setRecents] = useState<RecentEntry[]>([]);
+  const [recentsOpen, setRecentsOpen] = useState(false);
+  const [undoState, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null });
 
-  async function handleOpen() {
-    const path = pathInput.trim();
-    if (!path) return;
+  useEffect(() => { listRecents().then(setRecents).catch(() => {}); }, [ws?.rootPath]);
+
+  useEffect(() => {
+    if (!ws) return;
+    let stop = false;
+    async function poll() {
+      try { const s = await fetchUndoState(); if (!stop) setUndoState(s); } catch { /* ignore */ }
+    }
+    poll();
+    const id = setInterval(poll, 1500);
+    return () => { stop = true; clearInterval(id); };
+  }, [ws?.rootPath]);
+
+  async function openPath(path: string) {
     setLoading(true);
     try {
       const w = await openWorkspace(path);
@@ -44,6 +61,16 @@ export function Topbar() {
     }
   }
 
+  async function handleUndo() {
+    const r = await undoOperation();
+    if (r && 'reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+  }
+
+  async function handleRedo() {
+    const r = await redoOperation();
+    if (r && 'reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+  }
+
   return (
     <header className="h-12 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur flex items-center px-4 gap-3">
       <div className="flex items-center gap-2">
@@ -55,13 +82,31 @@ export function Topbar() {
         {ws ? (
           <>
             <ViewSwitcher />
+            <div className="flex items-center gap-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md p-0.5">
+              <button
+                onClick={handleUndo}
+                disabled={!undoState.canUndo}
+                title={undoState.undoDescription ? `Undo: ${undoState.undoDescription} (${format({ key: 'z', primary: true, description: '', handler: () => {} })})` : `Undo (${format({ key: 'z', primary: true, description: '', handler: () => {} })})`}
+                className="p-1.5 rounded text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!undoState.canRedo}
+                title={undoState.redoDescription ? `Redo: ${undoState.redoDescription} (${primaryKeyLabel}${shiftKeyLabel}Z)` : `Redo (${primaryKeyLabel}${shiftKeyLabel}Z)`}
+                className="p-1.5 rounded text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <button
               onClick={() => setOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors w-64"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors w-56"
             >
               <Search className="w-3.5 h-3.5" />
-              <span className="flex-1 text-left">Search or run command…</span>
-              <kbd className="text-[10px] font-mono bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">⌘K</kbd>
+              <span className="flex-1 text-left">Search…</span>
+              <kbd className="text-[10px] font-mono bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{primaryKeyLabel}K</kbd>
             </button>
           </>
         ) : (
@@ -70,12 +115,39 @@ export function Topbar() {
             <input
               value={pathInput}
               onChange={(e) => setPathInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleOpen(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') openPath(pathInput.trim()); }}
               placeholder="/absolute/path/to/your/workspace"
               className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-800 rounded px-3 py-1.5 text-xs outline-none focus:border-indigo-500 dark:focus:border-indigo-500"
             />
+            <div className="relative">
+              <button
+                onClick={() => setRecentsOpen((v) => !v)}
+                title="Recent workspaces"
+                className="text-xs px-2.5 py-1.5 rounded bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 flex items-center gap-1"
+              >
+                <Clock className="w-3 h-3" /> Recent <ChevronDown className="w-3 h-3" />
+              </button>
+              {recentsOpen && (
+                <div
+                  className="absolute right-0 top-full mt-1 w-80 max-h-80 overflow-auto rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg z-50"
+                  onMouseLeave={() => setRecentsOpen(false)}
+                >
+                  {recents.length === 0 && <div className="px-3 py-3 text-xs text-zinc-500">No recent workspaces yet.</div>}
+                  {recents.map((r) => (
+                    <button
+                      key={r.rootPath}
+                      onClick={() => { setRecentsOpen(false); openPath(r.rootPath); }}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800/60 border-b border-zinc-100 dark:border-zinc-800 last:border-b-0"
+                    >
+                      <div className="font-medium truncate">{r.displayName}</div>
+                      <div className="text-[10px] text-zinc-500 font-mono truncate">{r.rootPath}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
-              onClick={handleOpen}
+              onClick={() => openPath(pathInput.trim())}
               className="text-xs px-3 py-1.5 rounded bg-indigo-500 hover:bg-indigo-400 text-white"
             >
               Open

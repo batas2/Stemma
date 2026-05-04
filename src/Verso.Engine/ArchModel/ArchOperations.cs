@@ -29,3 +29,17 @@ public sealed record AddLinkOp(
 public sealed record RemoveLinkOp(string OpId, string LinkId) : OperationBase(OpId);
 
 public sealed record SetLinkAttributeOp(string OpId, string LinkId, string AttributeName, string? Value) : OperationBase(OpId);
+
+public sealed record SetLifecycleOp(
+    string OpId,
+    string TargetId,
+    string? Status,
+    string? Phase,
+    string? ValidFrom,
+    string? ValidUntil) : OperationBase(OpId);
+
+public sealed record SetOwnershipOp(
+    string OpId,
+    string TargetId,
+    string? Squad,
+    string? Domain) : OperationBase(OpId);

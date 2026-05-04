@@ -15,14 +15,58 @@ public sealed class VersoEngine : IAsyncDisposable
     private readonly MSBuildWorkspace _workspace;
     private WorkspaceModel _model;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly UndoStack _undo = new();
+    private ExternalWatcher? _watcher;
+    private ArchModel.ArchModel? _archBeforeOp;
 
     public WorkspaceModel Model => _model;
     public string RootPath => _model.RootPath;
+    public UndoStack Undo => _undo;
+    public event Action<string>? ExternalChange;
 
     private VersoEngine(MSBuildWorkspace workspace, WorkspaceModel model)
     {
         _workspace = workspace;
         _model = model;
+    }
+
+    public void StartWatching()
+    {
+        _watcher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        _watcher = new ExternalWatcher(_model.RootPath, ShouldWatch);
+        _watcher.Changed += OnExternalChange;
+    }
+
+    private bool ShouldWatch(string path)
+    {
+        // Watch Architecture/ + any project's tracked files.
+        if (path.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) return true;
+        return _workspace.CurrentSolution.Projects
+            .SelectMany(p => p.Documents)
+            .Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async void OnExternalChange(string path)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            var contents = File.Exists(path) ? await File.ReadAllTextAsync(path) : null;
+            // Try to update the existing document; otherwise reload solution.
+            var doc = _workspace.CurrentSolution.Projects
+                .SelectMany(p => p.Documents)
+                .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            if (doc is not null && contents is not null)
+            {
+                var newSol = doc.WithText(Microsoft.CodeAnalysis.Text.SourceText.From(contents)).Project.Solution;
+                _workspace.TryApplyChanges(newSol);
+            }
+            await ReloadAsync();
+            _undo.OnExternalChange();
+            ExternalChange?.Invoke(path);
+        }
+        catch { /* engine swallows; client gets the broadcast eventually via reload */ }
+        finally { _gate.Release(); }
     }
 
     public static async Task<VersoEngine> OpenAsync(string rootPath, CancellationToken ct = default)
@@ -36,32 +80,69 @@ public sealed class VersoEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
-            return op switch
-            {
-                AddTypeOp x => await AddTypeAsync(x, ct),
-                RenameTypeOp x => await RenameTypeAsync(x, ct),
-                RemoveTypeOp x => await RemoveTypeAsync(x, ct),
-                AddPropertyOp x => await AddPropertyAsync(x, ct),
-                RenamePropertyOp x => await RenamePropertyAsync(x, ct),
-                RemovePropertyOp x => await RemovePropertyAsync(x, ct),
-                AddInheritanceOp x => await AddInheritanceAsync(x, ct),
-                RemoveInheritanceOp x => await RemoveInheritanceAsync(x, ct),
-                AddImplementationOp x => await AddImplementationAsync(x, ct),
-                RemoveImplementationOp x => await RemoveImplementationAsync(x, ct),
-                AddElementOp x => await AddArchElementAsync(x, ct),
-                RenameElementOp x => await RenameArchElementAsync(x, ct),
-                RemoveElementOp x => await RemoveArchElementAsync(x, ct),
-                AddLinkOp x => await AddArchLinkAsync(x, ct),
-                RemoveLinkOp x => await RemoveArchLinkAsync(x, ct),
-                SetLinkAttributeOp x => await SetLinkAttributeAsync(x, ct),
-                _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
-            };
+            return await ApplyInternalAsync(op, recordUndo: true, ct);
         }
         finally
         {
             _gate.Release();
         }
     }
+
+    private async Task<OperationResult> ApplyInternalAsync(OperationBase op, bool recordUndo, CancellationToken ct)
+    {
+        // Capture the arch model state BEFORE the op so we can build inverse ops.
+        if (recordUndo)
+        {
+            try { _archBeforeOp = await ReadArchModelAsync(ct); }
+            catch { _archBeforeOp = null; }
+        }
+
+        var result = op switch
+        {
+            AddTypeOp x => await AddTypeAsync(x, ct),
+            RenameTypeOp x => await RenameTypeAsync(x, ct),
+            RemoveTypeOp x => await RemoveTypeAsync(x, ct),
+            AddPropertyOp x => await AddPropertyAsync(x, ct),
+            RenamePropertyOp x => await RenamePropertyAsync(x, ct),
+            RemovePropertyOp x => await RemovePropertyAsync(x, ct),
+            AddInheritanceOp x => await AddInheritanceAsync(x, ct),
+            RemoveInheritanceOp x => await RemoveInheritanceAsync(x, ct),
+            AddImplementationOp x => await AddImplementationAsync(x, ct),
+            RemoveImplementationOp x => await RemoveImplementationAsync(x, ct),
+            AddElementOp x => await AddArchElementAsync(x, ct),
+            RenameElementOp x => await RenameArchElementAsync(x, ct),
+            RemoveElementOp x => await RemoveArchElementAsync(x, ct),
+            AddLinkOp x => await AddArchLinkAsync(x, ct),
+            RemoveLinkOp x => await RemoveArchLinkAsync(x, ct),
+            SetLinkAttributeOp x => await SetLinkAttributeAsync(x, ct),
+            SetLifecycleOp x => await SetLifecycleAsync(x, ct),
+            SetOwnershipOp x => await SetOwnershipAsync(x, ct),
+            _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
+        };
+
+        if (recordUndo && result is OperationApplied)
+        {
+            var inverse = UndoStack.BuildInverse(op, _archBeforeOp);
+            if (inverse is not null)
+            {
+                _undo.Push(op, inverse, DescribeOp(op));
+            }
+        }
+        return result;
+    }
+
+    private static string DescribeOp(OperationBase op) => op switch
+    {
+        AddElementOp x => $"Add {x.ElementKind} \"{x.Name}\"",
+        RenameElementOp x => $"Rename to \"{x.NewName}\"",
+        RemoveElementOp x => "Remove element",
+        AddLinkOp x => $"Add {x.LinkKind}",
+        RemoveLinkOp _ => "Remove link",
+        SetLinkAttributeOp x => $"Set {x.AttributeName}",
+        SetLifecycleOp _ => "Set lifecycle",
+        SetOwnershipOp _ => "Set ownership",
+        _ => op.GetType().Name
+    };
 
     public async Task ReloadAsync(CancellationToken ct = default)
     {
@@ -70,8 +151,36 @@ public sealed class VersoEngine : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_watcher is not null) await _watcher.DisposeAsync();
         _workspace.Dispose();
         await Task.CompletedTask;
+    }
+
+    public async Task<OperationResult> UndoAsync(string opId, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var entry = _undo.PopUndo();
+            if (entry is null) return new OperationFailed(opId, "NothingToUndo", "Undo stack is empty");
+            // Apply the inverse op without re-pushing onto the undo stack.
+            var inverse = entry.Inverse with { OpId = opId };
+            return await ApplyInternalAsync(inverse, recordUndo: false, ct);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<OperationResult> RedoAsync(string opId, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var entry = _undo.PopRedo();
+            if (entry is null) return new OperationFailed(opId, "NothingToRedo", "Redo stack is empty");
+            var forward = entry.Forward with { OpId = opId };
+            return await ApplyInternalAsync(forward, recordUndo: false, ct);
+        }
+        finally { _gate.Release(); }
     }
 
     private Document? FindDocument(string filePath) =>
@@ -610,6 +719,55 @@ public sealed class VersoEngine : IAsyncDisposable
         SyntaxNode newRoot;
         try { newRoot = DslWriter.RemoveStatementById(root, op.LinkId); }
         catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> SetLifecycleAsync(SetLifecycleOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        var current = DslReader.TryRead(doc.FilePath!, root);
+        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
+        var existingTag = current.Tags.FirstOrDefault(t => t.TargetId == op.TargetId);
+        var existingOwnership = existingTag?.Ownership;
+
+        var allEmpty = string.IsNullOrEmpty(op.Status) && string.IsNullOrEmpty(op.Phase)
+                    && string.IsNullOrEmpty(op.ValidFrom) && string.IsNullOrEmpty(op.ValidUntil);
+        var lifecycle = allEmpty ? null : new ArchLifecycle(op.Status, op.Phase, op.ValidFrom, op.ValidUntil);
+
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.SetTag(root, op.TargetId, lifecycle, existingOwnership); }
+        catch (Exception e) { return new OperationFailed(op.OpId, "SetTagFailed", e.Message); }
+
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> SetOwnershipAsync(SetOwnershipOp op, CancellationToken ct)
+    {
+        var doc = FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        var current = DslReader.TryRead(doc.FilePath!, root);
+        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
+        var existingTag = current.Tags.FirstOrDefault(t => t.TargetId == op.TargetId);
+        var existingLifecycle = existingTag?.Lifecycle;
+
+        var allEmpty = string.IsNullOrEmpty(op.Squad) && string.IsNullOrEmpty(op.Domain);
+        var ownership = allEmpty ? null : new ArchOwnership(op.Squad, op.Domain);
+
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.SetTag(root, op.TargetId, existingLifecycle, ownership); }
+        catch (Exception e) { return new OperationFailed(op.OpId, "SetTagFailed", e.Message); }
+
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
