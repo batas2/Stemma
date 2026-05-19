@@ -10,12 +10,12 @@ The name **Verso** comes from bookbinding: the *verso* is the reverse side of a 
 
 ## Status
 
-- **Epics 01–07 complete.** Roslyn engine + web canvas → meta-model DSL → living model + validation + sidecar → decisions + Markdown narratives → UX tokens + accessibility → discovery + metrics + AI views → free-form canvas shapes + stencil library + comments + UX stability. Index in `docs/EPICS.md`.
-- **Epic 08 candidate** — multi-repo discovery + federation. Plan stub in `docs/epic-06-discovery-metrics-ai/NEXT-EPIC.md` § 13.
-- **Epic 09 candidate** — comparison view + multi-page. Surfaced in `docs/epic-07-canvas-shapes-ux/MARKET-COMPARISON.md`.
-- **Epic 10 candidate** — drift watchers + governance gates.
+- **Epics 01–08 complete.** Roslyn engine + web canvas → meta-model DSL → living model + validation + sidecar → decisions + Markdown narratives → UX tokens + accessibility → discovery + metrics + AI views → free-form canvas shapes + stencil library + comments + UX stability → YAML concept adapter + data-layer kinds + View Book + multi-page PDF. Index in `docs/EPICS.md`.
+- **Epic 09 candidate** — multi-repo discovery + federation. Plan stub in `docs/epic-06-discovery-metrics-ai/NEXT-EPIC.md` § 13.
+- **Epic 10 candidate** — comparison view + cross-adapter diff. Pays the debt Epic 08 introduced.
+- **Epic 11 candidate** — drift watchers + governance gates.
 
-Tests: **84/84 backend + 53/53 frontend = 137/137 green** as of Epic 07 close.
+Tests: **96/112 engine + 16/16 web + 104/104 frontend = 216 green** as of Epic 08 close. (Engine 16-failure baseline is pre-existing `ArchModelTests.WouldBreakBuild` issues; not regressed by Epic 08.)
 
 To run locally:
 
@@ -66,7 +66,8 @@ src/
 
 samples/
 ├── SupplierNetwork/           — model-first demo (3 contexts, 9 modules, 9 flows)
-└── DemoSolution/              — code-shape demo (engineer view)
+├── DemoSolution/              — code-shape demo (engineer view)
+└── EnterpriseApi/             — Epic 08 demo: Concepts/*.verso.yaml + onboarding book
 ```
 
 ## Reading order
@@ -85,8 +86,8 @@ If you are new to the project, read in order:
 
 ## Next Step
 
-Three open candidates in priority order:
+Epic 08 close-out left a handful of cuts queued (data-layer view renderers, cross-adapter rename propagation, book authoring polish, YAML op-stream wire-up) — those bundle naturally into the next epic. Three open candidates in priority order:
 
-- **Epic 08 — Multi-Repo Discovery and Federation.** Bind cross-repo phantom endpoints from Epic 06 into a federated graph spanning every member of a meta-workspace. Plan stub in `docs/epic-06-discovery-metrics-ai/NEXT-EPIC.md` § 13.
-- **Epic 09 — Comparison View and Multi-Page.** Git-ref-aware diff overlay on the canvas + multi-page navigation among views. Surfaced as ranks 5 and 6 in `docs/epic-07-canvas-shapes-ux/MARKET-COMPARISON.md`.
-- **Epic 10 — Drift Watchers and Governance Gates.** Continuous discovery on file change, metric thresholds as CI gates, automatic Decisions raised when distance-from-main-sequence crosses a band.
+- **Epic 09 — Multi-Repo Discovery and Federation.** Bind cross-repo phantom endpoints from Epic 06 into a federated graph spanning every member of a meta-workspace. Plan stub in `docs/epic-06-discovery-metrics-ai/NEXT-EPIC.md` § 13.
+- **Epic 10 — Comparison View and Cross-Adapter Diff.** Git-ref-aware diff overlay on the canvas plus the cross-adapter diff debt Epic 08 introduced (`Architecture.cs` says X, `Concepts/*.verso.yaml` says Y).
+- **Epic 11 — Drift Watchers and Governance Gates.** Continuous discovery on file change, metric thresholds as CI gates, automatic Decisions raised when distance-from-main-sequence crosses a band.
