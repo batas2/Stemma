@@ -1,0 +1,8 @@
+version: 1
+books:
+  - id: book_intro
+    name: Intro
+    pages:
+      - viewId: c4Context
+        title: System context
+        narrative: Start here.

@@ -27,6 +27,9 @@ public sealed class YamlConceptFile
     /// <summary>Original trailing bytes inside a section (between last entry and next section).</summary>
     public Dictionary<string, string> SectionTrailers { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Original leading bytes inside a section (between section header and first entry).</summary>
+    public Dictionary<string, string> SectionPreambles { get; } = new(StringComparer.Ordinal);
+
     public YamlConceptEntry? FindConcept(string id) =>
         Concepts.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
 

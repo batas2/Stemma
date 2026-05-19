@@ -1,0 +1,27 @@
+version: 1
+
+# Onboarding deck for new engineers. Drives the welcome session.
+books:
+  - id: book_onboarding
+    name: New Hire Onboarding
+    audience: engineering
+    pages:
+      - viewId: c4Context
+        title: What we ship
+        narrative: The orange box is us — that is the system you'll be working on.
+
+      - viewId: moduleMap
+        title: How the code is organised
+        narrative: Each tile is a module. Tiles in the same colour ship together.
+
+      - viewId: dependencyGraph
+        title: Where it gets risky
+        narrative: Arrows point at things we depend on. Watch the red ones.
+
+  - id: book_quarterly
+    name: Q3 Architecture Review
+    audience: leadership
+    pages:
+      - viewId: decisionLog
+        title: Decisions we made this quarter
+        narrative: Skim the ADRs in chronological order.

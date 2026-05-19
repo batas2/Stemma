@@ -55,6 +55,8 @@ public static class YamlConceptWriter
             sb.Append(headerLine).Append('\n');
         else
             sb.Append(name).Append(":\n");
+        if (file.SectionPreambles.TryGetValue(name, out var preamble))
+            sb.Append(preamble);
         if (hasEntries) emit();
         if (file.SectionTrailers.TryGetValue(name, out var trailer))
             sb.Append(trailer);

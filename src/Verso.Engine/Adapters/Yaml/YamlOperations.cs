@@ -85,6 +85,73 @@ public static class YamlMutations
     public static void RemoveRelation(YamlConceptFile file, string id) =>
         file.Relations.RemoveAll(r => r.Id == id);
 
+    public static YamlBookEntry AddBook(YamlAdapter adapter, string fileName, string id, string name, string? audience = null)
+    {
+        var file = adapter.GetOrCreate(fileName);
+        if (file.Books.Any(b => b.Id == id))
+            throw new InvalidOperationException($"book id `{id}` already present in {fileName}");
+        var entry = new YamlBookEntry { Id = id, Name = name, Audience = audience, IsNew = true };
+        file.Books.Add(entry);
+        EnsureSection(file, YamlSchema.BooksKey);
+        return entry;
+    }
+
+    public static void RemoveBook(YamlConceptFile file, string id) =>
+        file.Books.RemoveAll(b => b.Id == id);
+
+    public static void RenameBook(YamlBookEntry entry, string newName)
+    {
+        if (entry.Name == newName) return;
+        entry.Name = newName;
+        // Books are always fully re-emitted (no in-place rewrite path), so mark IsNew so the
+        // writer rebuilds the block. This preserves trivia of *sibling* books, not this one.
+        entry.IsNew = true;
+        entry.OriginalBlock = string.Empty;
+    }
+
+    public static YamlBookPage AddBookPage(YamlBookEntry book, string viewId, string title, string narrative = "")
+    {
+        var page = new YamlBookPage { ViewId = viewId, Title = title, Narrative = narrative };
+        book.Pages.Add(page);
+        book.IsNew = true;
+        book.OriginalBlock = string.Empty;
+        return page;
+    }
+
+    public static void RemoveBookPage(YamlBookEntry book, int pageIndex)
+    {
+        if (pageIndex < 0 || pageIndex >= book.Pages.Count)
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), $"page index {pageIndex} out of range (0..{book.Pages.Count - 1})");
+        book.Pages.RemoveAt(pageIndex);
+        book.IsNew = true;
+        book.OriginalBlock = string.Empty;
+    }
+
+    public static void ReorderBookPages(YamlBookEntry book, IReadOnlyList<int> newOrder)
+    {
+        if (newOrder.Count != book.Pages.Count)
+            throw new ArgumentException($"new order length {newOrder.Count} must equal page count {book.Pages.Count}", nameof(newOrder));
+        var distinct = new HashSet<int>(newOrder);
+        if (distinct.Count != newOrder.Count) throw new ArgumentException("new order contains duplicate indices", nameof(newOrder));
+        foreach (var i in newOrder)
+            if (i < 0 || i >= book.Pages.Count)
+                throw new ArgumentException($"index {i} out of range", nameof(newOrder));
+        var reordered = newOrder.Select(i => book.Pages[i]).ToList();
+        book.Pages.Clear();
+        book.Pages.AddRange(reordered);
+        book.IsNew = true;
+        book.OriginalBlock = string.Empty;
+    }
+
+    public static void SetBookPageNarrative(YamlBookEntry book, int pageIndex, string narrative)
+    {
+        if (pageIndex < 0 || pageIndex >= book.Pages.Count)
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), $"page index {pageIndex} out of range (0..{book.Pages.Count - 1})");
+        book.Pages[pageIndex].Narrative = narrative;
+        book.IsNew = true;
+        book.OriginalBlock = string.Empty;
+    }
+
     private static void EnsureSection(YamlConceptFile file, string sectionName)
     {
         if (file.SectionPresent.Contains(sectionName)) return;
@@ -139,6 +206,46 @@ public sealed record UpdateYamlRelationOp(
 public sealed record RemoveYamlRelationOp(
     string OpId,
     string Id) : OperationBase(OpId);
+
+// === Track A — View Book ops ===
+
+public sealed record AddBookOp(
+    string OpId,
+    string Id,
+    string Name,
+    string? Audience = null) : OperationBase(OpId);
+
+public sealed record RemoveBookOp(
+    string OpId,
+    string Id) : OperationBase(OpId);
+
+public sealed record RenameBookOp(
+    string OpId,
+    string Id,
+    string NewName) : OperationBase(OpId);
+
+public sealed record AddBookPageOp(
+    string OpId,
+    string BookId,
+    string ViewId,
+    string Title,
+    string Narrative = "") : OperationBase(OpId);
+
+public sealed record RemoveBookPageOp(
+    string OpId,
+    string BookId,
+    int PageIndex) : OperationBase(OpId);
+
+public sealed record ReorderBookPagesOp(
+    string OpId,
+    string BookId,
+    IReadOnlyList<int> NewOrder) : OperationBase(OpId);
+
+public sealed record SetBookPageNarrativeOp(
+    string OpId,
+    string BookId,
+    int PageIndex,
+    string Narrative) : OperationBase(OpId);
 
 // === Track C sugar ops — emit YAML under the hood ===
 

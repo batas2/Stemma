@@ -46,6 +46,13 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.MoveEntityToAggregateOp), "MoveEntityToAggregate")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.MoveResourceUnderParentOp), "MoveResourceUnderParent")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.SetResourceActionsOp), "SetResourceActions")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddBookOp), "AddBook")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RemoveBookOp), "RemoveBook")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RenameBookOp), "RenameBook")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddBookPageOp), "AddBookPage")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RemoveBookPageOp), "RemoveBookPage")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.ReorderBookPagesOp), "ReorderBookPages")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.SetBookPageNarrativeOp), "SetBookPageNarrative")]
 public abstract record OperationBase(string OpId);
 
 public sealed record AddTypeOp(

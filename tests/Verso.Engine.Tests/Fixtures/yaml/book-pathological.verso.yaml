@@ -1,0 +1,26 @@
+version: 1
+
+
+# Stress test: blank-line clusters, comments between pages, quoted scalars.
+books:
+  # First book has a quoted name with a colon — must round-trip exactly.
+  - id: book_weird
+    name: "Architecture: the bits we still don't trust"
+    audience: ops
+    pages:
+      # A page with a tricky narrative.
+      - viewId: c4Context
+        title: "Trust, but verify"
+        narrative: "Quotes \"inside\" the narrative, plus a colon: see?"
+
+
+      - viewId: moduleMap
+        title: Modules
+        narrative: ""
+
+  - id: book_empty_pages
+    name: Bookless book
+    pages: []
+
+
+# Tail comment that must survive a round-trip.

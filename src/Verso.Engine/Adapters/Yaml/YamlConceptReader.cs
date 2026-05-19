@@ -58,6 +58,11 @@ public static class YamlConceptReader
             var sectionStart = sect.HeaderLineIndex + 1;
             var sectionEndLine = s + 1 < sections.Count ? sections[s + 1].HeaderLineIndex : lines.Length;
             var entries = SplitEntries(lines, sectionStart, sectionEndLine);
+            // Capture any text between the section header and the first entry start
+            // (comments / blanks) so it can be re-emitted byte-identical.
+            var firstEntryLine = entries.Count > 0 ? entries[0].Start : sectionEndLine;
+            if (firstEntryLine > sectionStart)
+                file.SectionPreambles[sect.Name] = text[lineStarts[sectionStart]..lineStarts[firstEntryLine]];
             foreach (var (entryStart, entryEnd) in entries)
             {
                 var block = text[lineStarts[entryStart]..lineStarts[entryEnd + 1]];
