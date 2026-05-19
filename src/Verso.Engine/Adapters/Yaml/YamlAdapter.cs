@@ -5,8 +5,10 @@ namespace Verso.Engine.Adapters.Yaml;
 /// files from a workspace root and dispatches mutation ops to the trivia-preserving
 /// writer. See ADR-0011 for the round-trip contract.
 /// </summary>
-public sealed class YamlAdapter
+public sealed class YamlAdapter : IStorageAdapter
 {
+    public string Name => "yaml";
+
     public string ConceptsDirectory { get; }
     public Dictionary<string, YamlConceptFile> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
 
