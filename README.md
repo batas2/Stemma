@@ -10,19 +10,20 @@ The name **Verso** comes from bookbinding: the *verso* is the reverse side of a 
 
 ## Status
 
-- **Spike 01 complete** — code-shape modeller with C# files as the only storage. `docs/spike-01-status/STATE.md`.
-- **Spike 02 complete** — model-first canvas with the `Verso.Model` meta-model encoded as a compiling C# DSL. Three modelling views (C4 Context, Module Map, Dependencies) plus an Engineer view. Light/dark themes, custom views, drag-and-drop, two auto-arrange algorithms, editable relationships with line styling, snap-to-grid and align/distribute, sidebar with collapsible categories. `docs/spike-02-status/STATE.md`.
-- **Spike 03 planned** — external-edit watcher, undo/redo, lifecycle and ownership metadata, validation rules, layout sidecar in source. `docs/spike-02-status/NEXT-SPIKE.md`.
+- **Epics 01–07 complete.** Roslyn engine + web canvas → meta-model DSL → living model + validation + sidecar → decisions + Markdown narratives → UX tokens + accessibility → discovery + metrics + AI views → free-form canvas shapes + stencil library + comments + UX stability. Index in `docs/EPICS.md`.
+- **Epic 08 candidate** — multi-repo discovery + federation. Plan stub in `docs/epic-06-discovery-metrics-ai/NEXT-EPIC.md` § 13.
+- **Epic 09 candidate** — comparison view + multi-page. Surfaced in `docs/epic-07-canvas-shapes-ux/MARKET-COMPARISON.md`.
+- **Epic 10 candidate** — drift watchers + governance gates.
 
-Tests: 17/17 green (`./scripts/test.sh`).
+Tests: **84/84 backend + 53/53 frontend = 137/137 green** as of Epic 07 close.
 
 To run locally:
 
 ```bash
 ./run.sh                                                # dev mode (Vite + backend, HMR)
 ./run.sh --prod                                         # production (bundled SPA + backend)
-./run.sh --dev --workspace samples/SupplierNetwork      # arch-modelling demo (Spike 02)
-./run.sh --dev --workspace samples/DemoSolution         # code-shape demo (Spike 01)
+./run.sh --dev --workspace samples/SupplierNetwork      # arch-modelling demo (Epic 02)
+./run.sh --dev --workspace samples/DemoSolution         # code-shape demo (Epic 01)
 ```
 
 Docker:
@@ -55,7 +56,7 @@ verso/
     ├── operations-catalog.md  — implemented + planned operations
     ├── sync-protocol.md       — UI ↔ backend synchronization
     ├── projections.md         — multi-audience view system
-    └── spike-01-web-modeler.md — first spike spec (web canvas + C# storage)
+    └── epic-01-web-modeler.md — first epic spec (web canvas + C# storage)
 
 src/
 ├── Verso.Engine/              — Roslyn workspace + DSL reader/writer + ops
@@ -79,8 +80,13 @@ If you are new to the project, read in order:
 5. `specs/round-trip-fidelity.md`
 6. `specs/operations-catalog.md`
 7. `specs/projections.md`
-8. `docs/spike-02-status/STATE.md` — what's actually built today
+8. `docs/EPICS.md` — index of every epic and its current status
+9. `docs/epic-06-discovery-metrics-ai/STATE.md` — most recent close-out (the freshest snapshot of what is built)
 
 ## Next Step
 
-Spike 03: *Living, governable model* — external-edit watcher, undo/redo, lifecycle and ownership metadata, validation rules, layout sidecar in source. Plan in `docs/spike-02-status/NEXT-SPIKE.md`.
+Three open candidates in priority order:
+
+- **Epic 08 — Multi-Repo Discovery and Federation.** Bind cross-repo phantom endpoints from Epic 06 into a federated graph spanning every member of a meta-workspace. Plan stub in `docs/epic-06-discovery-metrics-ai/NEXT-EPIC.md` § 13.
+- **Epic 09 — Comparison View and Multi-Page.** Git-ref-aware diff overlay on the canvas + multi-page navigation among views. Surfaced as ranks 5 and 6 in `docs/epic-07-canvas-shapes-ux/MARKET-COMPARISON.md`.
+- **Epic 10 — Drift Watchers and Governance Gates.** Continuous discovery on file change, metric thresholds as CI gates, automatic Decisions raised when distance-from-main-sequence crosses a band.

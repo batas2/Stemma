@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Verso.Engine.ArchModel;
+using Verso.Engine.Discovery;
 using Verso.Engine.Workspace;
 using Verso.Web.Hubs;
 using Verso.Web.Services;
@@ -8,6 +9,24 @@ using Verso.Web.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<EngineHost>();
+builder.Services.AddSingleton<DiscoveryService>();
+builder.Services.AddSingleton<IClaudeTransport>(sp => SelectClaudeTransport(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<AiBroker>(sp => new AiBroker(sp.GetRequiredService<IClaudeTransport>()));
+
+static IClaudeTransport SelectClaudeTransport(IConfiguration config)
+{
+    // Selection order:
+    //   1. $VERSO_AI_TRANSPORT=cli|http (env wins — easy override per shell).
+    //   2. config "Verso:Ai:Transport" from appsettings.json (project default = "cli").
+    //   3. Auto-detect: prefer CLI when `claude` is on PATH; fall back to HTTP.
+    var pinned = (Environment.GetEnvironmentVariable("VERSO_AI_TRANSPORT")
+                  ?? config["Verso:Ai:Transport"])?.ToLowerInvariant();
+    if (pinned == "cli") return new ClaudeCliTransport();
+    if (pinned == "http") return new HttpClaudeTransport();
+
+    var cli = new ClaudeCliTransport();
+    return cli.IsAvailable ? cli : new HttpClaudeTransport();
+}
 builder.Services.AddSignalR().AddJsonProtocol(o =>
 {
     o.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -283,6 +302,90 @@ workspaceApi.MapPut("/layout", async (LayoutSidecar sidecar, EngineHost host) =>
     sidecar.Write(engine.RootPath);
     await Task.CompletedTask;
     return Results.NoContent();
+});
+
+// ---------------- Epic 06 — Discovery, metrics, AI, view recommendations ----------------
+
+workspaceApi.MapPost("/discovery/run", async (EngineHost host, DiscoveryService discovery, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+    var bundle = await discovery.RunAsync(engine.Model, engine.Solution, ct);
+    return Results.Ok(bundle);
+});
+
+workspaceApi.MapGet("/discovery", (EngineHost host, DiscoveryService discovery) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var cached = discovery.ReadCached(engine.RootPath);
+    return cached is null ? Results.NotFound() : Results.Ok(cached);
+});
+
+workspaceApi.MapGet("/discovery/metrics", (EngineHost host) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var metrics = DiscoverySidecars.ReadMetrics(engine.RootPath);
+    return metrics is null ? Results.NotFound() : Results.Ok(metrics);
+});
+
+workspaceApi.MapPost("/discovery/analyse-module", async (
+    AnalyseModuleRequest req, EngineHost host, DiscoveryService discovery, AiBroker broker, CancellationToken ct) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+    var bundle = discovery.ReadCached(engine.RootPath);
+    if (bundle is null) return Results.BadRequest(new { error = "run /discovery/run first" });
+    var result = await broker.AnalyseModuleAsync(req, engine.Model, bundle, ct);
+    return Results.Ok(result);
+});
+
+workspaceApi.MapGet("/discovery/ai-status", (AiBroker broker) =>
+    Results.Ok(new { configured = broker.IsConfigured, transport = broker.TransportLabel }));
+
+// ---------------- Epic 07 — Comments substrate ----------------
+
+workspaceApi.MapGet("/comments", (EngineHost host) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    return Results.Ok(CommentsSidecar.Read(engine.RootPath));
+});
+
+workspaceApi.MapPut("/comments", async (CommentsSidecar sidecar, EngineHost host) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+    sidecar.Write(engine.RootPath);
+    await Task.CompletedTask;
+    return Results.NoContent();
+});
+
+workspaceApi.MapGet("/author", () =>
+{
+    // Best-effort resolution of the current author for new comment entries.
+    string? FromGit(string key)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git", $"config {key}")
+            {
+                RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true,
+            };
+            using var p = System.Diagnostics.Process.Start(psi);
+            if (p is null) return null;
+            var s = p.StandardOutput.ReadToEnd().Trim();
+            p.WaitForExit(500);
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+        catch { return null; }
+    }
+    var author = FromGit("user.name")
+                 ?? Environment.GetEnvironmentVariable("USER")
+                 ?? Environment.GetEnvironmentVariable("USERNAME")
+                 ?? "anonymous";
+    return Results.Ok(new { author });
 });
 
 app.MapHub<WorkspaceHub>("/hubs/workspace");

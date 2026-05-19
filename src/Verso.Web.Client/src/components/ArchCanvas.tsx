@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import clsx from 'clsx';
 import {
   ReactFlow,
   Background,
@@ -19,6 +20,10 @@ import { ArchNodeView } from './nodes/ArchNodeView';
 import { BcBackdrop } from './nodes/BcBackdrop';
 import { WaypointEdge } from './edges/WaypointEdge';
 import { CanvasToolbar } from './CanvasToolbar';
+import { C4Legend } from './C4Legend';
+import { ShapeLayer } from './ShapeLayer';
+import { StencilDrawer } from './StencilDrawer';
+import { isCustomViewKey, loadShapes, primeShapeCache } from '@/lib/shapes';
 import { ContextMenu, ContextIcons, type ContextMenuState } from './ContextMenu';
 import { confirmAction } from './ConfirmDialog';
 import { promptText, pickFromList } from './PromptDialog';
@@ -28,7 +33,8 @@ import { applyOperation } from '@/lib/signalr';
 import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, type SavedPosition } from '@/lib/layout';
 import { layoutUndo, diffPositions, isEmptyDiff } from '@/lib/layoutUndo';
 import {
-  layoutHierarchical, layoutForceDirected, alignSelected, distributeSelected,
+  layoutHierarchical, layoutForceDirected, layoutC4HubAndSpoke, layoutFocused, layoutByType,
+  alignSelected, distributeSelected,
   type LayoutAlgorithm,
 } from '@/lib/autoLayout';
 import { dashArrayFor, DEFAULT_EDGE_STYLE } from '@/lib/edgeStyles';
@@ -42,7 +48,13 @@ interface FilteredView {
   links: ArchLink[];
 }
 
-function filterByView(arch: ArchModel, view: ViewKind, customView: CustomView | null): FilteredView {
+interface C4State {
+  level: 'context' | 'container' | 'component';
+  focusSystemId: string | null;
+  focusContainerId: string | null;
+}
+
+function filterByView(arch: ArchModel, view: ViewKind, customView: CustomView | null, c4: C4State): FilteredView {
   if (customView) {
     const inView = arch.elements.filter((e) => customView.elementIds.includes(e.id));
     let elements = inView;
@@ -53,7 +65,7 @@ function filterByView(arch: ArchModel, view: ViewKind, customView: CustomView | 
     const links = arch.links.filter((l) => ids.has(l.fromId) && ids.has(l.toId));
     return { elements, links };
   }
-  return applyBuiltIn(arch, view);
+  return applyBuiltIn(arch, view, c4);
 }
 
 function applyKindFilter(elements: ArchElement[], view: ViewKind): ArchElement[] {
@@ -65,10 +77,53 @@ function applyKindFilter(elements: ArchElement[], view: ViewKind): ArchElement[]
   }
 }
 
-function applyBuiltIn(arch: ArchModel, view: ViewKind): FilteredView {
+function applyBuiltIn(arch: ArchModel, view: ViewKind, c4: C4State): FilteredView {
   switch (view) {
     case 'c4Context': {
-      const elements = arch.elements.filter((e) => e.kind === 'softwareSystem' || e.kind === 'person' || e.kind === 'container');
+      // C4 levels:
+      //   L1 'context'   → SoftwareSystem + Person, no containers (the strict System Context view)
+      //   L2 'container' → Container (filtered to focused system if set) + Person + neighbouring SoftwareSystems
+      //   L3 'component' → Module/Capability (filtered to focused container's owning context if set)
+      const level = c4.level;
+      const focusSysId = c4.focusSystemId;
+      const focusCtnId = c4.focusContainerId;
+
+      let elements: ArchElement[] = [];
+      switch (level) {
+        case 'context':
+          elements = arch.elements.filter((e) => e.kind === 'softwareSystem' || e.kind === 'person');
+          break;
+        case 'container': {
+          const containers = arch.elements.filter((e) =>
+            e.kind === 'container' && (!focusSysId || e.attributes.systemId === focusSysId));
+          // Also keep neighbouring systems & people that link to the focused containers,
+          // so the boundary is meaningful but the diagram is still scoped.
+          const ids = new Set(containers.map((c) => c.id));
+          const neighbours = new Set<string>();
+          for (const l of arch.links) {
+            if (ids.has(l.fromId)) neighbours.add(l.toId);
+            if (ids.has(l.toId)) neighbours.add(l.fromId);
+          }
+          const others = arch.elements.filter((e) =>
+            (e.kind === 'softwareSystem' || e.kind === 'person') && (neighbours.has(e.id) || (focusSysId && e.id === focusSysId)));
+          elements = [...containers, ...others];
+          break;
+        }
+        case 'component': {
+          // L3 = Modules / Capabilities under the focused container's containing system, or the focused
+          // container's contextId if it has one. Without a focus, show every module + capability.
+          if (focusCtnId) {
+            const ctn = arch.elements.find((e) => e.id === focusCtnId);
+            const ctxId = ctn?.attributes.contextId;
+            elements = arch.elements.filter((e) =>
+              (e.kind === 'module' || e.kind === 'capability')
+              && (!ctxId || e.attributes.contextId === ctxId));
+          } else {
+            elements = arch.elements.filter((e) => e.kind === 'module' || e.kind === 'capability');
+          }
+          break;
+        }
+      }
       const ids = new Set(elements.map((e) => e.id));
       const links = arch.links.filter((l) => ids.has(l.fromId) && ids.has(l.toId));
       return { elements, links };
@@ -80,7 +135,10 @@ function applyBuiltIn(arch: ArchModel, view: ViewKind): FilteredView {
       return { elements, links };
     }
     case 'dependencyGraph': {
-      const elements = arch.elements.filter((e) => e.kind === 'module');
+      // Include Bounded Contexts so we can group modules under their BC backdrops, and capabilities
+      // so dependency arrows targeting a capability still render. Architects expect to see context.
+      const elements = arch.elements.filter((e) =>
+        e.kind === 'module' || e.kind === 'boundedContext' || e.kind === 'capability');
       const ids = new Set(elements.map((e) => e.id));
       const links = arch.links.filter((l) => l.kind === 'dependency' && ids.has(l.fromId) && ids.has(l.toId));
       return { elements, links };
@@ -116,11 +174,85 @@ function CanvasInner() {
 
   const activeCustomView = customViews.find((v) => v.id === activeId) ?? null;
   const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : view;
+  const shapesEnabled = isCustomViewKey(layoutKey);
 
-  const filtered = useMemo(
-    () => arch ? filterByView(arch, view, activeCustomView) : { elements: [], links: [] },
-    [arch, view, activeCustomView]
-  );
+  const depKindFilter = useApp((s) => s.depKindFilter);
+  const depFocusMode = useApp((s) => s.depFocusMode);
+  const depDepth = useApp((s) => s.depDepth);
+  const selectedElementId = useApp((s) => s.selectedElementId);
+  const c4Level = useApp((s) => s.c4Level);
+  const c4FocusSystemId = useApp((s) => s.c4FocusSystemId);
+  const c4FocusContainerId = useApp((s) => s.c4FocusContainerId);
+
+  const filtered = useMemo(() => {
+    const c4State = { level: c4Level, focusSystemId: c4FocusSystemId, focusContainerId: c4FocusContainerId };
+    const base = arch ? filterByView(arch, view, activeCustomView, c4State) : { elements: [], links: [] };
+    // Dependency view supports a per-kind filter so architects can mute "uses" while focusing on
+    // "calls" / "consumes" without leaving the canvas.
+    if (view !== 'dependencyGraph' || !depKindFilter) return base;
+    const links = base.links.filter((l) => l.kind !== 'dependency' || depKindFilter.has(l.attributes.kind ?? 'uses'));
+    return { ...base, links };
+  }, [arch, view, activeCustomView, depKindFilter, c4Level, c4FocusSystemId, c4FocusContainerId]);
+
+  /**
+   * Fan-in / fan-out for the dependency view, computed off the *unfiltered* arch so the badge
+   * always reflects the architect's intent — not whatever they happen to be filtering today.
+   */
+  const fanCounts = useMemo(() => {
+    const map = new Map<string, { in: number; out: number }>();
+    if (view !== 'dependencyGraph' || !arch) return map;
+    for (const e of filtered.elements) map.set(e.id, { in: 0, out: 0 });
+    for (const l of arch.links) {
+      if (l.kind !== 'dependency') continue;
+      const o = map.get(l.fromId);
+      const i = map.get(l.toId);
+      if (o) o.out++;
+      if (i) i.in++;
+    }
+    return map;
+  }, [view, arch, filtered.elements]);
+
+  /**
+   * Focus mode — given the selected element, the related set is the union of:
+   *   - the element itself,
+   *   - everything it directly depends on (out-edges, up to depDepth hops),
+   *   - everything that depends on it (in-edges, up to depDepth hops),
+   *   - the BoundedContext that owns it (so the BC backdrop stays lit).
+   * Returns null when the user has selected nothing — caller treats null as "no dimming".
+   */
+  const focusSet = useMemo<Set<string> | null>(() => {
+    if (view !== 'dependencyGraph' || !depFocusMode || !arch) return null;
+    const seed = selectedElementId;
+    if (!seed) return null;
+    const out = new Map<string, string[]>();
+    const inMap = new Map<string, string[]>();
+    for (const l of arch.links) {
+      if (l.kind !== 'dependency') continue;
+      if (depKindFilter && !depKindFilter.has(l.attributes.kind ?? 'uses')) continue;
+      (out.get(l.fromId) ?? out.set(l.fromId, []).get(l.fromId)!).push(l.toId);
+      (inMap.get(l.toId) ?? inMap.set(l.toId, []).get(l.toId)!).push(l.fromId);
+    }
+    const visited = new Set<string>([seed]);
+    function walk(start: string, edges: Map<string, string[]>, depth: number) {
+      let frontier = [start];
+      for (let d = 0; d < depth; d++) {
+        const next: string[] = [];
+        for (const id of frontier) {
+          const adj = edges.get(id) ?? [];
+          for (const n of adj) if (!visited.has(n)) { visited.add(n); next.push(n); }
+        }
+        frontier = next;
+        if (frontier.length === 0) break;
+      }
+    }
+    walk(seed, out, depDepth);
+    walk(seed, inMap, depDepth);
+    // Always include the seed's containing BC (so its backdrop doesn't dim).
+    const seedEl = arch.elements.find((e) => e.id === seed);
+    const ctxId = seedEl?.attributes?.contextId;
+    if (ctxId) visited.add(ctxId);
+    return visited;
+  }, [view, depFocusMode, arch, depKindFilter, depDepth, selectedElementId]);
 
   const [edgeWaypoints, setEdgeWaypoints] = useState<Record<string, SavedPosition[]>>({});
   useEffect(() => {
@@ -160,6 +292,9 @@ function CanvasInner() {
     const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
     const dash = dashArrayFor(userStyle.lineStyle) ?? (isDataFlow ? undefined : '4 4');
     const waypoints = edgeWaypoints[l.id];
+    // Dim edges that connect dimmed nodes in focus mode. Both endpoints have to be in
+    // the focus set for the edge to stay lit — otherwise it's irrelevant to the selection.
+    const dimmed = focusSet !== null && !(focusSet.has(l.fromId) && focusSet.has(l.toId));
     return {
       id: l.id,
       source: l.fromId,
@@ -167,18 +302,23 @@ function CanvasInner() {
       type: 'waypointed',
       label,
       animated: !isDataFlow && userStyle.lineStyle === 'solid' && (!waypoints || waypoints.length === 0),
+      // markerEnd makes the arrow direction unambiguous on the dependency graph — architects
+      // need to see "what depends on what" at a glance, not infer from animation.
+      markerEnd: { type: 'arrowclosed' as const, color: userStyle.color, width: 18, height: 18 },
       style: {
         strokeWidth: userStyle.thickness,
         strokeDasharray: dash,
         stroke: userStyle.color,
+        opacity: dimmed ? 0.18 : 1,
       },
+      labelStyle: dimmed ? { opacity: 0.4 } : undefined,
       data: {
         waypoints,
         onAddWaypoint: handleAddWaypoint,
         onRemoveWaypoint: handleRemoveWaypoint,
       },
     };
-  }), [filtered.links, edgeStyles, edgeWaypoints, handleAddWaypoint, handleRemoveWaypoint]);
+  }), [filtered.links, edgeStyles, edgeWaypoints, handleAddWaypoint, handleRemoveWaypoint, focusSet]);
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
@@ -194,10 +334,28 @@ function CanvasInner() {
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
 
   const onNodeDoubleClick: NodeMouseHandler = useCallback((_, node) => {
-    if (mode === 'view') return;
     if (node.type !== 'arch') return;
+    // C4 drill-down: on L1, double-click a SoftwareSystem → drill into its containers (L2).
+    // On L2, double-click a Container → drill into its components (L3). Editing names via
+    // double-click stays the gesture for everything else.
+    if (view === 'c4Context') {
+      const data = node.data as { element?: { id: string; kind: string } };
+      const el = data.element;
+      const s = useApp.getState();
+      if (el && s.c4Level === 'context' && el.kind === 'softwareSystem') {
+        s.setC4FocusSystem(el.id);
+        s.setC4Level('container');
+        return;
+      }
+      if (el && s.c4Level === 'container' && el.kind === 'container') {
+        s.setC4FocusContainer(el.id);
+        s.setC4Level('component');
+        return;
+      }
+    }
+    if (mode === 'view') return;
     setEditingNodeId(node.id);
-  }, [mode]);
+  }, [mode, view]);
 
   const handleCommitName = useCallback(async (nodeId: string, next: string) => {
     setEditingNodeId(null);
@@ -231,11 +389,17 @@ function CanvasInner() {
           if (!cur || sevRank(v.severity) > sevRank(cur)) sevByElement.set(id, v.severity);
         }
       }
+      // Quick lookup for the BC backing each element so the inspector / badges can show context name.
+      const ctxById = new Map(arch?.elements.filter((x) => x.kind === 'boundedContext').map((x) => [x.id, x.name]) ?? []);
       return filtered.elements.map((e) => {
         const existing = prevById.get(e.id);
         const pos = existing?.position ?? merged[e.id] ?? { x: 0, y: 0 };
         const ns = nodeStyles[e.id];
         const editing = editingNodeId === e.id;
+        const dimmed = focusSet !== null && !focusSet.has(e.id);
+        const fan = fanCounts.get(e.id);
+        const ctxId = e.attributes?.contextId ?? null;
+        const ctxName = ctxId ? ctxById.get(ctxId) ?? null : null;
         return {
           id: e.id,
           type: 'arch',
@@ -253,11 +417,17 @@ function CanvasInner() {
             editing,
             onCommitName: handleCommitName,
             onCancelEdit: handleCancelEdit,
+            // Architect-grade dep view extras — read by ArchNodeView.
+            dimmed,
+            fanIn: fan?.in,
+            fanOut: fan?.out,
+            contextName: ctxName,
+            isDependencyView: view === 'dependencyGraph',
           },
         } satisfies Node;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, mode, handleNodeResize, editingNodeId, handleCommitName, handleCancelEdit, activeCustomView]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, mode, handleNodeResize, editingNodeId, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts]);
 
   useEffect(() => {
     if (nodes.length > 0) {
@@ -595,7 +765,8 @@ function CanvasInner() {
   const onDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/verso-palette')
         || e.dataTransfer.types.includes('application/verso-element')
-        || e.dataTransfer.types.includes('application/verso-template')) {
+        || e.dataTransfer.types.includes('application/verso-template')
+        || e.dataTransfer.types.includes('application/verso-stencil')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     }
@@ -606,7 +777,27 @@ function CanvasInner() {
     const paletteKind = e.dataTransfer.getData('application/verso-palette') as ArchElementKind | '';
     const template = e.dataTransfer.getData('application/verso-template');
     const elementId = e.dataTransfer.getData('application/verso-element');
+    const stencilId = e.dataTransfer.getData('application/verso-stencil');
     const dropPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+
+    if (stencilId && shapesEnabled && workspace) {
+      const { findStencil } = await import('@/lib/stencils');
+      const { addShape, newImage, saveShapes } = await import('@/lib/shapes');
+      const stencil = findStencil(stencilId);
+      if (stencil) {
+        const shape = newImage(dropPos.x - 32, dropPos.y - 32, stencil.src, 64, 64);
+        shape.label = stencil.label;
+        try {
+          const next = addShape(useApp.getState().shapes[layoutKey] ?? [], shape);
+          useApp.getState().setShapesFor(layoutKey, next);
+          saveShapes(workspace.rootPath, layoutKey, next);
+          useApp.getState().selectShape(shape.id);
+        } catch (err) {
+          setToast({ kind: 'error', text: (err as Error).message });
+        }
+      }
+      return;
+    }
 
     if (template === 'bcWithModules') {
       if (mode === 'view') { setToast({ kind: 'info', text: 'Switch to Edit mode to add elements.' }); return; }
@@ -661,26 +852,24 @@ function CanvasInner() {
     }
   }, [mode, screenToFlowPosition, setToast, activeCustomView, workspace, layoutKey, addElementToActiveView, templateBoundedContextWithModules, templateSystemWithContainer]);
 
-  const handleAutoLayout = useCallback((algo: LayoutAlgorithm) => {
-    setNodes((current) => {
-      const seed: Record<string, SavedPosition> = {};
-      for (const n of current) seed[n.id] = { x: n.position.x, y: n.position.y };
-      const fresh = algo === 'hierarchical'
-        ? layoutHierarchical(filtered.elements, filtered.links)
-        : layoutForceDirected(filtered.elements, filtered.links, seed);
-      const next = current.map((n) => ({ ...n, position: fresh[n.id] ?? n.position }));
-      persistPositions(next);
-      setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50);
-      return next;
-    });
-    setToast({ kind: 'success', text: `Applied ${algo === 'hierarchical' ? 'hierarchical' : 'force-directed'} layout` });
-  }, [filtered, persistPositions, fitView, setToast]);
+  // Layout animation. We toggle a class on the canvas wrapper that enables a CSS
+  // transform-transition on every React Flow node for ~600 ms after a relayout commits.
+  // Implemented as a class rather than per-node inline styles so React Flow's wrapper
+  // (which we don't own) picks it up via a single global rule.
+  const [animatingLayout, setAnimatingLayout] = useState(false);
+  const animateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerLayoutAnimation = useCallback(() => {
+    setAnimatingLayout(true);
+    if (animateTimerRef.current) clearTimeout(animateTimerRef.current);
+    animateTimerRef.current = setTimeout(() => setAnimatingLayout(false), 650);
+  }, []);
+  useEffect(() => () => { if (animateTimerRef.current) clearTimeout(animateTimerRef.current); }, []);
 
   // Build a per-node bounds map. Width / height come from the rendered DOM
   // size (`measured`), falling back to any explicit style override (set when
-  // the user resized the node), then to a kind-specific default. Without
-  // dimensions, "Align right" would just align left edges and "Center"
-  // would only look right when every box is the same width.
+  // the user resized the node), then to a kind-specific default. Defined
+  // BEFORE handleAutoLayout because the latter feeds these into the force
+  // layout for AABB-aware repulsion.
   const nodeBounds = useCallback((list: Node[]): Record<string, { x: number; y: number; w: number; h: number }> => {
     const out: Record<string, { x: number; y: number; w: number; h: number }> = {};
     for (const n of list) {
@@ -696,6 +885,50 @@ function CanvasInner() {
     }
     return out;
   }, []);
+
+  const handleAutoLayout = useCallback((algo: LayoutAlgorithm) => {
+    setNodes((current) => {
+      const seed: Record<string, SavedPosition> = {};
+      // Measured sizes from React Flow's rendered DOM — passed into the force layout so
+      // its repulsion is AABB-aware, not centre-distance-only. Falls back to per-kind defaults
+      // inside the algorithm if a node has no measurement yet.
+      const sizes: Record<string, { w: number; h: number }> = {};
+      const bounds = nodeBounds(current);
+      for (const n of current) {
+        seed[n.id] = { x: n.position.x, y: n.position.y };
+        const b = bounds[n.id];
+        if (b) sizes[n.id] = { w: b.w, h: b.h };
+      }
+      let fresh: Record<string, SavedPosition>;
+      switch (algo) {
+        case 'hierarchical': fresh = layoutHierarchical(filtered.elements, filtered.links); break;
+        case 'force':        fresh = layoutForceDirected(filtered.elements, filtered.links, seed, { sizes }); break;
+        case 'c4-hub':       fresh = layoutC4HubAndSpoke(filtered.elements, filtered.links); break;
+        case 'byType':       fresh = layoutByType(filtered.elements, filtered.links, { view, sizes }); break;
+        case 'focused': {
+          // The dropdown gates this entry on selection, but defend anyway: if no selection
+          // is present, fall back to force-directed so the user always gets *some* result.
+          const focusId = useApp.getState().selectedElementId;
+          if (!focusId || !filtered.elements.some((e) => e.id === focusId)) {
+            fresh = layoutForceDirected(filtered.elements, filtered.links, seed, { sizes });
+          } else {
+            fresh = layoutFocused(focusId, filtered.elements, filtered.links);
+          }
+          break;
+        }
+      }
+      const next = current.map((n) => ({ ...n, position: fresh[n.id] ?? n.position }));
+      persistPositions(next);
+      setTimeout(() => fitView({ padding: 0.2, duration: 600 }), 50);
+      return next;
+    });
+    triggerLayoutAnimation();
+    const label: Record<LayoutAlgorithm, string> = {
+      hierarchical: 'hierarchical', force: 'force-directed', 'c4-hub': 'C4 hub-and-spoke',
+      focused: 'focused', byType: 'architectural (by type)',
+    };
+    setToast({ kind: 'success', text: `Applied ${label[algo]} layout` });
+  }, [filtered, persistPositions, fitView, setToast, triggerLayoutAnimation, nodeBounds]);
 
   const handleAlign = useCallback((axis: 'left' | 'right' | 'centerX' | 'top' | 'bottom' | 'centerY') => {
     setNodes((current) => {
@@ -760,7 +993,7 @@ function CanvasInner() {
   // contained modules sit on top. Only meaningful when the view shows both BCs
   // and modules together.
   const renderedNodes = useMemo<Node[]>(() => {
-    const showBackdrop = view === 'moduleMap' || activeCustomView !== null;
+    const showBackdrop = view === 'moduleMap' || view === 'dependencyGraph' || activeCustomView !== null;
     if (!showBackdrop) return nodes;
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const modulesByCtx = new Map<string, Node[]>();
@@ -795,6 +1028,10 @@ function CanvasInner() {
         selectable: false,
         focusable: false,
         zIndex: -1,
+        // Override React Flow's default `.react-flow__node { pointer-events: all; }` so the
+        // huge backdrop wrapper never steals clicks from the modules sitting on top of it
+        // — or, in extreme cases, from the floating canvas toolbar.
+        style: { pointerEvents: 'none' as const },
       });
     }
     return [...backdrops, ...nodes];
@@ -805,8 +1042,44 @@ function CanvasInner() {
   const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(248 250 252)';
   const dotColor = isDark ? 'rgb(45 45 50)' : 'rgb(212 217 224)';
 
+  // Shapes are gated to custom views (Epic 07 ADR-0009). `shapesEnabled` defined above.
+  const setShapesFor = useApp((s) => s.setShapesFor);
+  const [stencilOpen, setStencilOpen] = useState(false);
+
+  // Prime the shape cache ONCE per workspace open. Re-priming on every view switch
+  // races the debounced layout-sidecar PUT and can clobber an in-flight create with
+  // stale server data — that's the "shape disappears when I change view" bug.
+  const primedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!workspace) return;
+    if (primedFor.current === workspace.rootPath) return;
+    primedFor.current = workspace.rootPath;
+    primeShapeCache(workspace.rootPath).then(() => {
+      // Hydrate every view that exists in the sidecar so view switches read from store, not the wire.
+      const fresh = useApp.getState();
+      const known = Object.keys(fresh.shapes);
+      const candidates = new Set<string>([layoutKey, ...known]);
+      candidates.forEach((key) => setShapesFor(key, loadShapes(workspace.rootPath, key)));
+    }).catch(() => {});
+  }, [workspace?.rootPath, setShapesFor, layoutKey]);
+
+  // On view switch, refresh the active view's shapes from the (already-primed) cache
+  // without going back to the server. If the cache has the latest local edits — including
+  // not-yet-flushed debounced writes — they survive the round-trip.
+  useEffect(() => {
+    if (!workspace) return;
+    if (primedFor.current !== workspace.rootPath) return;
+    setShapesFor(layoutKey, loadShapes(workspace.rootPath, layoutKey));
+  }, [workspace?.rootPath, layoutKey, setShapesFor]);
+
   return (
-    <div className="h-full w-full relative" style={{ background: bgColor }} ref={wrapperRef} onDragOver={onDragOver} onDrop={onDrop}>
+    <div
+      className={clsx('h-full w-full relative', animatingLayout && 'verso-anim-layout')}
+      style={{ background: bgColor }}
+      ref={wrapperRef}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       <CanvasToolbar
         onAutoLayout={handleAutoLayout}
         onAlign={handleAlign}
@@ -814,7 +1087,17 @@ function CanvasInner() {
         onFitSelection={handleFitSelection}
         onDeleteSelected={handleDeleteSelected}
         selectedCount={selectedCount}
+        shapesEnabled={shapesEnabled}
+        onOpenStencils={() => setStencilOpen(true)}
       />
+      {view === 'c4Context' && <C4Legend />}
+      {shapesEnabled && stencilOpen && workspace && (
+        <StencilDrawer
+          viewKey={layoutKey}
+          workspaceRoot={workspace.rootPath}
+          onClose={() => setStencilOpen(false)}
+        />
+      )}
       <ReactFlow
         nodes={renderedNodes}
         edges={edges}
@@ -847,6 +1130,9 @@ function CanvasInner() {
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={dotColor} />
         <Controls />
         <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />
+        {shapesEnabled && workspace && (
+          <ShapeLayer viewKey={layoutKey} workspaceRoot={workspace.rootPath} enabled />
+        )}
       </ReactFlow>
       <ContextMenu state={menu} onClose={() => setMenu(null)} />
     </div>

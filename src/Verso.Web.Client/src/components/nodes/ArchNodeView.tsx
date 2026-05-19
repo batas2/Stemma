@@ -30,6 +30,12 @@ export type ArchNodeData = {
   editing?: boolean;
   onCommitName?: (id: string, next: string) => void;
   onCancelEdit?: () => void;
+  // Dependency-view extras — Epic 07 architect UX.
+  dimmed?: boolean;
+  fanIn?: number;
+  fanOut?: number;
+  contextName?: string | null;
+  isDependencyView?: boolean;
 } & Record<string, unknown>;
 
 export type ArchFlowNode = Node<ArchNodeData, 'arch'>;
@@ -129,6 +135,15 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   if (nodeStyle?.borderStyle) inlineStyle.borderStyle = nodeStyle.borderStyle;
   if (nodeStyle?.width) inlineStyle.width = nodeStyle.width;
   if (nodeStyle?.height) inlineStyle.height = nodeStyle.height;
+  if (data.dimmed) inlineStyle.opacity = 0.25;
+  // External SoftwareSystem (or external Person) gets a dashed boundary so architects can
+  // distinguish in-scope from out-of-scope at a glance — the C4 reference convention.
+  const isExternal = e.attributes?.external === 'true' || e.attributes?.role === 'external';
+  if (isExternal) {
+    inlineStyle.borderStyle = inlineStyle.borderStyle ?? 'dashed';
+    inlineStyle.borderWidth = inlineStyle.borderWidth ?? '1.5px';
+    inlineStyle.background = inlineStyle.background ?? 'rgba(148, 163, 184, 0.08)';
+  }
   const hasCustomStyle = !!(nodeStyle?.fillColor || nodeStyle?.borderColor || nodeStyle?.borderStyle);
 
   // Default size hints — kept on the wrapper so the NodeResizer respects min sizes.
@@ -161,6 +176,24 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         )}
       >
         <Handle type="target" position={Position.Top} />
+        {/* Fan-in / fan-out badges — shown only on the dependency view, where the architect
+            wants to see "how many things depend on this" + "how many things this pulls from" at a glance. */}
+        {data.isDependencyView && (data.fanIn !== undefined || data.fanOut !== undefined) && (
+          <div className="absolute -top-2 left-2 flex items-center gap-1 text-[10px] font-mono pointer-events-none">
+            {data.fanIn !== undefined && data.fanIn > 0 && (
+              <span title={`${data.fanIn} module${data.fanIn === 1 ? '' : 's'} depend on this`}
+                className="px-1 py-0 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                ←{data.fanIn}
+              </span>
+            )}
+            {data.fanOut !== undefined && data.fanOut > 0 && (
+              <span title={`This depends on ${data.fanOut} module${data.fanOut === 1 ? '' : 's'}`}
+                className="px-1 py-0 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                →{data.fanOut}
+              </span>
+            )}
+          </div>
+        )}
         {violationSeverity && (
           <span
             className={clsx(
@@ -192,6 +225,11 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     {labelForKind[e.kind]}
                   </span>
                 )}
+                {isExternal && (
+                  <span className="text-[9px] uppercase tracking-wider px-1 py-0 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium">
+                    external
+                  </span>
+                )}
                 {showField('status') && status && <StatusBadge status={status} />}
               </div>
             )}
@@ -205,7 +243,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                 <div className="text-[10px] text-zinc-500 font-mono truncate">{e.id}</div>
               )}
               {showField('contextId') && e.attributes.contextId && (
-                <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.contextId}</div>
+                <div className="text-[10px] text-zinc-500 truncate" title={`Bounded Context: ${data.contextName ?? e.attributes.contextId}`}>
+                  in <span className="font-medium text-zinc-700 dark:text-zinc-300">{data.contextName ?? e.attributes.contextId}</span>
+                </div>
               )}
               {showField('systemId') && e.attributes.systemId && (
                 <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.systemId}</div>

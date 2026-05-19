@@ -6,6 +6,7 @@ import { applyOperation } from '@/lib/signalr';
 import { DEFAULT_EDGE_STYLE, type EdgeLineStyle, type EdgeStyle } from '@/lib/edgeStyles';
 import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle } from '@/lib/nodeStyles';
 import { RESERVED_KEYS, type CustomProps } from '@/lib/customProps';
+import { CommentsPanel } from './CommentsPanel';
 import { ALL_FIELD_KEYS, fieldLabel } from './nodes/ArchNodeView';
 
 // Stable singleton — see customPropsSlot below for why this matters.
@@ -201,8 +202,29 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
         <Section label="Properties" persistKey="element.properties" defaultOpen>
           <Field label="Kind" value={e.kind} />
           <Field label="Id" value={e.id} mono />
-          {Object.entries(e.attributes).map(([k, v]) =>
+          {Object.entries(e.attributes).filter(([k]) => k !== 'external').map(([k, v]) =>
             v ? <Field key={k} label={k} value={v} mono /> : null
+          )}
+          {/* External toggle — shown for Software Systems and Persons. The C4 reference uses a
+              dashed boundary for elements outside the system in scope; this writes
+              attributes.external = 'true' which the renderer picks up. */}
+          {(e.kind === 'softwareSystem' || e.kind === 'person') && (
+            <label className="flex items-center gap-2 mt-2 text-xs">
+              <input
+                type="checkbox"
+                checked={e.attributes.external === 'true'}
+                onChange={async (ev) => {
+                  await applyOperation({
+                    kind: 'SetElementAttribute',
+                    opId: `op_${Date.now()}`,
+                    elementId: e.id,
+                    attributeName: 'external',
+                    value: ev.target.checked ? 'true' : null,
+                  });
+                }}
+              />
+              <span>Outside the system in scope (C4 external)</span>
+            </label>
           )}
         </Section>
 
@@ -374,6 +396,10 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           <button onClick={() => setNotesOpen(true)} className="mt-2 w-full btn btn-md btn-secondary">
             <Edit3 className="w-3 h-3" /> Open editor
           </button>
+        </Section>
+
+        <Section label="Comments" persistKey="element.comments" defaultOpen={false}>
+          <CommentsPanel targetKind="element" targetId={e.id} title={e.name} />
         </Section>
       </div>
       <div className="p-3 mt-auto border-t border-default">

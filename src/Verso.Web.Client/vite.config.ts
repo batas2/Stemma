@@ -21,5 +21,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['tests/visual/**', 'node_modules/**'],
+    // Tests that touch localStorage / window need a DOM. happy-dom is the lightest option.
+    environment: 'happy-dom',
   },
 });

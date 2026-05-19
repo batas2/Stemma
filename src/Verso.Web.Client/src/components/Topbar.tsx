@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock } from 'lucide-react';
+import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock, Compass, Loader2 } from 'lucide-react';
 import { VersoLockup } from './Logo';
 import { useApp } from '@/lib/store';
 import { initWorkspace, openWorkspace, listRecents } from '@/lib/api';
+import { runDiscovery } from '@/lib/discovery';
 import { fetchUndoState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
 import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
 import type { RecentEntry } from '@/lib/types';
@@ -21,6 +22,22 @@ export function Topbar() {
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [undoState, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null });
+  const [discovering, setDiscovering] = useState(false);
+
+  async function onDiscover() {
+    if (!ws) return;
+    setDiscovering(true);
+    setLoading(true);
+    try {
+      const b = await runDiscovery();
+      setToast({ kind: 'success', text: `Discovery: ${b.discovered.modules.length} modules · ${b.discovered.edges.length} edges · ${b.recommendations.length} suggested views` });
+    } catch (e) {
+      setToast({ kind: 'error', text: (e as Error).message });
+    } finally {
+      setDiscovering(false);
+      setLoading(false);
+    }
+  }
 
   useEffect(() => { listRecents().then(setRecents).catch(() => {}); }, [ws?.rootPath]);
 
@@ -111,6 +128,16 @@ export function Topbar() {
               <Search className="w-3.5 h-3.5" />
               <span className="flex-1 text-left">Search…</span>
               <kbd className="text-[10px] font-mono bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{primaryKeyLabel}K</kbd>
+            </button>
+            <button
+              onClick={onDiscover}
+              disabled={discovering}
+              aria-label="Run discovery"
+              title="Read source, propose modules + dependency typing + metrics"
+              className="btn btn-md btn-ghost border-default bg-zinc-100 dark:bg-zinc-900"
+            >
+              {discovering ? <Loader2 className="w-3 h-3 animate-spin" /> : <Compass className="w-3 h-3" />}
+              Discover
             </button>
             <ExportMenu />
           </>

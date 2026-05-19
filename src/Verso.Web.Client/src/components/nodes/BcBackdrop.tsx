@@ -19,10 +19,14 @@ export function BcBackdrop({ data }: NodeProps<BcBackdropNode>) {
         width: data.width,
         height: data.height,
         pointerEvents: 'none',
+        position: 'relative',
       }}
       className="rounded-2xl border-2 border-dashed border-violet-400/50 dark:border-violet-500/40 bg-violet-500/5 dark:bg-violet-500/10"
     >
-      <div className="absolute -top-3 left-3 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider bg-violet-500/20 text-violet-700 dark:text-violet-300 border border-violet-500/30">
+      <div
+        style={{ pointerEvents: 'none' }}
+        className="absolute -top-3 left-3 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider bg-violet-500/20 text-violet-700 dark:text-violet-300 border border-violet-500/30"
+      >
         {data.label}
       </div>
     </div>

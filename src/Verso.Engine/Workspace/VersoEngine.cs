@@ -25,6 +25,7 @@ public sealed class VersoEngine : IAsyncDisposable
     public WorkspaceModel Model => _model;
     public string RootPath => _model.RootPath;
     public UndoStack Undo => _undo;
+    public Microsoft.CodeAnalysis.Solution Solution => _workspace.CurrentSolution;
     public event Action<string>? ExternalChange;
 
     private VersoEngine(MSBuildWorkspace workspace, WorkspaceModel model)

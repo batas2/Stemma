@@ -44,6 +44,30 @@ cleanup_stale
 
 echo "==> Verso starting (mode=$MODE)"
 
+# --- Claude transport advisory --------------------------------------------
+# The default in appsettings.json is `cli` (Claude Code subprocess; uses your
+# `claude login` session). Override at runtime with `VERSO_AI_TRANSPORT=http`
+# plus an Anthropic API key.
+ACTIVE_TRANSPORT="${VERSO_AI_TRANSPORT:-cli}"
+if [ "$ACTIVE_TRANSPORT" = "cli" ]; then
+  if command -v claude >/dev/null 2>&1; then
+    echo "==> Claude transport: cli (claude $(claude --version 2>/dev/null | head -n1 | awk '{print $1}'))"
+  else
+    echo "==> Claude transport: cli — but \`claude\` is NOT on PATH."
+    echo "    Install:  npm i -g @anthropic-ai/claude-code  &&  claude login"
+    echo "    Or pin HTTP:  VERSO_AI_TRANSPORT=http ANTHROPIC_API_KEY=sk-ant-... ./run.sh"
+  fi
+elif [ "$ACTIVE_TRANSPORT" = "http" ]; then
+  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "==> Claude transport: http (ANTHROPIC_API_KEY set, ${#ANTHROPIC_API_KEY} chars)"
+  elif [ -f "${HOME:-}/.verso/credentials.json" ]; then
+    echo "==> Claude transport: http (~/.verso/credentials.json found)"
+  else
+    echo "==> Claude transport: http — no API key found in env or ~/.verso/credentials.json."
+    echo "    Set:  export ANTHROPIC_API_KEY=sk-ant-..."
+  fi
+fi
+
 if [ ! -d src/Verso.Web.Client/node_modules ]; then
   echo "==> Installing frontend deps"
   (cd src/Verso.Web.Client && npm install --no-fund --no-audit --progress=false)

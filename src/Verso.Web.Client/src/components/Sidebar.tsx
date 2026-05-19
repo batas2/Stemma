@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react';
 import {
   Box, Boxes, Cuboid, Layers, Package, User, Server, Target, BookOpen,
   Search, Plus, Trash2, Eye, Edit3, Pencil, ChevronsLeft, ChevronsRight, Wand2, X,
-  ChevronDown, ChevronRight, Workflow,
+  ChevronDown, ChevronRight, Workflow, Compass,
 } from 'lucide-react';
+import { DiscoveryPanel } from './DiscoveryPanel';
+import { SuggestedViews } from './SuggestedViews';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { newCustomView } from '@/lib/views';
@@ -12,7 +14,7 @@ import { promptText } from './PromptDialog';
 import { suggestViewName } from '@/lib/naming';
 import type { ArchElement, ArchElementKind } from '@/lib/types';
 
-type Tab = 'elements' | 'views';
+type Tab = 'elements' | 'views' | 'discovered';
 
 const palette: { kind: ArchElementKind; label: string; icon: typeof Box; accent: string }[] = [
   { kind: 'module', label: 'Module', icon: Package, accent: 'text-indigo-500' },
@@ -65,6 +67,27 @@ export function Sidebar() {
   const [tab, setTab] = useState<Tab>('elements');
   const [query, setQuery] = useState('');
   const [collapsedCats, setCollapsedCats] = useState<Set<ArchElementKind>>(new Set());
+
+  // Top-level section collapse state — persisted across reloads. Architects with a deep palette
+  // benefit from collapsing "Add new" once they know the kinds, leaving the Existing list visible.
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = localStorage.getItem('verso.sidebar.collapsedSections');
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+  function toggleSection(id: string) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('verso.sidebar.collapsedSections', JSON.stringify([...next])); } catch { /* ignore */ }
+      }
+      return next;
+    });
+  }
+  const sectionOpen = (id: string) => !collapsedSections.has(id);
 
   const activeView = customViews.find((v) => v.id === activeId);
 
@@ -191,6 +214,13 @@ export function Sidebar() {
         >
           <Eye className="w-4 h-4" />
         </button>
+        <button
+          onClick={() => { setOpen(true); setTab('discovered'); }}
+          title="Discovered"
+          className="p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400"
+        >
+          <Compass className="w-4 h-4" />
+        </button>
       </aside>
     );
   }
@@ -250,6 +280,18 @@ export function Sidebar() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setTab('discovered')}
+          className={clsx(
+            'flex-1 py-1.5 rounded transition-colors flex items-center justify-center gap-1',
+            tab === 'discovered'
+              ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
+              : 'text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60'
+          )}
+          title="Discovered modules + metrics + suggested views"
+        >
+          <Compass className="w-3 h-3" /> Discovered
+        </button>
       </div>
 
       {tab === 'elements' && (
@@ -278,34 +320,43 @@ export function Sidebar() {
           </div>
           <div className="flex-1 overflow-auto scrollbar-thin">
           <section className="px-3 pt-3">
-            <div className="text-[10px] uppercase tracking-wider text-faint mb-2 flex items-center gap-1">
-              <Wand2 className="w-3 h-3" /> Add new
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {palette.map((p) => {
-                const Icon = p.icon;
-                return (
-                  <div
-                    key={p.kind}
-                    draggable
-                    onDragStart={(e) => onPaletteDragStart(e, p.kind, p.label)}
-                    title={`Drag to canvas to add a ${p.label}`}
-                    aria-label={`Drag to canvas to add a ${p.label}`}
-                    className="group flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
-                  >
-                    <Icon className={clsx('w-3.5 h-3.5 shrink-0', p.accent)} />
-                    <span className="truncate">{p.label}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <SectionHeader
+              icon={<Wand2 className="w-3 h-3" />}
+              label="Add new"
+              open={sectionOpen('addNew')}
+              onToggle={() => toggleSection('addNew')}
+            />
+            {sectionOpen('addNew') && (
+              <div className="grid grid-cols-2 gap-1.5 mt-2">
+                {palette.map((p) => {
+                  const Icon = p.icon;
+                  return (
+                    <div
+                      key={p.kind}
+                      draggable
+                      onDragStart={(e) => onPaletteDragStart(e, p.kind, p.label)}
+                      title={`Drag to canvas to add a ${p.label}`}
+                      aria-label={`Drag to canvas to add a ${p.label}`}
+                      className="group flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
+                    >
+                      <Icon className={clsx('w-3.5 h-3.5 shrink-0', p.accent)} />
+                      <span className="truncate">{p.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section className="px-3 pt-4">
-            <div className="text-[10px] uppercase tracking-wider text-faint mb-2 flex items-center gap-1">
-              <Workflow className="w-3 h-3" /> Templates
-            </div>
-            <ul className="space-y-1">
+            <SectionHeader
+              icon={<Workflow className="w-3 h-3" />}
+              label="Templates"
+              open={sectionOpen('templates')}
+              onToggle={() => toggleSection('templates')}
+            />
+            {sectionOpen('templates') && (
+            <ul className="space-y-1 mt-2">
               <li>
                 <button
                   draggable
@@ -329,16 +380,20 @@ export function Sidebar() {
                 </button>
               </li>
             </ul>
+            )}
           </section>
 
           <section className="px-3 pt-4 pb-3">
-            <div className="text-[10px] uppercase tracking-wider text-faint mb-2">
-              Existing ({totalCount})
-            </div>
-            {totalCount === 0 && (
-              <p className="text-xs text-zinc-500 px-1">{arch ? 'No elements yet.' : 'Open a workspace.'}</p>
+            <SectionHeader
+              label={`Existing (${totalCount})`}
+              open={sectionOpen('existing')}
+              onToggle={() => toggleSection('existing')}
+            />
+            {sectionOpen('existing') && totalCount === 0 && (
+              <p className="text-xs text-zinc-500 px-1 mt-2">{arch ? 'No elements yet.' : 'Open a workspace.'}</p>
             )}
-            <div className="space-y-2">
+            {sectionOpen('existing') && (
+            <div className="space-y-2 mt-2">
               {Array.from(groups.entries()).map(([kind, items]) => {
                 const Icon = elementIcon[kind];
                 const collapsed = collapsedCats.has(kind);
@@ -391,6 +446,7 @@ export function Sidebar() {
                 );
               })}
             </div>
+            )}
           </section>
           </div>
         </div>
@@ -407,8 +463,14 @@ export function Sidebar() {
             </button>
           </section>
           <section className="px-3 pt-3 pb-3">
-            <div className="text-[10px] uppercase tracking-wider text-faint mb-2">Custom views</div>
-            <p className="text-[10px] text-faint mb-2 leading-snug">
+            <SectionHeader
+              label="Custom views"
+              open={sectionOpen('customViews')}
+              onToggle={() => toggleSection('customViews')}
+            />
+            {sectionOpen('customViews') && (
+            <>
+            <p className="text-[10px] text-faint mt-2 mb-2 leading-snug">
               Built-in views (Context, Module Map, Dependencies, Decisions) live in the topbar. Custom views below filter the model down to a curated subset.
             </p>
             {customViews.length === 0 && (
@@ -455,9 +517,40 @@ export function Sidebar() {
                 Drag elements onto the canvas to include them in this view.
               </div>
             )}
+            </>
+            )}
           </section>
+          <SuggestedViews />
+        </div>
+      )}
+
+      {tab === 'discovered' && (
+        <div className="flex-1 overflow-hidden">
+          <DiscoveryPanel />
         </div>
       )}
     </aside>
+  );
+}
+
+/** Clickable section header with chevron + persistent collapse. */
+function SectionHeader({ label, icon, open, onToggle }: {
+  label: string;
+  icon?: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={open}
+      className="w-full text-[10px] uppercase tracking-wider text-faint flex items-center gap-1 hover:text-body transition-colors"
+    >
+      {open
+        ? <ChevronDown className="w-3 h-3 shrink-0" />
+        : <ChevronRight className="w-3 h-3 shrink-0" />}
+      {icon}
+      <span className="flex-1 text-left">{label}</span>
+    </button>
   );
 }

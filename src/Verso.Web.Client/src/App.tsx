@@ -1,10 +1,11 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
 import { ArchCanvas } from './components/ArchCanvas';
 import { Inspector } from './components/Inspector';
 import { ArchInspector } from './components/ArchInspector';
+import { ShapeInspector } from './components/ShapeInspector';
 import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
@@ -25,6 +26,22 @@ import { bindShortcuts } from './lib/shortcuts';
 const DecisionLog = lazy(() => import('./components/DecisionLog').then((m) => ({ default: m.DecisionLog })));
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
+/** Renders the shape inspector when a shape is selected; otherwise falls back to the
+ *  arch inspector. Defined at module scope so it has stable identity across App renders —
+ *  inlining it inside App() caused unmount/remount churn that re-fired narrative fetches. */
+function ArchOrShapeInspector() {
+  const selectedShapeId = useApp((s) => s.selectedShapeId);
+  const workspace = useApp((s) => s.workspace);
+  const customViews = useApp((s) => s.customViews);
+  const activeId = useApp((s) => s.activeCustomViewId);
+  if (selectedShapeId && workspace) {
+    const activeCustomView = customViews.find((v) => v.id === activeId);
+    const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : 'moduleMap';
+    return <ShapeInspector viewKey={layoutKey} workspaceRoot={workspace.rootPath} />;
+  }
+  return <ArchInspector />;
+}
+
 export default function App() {
   const ws = useApp((s) => s.workspace);
   const arch = useApp((s) => s.arch);
@@ -43,17 +60,20 @@ export default function App() {
       }
     }).catch(() => {});
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
+    // UX bug fix #5: a transient archModel() failure must NOT clobber a previously good arch.
+    // Use a sentinel so refresh() can preserve the prior in-memory model on a 404 / network blip.
+    const PRESERVE = Symbol('preserve');
     async function refresh() {
       const [s, a, v] = await Promise.all([
         snapshot(),
-        archModel().catch(() => null),
+        archModel().catch(() => PRESERVE as unknown as null),
         listViolations().catch(() => []),
       ]);
       if (s) {
         setWs(s);
         primeLayoutSidecar(s.rootPath).catch(() => {});
       }
-      setArch(a);
+      if ((a as unknown) !== PRESERVE) setArch(a);
       setViolations(v);
     }
     const offOp = onOperationApplied(refresh);
@@ -154,12 +174,17 @@ export default function App() {
     document.body.style.color = theme === 'dark' ? 'rgb(244 244 245)' : 'rgb(24 24 27)';
   }, [theme]);
 
-  // Auto-pick a sensible default view based on workspace contents.
+  // UX bug fix #1: pick a default view ONCE per workspace open, not on every arch refresh.
+  // Anchored on rootPath; subsequent op refreshes that briefly null `arch` won't flip the view.
+  const initialisedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!ws) return;
-    if (arch && view === 'engineer') setView('moduleMap');
-    else if (!arch && view !== 'engineer') setView('engineer');
-  }, [ws, arch, view, setView]);
+    if (!ws) { initialisedFor.current = null; return; }
+    if (initialisedFor.current === ws.rootPath) return;
+    initialisedFor.current = ws.rootPath;
+    setView(arch ? 'moduleMap' : 'engineer');
+    // Intentionally omit `view` and `arch` from deps — we deliberately run only on workspace
+    // boundary changes. eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ws]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-screen flex flex-col">
@@ -180,7 +205,7 @@ export default function App() {
               {view !== 'engineer' && view !== 'decisionLog' && <ArchCanvas />}
             </main>
             {view === 'engineer' && <Inspector />}
-            {view !== 'engineer' && view !== 'decisionLog' && <ArchInspector />}
+            {view !== 'engineer' && view !== 'decisionLog' && <ArchOrShapeInspector />}
           </>
         ) : (
           <EmptyState />
