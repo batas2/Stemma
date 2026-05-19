@@ -1,4 +1,4 @@
-import { Boxes, GitBranch, Network, Code2, Lightbulb } from 'lucide-react';
+import { Boxes, GitBranch, Network, Lightbulb } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import type { ViewKind } from '@/lib/types';
@@ -8,7 +8,6 @@ const views: { id: ViewKind; label: string; icon: typeof Network }[] = [
   { id: 'moduleMap', label: 'Module Map', icon: Boxes },
   { id: 'dependencyGraph', label: 'Dependencies', icon: GitBranch },
   { id: 'decisionLog', label: 'Decisions', icon: Lightbulb },
-  { id: 'engineer', label: 'Engineer', icon: Code2 },
 ];
 
 export function ViewSwitcher() {
@@ -21,8 +20,7 @@ export function ViewSwitcher() {
     <div className="inline-flex items-center gap-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md p-0.5">
       {views.map((v) => {
         const Icon = v.icon;
-        const isEngineer = v.id === 'engineer';
-        const disabled = !isEngineer && !isArchWorkspace;
+        const disabled = !isArchWorkspace;
         const active = v.id === view;
         return (
           <button

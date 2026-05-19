@@ -32,6 +32,13 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.AddDecisionConcernsOp), "AddDecisionConcerns")]
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.SetDecisionNarrativeOp), "SetDecisionNarrative")]
 [JsonDerivedType(typeof(Verso.Engine.ArchModel.SetCapabilityNarrativeOp), "SetCapabilityNarrative")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddYamlConceptOp), "AddYamlConcept")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.UpdateYamlConceptOp), "UpdateYamlConcept")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RemoveYamlConceptOp), "RemoveYamlConcept")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RenameYamlConceptOp), "RenameYamlConcept")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddYamlRelationOp), "AddYamlRelation")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.UpdateYamlRelationOp), "UpdateYamlRelation")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RemoveYamlRelationOp), "RemoveYamlRelation")]
 public abstract record OperationBase(string OpId);
 
 public sealed record AddTypeOp(

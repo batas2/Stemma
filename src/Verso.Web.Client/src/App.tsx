@@ -44,7 +44,6 @@ function ArchOrShapeInspector() {
 
 export default function App() {
   const ws = useApp((s) => s.workspace);
-  const arch = useApp((s) => s.arch);
   const view = useApp((s) => s.view);
   const setWs = useApp((s) => s.setWorkspace);
   const setArch = useApp((s) => s.setArch);
@@ -181,7 +180,7 @@ export default function App() {
     if (!ws) { initialisedFor.current = null; return; }
     if (initialisedFor.current === ws.rootPath) return;
     initialisedFor.current = ws.rootPath;
-    setView(arch ? 'moduleMap' : 'engineer');
+    setView('moduleMap');
     // Intentionally omit `view` and `arch` from deps — we deliberately run only on workspace
     // boundary changes. eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws]); // eslint-disable-line react-hooks/exhaustive-deps
