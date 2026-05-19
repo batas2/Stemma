@@ -48,3 +48,4 @@ src/Verso.Web.Client/vite.config.d.ts
 src/Verso.Web.Client/vite.config.js
 src/Verso.Web.Client/tsconfig.node.tsbuildinfo
 src/Verso.Web.Client/tsconfig.tsbuildinfo
+*.lscache
