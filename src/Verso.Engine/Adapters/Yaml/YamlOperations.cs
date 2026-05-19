@@ -139,3 +139,98 @@ public sealed record UpdateYamlRelationOp(
 public sealed record RemoveYamlRelationOp(
     string OpId,
     string Id) : OperationBase(OpId);
+
+// === Track C sugar ops — emit YAML under the hood ===
+
+public sealed record AddAggregateRootOp(
+    string OpId,
+    string Id,
+    string Name,
+    string? ContextId = null) : OperationBase(OpId);
+
+public sealed record AddDomainEntityOp(
+    string OpId,
+    string Id,
+    string Name,
+    string ParentAggregateId) : OperationBase(OpId);
+
+public sealed record AddValueObjectOp(
+    string OpId,
+    string Id,
+    string Name) : OperationBase(OpId);
+
+public sealed record AddResourceOp(
+    string OpId,
+    string Id,
+    string Name,
+    string? ParentResourceId = null,
+    IReadOnlyList<string>? Actions = null) : OperationBase(OpId);
+
+public sealed record MoveEntityToAggregateOp(
+    string OpId,
+    string EntityId,
+    string NewParentAggregateId) : OperationBase(OpId);
+
+public sealed record MoveResourceUnderParentOp(
+    string OpId,
+    string ResourceId,
+    string NewParentResourceId) : OperationBase(OpId);
+
+public sealed record SetResourceActionsOp(
+    string OpId,
+    string ResourceId,
+    IReadOnlyList<string> Actions) : OperationBase(OpId);
+
+/// <summary>
+/// Convenience helpers that apply Track C ops as YAML primitives. Each sugar op resolves
+/// to one or more <see cref="YamlMutations"/> calls so the trivia-preserving contract
+/// applies uniformly.
+/// </summary>
+public static class DataLayerOps
+{
+    public const string DataModelFile = "data-model.verso.yaml";
+    public const string ResourcesFile = "resources.verso.yaml";
+
+    public static YamlConceptEntry AddAggregateRoot(YamlAdapter adapter, string id, string name, string? contextId = null)
+    {
+        var props = contextId is not null ? new[] { new KeyValuePair<string, string>("contextId", contextId) } : null;
+        return YamlMutations.AddConcept(adapter, DataModelFile, id, "AggregateRoot", name, layer: "data", properties: props);
+    }
+
+    public static YamlConceptEntry AddDomainEntity(YamlAdapter adapter, string id, string name, string parentAggregateId)
+    {
+        return YamlMutations.AddConcept(adapter, DataModelFile, id, "DomainEntity", name, layer: "data",
+            properties: new[] { new KeyValuePair<string, string>("parent", parentAggregateId) });
+    }
+
+    public static YamlConceptEntry AddValueObject(YamlAdapter adapter, string id, string name)
+    {
+        return YamlMutations.AddConcept(adapter, DataModelFile, id, "ValueObject", name, layer: "data");
+    }
+
+    public static YamlConceptEntry AddResource(YamlAdapter adapter, string id, string name, string? parent = null, IReadOnlyList<string>? actions = null)
+    {
+        var props = new List<KeyValuePair<string, string>>();
+        if (parent is not null) props.Add(new("parent", parent));
+        if (actions is { Count: > 0 }) props.Add(new("actions", string.Join(",", actions)));
+        return YamlMutations.AddConcept(adapter, ResourcesFile, id, "Resource", name, layer: "data", properties: props);
+    }
+
+    public static void MoveEntityToAggregate(YamlAdapter adapter, string entityId, string newParent)
+    {
+        var entry = adapter.FindConcept(entityId) ?? throw new InvalidOperationException($"entity `{entityId}` not found");
+        YamlMutations.UpdateConceptProperty(entry, "parent", newParent);
+    }
+
+    public static void MoveResourceUnderParent(YamlAdapter adapter, string resourceId, string newParent)
+    {
+        var entry = adapter.FindConcept(resourceId) ?? throw new InvalidOperationException($"resource `{resourceId}` not found");
+        YamlMutations.UpdateConceptProperty(entry, "parent", newParent);
+    }
+
+    public static void SetResourceActions(YamlAdapter adapter, string resourceId, IReadOnlyList<string> actions)
+    {
+        var entry = adapter.FindConcept(resourceId) ?? throw new InvalidOperationException($"resource `{resourceId}` not found");
+        YamlMutations.UpdateConceptProperty(entry, "actions", string.Join(",", actions));
+    }
+}

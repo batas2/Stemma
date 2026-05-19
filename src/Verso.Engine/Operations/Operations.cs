@@ -39,6 +39,13 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddYamlRelationOp), "AddYamlRelation")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.UpdateYamlRelationOp), "UpdateYamlRelation")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RemoveYamlRelationOp), "RemoveYamlRelation")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddAggregateRootOp), "AddAggregateRoot")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddDomainEntityOp), "AddDomainEntity")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddValueObjectOp), "AddValueObject")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddResourceOp), "AddResource")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.MoveEntityToAggregateOp), "MoveEntityToAggregate")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.MoveResourceUnderParentOp), "MoveResourceUnderParent")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.SetResourceActionsOp), "SetResourceActions")]
 public abstract record OperationBase(string OpId);
 
 public sealed record AddTypeOp(

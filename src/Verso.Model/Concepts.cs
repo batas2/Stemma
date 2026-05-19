@@ -24,6 +24,52 @@ public sealed record UseCase(string Id, string Name) : ModelElement(Id, Name);
 /// <summary>A business capability.</summary>
 public sealed record Capability(string Id, string Name, string? ContextId = null) : ModelElement(Id, Name);
 
+/// <summary>
+/// A DDD aggregate root: the entry point for a cluster of entities and value objects that
+/// must change as a unit. Carries invariants the aggregate enforces.
+/// </summary>
+public sealed record AggregateRoot(
+    string Id,
+    string Name,
+    string? ContextId = null,
+    IReadOnlyList<string>? Invariants = null) : ModelElement(Id, Name);
+
+/// <summary>
+/// A domain entity living inside an aggregate. Has identity, mutable state, but not method
+/// bodies (v1 — Epic 08 scope; method bodies are forbidden per .doc/engineering/conventions.md rule 4).
+/// </summary>
+public sealed record DomainEntity(
+    string Id,
+    string Name,
+    string? ParentAggregateId = null,
+    IReadOnlyList<EntityProperty>? Properties = null) : ModelElement(Id, Name);
+
+/// <summary>
+/// A value object: immutable, equality by value, no identity. Properties only.
+/// </summary>
+public sealed record ValueObject(
+    string Id,
+    string Name,
+    IReadOnlyList<EntityProperty>? Properties = null,
+    string EqualityPolicy = "by-value") : ModelElement(Id, Name);
+
+/// <summary>
+/// A property on a <see cref="DomainEntity"/> or <see cref="ValueObject"/>. Type is a label
+/// (string), not a Roslyn-typed reference — the data architect declares shape without
+/// buying into the C# compiler. Soft-allowlisted at the engine layer.
+/// </summary>
+public sealed record EntityProperty(string Name, string Type);
+
+/// <summary>
+/// An ACL / authorization resource. Forms a hierarchy via <see cref="ParentResourceId"/>;
+/// each resource carries the actions an actor may perform on it.
+/// </summary>
+public sealed record Resource(
+    string Id,
+    string Name,
+    string? ParentResourceId = null,
+    IReadOnlyList<string>? Actions = null) : ModelElement(Id, Name);
+
 /// <summary>Common base for relationships.</summary>
 public abstract record ModelLink(string Id, string FromId, string ToId);
 
