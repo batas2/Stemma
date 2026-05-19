@@ -107,7 +107,7 @@ export interface Violation {
   linkIds: string[];
 }
 
-export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'decisionLog' | 'engineer';
+export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'decisionLog' | 'engineer' | 'dataModel' | 'resourceTree';
 export type Mode = 'edit' | 'view';
 
 /** A user-defined named subset of the canonical model. Persisted in localStorage per workspace. */
