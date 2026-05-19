@@ -1,0 +1,43 @@
+version: 1
+
+# A pathological fixture exercising trivia preservation edge cases:
+#   - blank lines between entries
+#   - inline comments on properties
+#   - mixed double-quoted and bare scalars
+#   - colons and slashes inside quoted values
+#   - aliases section
+#   - tail-of-file blank line
+
+concepts:
+  - id: res_org_root
+    kind: Resource
+    name: "Acme: parent org"
+    layer: data
+    parent: ""
+
+  - id: res_tenant
+    kind: Resource
+    name: Tenant
+    layer: data
+    parent: res_org_root
+
+
+  # Mid-section comment block — must survive round-trip.
+  - id: res_project
+    kind: Resource
+    name: "Project / folder"
+    layer: data
+    parent: res_tenant
+    action_share: "share:r/w"
+
+relations:
+  - id: rel_nest_org_tenant
+    kind: nests
+    from: res_org_root
+    to: res_tenant
+
+  - id: rel_nest_tenant_project
+    kind: nests
+    from: res_tenant
+    to: res_project
+# trailing comment line

@@ -1,0 +1,31 @@
+version: 1
+
+# Order-management bounded context: aggregates + entities.
+concepts:
+  - id: agg_order
+    kind: AggregateRoot
+    name: Order
+    layer: data
+    domain: ordering
+
+  - id: ent_order_line
+    kind: DomainEntity
+    name: OrderLine
+    layer: data
+    parent: agg_order
+
+  - id: vo_money
+    kind: ValueObject
+    name: Money
+    layer: data
+
+relations:
+  - id: rel_order_lines
+    kind: composes
+    from: agg_order
+    to: ent_order_line
+
+  - id: rel_line_price
+    kind: references
+    from: ent_order_line
+    to: vo_money
