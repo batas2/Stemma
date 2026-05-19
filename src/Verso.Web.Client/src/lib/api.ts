@@ -90,6 +90,19 @@ export async function exportDrawio(): Promise<string> {
   return r.text();
 }
 
+export interface BookPdfPagePayload { viewId: string; title: string; narrative: string; capturePngBase64?: string; }
+export interface BookPdfPayload { name: string; audience: string | null; pages: BookPdfPagePayload[]; }
+
+export async function exportBookPdf(book: BookPdfPayload): Promise<Blob> {
+  const r = await fetch(`${BASE}/api/workspace/export/book-pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(book),
+  });
+  if (!r.ok) throw new Error(`book PDF export failed: ${r.status}`);
+  return r.blob();
+}
+
 export async function listRecents(): Promise<RecentEntry[]> {
   const r = await fetch(`${BASE}/api/workspace/recents`);
   if (!r.ok) return [];

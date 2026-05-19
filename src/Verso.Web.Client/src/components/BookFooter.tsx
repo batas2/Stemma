@@ -1,5 +1,6 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileDown } from 'lucide-react';
 import { useApp } from '@/lib/store';
+import { exportBookPdf } from '@/lib/api';
 
 /**
  * Epic 08 Track A — narrative strip + prev/next page controls.
@@ -47,6 +48,24 @@ export function BookFooter() {
         className="flex-1 bg-transparent text-xs text-body placeholder:text-faint resize-none outline-none border-0 focus:bg-white/50 dark:focus:bg-zinc-900/50 px-2 py-1 rounded"
       />
       <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          onClick={async () => {
+            const blob = await exportBookPdf({
+              name: book.name,
+              audience: book.audience,
+              pages: book.pages.map((p) => ({ viewId: String(p.viewId), title: p.title, narrative: p.narrative })),
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `${book.name || 'book'}.pdf`; a.click();
+            URL.revokeObjectURL(url);
+          }}
+          aria-label="Export book as PDF"
+          title="Export book as PDF"
+          className="p-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40"
+        >
+          <FileDown className="w-3.5 h-3.5" />
+        </button>
         <button
           onClick={prev}
           disabled={atFirst}

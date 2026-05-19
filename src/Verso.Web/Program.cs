@@ -184,6 +184,23 @@ workspaceApi.MapGet("/export/drawio", async (EngineHost host, CancellationToken 
     return Results.Text(xml, "application/xml");
 });
 
+workspaceApi.MapPost("/export/book-pdf", (BookPdfRequest req) =>
+{
+    var book = new BookPdfExporter.PdfBook(
+        req.Name,
+        req.Audience,
+        req.Pages.Select(p => new BookPdfExporter.PdfBookPage(
+            p.ViewId,
+            p.Title,
+            p.Narrative,
+            string.IsNullOrEmpty(p.CapturePngBase64) ? null : Convert.FromBase64String(p.CapturePngBase64)
+        )).ToList());
+    var bytes = BookPdfExporter.Render(book);
+    var safeName = string.Concat(req.Name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_'));
+    if (string.IsNullOrEmpty(safeName)) safeName = "book";
+    return Results.File(bytes, "application/pdf", $"{safeName}.pdf");
+});
+
 workspaceApi.MapGet("/views", async (EngineHost host, CancellationToken ct) =>
 {
     var engine = host.Engine;
@@ -396,5 +413,8 @@ app.Run();
 
 public sealed record OpenWorkspaceRequest(string RootPath);
 public sealed record InitWorkspaceRequest(string RootPath, string? Name);
+
+public sealed record BookPdfPageRequest(string ViewId, string Title, string Narrative, string? CapturePngBase64);
+public sealed record BookPdfRequest(string Name, string? Audience, IReadOnlyList<BookPdfPageRequest> Pages);
 
 public partial class Program;
