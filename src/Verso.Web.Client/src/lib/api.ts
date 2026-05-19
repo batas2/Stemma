@@ -1,4 +1,4 @@
-import type { ArchModel, RecentEntry, Violation, WorkspaceModel } from './types';
+import type { ArchModel, RecentEntry, Violation, WorkspaceModel, YamlConceptsBundle } from './types';
 
 const BASE = '';
 
@@ -33,6 +33,13 @@ export async function archModel(): Promise<ArchModel | null> {
   const r = await fetch(`${BASE}/api/workspace/arch`);
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`Arch fetch failed: ${r.status}`);
+  return r.json();
+}
+
+export async function yamlConcepts(): Promise<YamlConceptsBundle | null> {
+  const r = await fetch(`${BASE}/api/workspace/yaml-concepts`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`YAML concepts fetch failed: ${r.status}`);
   return r.json();
 }
 

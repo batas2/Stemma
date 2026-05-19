@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Verso.Engine.Adapters.Yaml;
 using Verso.Engine.ArchModel;
 using Verso.Engine.Discovery;
 using Verso.Engine.Workspace;
@@ -159,6 +160,27 @@ workspaceApi.MapGet("/arch", async (EngineHost host, CancellationToken ct) =>
 {
     var arch = await host.ReadArchAsync(ct);
     return arch is null ? Results.NotFound() : Results.Ok(arch);
+});
+
+// Epic 08 — Data-layer concepts (AggregateRoot / DomainEntity / ValueObject / Resource)
+// and View Books live in `Concepts/*.verso.yaml`. The frontend Data Model + Resource Tree
+// views render off this surface; the Books popover seeds from `books`.
+workspaceApi.MapGet("/yaml-concepts", (EngineHost host) =>
+{
+    var engine = host.Engine;
+    if (engine is null) return Results.NotFound();
+    var adapter = YamlAdapter.Load(engine.RootPath);
+    var concepts = adapter.AllConcepts.Select(c => new YamlConceptDto(
+        c.Id, c.Kind, c.Name, c.Layer,
+        c.Properties.ToDictionary(p => p.Key, p => (string?)p.Value),
+        c.Aliases.ToArray())).ToArray();
+    var relations = adapter.AllRelations.Select(r => new YamlRelationDto(
+        r.Id, r.Kind, r.From, r.To,
+        r.Properties.ToDictionary(p => p.Key, p => (string?)p.Value))).ToArray();
+    var books = adapter.AllBooks.Select(b => new YamlBookDto(
+        b.Id, b.Name, b.Audience,
+        b.Pages.Select(p => new YamlBookPageDto(p.ViewId, p.Title, p.Narrative)).ToArray())).ToArray();
+    return Results.Ok(new YamlConceptsResponse(concepts, relations, books));
 });
 
 workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, CancellationToken ct) =>
@@ -416,5 +438,11 @@ public sealed record InitWorkspaceRequest(string RootPath, string? Name);
 
 public sealed record BookPdfPageRequest(string ViewId, string Title, string Narrative, string? CapturePngBase64);
 public sealed record BookPdfRequest(string Name, string? Audience, IReadOnlyList<BookPdfPageRequest> Pages);
+
+public sealed record YamlConceptDto(string Id, string Kind, string Name, string? Layer, IReadOnlyDictionary<string, string?> Properties, IReadOnlyList<string> Aliases);
+public sealed record YamlRelationDto(string Id, string Kind, string From, string To, IReadOnlyDictionary<string, string?> Properties);
+public sealed record YamlBookPageDto(string ViewId, string Title, string Narrative);
+public sealed record YamlBookDto(string Id, string Name, string? Audience, IReadOnlyList<YamlBookPageDto> Pages);
+public sealed record YamlConceptsResponse(IReadOnlyList<YamlConceptDto> Concepts, IReadOnlyList<YamlRelationDto> Relations, IReadOnlyList<YamlBookDto> Books);
 
 public partial class Program;

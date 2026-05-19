@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ArchModel, Book, BookPage, CustomView, Mode, ViewKind, Violation, WorkspaceModel } from './types';
+import type { ArchModel, Book, BookPage, CustomView, Mode, ViewKind, Violation, WorkspaceModel, YamlConcept, YamlRelation } from './types';
 import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
@@ -63,6 +63,13 @@ interface AppState {
   books: Book[];
   activeBookId: string | null;
   activeBookPageIndex: number;
+  // Epic 08 Tracks B/C — YAML data-layer concepts (aggregates, entities, value objects, resources).
+  // Hydrated once on workspace open; mutations are queued (writes go through the engine).
+  yamlConcepts: YamlConcept[];
+  yamlRelations: YamlRelation[];
+  selectedYamlConceptId: string | null;
+  // Epic 08 A9 — audience filter for the Books popover.
+  booksAudienceFilter: string | null;
   setWorkspace: (ws: WorkspaceModel | null) => void;
   setArch: (a: ArchModel | null) => void;
   setView: (v: ViewKind) => void;
@@ -112,6 +119,9 @@ interface AppState {
   setActiveBookPageIndex: (i: number) => void;
   nextBookPage: () => void;
   prevBookPage: () => void;
+  setYamlConcepts: (concepts: YamlConcept[], relations: YamlRelation[]) => void;
+  selectYamlConcept: (id: string | null) => void;
+  setBooksAudienceFilter: (audience: string | null) => void;
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -149,6 +159,10 @@ export const useApp = create<AppState>((set, get) => ({
   books: [],
   activeBookId: null,
   activeBookPageIndex: 0,
+  yamlConcepts: [],
+  yamlRelations: [],
+  selectedYamlConceptId: null,
+  booksAudienceFilter: null,
   setWorkspace: (ws) => {
     // UX bug fix #4: hydrate from localStorage only on first open of a given rootPath.
     // Subsequent refresh()s during the same session should NOT reset activeCustomViewId,
@@ -383,4 +397,7 @@ export const useApp = create<AppState>((set, get) => ({
     const s = get();
     if (s.activeBookPageIndex > 0) set({ activeBookPageIndex: s.activeBookPageIndex - 1 });
   },
+  setYamlConcepts: (concepts, relations) => set({ yamlConcepts: concepts, yamlRelations: relations }),
+  selectYamlConcept: (id) => set({ selectedYamlConceptId: id, selectedElementId: null, selectedLinkId: null, selectedShapeId: null }),
+  setBooksAudienceFilter: (audience) => set({ booksAudienceFilter: audience }),
 }));

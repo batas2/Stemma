@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Book as BookIcon, ChevronDown, Plus, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
@@ -15,6 +15,19 @@ export function BooksButton() {
   const activeBookId = useApp((s) => s.activeBookId);
   const setActiveBook = useApp((s) => s.setActiveBook);
   const addBook = useApp((s) => s.addBook);
+  const audienceFilter = useApp((s) => s.booksAudienceFilter);
+  const setAudienceFilter = useApp((s) => s.setBooksAudienceFilter);
+
+  const audiences = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of books) if (b.audience) set.add(b.audience);
+    return [...set].sort();
+  }, [books]);
+
+  const filteredBooks = useMemo(() => {
+    if (!audienceFilter) return books;
+    return books.filter((b) => (b.audience ?? '') === audienceFilter);
+  }, [books, audienceFilter]);
 
   function newBook() {
     const id = 'book_' + Math.random().toString(36).slice(2, 8);
@@ -54,7 +67,45 @@ export function BooksButton() {
               No books yet. <button onClick={newBook} className="text-indigo-500 hover:underline">Create one</button>.
             </div>
           )}
-          {books.map((b) => (
+          {audiences.length > 0 && (
+            <div
+              role="group"
+              aria-label="Filter by audience"
+              className="flex flex-wrap gap-1 px-2 py-1.5 border-b border-zinc-200 dark:border-zinc-800"
+            >
+              <button
+                onClick={() => setAudienceFilter(null)}
+                aria-pressed={audienceFilter === null}
+                className={clsx(
+                  'text-[10px] px-1.5 py-0.5 rounded',
+                  audienceFilter === null
+                    ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
+                    : 'text-faint hover:bg-zinc-100 dark:hover:bg-zinc-800/60',
+                )}
+              >
+                all
+              </button>
+              {audiences.map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setAudienceFilter(audienceFilter === a ? null : a)}
+                  aria-pressed={audienceFilter === a}
+                  className={clsx(
+                    'text-[10px] px-1.5 py-0.5 rounded',
+                    audienceFilter === a
+                      ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
+                      : 'text-faint hover:bg-zinc-100 dark:hover:bg-zinc-800/60',
+                  )}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+          )}
+          {filteredBooks.length === 0 && books.length > 0 && (
+            <div className="px-3 py-3 text-xs text-faint">No books for audience "{audienceFilter}".</div>
+          )}
+          {filteredBooks.map((b) => (
             <div key={b.id} className="flex items-center border-b border-zinc-100 dark:border-zinc-800 last:border-b-0">
               <button
                 onClick={() => { setActiveBook(b.id); setOpen(false); }}

@@ -1,17 +1,20 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
+import { DataSidebar } from './components/DataSidebar';
 import { Canvas } from './components/Canvas';
 import { ArchCanvas } from './components/ArchCanvas';
+import { DataLayerCanvas } from './components/DataLayerCanvas';
 import { Inspector } from './components/Inspector';
 import { ArchInspector } from './components/ArchInspector';
+import { DataInspector } from './components/DataInspector';
 import { ShapeInspector } from './components/ShapeInspector';
 import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
 import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation } from './lib/signalr';
-import { archModel, listViolations, snapshot } from './lib/api';
+import { archModel, listViolations, snapshot, yamlConcepts } from './lib/api';
 import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
@@ -32,9 +35,13 @@ const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => 
  *  inlining it inside App() caused unmount/remount churn that re-fired narrative fetches. */
 function ArchOrShapeInspector() {
   const selectedShapeId = useApp((s) => s.selectedShapeId);
+  const view = useApp((s) => s.view);
   const workspace = useApp((s) => s.workspace);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
+  if (view === 'dataModel' || view === 'resourceTree') {
+    return <DataInspector />;
+  }
   if (selectedShapeId && workspace) {
     const activeCustomView = customViews.find((v) => v.id === activeId);
     const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : 'moduleMap';
@@ -50,6 +57,8 @@ export default function App() {
   const setArch = useApp((s) => s.setArch);
   const setView = useApp((s) => s.setView);
   const setViolations = useApp((s) => s.setViolations);
+  const setYamlConcepts = useApp((s) => s.setYamlConcepts);
+  const setBooks = useApp((s) => s.setBooks);
 
   useEffect(() => {
     ensureConnection().catch(() => {});
@@ -60,14 +69,20 @@ export default function App() {
       }
     }).catch(() => {});
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
+    yamlConcepts().then((y) => {
+      if (!y) return;
+      setYamlConcepts(y.concepts, y.relations);
+      setBooks(y.books);
+    }).catch(() => {});
     // UX bug fix #5: a transient archModel() failure must NOT clobber a previously good arch.
     // Use a sentinel so refresh() can preserve the prior in-memory model on a 404 / network blip.
     const PRESERVE = Symbol('preserve');
     async function refresh() {
-      const [s, a, v] = await Promise.all([
+      const [s, a, v, y] = await Promise.all([
         snapshot(),
         archModel().catch(() => PRESERVE as unknown as null),
         listViolations().catch(() => []),
+        yamlConcepts().catch(() => null),
       ]);
       if (s) {
         setWs(s);
@@ -75,11 +90,15 @@ export default function App() {
       }
       if ((a as unknown) !== PRESERVE) setArch(a);
       setViolations(v);
+      if (y) {
+        setYamlConcepts(y.concepts, y.relations);
+        setBooks(y.books);
+      }
     }
     const offOp = onOperationApplied(refresh);
     const offExt = onExternalChange(refresh);
     return () => { offOp(); offExt(); };
-  }, [setWs, setArch, setViolations]);
+  }, [setWs, setArch, setViolations, setYamlConcepts, setBooks]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
 
@@ -208,7 +227,8 @@ export default function App() {
       <div className="flex-1 flex min-h-0">
         {ws ? (
           <>
-            {view !== 'engineer' && view !== 'decisionLog' && <Sidebar />}
+            {(view === 'dataModel' || view === 'resourceTree') && <DataSidebar />}
+            {view !== 'engineer' && view !== 'decisionLog' && view !== 'dataModel' && view !== 'resourceTree' && <Sidebar />}
             <main id="verso-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0">
               {view === 'engineer' && <Canvas />}
               {view === 'decisionLog' && (
@@ -216,7 +236,8 @@ export default function App() {
                   <DecisionLog />
                 </Suspense>
               )}
-              {view !== 'engineer' && view !== 'decisionLog' && <ArchCanvas />}
+              {(view === 'dataModel' || view === 'resourceTree') && <DataLayerCanvas />}
+              {view !== 'engineer' && view !== 'decisionLog' && view !== 'dataModel' && view !== 'resourceTree' && <ArchCanvas />}
             </main>
             {view === 'engineer' && <Inspector />}
             {view !== 'engineer' && view !== 'decisionLog' && <ArchOrShapeInspector />}

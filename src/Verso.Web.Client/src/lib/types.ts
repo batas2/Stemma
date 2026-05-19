@@ -136,6 +136,32 @@ export interface Book {
   pages: BookPage[];
 }
 
+/** Epic 08 Track B/C — concepts persisted in `Concepts/*.verso.yaml`. The frontend
+ *  hydrates these once on workspace open and renders them in the Data Model + Resource
+ *  Tree views, the *Data* sidebar group, and the Inspector *Data* tab. */
+export type YamlDataKind = 'AggregateRoot' | 'DomainEntity' | 'ValueObject' | 'Resource';
+
+export interface YamlConcept {
+  id: string;
+  kind: string;
+  name: string;
+  layer: string | null;
+  properties: Record<string, string | null>;
+  aliases: string[];
+}
+export interface YamlRelation {
+  id: string;
+  kind: string;
+  from: string;
+  to: string;
+  properties: Record<string, string | null>;
+}
+export interface YamlConceptsBundle {
+  concepts: YamlConcept[];
+  relations: YamlRelation[];
+  books: Book[];
+}
+
 export interface OperationEnvelope {
   kind: OperationKind;
   opId: string;
