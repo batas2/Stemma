@@ -36,6 +36,7 @@ namespace Verso.Engine.Operations;
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.UpdateYamlConceptOp), "UpdateYamlConcept")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RemoveYamlConceptOp), "RemoveYamlConcept")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RenameYamlConceptOp), "RenameYamlConcept")]
+[JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RenameYamlConceptIdOp), "RenameYamlConceptId")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.AddYamlRelationOp), "AddYamlRelation")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.UpdateYamlRelationOp), "UpdateYamlRelation")]
 [JsonDerivedType(typeof(Verso.Engine.Adapters.Yaml.RemoveYamlRelationOp), "RemoveYamlRelation")]

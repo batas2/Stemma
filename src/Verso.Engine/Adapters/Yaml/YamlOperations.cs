@@ -63,6 +63,52 @@ public static class YamlMutations
         }
     }
 
+    /// <summary>
+    /// B9 — change a concept's identifier and propagate the new value across every
+    /// YAML file the adapter owns: relation endpoints (from/to), concept property
+    /// values that referenced the old id, and other concepts' parent fields. Arch-
+    /// side propagation (Architecture.cs literal rewrites) is handled separately by
+    /// the engine after this primitive runs.
+    /// </summary>
+    public static int RenameConceptId(YamlAdapter adapter, string oldId, string newId)
+    {
+        if (string.IsNullOrEmpty(oldId)) throw new ArgumentException("oldId required", nameof(oldId));
+        if (string.IsNullOrEmpty(newId)) throw new ArgumentException("newId required", nameof(newId));
+        if (oldId == newId) return 0;
+        if (adapter.FindConcept(newId) is not null)
+            throw new InvalidOperationException($"concept id `{newId}` already in use");
+        var target = adapter.FindConcept(oldId)
+            ?? throw new InvalidOperationException($"concept `{oldId}` not found");
+
+        int touched = 0;
+        target.Id = newId;
+        target.Dirty = true;
+        touched++;
+
+        foreach (var file in adapter.Files.Values)
+        {
+            foreach (var r in file.Relations)
+            {
+                if (r.From == oldId) { r.From = newId; r.Dirty = true; touched++; }
+                if (r.To == oldId) { r.To = newId; r.Dirty = true; touched++; }
+            }
+            foreach (var c in file.Concepts)
+            {
+                for (int i = 0; i < c.Properties.Count; i++)
+                {
+                    var kv = c.Properties[i];
+                    if (kv.Value == oldId)
+                    {
+                        c.Properties[i] = new KeyValuePair<string, string>(kv.Key, newId);
+                        c.Dirty = true;
+                        touched++;
+                    }
+                }
+            }
+        }
+        return touched;
+    }
+
     public static YamlRelationEntry AddRelation(YamlAdapter adapter, string fileName, string id, string kind, string from, string to)
     {
         var file = adapter.GetOrCreate(fileName);
@@ -187,6 +233,16 @@ public sealed record RenameYamlConceptOp(
     string OpId,
     string Id,
     string NewName) : OperationBase(OpId);
+
+/// <summary>
+/// B9 — change a yaml concept's id (not just its display name) and propagate
+/// the substitution across every relation endpoint and concept property in
+/// the workspace. See <see cref="YamlMutations.RenameConceptId"/>.
+/// </summary>
+public sealed record RenameYamlConceptIdOp(
+    string OpId,
+    string OldId,
+    string NewId) : OperationBase(OpId);
 
 public sealed record AddYamlRelationOp(
     string OpId,

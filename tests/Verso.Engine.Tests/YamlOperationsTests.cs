@@ -105,4 +105,89 @@ public sealed class YamlOperationsTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    private const string SeedWithReferences =
+        "version: 1\nconcepts:\n  - id: agg_order\n    kind: AggregateRoot\n    name: Order\n    layer: data\n\n  - id: ent_line\n    kind: DomainEntity\n    name: Line\n    layer: data\n    parent: agg_order\nrelations:\n  - id: rel_lines\n    kind: composes\n    from: agg_order\n    to: ent_line\n";
+
+    [Fact]
+    public void RenameConceptId_updates_target_id_relations_and_parent_references()
+    {
+        var (dir, adapter) = NewWorkspace(SeedWithReferences);
+        try
+        {
+            var touched = YamlMutations.RenameConceptId(adapter, "agg_order", "agg_purchase_order");
+            touched.Should().BeGreaterThanOrEqualTo(3); // id + relation.from + entity.parent
+
+            var file = adapter.Files["data-model.verso.yaml"];
+            adapter.Save(file);
+            var saved = File.ReadAllText(file.FilePath);
+
+            saved.Should().Contain("  - id: agg_purchase_order");
+            saved.Should().NotContain("  - id: agg_order");
+            saved.Should().Contain("    parent: agg_purchase_order");
+            saved.Should().Contain("    from: agg_purchase_order");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void RenameConceptId_rejects_collision_with_existing_id()
+    {
+        var (dir, adapter) = NewWorkspace(SeedWithReferences);
+        try
+        {
+            var act = () => YamlMutations.RenameConceptId(adapter, "agg_order", "ent_line");
+            act.Should().Throw<InvalidOperationException>().WithMessage("*ent_line*already in use*");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void RenameConceptId_unknown_id_throws()
+    {
+        var (dir, adapter) = NewWorkspace(SeedFixture);
+        try
+        {
+            var act = () => YamlMutations.RenameConceptId(adapter, "agg_missing", "agg_other");
+            act.Should().Throw<InvalidOperationException>().WithMessage("*agg_missing*not found*");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void RenameConceptId_noop_when_old_equals_new()
+    {
+        var (dir, adapter) = NewWorkspace(SeedWithReferences);
+        try
+        {
+            var touched = YamlMutations.RenameConceptId(adapter, "agg_order", "agg_order");
+            touched.Should().Be(0);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void RenameConceptId_propagates_across_multiple_files()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "verso-yaml-op-" + Guid.NewGuid());
+        var conceptsDir = Path.Combine(dir, "Concepts");
+        Directory.CreateDirectory(conceptsDir);
+        File.WriteAllText(Path.Combine(conceptsDir, "data-model.verso.yaml"),
+            "version: 1\nconcepts:\n  - id: agg_order\n    kind: AggregateRoot\n    name: Order\n");
+        File.WriteAllText(Path.Combine(conceptsDir, "resources.verso.yaml"),
+            "version: 1\nconcepts:\n  - id: res_order\n    kind: Resource\n    name: OrderResource\n    aggregate: agg_order\n");
+        try
+        {
+            var adapter = YamlAdapter.Load(dir);
+            YamlMutations.RenameConceptId(adapter, "agg_order", "agg_purchase_order");
+            foreach (var f in adapter.Files.Values) adapter.Save(f);
+
+            var dataModel = File.ReadAllText(Path.Combine(conceptsDir, "data-model.verso.yaml"));
+            var resources = File.ReadAllText(Path.Combine(conceptsDir, "resources.verso.yaml"));
+            dataModel.Should().Contain("  - id: agg_purchase_order");
+            resources.Should().Contain("    aggregate: agg_purchase_order");
+            resources.Should().NotContain("agg_order");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
