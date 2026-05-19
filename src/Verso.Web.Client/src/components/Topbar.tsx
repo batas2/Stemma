@@ -9,6 +9,7 @@ import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
 import type { RecentEntry } from '@/lib/types';
 import { ViewSwitcher } from './ViewSwitcher';
 import { ExportMenu } from './ExportMenu';
+import { BooksButton } from './BooksButton';
 
 export function Topbar() {
   const ws = useApp((s) => s.workspace);
@@ -139,6 +140,7 @@ export function Topbar() {
               {discovering ? <Loader2 className="w-3 h-3 animate-spin" /> : <Compass className="w-3 h-3" />}
               Discover
             </button>
+            <BooksButton />
             <ExportMenu />
           </>
         ) : (

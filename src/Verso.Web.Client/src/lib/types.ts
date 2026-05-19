@@ -121,6 +121,21 @@ export interface CustomView {
   createdAt: string;
 }
 
+/** Epic 08 Track A — view-presentation surface. A Book is an ordered list of pages;
+ *  each page references a view kind plus a free-form narrative. Persisted on the
+ *  backend in `Concepts/view-book.verso.yaml`; the store mirrors them for fast UI. */
+export interface BookPage {
+  viewId: ViewKind | string;
+  title: string;
+  narrative: string;
+}
+export interface Book {
+  id: string;
+  name: string;
+  audience: string | null;
+  pages: BookPage[];
+}
+
 export interface OperationEnvelope {
   kind: OperationKind;
   opId: string;

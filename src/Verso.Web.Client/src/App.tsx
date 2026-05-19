@@ -16,6 +16,7 @@ import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
 import { ViolationsPanel } from './components/ViolationsPanel';
+import { BookFooter } from './components/BookFooter';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { PromptDialog } from './components/PromptDialog';
 import { ToastQueue } from './components/ToastQueue';
@@ -81,6 +82,20 @@ export default function App() {
   }, [setWs, setArch, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
+
+  // Epic 08 Track A — book mode: when the active page changes, drive `view` to follow.
+  const activeBookId = useApp((s) => s.activeBookId);
+  const activeBookPageIndex = useApp((s) => s.activeBookPageIndex);
+  const books = useApp((s) => s.books);
+  useEffect(() => {
+    if (!activeBookId) return;
+    const book = books.find((b) => b.id === activeBookId);
+    if (!book || book.pages.length === 0) return;
+    const target = book.pages[activeBookPageIndex];
+    if (target && (target.viewId === 'c4Context' || target.viewId === 'moduleMap' || target.viewId === 'dependencyGraph' || target.viewId === 'dataModel' || target.viewId === 'resourceTree' || target.viewId === 'decisionLog' || target.viewId === 'engineer')) {
+      setView(target.viewId as ViewKind);
+    }
+  }, [activeBookId, activeBookPageIndex, books, setView]);
 
   function applyLayoutEntry(entry: { workspaceRoot: string; viewKey: string; positions: Record<string, { x: number; y: number }> }) {
     // Merge into existing layout for the view, then write back through the layout module
@@ -210,6 +225,7 @@ export default function App() {
           <EmptyState />
         )}
       </div>
+      <BookFooter />
       <ViolationsPanel />
       <StatusBar />
       <CommandPalette />

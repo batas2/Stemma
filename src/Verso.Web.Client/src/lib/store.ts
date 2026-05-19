@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ArchModel, CustomView, Mode, ViewKind, Violation, WorkspaceModel } from './types';
+import type { ArchModel, Book, BookPage, CustomView, Mode, ViewKind, Violation, WorkspaceModel } from './types';
 import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
@@ -59,6 +59,10 @@ interface AppState {
   c4Level: 'context' | 'container' | 'component';
   c4FocusSystemId: string | null;
   c4FocusContainerId: string | null;
+  // Epic 08 Track A — View Books
+  books: Book[];
+  activeBookId: string | null;
+  activeBookPageIndex: number;
   setWorkspace: (ws: WorkspaceModel | null) => void;
   setArch: (a: ArchModel | null) => void;
   setView: (v: ViewKind) => void;
@@ -96,6 +100,18 @@ interface AppState {
   setC4Level: (l: 'context' | 'container' | 'component') => void;
   setC4FocusSystem: (id: string | null) => void;
   setC4FocusContainer: (id: string | null) => void;
+  setBooks: (b: Book[]) => void;
+  addBook: (b: Book) => void;
+  removeBook: (id: string) => void;
+  renameBook: (id: string, newName: string) => void;
+  addBookPage: (bookId: string, page: BookPage) => void;
+  removeBookPage: (bookId: string, pageIndex: number) => void;
+  reorderBookPages: (bookId: string, newOrder: number[]) => void;
+  setBookPageNarrative: (bookId: string, pageIndex: number, narrative: string) => void;
+  setActiveBook: (id: string | null) => void;
+  setActiveBookPageIndex: (i: number) => void;
+  nextBookPage: () => void;
+  prevBookPage: () => void;
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -130,6 +146,9 @@ export const useApp = create<AppState>((set, get) => ({
   c4Level: 'context' as const,
   c4FocusSystemId: null,
   c4FocusContainerId: null,
+  books: [],
+  activeBookId: null,
+  activeBookPageIndex: 0,
   setWorkspace: (ws) => {
     // UX bug fix #4: hydrate from localStorage only on first open of a given rootPath.
     // Subsequent refresh()s during the same session should NOT reset activeCustomViewId,
@@ -310,4 +329,58 @@ export const useApp = create<AppState>((set, get) => ({
   setC4Level: (l) => set({ c4Level: l }),
   setC4FocusSystem: (id) => set({ c4FocusSystemId: id }),
   setC4FocusContainer: (id) => set({ c4FocusContainerId: id }),
+  setBooks: (b) => set({ books: b }),
+  addBook: (b) => set((s) => ({ books: [...s.books, b] })),
+  removeBook: (id) => set((s) => {
+    const next = s.books.filter((b) => b.id !== id);
+    const stillActive = s.activeBookId && next.some((b) => b.id === s.activeBookId);
+    return { books: next, activeBookId: stillActive ? s.activeBookId : null, activeBookPageIndex: stillActive ? s.activeBookPageIndex : 0 };
+  }),
+  renameBook: (id, newName) => set((s) => ({
+    books: s.books.map((b) => b.id === id ? { ...b, name: newName } : b),
+  })),
+  addBookPage: (bookId, page) => set((s) => ({
+    books: s.books.map((b) => b.id === bookId ? { ...b, pages: [...b.pages, page] } : b),
+  })),
+  removeBookPage: (bookId, pageIndex) => set((s) => ({
+    books: s.books.map((b) => {
+      if (b.id !== bookId) return b;
+      if (pageIndex < 0 || pageIndex >= b.pages.length) return b;
+      return { ...b, pages: b.pages.filter((_, i) => i !== pageIndex) };
+    }),
+    activeBookPageIndex: s.activeBookId === bookId && s.activeBookPageIndex >= pageIndex && s.activeBookPageIndex > 0
+      ? s.activeBookPageIndex - 1 : s.activeBookPageIndex,
+  })),
+  reorderBookPages: (bookId, newOrder) => set((s) => ({
+    books: s.books.map((b) => {
+      if (b.id !== bookId) return b;
+      if (newOrder.length !== b.pages.length) return b;
+      if (new Set(newOrder).size !== newOrder.length) return b;
+      return { ...b, pages: newOrder.map((i) => b.pages[i]) };
+    }),
+  })),
+  setBookPageNarrative: (bookId, pageIndex, narrative) => set((s) => ({
+    books: s.books.map((b) => {
+      if (b.id !== bookId) return b;
+      if (pageIndex < 0 || pageIndex >= b.pages.length) return b;
+      return { ...b, pages: b.pages.map((p, i) => i === pageIndex ? { ...p, narrative } : p) };
+    }),
+  })),
+  setActiveBook: (id) => set({ activeBookId: id, activeBookPageIndex: 0 }),
+  setActiveBookPageIndex: (i) => {
+    const book = get().books.find((b) => b.id === get().activeBookId);
+    if (!book) return;
+    const clamped = Math.max(0, Math.min(book.pages.length - 1, i));
+    set({ activeBookPageIndex: clamped });
+  },
+  nextBookPage: () => {
+    const s = get();
+    const book = s.books.find((b) => b.id === s.activeBookId);
+    if (!book) return;
+    if (s.activeBookPageIndex < book.pages.length - 1) set({ activeBookPageIndex: s.activeBookPageIndex + 1 });
+  },
+  prevBookPage: () => {
+    const s = get();
+    if (s.activeBookPageIndex > 0) set({ activeBookPageIndex: s.activeBookPageIndex - 1 });
+  },
 }));
