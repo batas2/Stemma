@@ -2,6 +2,7 @@ import type { CustomView, ViewKind } from './types';
 
 const KEY_PREFIX = 'verso.views';
 const ACTIVE_KEY = 'verso.activeView';
+const OPEN_KEY = 'verso.openViews';
 
 function key(rootPath: string): string {
   return `${KEY_PREFIX}:${rootPath}`;
@@ -29,6 +30,20 @@ export function saveActiveView(rootPath: string, customViewId: string | null): v
   if (typeof window === 'undefined') return;
   if (customViewId) localStorage.setItem(`${ACTIVE_KEY}:${rootPath}`, customViewId);
   else localStorage.removeItem(`${ACTIVE_KEY}:${rootPath}`);
+}
+
+/** Which saved views are currently open as bottom tabs. `null` = never persisted (fresh). */
+export function loadOpenViews(rootPath: string): string[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(`${OPEN_KEY}:${rootPath}`);
+    return raw ? JSON.parse(raw) as string[] : null;
+  } catch { return null; }
+}
+
+export function saveOpenViews(rootPath: string, ids: string[]): void {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(`${OPEN_KEY}:${rootPath}`, JSON.stringify(ids)); } catch { /* ignore */ }
 }
 
 export function newCustomView(name: string, baseView: ViewKind | 'all' = 'all'): CustomView {

@@ -3,6 +3,8 @@
 // If we ever lift these into the model, swap the storage backend without
 // touching callers — the public API is small on purpose.
 
+import { sidecarMap, sidecarSet } from './layout';
+
 export type CustomProps = Record<string, string>;
 
 const KEY_PREFIX = 'verso.customProps';
@@ -11,10 +13,16 @@ function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
 
 export function loadCustomProps(rootPath: string): Record<string, CustomProps> {
   if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(key(rootPath));
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
+  let local: Record<string, CustomProps> = {};
+  try { const raw = localStorage.getItem(key(rootPath)); local = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
+  const committed = sidecarMap<CustomProps>(rootPath, 'customProps');
+  return committed ? { ...local, ...committed } : local;
+}
+
+/** Mirror a node's whole custom-prop map into the committed sidecar (or delete when empty). */
+function commitProps(rootPath: string, all: Record<string, CustomProps>, nodeId: string): void {
+  const entry = all[nodeId];
+  sidecarSet(rootPath, 'customProps', nodeId, entry && Object.keys(entry).length > 0 ? entry : undefined);
 }
 
 export function saveCustomProps(rootPath: string, all: Record<string, CustomProps>): void {
@@ -32,6 +40,7 @@ export function setCustomProp(
   const current = all[nodeId] ?? {};
   all[nodeId] = { ...current, [propKey]: value };
   saveCustomProps(rootPath, all);
+  commitProps(rootPath, all, nodeId);
   return all;
 }
 
@@ -48,6 +57,7 @@ export function removeCustomProp(
   if (Object.keys(next).length === 0) delete all[nodeId];
   else all[nodeId] = next;
   saveCustomProps(rootPath, all);
+  commitProps(rootPath, all, nodeId);
   return all;
 }
 
@@ -67,6 +77,7 @@ export function renameCustomProp(
   next[newKey] = value;
   all[nodeId] = next;
   saveCustomProps(rootPath, all);
+  commitProps(rootPath, all, nodeId);
   return all;
 }
 

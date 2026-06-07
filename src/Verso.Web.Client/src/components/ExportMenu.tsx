@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, ChevronDown, FileImage, FileCode, FileText } from 'lucide-react';
-import { toPng, toSvg } from 'html-to-image';
 import { exportMermaid, exportDrawio } from '@/lib/api';
 import { useApp } from '@/lib/store';
 
@@ -12,14 +11,6 @@ function download(filename: string, content: string | Blob, mime = 'text/plain')
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-async function snapshotCanvas(format: 'png' | 'svg'): Promise<string | Blob | null> {
-  const el = document.querySelector('.react-flow__viewport') as HTMLElement | null
-    ?? document.querySelector('.react-flow') as HTMLElement | null;
-  if (!el) return null;
-  if (format === 'png') return await toPng(el, { backgroundColor: getComputedStyle(document.body).backgroundColor || '#fff' });
-  return await toSvg(el);
 }
 
 export function ExportMenu() {
@@ -42,41 +33,22 @@ export function ExportMenu() {
     };
   }, [open]);
 
-  function safeView() {
-    return view === 'engineer' ? 'moduleMap' : view;
-  }
-
   async function exportFormat(format: 'mermaid' | 'drawio' | 'png' | 'svg') {
     setOpen(false);
+    // Image formats are rendered by the canvas (it has the flow context to fit ALL nodes,
+    // even ones dragged far off-screen) — see the verso:export-image handler in ArchCanvas.
+    if (format === 'png' || format === 'svg') {
+      window.dispatchEvent(new CustomEvent('verso:export-image', { detail: { format } }));
+      return;
+    }
     try {
-      switch (format) {
-        case 'mermaid': {
-          const text = await exportMermaid(safeView() as 'c4Context' | 'moduleMap' | 'dependencyGraph');
-          download(`verso-${safeView()}.md`, '```mermaid\n' + text + '\n```\n', 'text/markdown');
-          break;
-        }
-        case 'drawio': {
-          const xml = await exportDrawio();
-          download('verso.drawio', xml, 'application/xml');
-          break;
-        }
-        case 'png': {
-          const dataUrl = await snapshotCanvas('png') as string;
-          if (!dataUrl) { setToast({ kind: 'error', text: 'Could not snapshot the canvas' }); return; }
-          download('verso.png', await (await fetch(dataUrl)).blob(), 'image/png');
-          break;
-        }
-        case 'svg': {
-          const svg = await snapshotCanvas('svg') as string;
-          if (!svg) { setToast({ kind: 'error', text: 'Could not snapshot the canvas' }); return; }
-          if (svg.startsWith('data:image/svg+xml')) {
-            const xml = decodeURIComponent(svg.split(',')[1] ?? '');
-            download('verso.svg', xml, 'image/svg+xml');
-          } else {
-            download('verso.svg', svg, 'image/svg+xml');
-          }
-          break;
-        }
+      if (format === 'mermaid') {
+        const v = view === 'concerns' ? 'moduleMap' : view;
+        const text = await exportMermaid(v);
+        download(`verso-${v}.md`, '```mermaid\n' + text + '\n```\n', 'text/markdown');
+      } else {
+        const xml = await exportDrawio();
+        download('verso.drawio', xml, 'application/xml');
       }
       setToast({ kind: 'success', text: `Exported ${format}` });
     } catch (e) {

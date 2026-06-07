@@ -83,6 +83,74 @@ public class ArchModelTests
     }
 
     [Fact]
+    public async Task SetElementContext_moves_module_to_another_context()
+    {
+        await using var ws = await CreateAsync("""
+            var ctxA = new BoundedContext("ctx_001", "Buyer");
+            var ctxB = new BoundedContext("ctx_002", "Seller");
+            var mod = new Module("mod_001", "Onboarding", "ctx_001");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var result = await engine.ApplyAsync(new SetElementContextOp("op1", "mod_001", "ctx_002"));
+        if (result is Operations.OperationFailed f)
+            throw new Xunit.Sdk.XunitException($"Failed: reason={f.Reason}, message={f.Message}, diags={string.Join(" | ", f.Diagnostics ?? [])}");
+        result.Should().BeOfType<Operations.OperationApplied>();
+
+        var src = await ws.ReadArchAsync();
+        src.Should().Contain("new Module(\"mod_001\", \"Onboarding\", \"ctx_002\")");
+        var arch = await engine.ReadArchModelAsync();
+        arch!.Elements.First(e => e.Id == "mod_001").Attributes["contextId"].Should().Be("ctx_002");
+    }
+
+    [Fact]
+    public async Task SetElementContext_clears_context_when_null()
+    {
+        await using var ws = await CreateAsync("""
+            var ctx = new BoundedContext("ctx_001", "Buyer");
+            var mod = new Module("mod_001", "Onboarding", "ctx_001");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var result = await engine.ApplyAsync(new SetElementContextOp("op1", "mod_001", null));
+        result.Should().BeOfType<Operations.OperationApplied>();
+
+        var src = await ws.ReadArchAsync();
+        src.Should().Contain("new Module(\"mod_001\", \"Onboarding\")");
+        var arch = await engine.ReadArchModelAsync();
+        arch!.Elements.First(e => e.Id == "mod_001").Attributes.ContainsKey("contextId").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Question_with_about_link_round_trips()
+    {
+        await using var ws = await CreateAsync("""
+            var mod = new Module("mod_001", "Onboarding");
+            var q = new Question("q_001", "Should onboarding be async?", "mod_001");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var arch = await engine.ReadArchModelAsync();
+        var q = arch!.Elements.First(e => e.Id == "q_001");
+        q.Kind.Should().Be(ArchElementKind.Question);
+        q.Name.Should().Be("Should onboarding be async?");
+        q.Attributes["aboutId"].Should().Be("mod_001");
+    }
+
+    [Fact]
+    public async Task SetElementAttribute_sets_about_id_on_a_risk()
+    {
+        await using var ws = await CreateAsync("""
+            var mod = new Module("mod_001", "Rating");
+            var rsk = new Risk("risk_001", "Vendor lock-in");
+        """);
+        await using var engine = await VersoEngine.OpenAsync(ws.RootPath);
+        var result = await engine.ApplyAsync(new SetElementAttributeOp("op1", "risk_001", "aboutId", "mod_001"));
+        if (result is Operations.OperationFailed f)
+            throw new Xunit.Sdk.XunitException($"Failed: reason={f.Reason}, message={f.Message}");
+        result.Should().BeOfType<Operations.OperationApplied>();
+        var src = await ws.ReadArchAsync();
+        src.Should().Contain("new Risk(\"risk_001\", \"Vendor lock-in\", \"mod_001\")");
+    }
+
+    [Fact]
     public async Task RenameElement_changes_name_and_preserves_id()
     {
         await using var ws = await CreateAsync("""

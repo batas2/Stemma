@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  alignSelected, distributeSelected, layoutC4HubAndSpoke,
+  alignSelected, distributeSelected,
   layoutHierarchical, layoutForceDirected, layoutFocused, layoutByType,
   type NodeBounds,
 } from './autoLayout';
@@ -102,53 +102,6 @@ describe('distributeSelected', () => {
   });
 });
 
-describe('layoutC4HubAndSpoke', () => {
-  function el(id: string, kind: ArchElement['kind'], attrs: Record<string, string | null> = {}): ArchElement {
-    return { id, name: id, kind, attributes: attrs };
-  }
-
-  it('places persons above the centre line', () => {
-    const out = layoutC4HubAndSpoke([
-      el('per_a', 'person'),
-      el('sys_main', 'softwareSystem'),
-    ], []);
-    expect(out.per_a.y).toBeLessThan(out.sys_main.y);
-  });
-
-  it('separates external systems from internal ones horizontally', () => {
-    const out = layoutC4HubAndSpoke([
-      el('sys_main', 'softwareSystem'),
-      el('sys_ext1', 'softwareSystem', { external: 'true' }),
-      el('sys_ext2', 'softwareSystem', { external: 'true' }),
-    ], []);
-    // Internal stays near centre; externals push outward.
-    expect(Math.abs(out.sys_main.x)).toBeLessThan(Math.abs(out.sys_ext1.x));
-  });
-
-  it('stacks containers under their parent system when systemId is set', () => {
-    const out = layoutC4HubAndSpoke([
-      el('sys_main', 'softwareSystem'),
-      el('cnt_a', 'container', { systemId: 'sys_main' }),
-      el('cnt_b', 'container', { systemId: 'sys_main' }),
-    ], []);
-    expect(out.cnt_a.x).toBe(out.sys_main.x);
-    expect(out.cnt_b.x).toBe(out.sys_main.x);
-    expect(out.cnt_a.y).toBeGreaterThan(out.sys_main.y);
-    expect(out.cnt_b.y).toBeGreaterThan(out.cnt_a.y);
-  });
-
-  it('is deterministic — same input → same output', () => {
-    const input: ArchElement[] = [
-      el('per_a', 'person'),
-      el('sys_main', 'softwareSystem'),
-      el('sys_ext1', 'softwareSystem', { external: 'true' }),
-    ];
-    const a = layoutC4HubAndSpoke(input, []);
-    const b = layoutC4HubAndSpoke(input, []);
-    expect(a).toEqual(b);
-  });
-});
-
 // ---------- Hierarchical (Sugiyama) ----------
 
 function el(id: string, kind: ArchElement['kind'], attrs: Record<string, string | null> = {}): ArchElement {
@@ -234,6 +187,22 @@ describe('layoutForceDirected', () => {
     const dist = (p: { x: number; y: number }, q: { x: number; y: number }) =>
       Math.hypot(p.x - q.x, p.y - q.y);
     expect(dist(out.a, out.b)).toBeLessThan(dist(out.a, out.c));
+  });
+
+  it('keeps an aboutId-linked annotation near its element (not flung to the far balance)', () => {
+    // Risk / Question connect to their element ONLY via `aboutId` (not a model link). They must
+    // still be pulled close — the regression had them drift far to the repulsion balance point.
+    const elements = [
+      el('hub', 'module'), el('m1', 'module'), el('m2', 'module'), el('m3', 'module'),
+      el('risk1', 'risk', { aboutId: 'hub' }),
+      el('q1', 'question', { aboutId: 'hub' }),
+    ];
+    const links = [link('l1', 'm1', 'hub'), link('l2', 'm2', 'hub'), link('l3', 'm3', 'hub')];
+    const out = layoutForceDirected(elements, links, {}, { iterations: 320 });
+    const dist = (p: { x: number; y: number }, q: { x: number; y: number }) => Math.hypot(p.x - q.x, p.y - q.y);
+    const maxLinked = Math.max(dist(out.m1, out.hub), dist(out.m2, out.hub), dist(out.m3, out.hub));
+    expect(dist(out.risk1, out.hub)).toBeLessThan(maxLinked * 2);
+    expect(dist(out.q1, out.hub)).toBeLessThan(maxLinked * 2);
   });
 
   it('clusters elements that share a BoundedContext', () => {
@@ -366,47 +335,6 @@ describe('layoutFocused', () => {
 // ---------- By-Type (view-aware) ----------
 
 describe('layoutByType', () => {
-  describe('c4Context view', () => {
-    it('places persons above internal systems above containers', () => {
-      const out = layoutByType([
-        el('per_a', 'person'),
-        el('sys_main', 'softwareSystem'),
-        el('cnt_a', 'container', { systemId: 'sys_main' }),
-      ], [], { view: 'c4Context' });
-      expect(out.per_a.y).toBeLessThan(out.sys_main.y);
-      expect(out.sys_main.y).toBeLessThan(out.cnt_a.y);
-    });
-
-    it('parks external systems on the flanks of internal ones', () => {
-      const out = layoutByType([
-        el('sys_main', 'softwareSystem'),
-        el('sys_ext1', 'softwareSystem', { external: 'true' }),
-        el('sys_ext2', 'softwareSystem', { external: 'true' }),
-      ], [], { view: 'c4Context' });
-      expect(Math.abs(out.sys_main.x)).toBeLessThan(Math.abs(out.sys_ext1.x));
-      expect(Math.abs(out.sys_main.x)).toBeLessThan(Math.abs(out.sys_ext2.x));
-      // Externals straddle the internal — one to each side.
-      expect(Math.sign(out.sys_ext1.x) * Math.sign(out.sys_ext2.x)).toBeLessThanOrEqual(0);
-    });
-
-    it('stacks containers under their parent system', () => {
-      const out = layoutByType([
-        el('sys_main', 'softwareSystem'),
-        el('cnt_a', 'container', { systemId: 'sys_main' }),
-        el('cnt_b', 'container', { systemId: 'sys_main' }),
-      ], [], { view: 'c4Context' });
-      // Both containers below the system.
-      expect(out.cnt_a.y).toBeGreaterThan(out.sys_main.y);
-      expect(out.cnt_b.y).toBeGreaterThan(out.sys_main.y);
-      // Roughly centred under the system: container row spans across system centre.
-      const sysCentre = out.sys_main.x + 220 / 2;
-      const cntMin = Math.min(out.cnt_a.x, out.cnt_b.x);
-      const cntMax = Math.max(out.cnt_a.x, out.cnt_b.x) + 220;
-      expect(sysCentre).toBeGreaterThanOrEqual(cntMin);
-      expect(sysCentre).toBeLessThanOrEqual(cntMax);
-    });
-  });
-
   describe('moduleMap view', () => {
     it('lays each Bounded Context as a vertical column with modules underneath', () => {
       const out = layoutByType([

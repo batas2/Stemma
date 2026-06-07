@@ -5,9 +5,67 @@ export interface SavedPosition { x: number; y: number; }
 
 interface SidecarShape {
   version?: number;
-  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown> }>;
+  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown>; shapes?: unknown[] }>;
   nodeStyles?: Record<string, unknown>;
   edgeStyles?: Record<string, unknown>;
+  notes?: Record<string, string>;
+  customProps?: Record<string, Record<string, string>>;
+  annotations?: Record<string, unknown[]>;
+}
+
+/** Top-level pass-through sections of the committed sidecar that the client owns the schema of. */
+export type SidecarSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'annotations';
+
+function ensureSidecar(rootPath: string): SidecarShape {
+  if (!sidecarCache || sidecarCache.rootPath !== rootPath) {
+    sidecarCache = { rootPath, sidecar: { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} } };
+  }
+  return sidecarCache.sidecar;
+}
+
+function scheduleSidecarWrite(rootPath: string): void {
+  if (pendingWrite?.rootPath === rootPath) clearTimeout(pendingWrite.timer);
+  const timer = setTimeout(() => {
+    saveLayoutSidecar(sidecarCache!.sidecar).catch(() => { /* best-effort */ });
+    pendingWrite = null;
+  }, 400);
+  pendingWrite = { rootPath, sidecar: ensureSidecar(rootPath), timer };
+}
+
+/** Read a whole pass-through section from the primed sidecar (undefined if not primed yet). */
+export function sidecarMap<T = unknown>(rootPath: string, section: SidecarSection): Record<string, T> | undefined {
+  if (sidecarCache?.rootPath !== rootPath) return undefined;
+  return sidecarCache.sidecar[section] as Record<string, T> | undefined;
+}
+
+/** Set (or delete, when value is undefined) one entry in a pass-through section and schedule a PUT. */
+export function sidecarSet(rootPath: string, section: SidecarSection, key: string, value: unknown): void {
+  if (typeof window === 'undefined') return;
+  const s = ensureSidecar(rootPath);
+  const map = ((s as Record<string, unknown>)[section] as Record<string, unknown> | undefined) ?? {};
+  if (value === undefined || value === null) delete map[key];
+  else map[key] = value;
+  (s as Record<string, unknown>)[section] = map;
+  scheduleSidecarWrite(rootPath);
+}
+
+/** Per-view free-form canvas shapes (annotations), persisted under views.<key>.shapes. */
+export function loadViewShapes<T = unknown>(rootPath: string, viewKey: string): T[] {
+  if (sidecarCache?.rootPath !== rootPath) return [];
+  return ((sidecarCache.sidecar.views?.[viewKey]?.shapes) as T[] | undefined) ?? [];
+}
+
+export function saveViewShapes(rootPath: string, viewKey: string, shapes: unknown[]): void {
+  if (typeof window === 'undefined') return;
+  const s = ensureSidecar(rootPath);
+  s.views = s.views ?? {};
+  s.views[viewKey] = { ...s.views[viewKey], shapes };
+  scheduleSidecarWrite(rootPath);
+}
+
+/** Test seam: inject the shared sidecar cache without going through fetch. */
+export function setSidecarCacheForTest(rootPath: string, sidecar: unknown): void {
+  sidecarCache = { rootPath, sidecar: sidecar as SidecarShape };
 }
 
 const KEY_PREFIX = 'verso.layout';
@@ -128,7 +186,7 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
     // First-load migration from localStorage (idempotent).
     const alreadyMigrated = localStorage.getItem(migratedKey(workspaceRoot)) === '1';
     if (!alreadyMigrated) {
-      const candidates = ['c4Context', 'moduleMap', 'dependencyGraph', 'engineer'];
+      const candidates = ['moduleMap', 'dependencyGraph'];
       let touched = false;
       sidecar.views = sidecar.views ?? {};
       for (const v of candidates) {
@@ -162,6 +220,8 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
       }
       localStorage.setItem(migratedKey(workspaceRoot), '1');
     }
+    // Tell the store/canvas to re-hydrate styles/notes/props from the now-loaded committed sidecar.
+    window.dispatchEvent(new CustomEvent('verso:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
   } catch {
     // Sidecar fetch failed (engine not ready) — fall back to localStorage transparently.
   }

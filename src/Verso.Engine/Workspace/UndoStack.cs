@@ -126,6 +126,22 @@ public sealed class UndoStack
                     setO.TargetId, prior?.Squad, prior?.Domain);
             }
 
+            case SetElementContextOp setCtx when archBefore is not null:
+            {
+                var prior = archBefore.Elements.FirstOrDefault(e => e.Id == setCtx.ElementId);
+                string? prev = null;
+                prior?.Attributes.TryGetValue("contextId", out prev);
+                return new SetElementContextOp($"undo_{Guid.NewGuid():N}", setCtx.ElementId, prev);
+            }
+
+            case SetElementAttributeOp setA when archBefore is not null:
+            {
+                var prior = archBefore.Elements.FirstOrDefault(e => e.Id == setA.ElementId);
+                string? prev = null;
+                prior?.Attributes.TryGetValue(setA.AttributeName, out prev);
+                return new SetElementAttributeOp($"undo_{Guid.NewGuid():N}", setA.ElementId, setA.AttributeName, prev);
+            }
+
             default:
                 return null;
         }

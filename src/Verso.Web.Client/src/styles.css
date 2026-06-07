@@ -140,3 +140,61 @@
   font-size: 13px;
 }
 .skip-link:focus { left: 8px; }
+
+/* Rich notes (.archnote) — shared by the WYSIWYG editor and the read-only render. */
+.archnote ul { list-style: disc; padding-left: 1.1rem; margin: 0.15rem 0; }
+.archnote ol { list-style: decimal; padding-left: 1.1rem; margin: 0.15rem 0; }
+.archnote li { display: list-item; }
+.archnote strong, .archnote b { font-weight: 600; }
+.archnote em, .archnote i { font-style: italic; }
+.archnote code { background: rgb(228 228 231); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em; }
+.dark .archnote code { background: rgb(39 39 42); }
+.archnote a { color: rgb(99 102 241); text-decoration: underline; }
+.archnote s, .archnote del, .archnote strike { text-decoration: line-through; }
+.archnote p, .archnote div { margin: 0; }
+.archnote:focus { outline: none; }
+
+/* Animated "marching ants" border overlay for an element (Appearance → Animate border). */
+.verso-march {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    linear-gradient(90deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-x,
+    linear-gradient(90deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-x,
+    linear-gradient(0deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-y,
+    linear-gradient(0deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-y;
+  background-size: 12px 2px, 12px 2px, 2px 12px, 2px 12px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  animation: verso-march 0.5s infinite linear;
+}
+@keyframes verso-march {
+  to { background-position: 12px 0, -12px 100%, 0 -12px, 100% 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .verso-march { animation: none; } }
+
+/* Element motion effects (Appearance → Animation). Duration via --anim-dur (set per speed). */
+@keyframes verso-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+@keyframes verso-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes verso-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes verso-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-2px); } 40% { transform: translateX(2px); } 60% { transform: translateX(-2px); } 80% { transform: translateX(2px); } }
+@keyframes verso-glow { 0%, 100% { box-shadow: 0 0 0 0 var(--glow, rgba(99,102,241,0.5)); } 50% { box-shadow: 0 0 14px 2px var(--glow, rgba(99,102,241,0.55)); } }
+.verso-anim-pulse   { animation: verso-pulse var(--anim-dur, 1.5s) ease-in-out infinite; }
+.verso-anim-breathe { animation: verso-breathe var(--anim-dur, 1.5s) ease-in-out infinite; }
+.verso-anim-bounce  { animation: verso-bounce var(--anim-dur, 1.5s) ease-in-out infinite; }
+.verso-anim-shake   { animation: verso-shake var(--anim-dur, 1.5s) ease-in-out infinite; }
+.verso-anim-glow    { animation: verso-glow var(--anim-dur, 1.5s) ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { [class*="verso-anim-"] { animation: none !important; } }
+
+/* Relationship flow-animation speed overrides (edge className). */
+.react-flow__edge.verso-edge-slow path { animation-duration: 1.1s; }
+.react-flow__edge.verso-edge-fast path { animation-duration: 0.25s; }
+
+/* Free-form shape motion (Shape inspector → Animation). SVG-friendly. */
+@keyframes verso-shape-march { to { stroke-dashoffset: -12; } }
+.verso-shape-marching { stroke-dasharray: 7 4; animation: verso-shape-march 0.5s linear infinite; }
+.verso-shape-pulse { transform-box: fill-box; transform-origin: center; animation: verso-pulse 1.6s ease-in-out infinite; }
+.verso-shape-breathe { animation: verso-breathe 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { [class*="verso-shape-"] { animation: none !important; } }

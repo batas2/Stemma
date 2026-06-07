@@ -1,7 +1,7 @@
 import type { ArchElement, ArchLink, ViewKind } from './types';
 import type { SavedPosition } from './layout';
 
-export type LayoutAlgorithm = 'hierarchical' | 'force' | 'c4-hub' | 'focused' | 'byType';
+export type LayoutAlgorithm = 'hierarchical' | 'force' | 'focused' | 'byType';
 
 // ---------- Shared helpers ----------
 
@@ -229,7 +229,7 @@ export function layoutForceDirected(
   const n = elements.length;
   const iterations = opts.iterations ?? 320;
   const padding = opts.padding ?? 40;
-  const gravity = opts.gravity ?? 0.025;
+  const gravity = opts.gravity ?? 0.06;
   const sizesIn = opts.sizes ?? {};
 
   // Per-element rendered size. Defaults track ArchNodeView so the algorithm produces
@@ -266,6 +266,22 @@ export function layoutForceDirected(
   });
 
   const idList = elements.map((e) => e.id);
+  const idSet = new Set(idList);
+
+  // Attraction edges = model links + "about" annotations (Risk / Question / Assumption → the
+  // element they're about). Those `aboutId` references are NOT model links, so without adding
+  // them here the annotation nodes are *disconnected* — they feel only repulsion + weak gravity
+  // and drift to the far balance point (the bug in the screenshot). They pull a bit harder
+  // (w > 1) so they hug their parent instead of floating.
+  const attractEdges: { from: string; to: string; w: number }[] = [];
+  for (const l of links) {
+    if (idSet.has(l.fromId) && idSet.has(l.toId) && l.fromId !== l.toId) attractEdges.push({ from: l.fromId, to: l.toId, w: 1 });
+  }
+  for (const e of elements) {
+    const about = e.attributes?.aboutId;
+    if (about && about !== e.id && idSet.has(about)) attractEdges.push({ from: e.id, to: about, w: 1.8 });
+  }
+
   const startTemp = k * 1.1;
   const endTemp = k * 0.04;
 
@@ -322,15 +338,15 @@ export function layoutForceDirected(
       }
     }
 
-    // Attraction along links — classic FR.
-    for (const l of links) {
-      const a = pos[l.fromId];
-      const b = pos[l.toId];
+    // Attraction along edges (model links + about-annotations) — classic FR, edge-weighted.
+    for (const ed of attractEdges) {
+      const a = pos[ed.from];
+      const b = pos[ed.to];
       if (!a || !b) continue;
       const dx = a.x - b.x;
       const dy = a.y - b.y;
       const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const f = (d * d) / k;
+      const f = (d * d) / k * ed.w;
       const fx = (dx / d) * f;
       const fy = (dy / d) * f;
       a.dx -= fx; a.dy -= fy;
@@ -347,7 +363,7 @@ export function layoutForceDirected(
       centroids.set(c, cur);
     }
     for (const c of centroids.values()) { c.x /= c.n; c.y /= c.n; }
-    const clusterPull = 0.04;
+    const clusterPull = 0.022;
     for (const id of idList) {
       const c = cluster.get(id)!;
       if (c === '__none') continue;
@@ -411,77 +427,6 @@ export function layoutForceDirected(
   return out;
 }
 
-// ---------- Algorithm 3 — C4 Hub-and-Spoke (unchanged in behaviour, retained verbatim) ----------
-
-/**
- * C4 Hub-and-Spoke. Reads like a C4 reference card:
- *   - Persons row across the top.
- *   - Internal Software Systems / Containers at the centre.
- *   - External Software Systems on a ring beside the centre.
- *   - Containers stack under their owning system on L2 layouts.
- * Deterministic — re-running with the same input lands the same positions.
- */
-export function layoutC4HubAndSpoke(elements: ArchElement[], _links: ArchLink[]): Record<string, SavedPosition> {
-  const out: Record<string, SavedPosition> = {};
-
-  const persons = elements.filter((e) => e.kind === 'person');
-  const internalSystems = elements.filter((e) => e.kind === 'softwareSystem' && e.attributes?.external !== 'true');
-  const externalSystems = elements.filter((e) => e.kind === 'softwareSystem' && e.attributes?.external === 'true');
-  const containers = elements.filter((e) => e.kind === 'container');
-  const modulesAndCaps = elements.filter((e) => e.kind === 'module' || e.kind === 'capability');
-
-  const W = 240, H = 110, GAP = 80;
-  const cx = 0;
-  const cy = 0;
-
-  persons.forEach((p, i) => {
-    const span = persons.length;
-    const totalW = span * W + (span - 1) * GAP;
-    const x = cx - totalW / 2 + i * (W + GAP);
-    out[p.id] = { x, y: cy - 320 };
-  });
-
-  internalSystems.forEach((s, i) => {
-    const total = internalSystems.length;
-    const totalW = total * W + (total - 1) * GAP;
-    const x = cx - totalW / 2 + i * (W + GAP);
-    out[s.id] = { x, y: cy - 60 };
-  });
-
-  externalSystems.forEach((s, i) => {
-    const half = Math.ceil(externalSystems.length / 2);
-    const side = i < half ? -1 : 1;
-    const idx = i < half ? i : i - half;
-    const x = cx + side * (W * 1.6 + GAP * 2);
-    const y = cy + idx * (H + GAP) - (half - 1) * (H + GAP) / 2;
-    out[s.id] = { x, y };
-  });
-
-  const groupedContainers = new Map<string, ArchElement[]>();
-  for (const c of containers) {
-    const sysId = c.attributes?.systemId ?? '';
-    if (!groupedContainers.has(sysId)) groupedContainers.set(sysId, []);
-    groupedContainers.get(sysId)!.push(c);
-  }
-  let containerColumn = 0;
-  groupedContainers.forEach((list, sysId) => {
-    const parent = out[sysId];
-    const baseX = parent ? parent.x : cx + containerColumn * (W + GAP) - ((groupedContainers.size - 1) * (W + GAP)) / 2;
-    const baseY = parent ? parent.y + 220 : cy + 220;
-    list.forEach((c, i) => {
-      out[c.id] = { x: baseX, y: baseY + i * (H + 40) };
-    });
-    if (!parent) containerColumn++;
-  });
-
-  modulesAndCaps.forEach((m, i) => {
-    const col = i % 4;
-    const row = Math.floor(i / 4);
-    out[m.id] = { x: cx - W * 1.5 - GAP * 1.5 + col * (W + GAP), y: cy + 480 + row * (H + GAP) };
-  });
-
-  return out;
-}
 
 // ---------- Algorithm 4 — Focus-Around-Entity (radial BFS) ----------
 
@@ -614,9 +559,6 @@ export interface ByTypeLayoutOptions {
  * kinds and the current diagram view, then minimises edge crossings within and across
  * layers. Follows the conventions practising architects expect:
  *
- *   - **C4 Context views** — Persons row at the top, internal Software Systems centred,
- *     external systems on the flanks (Simon Brown's reference layout). Containers stack
- *     under their owning system; modules / capabilities row below.
  *   - **Module Map / Context Map views** — Bounded Contexts as vertical columns; modules
  *     of a context stack under their BC card. BC column order is chosen by barycentric
  *     sort over inter-BC edges so heavy talkers end up adjacent (fewer crossings).
@@ -636,7 +578,6 @@ export function layoutByType(
 ): Record<string, SavedPosition> {
   if (elements.length === 0) return {};
   switch (opts.view) {
-    case 'c4Context':       return c4ContextLayout(elements, links, opts);
     case 'dependencyGraph': return layeredDependencyLayout(elements, links, opts);
     case 'moduleMap':       return contextMapLayout(elements, links, opts);
     default:                return contextMapLayout(elements, links, opts);
@@ -785,122 +726,6 @@ function minimiseLayerCrossings(
 
 // ----- View skeletons -----
 
-function c4ContextLayout(
-  elements: ArchElement[],
-  links: ArchLink[],
-  opts: ByTypeLayoutOptions,
-): Record<string, SavedPosition> {
-  const sizes = opts.sizes ?? {};
-  const gap = opts.gap ?? 60;
-  const groupGap = opts.groupGap ?? 100;
-  const rowGap = opts.rowGap ?? 220;
-  const out: Record<string, SavedPosition> = {};
-
-  const persons = elements.filter((e) => e.kind === 'person');
-  const internals = elements.filter((e) => e.kind === 'softwareSystem' && e.attributes?.external !== 'true');
-  const externals = elements.filter((e) => e.kind === 'softwareSystem' && e.attributes?.external === 'true');
-  const containers = elements.filter((e) => e.kind === 'container');
-  const modulesAndCaps = elements.filter((e) => e.kind === 'module' || e.kind === 'capability');
-
-  const adj = buildAdjacency(elements, links);
-
-  // Order internal systems alphabetically (deterministic anchor), then assign provisional
-  // indices so we can score persons + externals against them with edge barycentre.
-  internals.sort((a, b) => a.name.localeCompare(b.name));
-  const internalIdx = new Map(internals.map((s, i) => [s.id, i] as const));
-  const baryAgainstInternals = (e: ArchElement): number => {
-    const ts = [...(adj.out.get(e.id) ?? []), ...(adj.in.get(e.id) ?? [])];
-    const idxs = ts.map((t) => internalIdx.get(t)).filter((v): v is number => typeof v === 'number');
-    if (idxs.length === 0) return internals.length / 2;
-    return idxs.reduce((s, v) => s + v, 0) / idxs.length;
-  };
-  persons.sort((a, b) => baryAgainstInternals(a) - baryAgainstInternals(b));
-  externals.sort((a, b) => baryAgainstInternals(a) - baryAgainstInternals(b));
-
-  // Row 1 — Persons.
-  const personY = 0;
-  Object.assign(out, placeRowByGroup(persons, () => '__persons', personY, sizes, gap, groupGap));
-
-  // Row 2 — Internal systems centred.
-  const sysY = personY + rowGap;
-  Object.assign(out, placeRowByGroup(internals, (e) => e.attributes?.systemId ?? e.id, sysY, sizes, gap, groupGap));
-
-  // Externals split half-and-half to left/right flanks, parked beyond the internal-row span.
-  const half = Math.ceil(externals.length / 2);
-  const leftExternals = externals.slice(0, half);
-  const rightExternals = externals.slice(half);
-  let internalLeft = 0, internalRight = 0;
-  if (internals.length > 0) {
-    internalLeft = Math.min(...internals.map((s) => out[s.id].x));
-    internalRight = Math.max(...internals.map((s) => out[s.id].x + getSize(sizes, s).w));
-  }
-  const flankGap = groupGap * 1.5;
-  let lyCursor = sysY;
-  for (const e of leftExternals) {
-    const sz = getSize(sizes, e);
-    out[e.id] = { x: internalLeft - flankGap - sz.w, y: lyCursor };
-    lyCursor += sz.h + 28;
-  }
-  let ryCursor = sysY;
-  for (const e of rightExternals) {
-    const sz = getSize(sizes, e);
-    out[e.id] = { x: internalRight + flankGap, y: ryCursor };
-    ryCursor += sz.h + 28;
-  }
-
-  // Row 3 — Containers under their parent system. Orphan containers go to a centred row.
-  const containerY = sysY + rowGap;
-  const orphanContainers: ArchElement[] = [];
-  const containersBySystem = new Map<string, ArchElement[]>();
-  for (const c of containers) {
-    const sysId = c.attributes?.systemId;
-    if (sysId && internalIdx.has(sysId)) {
-      (containersBySystem.get(sysId) ?? containersBySystem.set(sysId, []).get(sysId)!).push(c);
-    } else orphanContainers.push(c);
-  }
-  for (const [sysId, list] of containersBySystem) {
-    list.sort((a, b) => a.name.localeCompare(b.name));
-    const sys = internals.find((s) => s.id === sysId);
-    if (!sys) continue;
-    const sysPos = out[sysId];
-    const sysW = getSize(sizes, sys).w;
-    let total = 0;
-    for (let i = 0; i < list.length; i++) {
-      total += getSize(sizes, list[i]).w;
-      if (i < list.length - 1) total += gap;
-    }
-    let cur = sysPos.x + sysW / 2 - total / 2;
-    for (const c of list) {
-      const sz = getSize(sizes, c);
-      out[c.id] = { x: cur, y: containerY };
-      cur += sz.w + gap;
-    }
-  }
-  if (orphanContainers.length > 0) {
-    Object.assign(out, placeRowByGroup(orphanContainers, () => '__orphan', containerY, sizes, gap, groupGap));
-  }
-
-  // Row 4 — Modules / Capabilities, BC-grouped.
-  if (modulesAndCaps.length > 0) {
-    modulesAndCaps.sort((a, b) => {
-      const ca = a.attributes?.contextId ?? '';
-      const cb = b.attributes?.contextId ?? '';
-      if (ca !== cb) return ca.localeCompare(cb);
-      return a.name.localeCompare(b.name);
-    });
-    const moduleY = containerY + rowGap;
-    Object.assign(out, placeRowByGroup(
-      modulesAndCaps,
-      (e) => e.attributes?.contextId ?? '__none',
-      moduleY,
-      sizes,
-      gap,
-      groupGap,
-    ));
-  }
-
-  return out;
-}
 
 function contextMapLayout(
   elements: ArchElement[],

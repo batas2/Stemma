@@ -1,20 +1,24 @@
 import { useMemo, useState } from 'react';
 import {
   Box, Boxes, Cuboid, Layers, Package, User, Server, Target, BookOpen,
-  Search, Plus, Trash2, Eye, Edit3, Pencil, ChevronsLeft, ChevronsRight, Wand2, X,
-  ChevronDown, ChevronRight, Workflow, Compass,
+  Search, Plus, Trash2, Eye, Edit3, ChevronsLeft, ChevronsRight, Wand2, X,
+  ChevronDown, ChevronRight, Shapes, HelpCircle, Lightbulb, AlertTriangle,
 } from 'lucide-react';
-import { DiscoveryPanel } from './DiscoveryPanel';
-import { SuggestedViews } from './SuggestedViews';
+import { BooksPanel } from './BooksPanel';
+import type { ShapeKind } from '@/lib/shapes';
+import { Square, Circle, Triangle, ArrowRight, Type, Image as ImageIcon, MousePointer2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { newCustomView } from '@/lib/views';
+import { applyOperation } from '@/lib/signalr';
+import { friendlyOpError } from '@/lib/opError';
+import { revealNewElement, revealToast } from '@/lib/canvasReveal';
 import { confirmAction } from './ConfirmDialog';
 import { promptText } from './PromptDialog';
-import { suggestViewName } from '@/lib/naming';
+import { suggestViewName, suggestElementName } from '@/lib/naming';
 import type { ArchElement, ArchElementKind } from '@/lib/types';
 
-type Tab = 'elements' | 'views' | 'discovered';
+type Tab = 'elements' | 'views';
 
 const palette: { kind: ArchElementKind; label: string; icon: typeof Box; accent: string }[] = [
   { kind: 'module', label: 'Module', icon: Package, accent: 'text-indigo-500' },
@@ -24,6 +28,9 @@ const palette: { kind: ArchElementKind; label: string; icon: typeof Box; accent:
   { kind: 'person', label: 'Person', icon: User, accent: 'text-amber-500' },
   { kind: 'useCase', label: 'Use Case', icon: Target, accent: 'text-rose-500' },
   { kind: 'capability', label: 'Capability', icon: BookOpen, accent: 'text-sky-500' },
+  { kind: 'question', label: 'Question', icon: HelpCircle, accent: 'text-sky-500' },
+  { kind: 'assumption', label: 'Assumption', icon: Lightbulb, accent: 'text-amber-500' },
+  { kind: 'risk', label: 'Risk', icon: AlertTriangle, accent: 'text-rose-500' },
 ];
 
 const elementIcon: Record<ArchElementKind, typeof Box> = {
@@ -34,6 +41,9 @@ const elementIcon: Record<ArchElementKind, typeof Box> = {
   person: User,
   useCase: Target,
   capability: BookOpen,
+  question: HelpCircle,
+  assumption: Lightbulb,
+  risk: AlertTriangle,
 };
 
 const elementLabel: Record<ArchElementKind, string> = {
@@ -44,32 +54,77 @@ const elementLabel: Record<ArchElementKind, string> = {
   person: 'People',
   useCase: 'Use Cases',
   capability: 'Capabilities',
+  question: 'Questions',
+  assumption: 'Assumptions',
+  risk: 'Risks',
 };
 
 const CATEGORY_ORDER: ArchElementKind[] = [
   'boundedContext', 'module', 'softwareSystem', 'container', 'person', 'useCase', 'capability',
+  'question', 'assumption', 'risk',
+];
+
+// Shape tools live in the Add-new palette so everything you can place on the canvas is in one place.
+const SHAPE_TOOLS: { kind: ShapeKind; label: string; icon: typeof Square }[] = [
+  { kind: 'rect', label: 'Rectangle', icon: Square },
+  { kind: 'ellipse', label: 'Ellipse', icon: Circle },
+  { kind: 'triangle', label: 'Triangle', icon: Triangle },
+  { kind: 'arrow', label: 'Arrow', icon: ArrowRight },
+  { kind: 'label', label: 'Label', icon: Type },
 ];
 
 export function Sidebar() {
   const open = useApp((s) => s.sidebarOpen);
   const setOpen = useApp((s) => s.setSidebarOpen);
   const arch = useApp((s) => s.arch);
-  const mode = useApp((s) => s.mode);
-  const toggleMode = useApp((s) => s.toggleMode);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
   const setActive = useApp((s) => s.setActiveCustomView);
   const upsert = useApp((s) => s.upsertCustomView);
   const remove = useApp((s) => s.removeCustomView);
   const removeElementFromActiveView = useApp((s) => s.removeElementFromActiveView);
+  const selectElement = useApp((s) => s.selectElement);
   const setToast = useApp((s) => s.setToast);
+  const canvasMode = useApp((s) => s.canvasMode);
+  const setCanvasMode = useApp((s) => s.setCanvasMode);
+
+  // Shapes are drawn on saved views; arming a tool creates+activates a saved view first if needed.
+  function ensureSavedView() {
+    if (useApp.getState().activeCustomViewId != null) return false;
+    const v = newCustomView('Freeform', 'all');
+    upsert(v);
+    setActive(v.id);
+    return true;
+  }
+  function armShape(tool: ShapeKind | 'select') {
+    if (tool === 'select') { setCanvasMode({ kind: 'select' }); return; }
+    if (ensureSavedView()) setToast({ kind: 'info', text: 'Opened a saved view "Freeform" — shapes live on saved views.' });
+    setCanvasMode({ kind: 'shape', tool });
+  }
+  function openStencils() {
+    ensureSavedView();
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('verso:open-stencils'));
+  }
+
+  // Clicking a palette tile adds the element (drag still works too). Routed through
+  // revealNewElement so it switches to a lens that renders the kind, then selects + centers it.
+  async function addElement(kind: ArchElementKind) {
+    const fresh = useApp.getState().arch;
+    const prevIds = new Set((fresh?.elements ?? []).map((e) => e.id));
+    const name = suggestElementName(kind, fresh?.elements ?? []);
+    const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
+    if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return; }
+    const revealed = await revealNewElement(prevIds);
+    setToast(revealed
+      ? { kind: 'success', text: revealToast(revealed) }
+      : { kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` });
+  }
 
   const [tab, setTab] = useState<Tab>('elements');
   const [query, setQuery] = useState('');
   const [collapsedCats, setCollapsedCats] = useState<Set<ArchElementKind>>(new Set());
 
-  // Top-level section collapse state — persisted across reloads. Architects with a deep palette
-  // benefit from collapsing "Add new" once they know the kinds, leaving the Existing list visible.
+  // Top-level section collapse state — persisted across reloads.
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
     try {
@@ -209,17 +264,10 @@ export function Sidebar() {
         </button>
         <button
           onClick={() => { setOpen(true); setTab('views'); }}
-          title="Views"
+          title="Views & Books"
           className="p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400"
         >
           <Eye className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => { setOpen(true); setTab('discovered'); }}
-          title="Discovered"
-          className="p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400"
-        >
-          <Compass className="w-4 h-4" />
         </button>
       </aside>
     );
@@ -228,20 +276,9 @@ export function Sidebar() {
   return (
     <aside className="w-[280px] shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/60 flex flex-col overflow-hidden">
       <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
-        <button
-          onClick={toggleMode}
-          title={mode === 'edit' ? 'Switch to Read-only mode' : 'Switch to Edit mode'}
-          aria-label={mode === 'edit' ? 'Switch to Read-only mode' : 'Switch to Edit mode'}
-          className={clsx(
-            'flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors',
-            mode === 'edit'
-              ? 'bg-indigo-500/15 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300'
-              : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-          )}
-        >
-          {mode === 'edit' ? <Pencil className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-          {mode === 'edit' ? 'Edit' : 'Read-only'}
-        </button>
+        <span className="flex items-center gap-1.5 px-1 text-xs text-muted">
+          <Boxes className="w-3.5 h-3.5" /> Workspace
+        </span>
         <div className="flex-1" />
         <button
           onClick={() => setOpen(false)}
@@ -280,18 +317,6 @@ export function Sidebar() {
             </span>
           )}
         </button>
-        <button
-          onClick={() => setTab('discovered')}
-          className={clsx(
-            'flex-1 py-1.5 rounded transition-colors flex items-center justify-center gap-1',
-            tab === 'discovered'
-              ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
-              : 'text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60'
-          )}
-          title="Discovered modules + metrics + suggested views"
-        >
-          <Compass className="w-3 h-3" /> Discovered
-        </button>
       </div>
 
       {tab === 'elements' && (
@@ -327,64 +352,77 @@ export function Sidebar() {
               onToggle={() => toggleSection('addNew')}
             />
             {sectionOpen('addNew') && (
-              <div className="grid grid-cols-2 gap-1.5 mt-2">
+              <>
+              <div className="text-[10px] uppercase tracking-wider text-faint mt-2 mb-1 px-0.5">Model elements</div>
+              <div className="grid grid-cols-2 gap-1.5">
                 {palette.map((p) => {
                   const Icon = p.icon;
                   return (
-                    <div
+                    <button
                       key={p.kind}
                       draggable
+                      onClick={() => addElement(p.kind)}
                       onDragStart={(e) => onPaletteDragStart(e, p.kind, p.label)}
-                      title={`Drag to canvas to add a ${p.label}`}
-                      aria-label={`Drag to canvas to add a ${p.label}`}
-                      className="group flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
+                      title={`Click to add a ${p.label} (or drag it onto the canvas)`}
+                      aria-label={`Add a ${p.label}`}
+                      className="group flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-pointer active:cursor-grabbing text-xs text-left transition-colors"
                     >
                       <Icon className={clsx('w-3.5 h-3.5 shrink-0', p.accent)} />
                       <span className="truncate">{p.label}</span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
-            )}
-          </section>
-
-          <section className="px-3 pt-4">
-            <SectionHeader
-              icon={<Workflow className="w-3 h-3" />}
-              label="Templates"
-              open={sectionOpen('templates')}
-              onToggle={() => toggleSection('templates')}
-            />
-            {sectionOpen('templates') && (
-            <ul className="space-y-1 mt-2">
-              <li>
+              {/* Shapes — picked here, drawn on the canvas. */}
+              <div className="text-[10px] uppercase tracking-wider text-faint mt-3 mb-1 px-0.5">Shapes & stencils</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {SHAPE_TOOLS.map((s) => {
+                  const Icon = s.icon;
+                  const active = canvasMode.kind === 'shape' && canvasMode.tool === s.kind;
+                  return (
+                    <button
+                      key={s.kind}
+                      onClick={() => armShape(s.kind)}
+                      title={`${s.label} — then drag on the canvas to draw`}
+                      className={clsx(
+                        'flex items-center gap-1.5 px-2 py-1.5 rounded border text-xs transition-colors',
+                        active
+                          ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-200'
+                          : 'border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10',
+                      )}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+                      <span className="truncate">{s.label}</span>
+                    </button>
+                  );
+                })}
                 <button
-                  draggable
-                  onDragStart={(e) => { e.dataTransfer.setData('application/verso-template', 'bcWithModules'); e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setDragImage(makeDragChip('Template: BC + 2 modules'), 16, 16); }}
-                  title="Drag to canvas — Bounded Context with two modules"
-                  className="w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
+                  onClick={openStencils}
+                  title="Open the stencil library (cloud, db, queue icons…)"
+                  className="flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-xs"
                 >
-                  <Layers className="w-3.5 h-3.5 text-violet-500 shrink-0" />
-                  <span className="flex-1 truncate">BC + 2 modules</span>
+                  <ImageIcon className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+                  <span className="truncate">Stencils…</span>
                 </button>
-              </li>
-              <li>
-                <button
-                  draggable
-                  onDragStart={(e) => { e.dataTransfer.setData('application/verso-template', 'systemWithContainer'); e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setDragImage(makeDragChip('Template: System + Container'), 16, 16); }}
-                  title="Drag to canvas — System with one container"
-                  className="w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded border border-default bg-white dark:bg-zinc-900/50 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 cursor-grab active:cursor-grabbing text-xs transition-colors"
-                >
-                  <Server className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="flex-1 truncate">System + Container</span>
-                </button>
-              </li>
-            </ul>
+                {canvasMode.kind === 'shape' && (
+                  <button
+                    onClick={() => armShape('select')}
+                    className="col-span-2 flex items-center justify-center gap-1.5 px-2 py-1 rounded border border-default text-[11px] text-muted hover:text-body"
+                  >
+                    <MousePointer2 className="w-3 h-3" /> Done drawing
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-faint mt-1.5 px-0.5 leading-snug">
+                Pick a shape, then drag on the canvas. Shapes live on saved views.
+              </p>
+              </>
             )}
           </section>
 
           <section className="px-3 pt-4 pb-3">
             <SectionHeader
+              icon={<Boxes className="w-3 h-3" />}
               label={`Existing (${totalCount})`}
               open={sectionOpen('existing')}
               onToggle={() => toggleSection('existing')}
@@ -417,8 +455,9 @@ export function Sidebar() {
                             <li
                               key={e.id}
                               draggable
+                              onClick={() => { selectElement(e.id); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('verso:focus-node', { detail: { nodeId: e.id } })); }}
                               onDragStart={(ev) => onElementDragStart(ev, e.id, e.name)}
-                              title={`Drag to canvas${activeView ? ` to add to "${activeView.name}"` : ''}`}
+                              title={`Click to select & center · drag to canvas${activeView ? ` to add to "${activeView.name}"` : ''}`}
                               className={clsx(
                                 'group flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-grab active:cursor-grabbing transition-colors',
                                 inActiveView
@@ -454,27 +493,27 @@ export function Sidebar() {
 
       {tab === 'views' && (
         <div className="flex-1 overflow-auto scrollbar-thin">
+          {/* One home for "view": saved views + books. The built-in lenses live in the topbar switcher. */}
           <section className="px-3 pt-3">
-            <button
-              onClick={handleNewView}
-              className="w-full flex items-center justify-center gap-1.5 text-xs px-2 py-1.5 rounded bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300"
-            >
-              <Plus className="w-3 h-3" /> New View
-            </button>
-          </section>
-          <section className="px-3 pt-3 pb-3">
             <SectionHeader
-              label="Custom views"
+              icon={<Eye className="w-3 h-3" />}
+              label="Saved views"
               open={sectionOpen('customViews')}
               onToggle={() => toggleSection('customViews')}
             />
             {sectionOpen('customViews') && (
             <>
+            <button
+              onClick={handleNewView}
+              className="w-full flex items-center justify-center gap-1.5 text-xs px-2 py-1.5 rounded bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 mt-2"
+            >
+              <Plus className="w-3 h-3" /> New View
+            </button>
             <p className="text-[10px] text-faint mt-2 mb-2 leading-snug">
-              Built-in views (Context, Module Map, Dependencies, Decisions) live in the topbar. Custom views below filter the model down to a curated subset.
+              Saved views are <span className="font-medium">freeform</span> — a curated subset you can lay out by hand and annotate with shapes.
             </p>
             {customViews.length === 0 && (
-              <p className="text-xs text-zinc-500 px-1">No custom views yet. Click "New View" above.</p>
+              <p className="text-xs text-zinc-500 px-1">No saved views yet. Click "New View" above.</p>
             )}
             <ul className="space-y-0.5">
               {customViews.map((v) => {
@@ -492,6 +531,9 @@ export function Sidebar() {
                     <button onClick={() => setActive(v.id)} className="flex-1 text-left truncate">
                       {v.name}
                     </button>
+                    <span title="Freeform — supports shapes & manual layout" className="text-violet-500/80 shrink-0">
+                      <Shapes className="w-3 h-3" />
+                    </span>
                     <span className="text-[9px] text-zinc-500">{v.elementIds.length}</span>
                     <button
                       onClick={() => handleRenameView(v.id, v.name)}
@@ -520,13 +562,19 @@ export function Sidebar() {
             </>
             )}
           </section>
-          <SuggestedViews />
-        </div>
-      )}
-
-      {tab === 'discovered' && (
-        <div className="flex-1 overflow-hidden">
-          <DiscoveryPanel />
+          <section className="px-3 pt-4 pb-3">
+            <SectionHeader
+              icon={<BookOpen className="w-3 h-3" />}
+              label="Books"
+              open={sectionOpen('books')}
+              onToggle={() => toggleSection('books')}
+            />
+            {sectionOpen('books') && (
+              <div className="mt-2">
+                <BooksPanel />
+              </div>
+            )}
+          </section>
         </div>
       )}
     </aside>

@@ -3,13 +3,11 @@ import {
   Wand2, Network, ChevronDown, Magnet, AlignLeft, AlignRight, AlignCenterHorizontal,
   AlignStartVertical, AlignEndVertical, AlignCenterVertical,
   StretchHorizontal, StretchVertical, Maximize2, Trash2, MousePointerSquareDashed,
-  MousePointer2, Square, Circle, Type, ArrowRight, Image as ImageIcon, Shapes,
   Crosshair, Filter, Target, LayoutDashboard,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import type { LayoutAlgorithm } from '@/lib/autoLayout';
-import type { ShapeKind } from '@/lib/shapes';
 
 interface Props {
   onAutoLayout: (algorithm: LayoutAlgorithm) => void;
@@ -18,17 +16,7 @@ interface Props {
   onFitSelection: () => void;
   onDeleteSelected: () => void;
   selectedCount: number;
-  /** True on a custom view — exposes the shape tools section. */
-  shapesEnabled?: boolean;
-  onOpenStencils?: () => void;
 }
-
-const shapeTools: Array<{ kind: ShapeKind; label: string; icon: typeof Square }> = [
-  { kind: 'rect',    label: 'Rectangle',  icon: Square },
-  { kind: 'ellipse', label: 'Ellipse',    icon: Circle },
-  { kind: 'arrow',   label: 'Arrow',      icon: ArrowRight },
-  { kind: 'label',   label: 'Label',      icon: Type },
-];
 
 // Defined at module scope so its component identity is stable across CanvasToolbar
 // renders. Inlining it inside the parent caused unmount/remount of every toolbar
@@ -57,11 +45,10 @@ function Btn({
   );
 }
 
-export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelection, onDeleteSelected, selectedCount, shapesEnabled = false, onOpenStencils }: Props) {
+export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelection, onDeleteSelected, selectedCount }: Props) {
   const snap = useApp((s) => s.snapEnabled);
   const toggleSnap = useApp((s) => s.toggleSnap);
   const canvasMode = useApp((s) => s.canvasMode);
-  const setCanvasMode = useApp((s) => s.setCanvasMode);
   const view = useApp((s) => s.view);
 
   // Dependency-view state — surfaced inline on this toolbar when view === 'dependencyGraph'.
@@ -74,7 +61,6 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelect
   const setDepDepth = useApp((s) => s.setDepDepth);
 
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
-  const [shapesExpanded, setShapesExpanded] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
   // Close dropdowns when the user clicks anywhere outside their wrapper. Implemented at
@@ -110,13 +96,6 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelect
   const canDistribute = selectedCount >= 3;
   const inShapeMode = canvasMode.kind === 'shape';
   const isDepView = view === 'dependencyGraph';
-  const isC4View = view === 'c4Context';
-  const c4Level = useApp((s) => s.c4Level);
-  const setC4Level = useApp((s) => s.setC4Level);
-  const c4FocusSystemId = useApp((s) => s.c4FocusSystemId);
-  const c4FocusContainerId = useApp((s) => s.c4FocusContainerId);
-  const setC4FocusSystem = useApp((s) => s.setC4FocusSystem);
-  const setC4FocusContainer = useApp((s) => s.setC4FocusContainer);
 
   const depKinds = useMemo(() => {
     if (!arch) return [];
@@ -142,53 +121,8 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelect
       className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur border border-zinc-200 dark:border-zinc-800 rounded-md shadow-sm px-1 py-0.5"
       style={{ pointerEvents: 'auto', zIndex: 1000, isolation: 'isolate' }}
     >
-      {/* Shape tools — only on custom views. Collapsed by default; the Shapes button toggles
-          the inline tool row so the toolbar stays compact when not drawing. */}
-      {shapesEnabled && (
-        <>
-          <Btn
-            onClick={() => setShapesExpanded((v) => !v)}
-            title={shapesExpanded ? 'Hide shape tools' : 'Show shape tools'}
-            active={shapesExpanded || inShapeMode}
-          >
-            <span className="flex items-center gap-1">
-              <Shapes className="w-3.5 h-3.5" />
-              <ChevronDown className={clsx('w-3 h-3 transition-transform', shapesExpanded && 'rotate-180')} />
-            </span>
-          </Btn>
-          {shapesExpanded && (
-            <>
-              <Btn
-                onClick={() => setCanvasMode({ kind: 'select' })}
-                title="Select / move (V)"
-                active={!inShapeMode}
-              >
-                <MousePointer2 className="w-3.5 h-3.5" />
-              </Btn>
-              {shapeTools.map((t) => {
-                const Icon = t.icon;
-                const active = inShapeMode && canvasMode.tool === t.kind;
-                return (
-                  <Btn
-                    key={t.kind}
-                    onClick={() => setCanvasMode({ kind: 'shape', tool: t.kind })}
-                    title={`${t.label} — drag on the canvas to draw`}
-                    active={active}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                  </Btn>
-                );
-              })}
-              {onOpenStencils && (
-                <Btn onClick={onOpenStencils} title="Open stencil library">
-                  <ImageIcon className="w-3.5 h-3.5" />
-                </Btn>
-              )}
-            </>
-          )}
-          <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
-        </>
-      )}
+      {/* Shape tools moved to the sidebar "Add new" palette (Epic 13) — one home for everything
+          you can place on the canvas. The "drag to draw" hint still shows below when armed. */}
       <div className="relative" ref={layoutMenuRef}>
         <Btn onClick={() => setLayoutMenuOpen((v) => !v)} title="Auto-arrange">
           <span className="flex items-center gap-1">
@@ -210,11 +144,9 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelect
               <div>
                 <div className="font-medium">Architectural (by type) — recommended</div>
                 <div className="text-[10px] text-zinc-500 mt-0.5">
-                  {isC4View
-                    ? 'Persons top, internal systems centred, externals on the flanks. C4 conventions.'
-                    : isDepView
-                      ? 'Apps on top, infrastructure on the bottom. Topological layers, BC clusters, crossings minimised.'
-                      : 'Bounded Contexts as columns, modules stacked under their BC. Crossings minimised.'}
+                  {isDepView
+                    ? 'Apps on top, infrastructure on the bottom. Topological layers, BC clusters, crossings minimised.'
+                    : 'Bounded Contexts as columns, modules stacked under their BC. Crossings minimised.'}
                 </div>
               </div>
             </button>
@@ -238,18 +170,6 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelect
                 <div className="text-[10px] text-zinc-500 mt-0.5">Spring + repulsion physics, clusters by links.</div>
               </div>
             </button>
-            {isC4View && (
-              <button
-                onClick={() => { onAutoLayout('c4-hub'); setLayoutMenuOpen(false); }}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800/60 flex items-start gap-2 border-t border-zinc-200 dark:border-zinc-800"
-              >
-                <Wand2 className="w-3.5 h-3.5 mt-0.5 text-emerald-500" />
-                <div>
-                  <div className="font-medium">C4 hub-and-spoke</div>
-                  <div className="text-[10px] text-zinc-500 mt-0.5">Actors top, system in centre, externals around the outside.</div>
-                </div>
-              </button>
-            )}
             {/* Focus-around-selection. Gated to single-selection so the algorithm has an
                 unambiguous focus point. Disabled rather than hidden when no/multi selection so
                 architects discover the option and learn the gesture. */}
@@ -287,41 +207,6 @@ export function CanvasToolbar({ onAutoLayout, onAlign, onDistribute, onFitSelect
         <Btn onClick={onFitSelection} title="Fit to selection (f)">
           <Maximize2 className="w-3.5 h-3.5" />
         </Btn>
-      )}
-
-      {/* C4 view — level pill switcher + breadcrumb when drilled in. */}
-      {isC4View && (
-        <>
-          <span className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
-          <div className="flex items-center gap-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded p-0.5 text-[11px]">
-            {([
-              { id: 'context',   label: 'L1', tooltip: 'System Context — systems + actors only' },
-              { id: 'container', label: 'L2', tooltip: 'Container — deployable units of the focused system' },
-              { id: 'component', label: 'L3', tooltip: 'Component — modules / capabilities of the focused container' },
-            ] as const).map((lvl) => (
-              <button
-                key={lvl.id}
-                onClick={() => setC4Level(lvl.id)}
-                title={lvl.tooltip}
-                className={clsx(
-                  'px-2 py-0.5 rounded transition-colors font-mono',
-                  c4Level === lvl.id
-                    ? 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-200'
-                    : 'text-muted hover:text-body hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60'
-                )}
-              >{lvl.label}</button>
-            ))}
-          </div>
-          {(c4FocusSystemId || c4FocusContainerId) && (
-            <button
-              onClick={() => { setC4FocusSystem(null); setC4FocusContainer(null); }}
-              title="Clear drill-down"
-              className="ml-1 text-[10px] text-muted hover:text-body underline"
-            >
-              clear focus
-            </button>
-          )}
-        </>
       )}
 
       {/* Dependency-view-only block. Lives in the same bar as auto-arrange / snap so the architect

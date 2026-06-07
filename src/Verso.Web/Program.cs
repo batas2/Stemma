@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Verso.Engine.Adapters.Yaml;
 using Verso.Engine.ArchModel;
-using Verso.Engine.Discovery;
 using Verso.Engine.Workspace;
 using Verso.Web.Hubs;
 using Verso.Web.Services;
@@ -10,24 +9,6 @@ using Verso.Web.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<EngineHost>();
-builder.Services.AddSingleton<DiscoveryService>();
-builder.Services.AddSingleton<IClaudeTransport>(sp => SelectClaudeTransport(sp.GetRequiredService<IConfiguration>()));
-builder.Services.AddSingleton<AiBroker>(sp => new AiBroker(sp.GetRequiredService<IClaudeTransport>()));
-
-static IClaudeTransport SelectClaudeTransport(IConfiguration config)
-{
-    // Selection order:
-    //   1. $VERSO_AI_TRANSPORT=cli|http (env wins — easy override per shell).
-    //   2. config "Verso:Ai:Transport" from appsettings.json (project default = "cli").
-    //   3. Auto-detect: prefer CLI when `claude` is on PATH; fall back to HTTP.
-    var pinned = (Environment.GetEnvironmentVariable("VERSO_AI_TRANSPORT")
-                  ?? config["Verso:Ai:Transport"])?.ToLowerInvariant();
-    if (pinned == "cli") return new ClaudeCliTransport();
-    if (pinned == "http") return new HttpClaudeTransport();
-
-    var cli = new ClaudeCliTransport();
-    return cli.IsAvailable ? cli : new HttpClaudeTransport();
-}
 builder.Services.AddSignalR().AddJsonProtocol(o =>
 {
     o.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -162,25 +143,17 @@ workspaceApi.MapGet("/arch", async (EngineHost host, CancellationToken ct) =>
     return arch is null ? Results.NotFound() : Results.Ok(arch);
 });
 
-// Epic 08 — Data-layer concepts (AggregateRoot / DomainEntity / ValueObject / Resource)
-// and View Books live in `Concepts/*.verso.yaml`. The frontend Data Model + Resource Tree
-// views render off this surface; the Books popover seeds from `books`.
-workspaceApi.MapGet("/yaml-concepts", (EngineHost host) =>
+// View Books live in `Concepts/view-book.verso.yaml`. The Books panel + book-mode footer
+// read this surface; each book page references a built-in view by id.
+workspaceApi.MapGet("/books", (EngineHost host) =>
 {
     var engine = host.Engine;
     if (engine is null) return Results.NotFound();
     var adapter = YamlAdapter.Load(engine.RootPath);
-    var concepts = adapter.AllConcepts.Select(c => new YamlConceptDto(
-        c.Id, c.Kind, c.Name, c.Layer,
-        c.Properties.ToDictionary(p => p.Key, p => (string?)p.Value),
-        c.Aliases.ToArray())).ToArray();
-    var relations = adapter.AllRelations.Select(r => new YamlRelationDto(
-        r.Id, r.Kind, r.From, r.To,
-        r.Properties.ToDictionary(p => p.Key, p => (string?)p.Value))).ToArray();
     var books = adapter.AllBooks.Select(b => new YamlBookDto(
         b.Id, b.Name, b.Audience,
         b.Pages.Select(p => new YamlBookPageDto(p.ViewId, p.Title, p.Narrative)).ToArray())).ToArray();
-    return Results.Ok(new YamlConceptsResponse(concepts, relations, books));
+    return Results.Ok(books);
 });
 
 workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, CancellationToken ct) =>
@@ -189,7 +162,6 @@ workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, Canc
     if (arch is null) return Results.NotFound();
     var viewKind = view switch
     {
-        "c4" or "c4Context" or "context" => ArchViewKind.C4Context,
         "module" or "moduleMap" => ArchViewKind.ModuleMap,
         "dependency" or "dependencyGraph" => ArchViewKind.DependencyGraph,
         _ => ArchViewKind.ModuleMap
@@ -281,41 +253,6 @@ workspaceApi.MapDelete("/views/{viewId}", async (string viewId, EngineHost host,
     return Results.NotFound();
 });
 
-workspaceApi.MapGet("/decisions/{decisionId}/narrative", async (string decisionId, EngineHost host, CancellationToken ct) =>
-{
-    var engine = host.Engine;
-    if (engine is null) return Results.NotFound();
-    var folder = Path.Combine(engine.RootPath, "Decisions");
-    if (!Directory.Exists(folder)) return Results.NotFound();
-    var path = Directory.EnumerateFiles(folder, $"{decisionId}-*.md").FirstOrDefault();
-    if (path is null) return Results.NotFound();
-    var content = await File.ReadAllTextAsync(path, ct);
-    return Results.Text(content, "text/markdown");
-});
-
-workspaceApi.MapGet("/elements/{elementId}/narrative", async (string elementId, EngineHost host, CancellationToken ct) =>
-{
-    var engine = host.Engine;
-    if (engine is null) return Results.NotFound();
-    var arch = await engine.ReadArchModelAsync(ct);
-    var elem = arch?.Elements.FirstOrDefault(e => e.Id == elementId);
-    if (elem is null) return Results.NotFound();
-    var folder = elem.Kind switch
-    {
-        ArchElementKind.Capability => "Capabilities",
-        ArchElementKind.BoundedContext => "BoundedContexts",
-        _ => "Elements",
-    };
-    var slug = string.Concat(elem.Name.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-'))
-        .Trim('-')
-        .Replace("--", "-");
-    while (slug.Contains("--", StringComparison.Ordinal)) slug = slug.Replace("--", "-");
-    var path = Path.Combine(engine.RootPath, folder, slug + ".md");
-    if (!File.Exists(path)) return Results.Text(string.Empty, "text/markdown");
-    var content = await File.ReadAllTextAsync(path, ct);
-    return Results.Text(content, "text/markdown");
-});
-
 workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
 
 workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
@@ -343,47 +280,7 @@ workspaceApi.MapPut("/layout", async (LayoutSidecar sidecar, EngineHost host) =>
     return Results.NoContent();
 });
 
-// ---------------- Epic 06 — Discovery, metrics, AI, view recommendations ----------------
-
-workspaceApi.MapPost("/discovery/run", async (EngineHost host, DiscoveryService discovery, CancellationToken ct) =>
-{
-    var engine = host.Engine;
-    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
-    var bundle = await discovery.RunAsync(engine.Model, engine.Solution, ct);
-    return Results.Ok(bundle);
-});
-
-workspaceApi.MapGet("/discovery", (EngineHost host, DiscoveryService discovery) =>
-{
-    var engine = host.Engine;
-    if (engine is null) return Results.NotFound();
-    var cached = discovery.ReadCached(engine.RootPath);
-    return cached is null ? Results.NotFound() : Results.Ok(cached);
-});
-
-workspaceApi.MapGet("/discovery/metrics", (EngineHost host) =>
-{
-    var engine = host.Engine;
-    if (engine is null) return Results.NotFound();
-    var metrics = DiscoverySidecars.ReadMetrics(engine.RootPath);
-    return metrics is null ? Results.NotFound() : Results.Ok(metrics);
-});
-
-workspaceApi.MapPost("/discovery/analyse-module", async (
-    AnalyseModuleRequest req, EngineHost host, DiscoveryService discovery, AiBroker broker, CancellationToken ct) =>
-{
-    var engine = host.Engine;
-    if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
-    var bundle = discovery.ReadCached(engine.RootPath);
-    if (bundle is null) return Results.BadRequest(new { error = "run /discovery/run first" });
-    var result = await broker.AnalyseModuleAsync(req, engine.Model, bundle, ct);
-    return Results.Ok(result);
-});
-
-workspaceApi.MapGet("/discovery/ai-status", (AiBroker broker) =>
-    Results.Ok(new { configured = broker.IsConfigured, transport = broker.TransportLabel }));
-
-// ---------------- Epic 07 — Comments substrate ----------------
+// ---------------- Comments substrate ----------------
 
 workspaceApi.MapGet("/comments", (EngineHost host) =>
 {
@@ -439,10 +336,7 @@ public sealed record InitWorkspaceRequest(string RootPath, string? Name);
 public sealed record BookPdfPageRequest(string ViewId, string Title, string Narrative, string? CapturePngBase64);
 public sealed record BookPdfRequest(string Name, string? Audience, IReadOnlyList<BookPdfPageRequest> Pages);
 
-public sealed record YamlConceptDto(string Id, string Kind, string Name, string? Layer, IReadOnlyDictionary<string, string?> Properties, IReadOnlyList<string> Aliases);
-public sealed record YamlRelationDto(string Id, string Kind, string From, string To, IReadOnlyDictionary<string, string?> Properties);
 public sealed record YamlBookPageDto(string ViewId, string Title, string Narrative);
 public sealed record YamlBookDto(string Id, string Name, string? Audience, IReadOnlyList<YamlBookPageDto> Pages);
-public sealed record YamlConceptsResponse(IReadOnlyList<YamlConceptDto> Concepts, IReadOnlyList<YamlRelationDto> Relations, IReadOnlyList<YamlBookDto> Books);
 
 public partial class Program;

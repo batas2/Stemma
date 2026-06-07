@@ -39,20 +39,16 @@ export interface WorkspaceModel {
   projects: ProjectModel[];
 }
 
+/** Architecture-model operations the canvas emits against `Architecture/Architecture.cs`. */
 export type OperationKind =
-  | 'AddType' | 'RenameType' | 'RemoveType'
-  | 'AddProperty' | 'RenameProperty' | 'RemoveProperty'
-  | 'AddInheritance' | 'RemoveInheritance'
-  | 'AddImplementation' | 'RemoveImplementation'
-  | 'AddElement' | 'RenameElement' | 'RemoveElement'
-  | 'SetElementAttribute' | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute'
-  | 'SetLifecycle' | 'SetOwnership'
-  | 'AddDecision' | 'RenameDecision' | 'SetDecisionStatus' | 'RemoveDecision'
-  | 'AddDecisionConcerns' | 'SetDecisionNarrative' | 'SetCapabilityNarrative';
+  | 'AddElement' | 'RenameElement' | 'RemoveElement' | 'SetElementContext' | 'SetElementAttribute'
+  | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute'
+  | 'SetLifecycle' | 'SetOwnership';
 
 export type ArchElementKind =
   | 'module' | 'boundedContext' | 'softwareSystem'
-  | 'container' | 'person' | 'useCase' | 'capability';
+  | 'container' | 'person' | 'useCase' | 'capability'
+  | 'question' | 'assumption' | 'risk';
 export type ArchLinkKind = 'dataFlow' | 'dependency';
 
 export interface ArchElement {
@@ -74,26 +70,11 @@ export interface ArchTagInfo {
   ownership: { squad: string | null; domain: string | null } | null;
 }
 
-export interface ArchDecisionInfo {
-  id: string;
-  title: string;
-  status: string;
-  date: string | null;
-  chosenOptionId: string | null;
-}
-
-export interface ArchDecisionConcernsInfo { decisionId: string; elementId: string; }
-export interface ArchDecisionSupersedesInfo { newerDecisionId: string; olderDecisionId: string; }
-
 export interface ArchModel {
   filePath: string;
   elements: ArchElement[];
   links: ArchLink[];
   tags: ArchTagInfo[];
-  decisions?: ArchDecisionInfo[] | null;
-  decisionOptions?: { id: string; title: string; decisionId: string }[] | null;
-  decisionConcerns?: ArchDecisionConcernsInfo[] | null;
-  decisionSupersedes?: ArchDecisionSupersedesInfo[] | null;
 }
 
 export interface RecentEntry { rootPath: string; displayName: string; lastOpened: string; }
@@ -107,8 +88,8 @@ export interface Violation {
   linkIds: string[];
 }
 
-export type ViewKind = 'c4Context' | 'moduleMap' | 'dependencyGraph' | 'decisionLog' | 'engineer' | 'dataModel' | 'resourceTree';
-export type Mode = 'edit' | 'view';
+/** Built-in lenses: the two architecture canvases + a Concerns summary, all from `Architecture.cs`. */
+export type ViewKind = 'moduleMap' | 'dependencyGraph' | 'concerns';
 
 /** A user-defined named subset of the canonical model. Persisted in localStorage per workspace. */
 export interface CustomView {
@@ -121,9 +102,9 @@ export interface CustomView {
   createdAt: string;
 }
 
-/** Epic 08 Track A — view-presentation surface. A Book is an ordered list of pages;
- *  each page references a view kind plus a free-form narrative. Persisted on the
- *  backend in `Concepts/view-book.verso.yaml`; the store mirrors them for fast UI. */
+/** A view-presentation surface. A Book is an ordered list of pages; each page references a
+ *  view kind plus a free-form narrative. Stored in `Concepts/view-book.verso.yaml`; the
+ *  store mirrors them for fast UI. */
 export interface BookPage {
   viewId: ViewKind | string;
   title: string;
@@ -134,32 +115,6 @@ export interface Book {
   name: string;
   audience: string | null;
   pages: BookPage[];
-}
-
-/** Epic 08 Track B/C — concepts persisted in `Concepts/*.verso.yaml`. The frontend
- *  hydrates these once on workspace open and renders them in the Data Model + Resource
- *  Tree views, the *Data* sidebar group, and the Inspector *Data* tab. */
-export type YamlDataKind = 'AggregateRoot' | 'DomainEntity' | 'ValueObject' | 'Resource';
-
-export interface YamlConcept {
-  id: string;
-  kind: string;
-  name: string;
-  layer: string | null;
-  properties: Record<string, string | null>;
-  aliases: string[];
-}
-export interface YamlRelation {
-  id: string;
-  kind: string;
-  from: string;
-  to: string;
-  properties: Record<string, string | null>;
-}
-export interface YamlConceptsBundle {
-  concepts: YamlConcept[];
-  relations: YamlRelation[];
-  books: Book[];
 }
 
 export interface OperationEnvelope {

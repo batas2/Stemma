@@ -1,4 +1,4 @@
-import type { ArchModel, RecentEntry, Violation, WorkspaceModel, YamlConceptsBundle } from './types';
+import type { ArchModel, Book, RecentEntry, Violation, WorkspaceModel } from './types';
 
 const BASE = '';
 
@@ -29,6 +29,11 @@ export async function snapshot(): Promise<WorkspaceModel | null> {
   return r.json();
 }
 
+export async function closeWorkspace(): Promise<void> {
+  const r = await fetch(`${BASE}/api/workspace/close`, { method: 'POST' });
+  if (!r.ok && r.status !== 204) throw new Error(`Close failed: ${r.status} ${await r.text()}`);
+}
+
 export async function archModel(): Promise<ArchModel | null> {
   const r = await fetch(`${BASE}/api/workspace/arch`);
   if (r.status === 404) return null;
@@ -36,14 +41,14 @@ export async function archModel(): Promise<ArchModel | null> {
   return r.json();
 }
 
-export async function yamlConcepts(): Promise<YamlConceptsBundle | null> {
-  const r = await fetch(`${BASE}/api/workspace/yaml-concepts`);
+export async function books(): Promise<Book[] | null> {
+  const r = await fetch(`${BASE}/api/workspace/books`);
   if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`YAML concepts fetch failed: ${r.status}`);
+  if (!r.ok) throw new Error(`Books fetch failed: ${r.status}`);
   return r.json();
 }
 
-export async function exportMermaid(view: 'c4Context' | 'moduleMap' | 'dependencyGraph'): Promise<string> {
+export async function exportMermaid(view: 'moduleMap' | 'dependencyGraph'): Promise<string> {
   const r = await fetch(`${BASE}/api/workspace/export/mermaid?view=${view}`);
   if (!r.ok) throw new Error(`Mermaid export failed: ${r.status}`);
   return r.text();
@@ -77,18 +82,6 @@ export async function saveServerView(view: ServerView): Promise<void> {
 export async function deleteServerView(viewId: string): Promise<void> {
   const r = await fetch(`${BASE}/api/workspace/views/${encodeURIComponent(viewId)}`, { method: 'DELETE' });
   if (!r.ok && r.status !== 404) throw new Error(`view delete failed: ${r.status}`);
-}
-
-export async function fetchDecisionNarrative(decisionId: string): Promise<string> {
-  const r = await fetch(`${BASE}/api/workspace/decisions/${encodeURIComponent(decisionId)}/narrative`);
-  if (!r.ok) return '';
-  return r.text();
-}
-
-export async function fetchElementNarrative(elementId: string): Promise<string> {
-  const r = await fetch(`${BASE}/api/workspace/elements/${encodeURIComponent(elementId)}/narrative`);
-  if (!r.ok) return '';
-  return r.text();
 }
 
 export async function exportDrawio(): Promise<string> {

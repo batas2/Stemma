@@ -1,9 +1,9 @@
 import { useReactFlow, useStore, useViewport, type Node } from '@xyflow/react';
 import { useApp } from '@/lib/store';
 import {
-  type ArrowAnchor, type Shape, type ShapeArrow, type ShapeEllipse, type ShapeImage, type ShapeLabel, type ShapeRect,
+  type ArrowAnchor, type Shape, type ShapeArrow, type ShapeBoxText, type ShapeEllipse, type ShapeImage, type ShapeLabel, type ShapeRect, type ShapeTriangle,
   arrowDisplayLabel,
-  newArrow, newEllipse, newLabel, newRect, addShape, removeShape, updateShape, saveShapes,
+  newArrow, newEllipse, newLabel, newRect, newTriangle, addShape, removeShape, updateShape, saveShapes,
 } from '@/lib/shapes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyOperation } from '@/lib/signalr';
@@ -16,7 +16,7 @@ interface Props {
 
 const EMPTY_SHAPES: readonly Shape[] = Object.freeze([]) as readonly Shape[];
 
-type DraftDrag = { mode: 'draw'; tool: 'rect' | 'ellipse' | 'label' | 'arrow'; startX: number; startY: number; cur: { x: number; y: number } };
+type DraftDrag = { mode: 'draw'; tool: 'rect' | 'ellipse' | 'triangle' | 'label' | 'arrow'; startX: number; startY: number; cur: { x: number; y: number } };
 type ShapeMoveDrag = { mode: 'move'; shapeId: string; startX: number; startY: number; initial: Shape };
 type ShapeResizeDrag = { mode: 'resize'; shapeId: string; handle: ResizeHandle; startX: number; startY: number; initial: Shape };
 type ConnectDrag = { mode: 'connect'; from: ArrowAnchor; cursorX: number; cursorY: number };
@@ -46,6 +46,7 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
   const canvasMode = useApp((s) => s.canvasMode);
   const selectedShapeId = useApp((s) => s.selectedShapeId);
   const selectShape = useApp((s) => s.selectShape);
+  const customPropsAll = useApp((s) => s.customProps);
   const { screenToFlowPosition } = useReactFlow();
   const viewport = useViewport();
 
@@ -152,10 +153,11 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
         const h = Math.max(30, Math.abs(dy));
         let s: Shape | null = null;
         switch (d.tool) {
-          case 'rect':    s = newRect(x, y, w, h); break;
-          case 'ellipse': s = newEllipse(x, y, w, h); break;
-          case 'arrow':   s = newArrow(d.startX, d.startY, d.cur.x, d.cur.y); break;
-          case 'label':   s = newLabel(d.startX, d.startY, 'Label'); break;
+          case 'rect':     s = newRect(x, y, w, h); break;
+          case 'ellipse':  s = newEllipse(x, y, w, h); break;
+          case 'triangle': s = newTriangle(x, y, w, h); break;
+          case 'arrow':    s = newArrow(d.startX, d.startY, d.cur.x, d.cur.y); break;
+          case 'label':    s = newLabel(d.startX, d.startY, 'Label'); break;
         }
         if (s) commitNew(s);
       } else if (d.mode === 'move' || d.mode === 'resize') {
@@ -251,20 +253,15 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
     selectShape(null);
   }
 
-  function onSelectModeBackdropClick() {
-    if (!shapeMode) selectShape(null);
-  }
-
-  // Compute dock dots for every model node (when arrow tool active OR shape selected with arrow nearby).
-  // For simplicity: show docks on hover of any node when in select mode.
-  const showElementDocks = canvasMode.kind === 'select';
+  // Element docks appear ONLY while the arrow tool is armed — the rest of the time the model's
+  // own 6 connection handles are the dots, and free-form arrows dock to those same points.
+  const showElementDocks = canvasMode.kind === 'shape' && canvasMode.tool === 'arrow';
 
   return (
     <div
       data-shape-overlay="true"
       className="absolute inset-0 pointer-events-none"
       style={{ zIndex: 5 }}
-      onClick={onSelectModeBackdropClick}
     >
       {/* Shape-draw backdrop. A screen-space div (NOT a giant SVG rect inside the
           viewport-transformed SVG) so it never overlaps the floating CanvasToolbar
@@ -296,6 +293,7 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
             interactive={canvasMode.kind === 'select'}
             nodeBounds={nodeBounds}
             allShapes={shapes}
+            props={customPropsAll[s.id]}
             onPointerDown={(e) => onShapePointerDown(e, s)}
             onResizePointerDown={(e, handle) => onResizeHandlePointerDown(e, s, handle)}
             onDockPointerDown={onDockPointerDown}
@@ -333,7 +331,7 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
 
 export function translateShape(s: Shape, dx: number, dy: number): Shape {
   switch (s.kind) {
-    case 'rect': case 'ellipse': case 'image':
+    case 'rect': case 'ellipse': case 'triangle': case 'image':
       return { ...s, x: s.x + dx, y: s.y + dy } as Shape;
     case 'label':
       return { ...s, x: s.x + dx, y: s.y + dy } as Shape;
@@ -373,7 +371,7 @@ function findNodeUnder(x: number, y: number, bounds: Map<string, { x: number; y:
 function findShapeUnder(x: number, y: number, shapes: readonly Shape[]): Shape | null {
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i];
-    if (s.kind === 'rect' || s.kind === 'ellipse' || s.kind === 'image') {
+    if (s.kind === 'rect' || s.kind === 'ellipse' || s.kind === 'triangle' || s.kind === 'image') {
       const r = s as ShapeRect | ShapeEllipse | ShapeImage;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return s;
     }
@@ -383,7 +381,7 @@ function findShapeUnder(x: number, y: number, shapes: readonly Shape[]): Shape |
 
 function shapeCenter(s: Shape): { x: number; y: number } {
   switch (s.kind) {
-    case 'rect': case 'ellipse': case 'image':
+    case 'rect': case 'ellipse': case 'triangle': case 'image':
       return { x: (s as ShapeRect).x + (s as ShapeRect).w / 2, y: (s as ShapeRect).y + (s as ShapeRect).h / 2 };
     case 'label':
       return { x: (s as ShapeLabel).x, y: (s as ShapeLabel).y };
@@ -431,12 +429,37 @@ interface ShapeRendererProps {
   interactive: boolean;
   nodeBounds: Map<string, { x: number; y: number; w: number; h: number }>;
   allShapes: readonly Shape[];
+  props?: Record<string, string>;
   onPointerDown: (e: React.PointerEvent<SVGGElement>) => void;
   onResizePointerDown: (e: React.PointerEvent, handle: ResizeHandle) => void;
   onDockPointerDown: (e: React.PointerEvent, anchor: ArrowAnchor, fromX: number, fromY: number) => void;
 }
 
-function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, onPointerDown, onResizePointerDown, onDockPointerDown }: ShapeRendererProps) {
+function shapeStyleBits(s: ShapeRect | ShapeEllipse | ShapeTriangle) {
+  const gradId = `vgrad-${s.id}`;
+  const useGrad = s.fillStyle === 'gradient' && !!s.fill && s.fill !== 'transparent';
+  const SHAD: Record<string, string> = {
+    none: 'none',
+    soft: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))',
+    raised: 'drop-shadow(0 5px 9px rgba(0,0,0,0.22))',
+    glow: `drop-shadow(0 0 6px ${s.stroke})`,
+  };
+  return {
+    fillRef: useGrad ? `url(#${gradId})` : s.fill,
+    filter: s.shadow && s.shadow !== 'none' ? SHAD[s.shadow] : undefined,
+    anim: s.animation && s.animation !== 'none' ? `verso-shape-${s.animation}` : undefined,
+    gradientDef: useGrad ? (
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={s.fill} stopOpacity={1} />
+          <stop offset="100%" stopColor={s.fill} stopOpacity={0.45} />
+        </linearGradient>
+      </defs>
+    ) : null,
+  };
+}
+
+function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, props, onPointerDown, onResizePointerDown, onDockPointerDown }: ShapeRendererProps) {
   const stroke = (s: { strokeStyle?: 'solid' | 'dashed' | 'dotted' }) => {
     switch (s.strokeStyle) {
       case 'dashed': return '6 6';
@@ -450,14 +473,16 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, on
   switch (shape.kind) {
     case 'rect': {
       const r = shape as ShapeRect;
+      const rb = shapeStyleBits(r);
       return (
         <g style={{ cursor }}>
           <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+            {rb.gradientDef}
             <rect x={r.x} y={r.y} width={r.w} height={r.h}
-              rx={r.rounded ? 12 : 0} ry={r.rounded ? 12 : 0}
-              fill={r.fill} stroke={r.stroke} strokeWidth={r.strokeWidth}
-              strokeDasharray={stroke(r)} />
-            {r.label && <text x={r.x + 8} y={r.y + 18} fontSize="12" fill={r.stroke} style={{ userSelect: 'none' }}>{r.label}</text>}
+              rx={r.radius ?? (r.rounded ? 12 : 0)} ry={r.radius ?? (r.rounded ? 12 : 0)}
+              fill={rb.fillRef} stroke={r.stroke} strokeWidth={r.strokeWidth}
+              strokeDasharray={stroke(r)} className={rb.anim} style={rb.filter ? { filter: rb.filter } : undefined} />
+            <BoxText s={r} props={props} />
           </g>
           {selected && interactive && <SelectionFrame x={r.x} y={r.y} w={r.w} h={r.h} onResize={onResizePointerDown} />}
           {selected && interactive && <ShapeDocks shape={r} onDockPointerDown={onDockPointerDown} />}
@@ -466,16 +491,35 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, on
     }
     case 'ellipse': {
       const e = shape as ShapeEllipse;
+      const eb = shapeStyleBits(e);
       return (
         <g style={{ cursor }}>
           <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+            {eb.gradientDef}
             <ellipse cx={e.x + e.w / 2} cy={e.y + e.h / 2} rx={e.w / 2} ry={e.h / 2}
-              fill={e.fill} stroke={e.stroke} strokeWidth={e.strokeWidth}
-              strokeDasharray={stroke(e)} />
-            {e.label && <text x={e.x + e.w / 2} y={e.y + e.h / 2} textAnchor="middle" fontSize="12" fill={e.stroke} style={{ userSelect: 'none' }}>{e.label}</text>}
+              fill={eb.fillRef} stroke={e.stroke} strokeWidth={e.strokeWidth}
+              strokeDasharray={stroke(e)} className={eb.anim} style={eb.filter ? { filter: eb.filter } : undefined} />
+            <BoxText s={e} centered props={props} />
           </g>
           {selected && interactive && <SelectionFrame x={e.x} y={e.y} w={e.w} h={e.h} onResize={onResizePointerDown} />}
           {selected && interactive && <ShapeDocks shape={e} onDockPointerDown={onDockPointerDown} />}
+        </g>
+      );
+    }
+    case 'triangle': {
+      const tr = shape as ShapeTriangle;
+      const tb = shapeStyleBits(tr);
+      const pts = `${tr.x + tr.w / 2},${tr.y} ${tr.x},${tr.y + tr.h} ${tr.x + tr.w},${tr.y + tr.h}`;
+      return (
+        <g style={{ cursor }}>
+          <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+            {tb.gradientDef}
+            <polygon points={pts} fill={tb.fillRef} stroke={tr.stroke} strokeWidth={tr.strokeWidth}
+              strokeDasharray={stroke(tr)} strokeLinejoin="round" className={tb.anim} style={tb.filter ? { filter: tb.filter } : undefined} />
+            {/* Text in the wide lower half. */}
+            <BoxText s={{ ...tr, y: tr.y + tr.h * 0.42, h: tr.h * 0.58 }} centered props={props} />
+          </g>
+          {selected && interactive && <SelectionFrame x={tr.x} y={tr.y} w={tr.w} h={tr.h} onResize={onResizePointerDown} />}
         </g>
       );
     }
@@ -505,7 +549,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, on
         if (b) fromPt = edgePoint(b, toPt.x, toPt.y);
       } else if (fromAnchor?.kind === 'shape') {
         const s = allShapes.find((x) => x.id === fromAnchor.id);
-        if (s && (s.kind === 'rect' || s.kind === 'ellipse' || s.kind === 'image')) {
+        if (s && (s.kind === 'rect' || s.kind === 'ellipse' || s.kind === 'triangle' || s.kind === 'image')) {
           fromPt = edgePoint(s as ShapeRect, toPt.x, toPt.y);
         }
       }
@@ -515,7 +559,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, on
         if (b) toPt = edgePoint(b, fromPt.x, fromPt.y);
       } else if (toAnchor?.kind === 'shape') {
         const s = allShapes.find((x) => x.id === toAnchor.id);
-        if (s && (s.kind === 'rect' || s.kind === 'ellipse' || s.kind === 'image')) {
+        if (s && (s.kind === 'rect' || s.kind === 'ellipse' || s.kind === 'triangle' || s.kind === 'image')) {
           toPt = edgePoint(s as ShapeRect, fromPt.x, fromPt.y);
         }
       }
@@ -547,6 +591,14 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, on
               ) : null;
             })()}
           </g>
+          {/* Dock rings — persistent (not only when selected) so it's visible that an end is
+              anchored to an element / shape rather than floating at a free coordinate. */}
+          {fromAnchor && fromAnchor.kind !== 'free' && (
+            <circle cx={fromPt.x} cy={fromPt.y} r={3.5} fill="none" stroke={a.stroke} strokeWidth={1.5} opacity={0.85} />
+          )}
+          {toAnchor && toAnchor.kind !== 'free' && (
+            <circle cx={toPt.x} cy={toPt.y} r={3.5} fill="none" stroke={a.stroke} strokeWidth={1.5} opacity={0.85} />
+          )}
           {selected && interactive && (
             <>
               <circle cx={fromPt.x} cy={fromPt.y} r={4} fill="rgb(99 102 241)" />
@@ -654,11 +706,14 @@ function ElementDocks({ nodeId, bounds, onDockPointerDown }: {
   onDockPointerDown: (e: React.PointerEvent, anchor: ArrowAnchor, fromX: number, fromY: number) => void;
 }) {
   if (!bounds) return null;
+  // The same 6 points as the node's connection handles (2 top, 2 bottom, 1 left, 1 right).
   const ds = [
-    { side: 'top',    cx: bounds.x + bounds.w / 2, cy: bounds.y },
-    { side: 'right',  cx: bounds.x + bounds.w,     cy: bounds.y + bounds.h / 2 },
-    { side: 'bottom', cx: bounds.x + bounds.w / 2, cy: bounds.y + bounds.h },
-    { side: 'left',   cx: bounds.x,                cy: bounds.y + bounds.h / 2 },
+    { side: 'tl', cx: bounds.x + bounds.w * 0.33, cy: bounds.y },
+    { side: 'tr', cx: bounds.x + bounds.w * 0.67, cy: bounds.y },
+    { side: 'bl', cx: bounds.x + bounds.w * 0.33, cy: bounds.y + bounds.h },
+    { side: 'br', cx: bounds.x + bounds.w * 0.67, cy: bounds.y + bounds.h },
+    { side: 'l',  cx: bounds.x,                   cy: bounds.y + bounds.h / 2 },
+    { side: 'r',  cx: bounds.x + bounds.w,        cy: bounds.y + bounds.h / 2 },
   ];
   return (
     <>
@@ -680,6 +735,35 @@ function DragPreview({ drag }: { drag: DraftDrag }) {
   const h = Math.abs(drag.cur.y - drag.startY);
   if (drag.tool === 'rect') return <rect x={x} y={y} width={w} height={h} fill="rgba(99,102,241,0.05)" stroke="rgb(99 102 241)" strokeDasharray="4 4" rx={12} />;
   if (drag.tool === 'ellipse') return <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} fill="rgba(244,114,182,0.05)" stroke="rgb(244 114 182)" strokeDasharray="4 4" />;
+  if (drag.tool === 'triangle') return <polygon points={`${x + w / 2},${y} ${x},${y + h} ${x + w},${y + h}`} fill="rgba(16,185,129,0.05)" stroke="rgb(16 185 129)" strokeDasharray="4 4" strokeLinejoin="round" />;
   if (drag.tool === 'arrow') return <line x1={drag.startX} y1={drag.startY} x2={drag.cur.x} y2={drag.cur.y} stroke="rgb(63 63 70)" strokeWidth={2} strokeDasharray="4 4" />;
   return null;
+}
+
+/** Wrapped, multi-line text rendered inside a box-like shape (rect / ellipse / triangle). Uses a
+ *  foreignObject so the body wraps and respects font/colour, unlike a flat SVG <text>. */
+function BoxText({ s, centered, props }: { s: ShapeBoxText & { x: number; y: number; w: number; h: number }; centered?: boolean; props?: Record<string, string> }) {
+  const propEntries = props ? Object.entries(props) : [];
+  if (!s.label && !s.text && propEntries.length === 0) return null;
+  return (
+    <foreignObject x={s.x} y={s.y} width={Math.max(0, s.w)} height={Math.max(0, s.h)} style={{ pointerEvents: 'none', overflow: 'hidden' }}>
+      <div
+        style={{
+          width: '100%', height: '100%', boxSizing: 'border-box', padding: 8, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column', gap: 2,
+          justifyContent: centered ? 'center' : 'flex-start',
+          textAlign: centered ? 'center' : 'left',
+          color: s.textColor ?? '#27272a', fontSize: s.fontSize ?? 12, lineHeight: 1.3,
+        }}
+      >
+        {s.label ? <div style={{ fontWeight: 600 }}>{s.label}</div> : null}
+        {s.text ? <div style={{ whiteSpace: 'pre-wrap', opacity: 0.92 }}>{s.text}</div> : null}
+        {propEntries.length > 0 ? (
+          <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', gap: 1, fontSize: '0.85em', opacity: 0.85 }}>
+            {propEntries.map(([k, v]) => <div key={k}><span style={{ opacity: 0.65 }}>{k}:</span> {v}</div>)}
+          </div>
+        ) : null}
+      </div>
+    </foreignObject>
+  );
 }

@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock, Compass, Loader2 } from 'lucide-react';
+import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock, LogOut, ArrowLeftRight, PanelRight } from 'lucide-react';
 import { VersoLockup } from './Logo';
 import { useApp } from '@/lib/store';
-import { initWorkspace, openWorkspace, listRecents } from '@/lib/api';
-import { runDiscovery } from '@/lib/discovery';
+import { initWorkspace, openWorkspace, listRecents, closeWorkspace } from '@/lib/api';
 import { fetchUndoState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
+import { friendlyOpError } from '@/lib/opError';
 import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
 import type { RecentEntry } from '@/lib/types';
-import { ViewSwitcher } from './ViewSwitcher';
 import { ExportMenu } from './ExportMenu';
-import { BooksButton } from './BooksButton';
 
 export function Topbar() {
   const ws = useApp((s) => s.workspace);
@@ -19,26 +17,13 @@ export function Topbar() {
   const setToast = useApp((s) => s.setToast);
   const theme = useApp((s) => s.theme);
   const toggleTheme = useApp((s) => s.toggleTheme);
+  const inspectorOpen = useApp((s) => s.inspectorOpen);
+  const setInspectorOpen = useApp((s) => s.setInspectorOpen);
   const [pathInput, setPathInput] = useState('');
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [recentsOpen, setRecentsOpen] = useState(false);
+  const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [undoState, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null });
-  const [discovering, setDiscovering] = useState(false);
-
-  async function onDiscover() {
-    if (!ws) return;
-    setDiscovering(true);
-    setLoading(true);
-    try {
-      const b = await runDiscovery();
-      setToast({ kind: 'success', text: `Discovery: ${b.discovered.modules.length} modules · ${b.discovered.edges.length} edges · ${b.recommendations.length} suggested views` });
-    } catch (e) {
-      setToast({ kind: 'error', text: (e as Error).message });
-    } finally {
-      setDiscovering(false);
-      setLoading(false);
-    }
-  }
 
   useEffect(() => { listRecents().then(setRecents).catch(() => {}); }, [ws?.rootPath]);
 
@@ -83,12 +68,27 @@ export function Topbar() {
 
   async function handleUndo() {
     const r = await undoOperation();
-    if (r && 'reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    if (r && 'reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
   }
 
   async function handleRedo() {
     const r = await redoOperation();
-    if (r && 'reason' in r) setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+    if (r && 'reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+  }
+
+  async function handleCloseWorkspace() {
+    setWsMenuOpen(false);
+    setLoading(true);
+    try {
+      await closeWorkspace();
+      setWs(null);
+      setPathInput('');
+      setToast({ kind: 'success', text: 'Workspace closed' });
+    } catch (e) {
+      setToast({ kind: 'error', text: (e as Error).message });
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -100,47 +100,35 @@ export function Topbar() {
       <div className="flex-1 flex justify-center items-center gap-3">
         {ws ? (
           <>
-            <ViewSwitcher />
             <div className="flex items-center gap-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md p-0.5">
-              <button
-                onClick={handleUndo}
-                disabled={!undoState.canUndo}
-                aria-label={undoState.undoDescription ? `Undo: ${undoState.undoDescription}` : 'Undo'}
-                title={undoState.undoDescription ? `Undo: ${undoState.undoDescription} (${format({ key: 'z', primary: true, description: '', handler: () => {} })})` : `Undo (${format({ key: 'z', primary: true, description: '', handler: () => {} })})`}
-                className="p-1.5 rounded text-muted hover:text-body hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={handleRedo}
-                disabled={!undoState.canRedo}
-                aria-label={undoState.redoDescription ? `Redo: ${undoState.redoDescription}` : 'Redo'}
-                title={undoState.redoDescription ? `Redo: ${undoState.redoDescription} (${primaryKeyLabel}${shiftKeyLabel}Z)` : `Redo (${primaryKeyLabel}${shiftKeyLabel}Z)`}
-                className="p-1.5 rounded text-muted hover:text-body hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Redo2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <button
-              onClick={() => setOpen(true)}
-              aria-label="Open command palette"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-default text-xs text-muted hover:text-body transition-colors w-44"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span className="flex-1 text-left">Search…</span>
-              <kbd className="text-[10px] font-mono bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{primaryKeyLabel}K</kbd>
-            </button>
-            <button
-              onClick={onDiscover}
-              disabled={discovering}
-              aria-label="Run discovery"
-              title="Read source, propose modules + dependency typing + metrics"
-              className="btn btn-md btn-ghost border-default bg-zinc-100 dark:bg-zinc-900"
-            >
-              {discovering ? <Loader2 className="w-3 h-3 animate-spin" /> : <Compass className="w-3 h-3" />}
-              Discover
-            </button>
-            <BooksButton />
+                  <button
+                    onClick={handleUndo}
+                    disabled={!undoState.canUndo}
+                    aria-label={undoState.undoDescription ? `Undo: ${undoState.undoDescription}` : 'Undo'}
+                    title={undoState.undoDescription ? `Undo: ${undoState.undoDescription} (${format({ key: 'z', primary: true, description: '', handler: () => {} })})` : `Undo (${format({ key: 'z', primary: true, description: '', handler: () => {} })})`}
+                    className="p-1.5 rounded text-muted hover:text-body hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={handleRedo}
+                    disabled={!undoState.canRedo}
+                    aria-label={undoState.redoDescription ? `Redo: ${undoState.redoDescription}` : 'Redo'}
+                    title={undoState.redoDescription ? `Redo: ${undoState.redoDescription} (${primaryKeyLabel}${shiftKeyLabel}Z)` : `Redo (${primaryKeyLabel}${shiftKeyLabel}Z)`}
+                    className="p-1.5 rounded text-muted hover:text-body hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Redo2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <button
+                  onClick={() => setOpen(true)}
+                  aria-label="Open command palette"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-100 hover:bg-zinc-200/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border border-default text-xs text-muted hover:text-body transition-colors w-44"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span className="flex-1 text-left">Search…</span>
+                  <kbd className="text-[10px] font-mono bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{primaryKeyLabel}K</kbd>
+                </button>
             <ExportMenu />
           </>
         ) : (
@@ -198,6 +186,16 @@ export function Topbar() {
           </div>
         )}
       </div>
+      {ws && (
+        <button
+          onClick={() => setInspectorOpen(!inspectorOpen)}
+          aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'}
+          title={inspectorOpen ? 'Hide inspector panel' : 'Show inspector panel'}
+          className={`p-1.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 ${inspectorOpen ? 'text-indigo-600 dark:text-indigo-400' : 'text-muted hover:text-body'}`}
+        >
+          <PanelRight className="w-3.5 h-3.5" />
+        </button>
+      )}
       <button
         onClick={toggleTheme}
         aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
@@ -206,9 +204,52 @@ export function Topbar() {
       >
         {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
       </button>
-      <div className="text-[11px] text-zinc-500 truncate max-w-xs hidden md:block">
-        {ws ? <span className="font-mono">{ws.rootPath.split('/').slice(-2).join('/')}</span> : null}
-      </div>
+      {ws && (
+        <div className="relative hidden md:block">
+          <button
+            onClick={() => setWsMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={wsMenuOpen}
+            aria-label="Workspace actions"
+            title={ws.rootPath}
+            className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-body px-2 py-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800/60 max-w-xs"
+          >
+            <FolderOpen className="w-3 h-3 shrink-0" />
+            <span className="font-mono truncate">{ws.rootPath.split('/').slice(-2).join('/')}</span>
+            <ChevronDown className="w-3 h-3 shrink-0" />
+          </button>
+          {wsMenuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-full mt-1 w-56 rounded surface-overlay z-popover"
+              onMouseLeave={() => setWsMenuOpen(false)}
+            >
+              <button
+                role="menuitem"
+                onClick={handleCloseWorkspace}
+                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 border-b border-zinc-100 dark:border-zinc-800"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5 text-muted" />
+                <div className="flex-1">
+                  <div className="font-medium">Switch workspace…</div>
+                  <div className="text-[10px] text-zinc-500">Close and pick another</div>
+                </div>
+              </button>
+              <button
+                role="menuitem"
+                onClick={handleCloseWorkspace}
+                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
+              >
+                <LogOut className="w-3.5 h-3.5 text-muted" />
+                <div className="flex-1">
+                  <div className="font-medium">Close workspace</div>
+                  <div className="text-[10px] text-zinc-500 font-mono truncate">{ws.rootPath}</div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </header>
   );
 }

@@ -1,11 +1,14 @@
-import { Trash2, Wand2 } from 'lucide-react';
+import { Trash2, Wand2, Plus } from 'lucide-react';
+import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import {
-  type Shape, type ShapeArrow, type ShapeEllipse, type ShapeImage, type ShapeLabel, type ShapeLinkKind, type ShapeRect,
+  type Shape, type ShapeArrow, type ShapeEllipse, type ShapeImage, type ShapeLabel, type ShapeLinkKind, type ShapeRect, type ShapeTriangle,
   removeShape, saveShapes, styleForLinkKind, updateShape,
 } from '@/lib/shapes';
 import { CommentsPanel } from './CommentsPanel';
+import { InspectorActions } from './InspectorActions';
 import { applyOperation } from '@/lib/signalr';
+import { friendlyOpError } from '@/lib/opError';
 import { loadLayout, saveLayout } from '@/lib/layout';
 import type { ArchElementKind, ViewKind } from '@/lib/types';
 import { useState } from 'react';
@@ -20,9 +23,13 @@ export function ShapeInspector({ viewKey, workspaceRoot }: Props) {
   const setShapesFor = useApp((s) => s.setShapesFor);
   const selectShape = useApp((s) => s.selectShape);
   const setToast = useApp((s) => s.setToast);
+  const customPropsAll = useApp((s) => s.customProps);
+  const setCustomProp = useApp((s) => s.setCustomProp);
+  const removeCustomProp = useApp((s) => s.removeCustomProp);
 
   const shape = shapes.find((s) => s.id === selectedShapeId);
   if (!shape) return null;
+  const shapeProps = customPropsAll[shape.id] ?? {};
 
   function patch(values: Partial<Shape>) {
     const cur = useApp.getState().shapes[viewKey] ?? [];
@@ -47,6 +54,9 @@ export function ShapeInspector({ viewKey, workspaceRoot }: Props) {
           {shape.kind}
         </span>
         <span className="text-xs text-faint truncate font-mono">{shape.id}</span>
+        <span className="ml-auto flex items-center">
+          <InspectorActions showCollapseAll={false} />
+        </span>
       </div>
 
       <div className="flex-1 overflow-auto p-3 space-y-3 text-xs">
@@ -83,18 +93,58 @@ export function ShapeInspector({ viewKey, workspaceRoot }: Props) {
           </Field>
         )}
 
+        {/* Multi-line text body for box-like shapes — the draw.io "Option A / Variants" boxes. */}
+        {(shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'triangle') && (
+          <>
+            <Field label="Text">
+              <textarea
+                className="input-base w-full resize-y leading-relaxed"
+                rows={4}
+                value={(shape as ShapeRect).text ?? ''}
+                placeholder="Body text — wraps inside the shape…"
+                onChange={(e) => patch({ text: e.target.value } as Partial<ShapeRect>)}
+              />
+            </Field>
+            <Field label="Text size">
+              <input
+                type="number" min={8} max={48}
+                className="input-base w-full"
+                value={(shape as ShapeRect).fontSize ?? 12}
+                onChange={(e) => patch({ fontSize: Number(e.target.value) || 12 } as Partial<ShapeRect>)}
+              />
+            </Field>
+            <Field label="Text colour">
+              <ColourSwatches
+                value={(shape as ShapeRect).textColor ?? 'rgb(39,39,42)'}
+                presets={['rgb(39,39,42)', '#ffffff', 'rgb(99, 102, 241)', 'rgb(16, 185, 129)', 'rgb(244, 63, 94)', 'rgb(245, 158, 11)']}
+                onChange={(c) => patch({ textColor: c } as Partial<ShapeRect>)}
+              />
+            </Field>
+            {shape.kind === 'rect' && (
+              <Field label="Corner radius">
+                <input
+                  type="number" min={0} max={40}
+                  className="input-base w-full"
+                  value={(shape as ShapeRect).radius ?? 0}
+                  onChange={(e) => patch({ radius: Number(e.target.value) || 0 } as Partial<ShapeRect>)}
+                />
+              </Field>
+            )}
+          </>
+        )}
+
         {/* Position + size for box-like kinds */}
-        {(shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'image') && (
+        {(shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'triangle' || shape.kind === 'image') && (
           <BoxGeometry shape={shape} onPatch={(v) => patch(v)} />
         )}
 
         {/* Stroke */}
-        {(shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'arrow') && (
+        {(shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'triangle' || shape.kind === 'arrow') && (
           <StrokeBlock shape={shape} onPatch={(v) => patch(v)} />
         )}
 
         {/* Fill */}
-        {(shape.kind === 'rect' || shape.kind === 'ellipse') && (
+        {(shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'triangle') && (
           <Field label="Fill">
             <ColourSwatches
               value={(shape as ShapeRect).fill}
@@ -106,6 +156,40 @@ export function ShapeInspector({ viewKey, workspaceRoot }: Props) {
               onChange={(fill) => patch({ fill } as Partial<ShapeRect>)}
             />
           </Field>
+        )}
+
+        {/* Appearance parity with element nodes — fill style / shadow / motion. */}
+        {(shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'triangle') && (
+          <>
+            <Field label="Fill style">
+              <SegRow
+                value={(shape as ShapeRect).fillStyle ?? 'solid'}
+                options={[{ v: 'solid', l: 'Solid' }, { v: 'gradient', l: 'Gradient' }]}
+                onChange={(v) => patch({ fillStyle: v } as Partial<ShapeRect>)}
+              />
+            </Field>
+            <Field label="Shadow">
+              <SegRow
+                value={(shape as ShapeRect).shadow ?? 'none'}
+                options={[{ v: 'none', l: 'Flat' }, { v: 'soft', l: 'Soft' }, { v: 'raised', l: 'Raised' }, { v: 'glow', l: 'Glow' }]}
+                onChange={(v) => patch({ shadow: v } as Partial<ShapeRect>)}
+              />
+            </Field>
+            <Field label="Animation">
+              <SegRow
+                value={(shape as ShapeRect).animation ?? 'none'}
+                options={[{ v: 'none', l: 'None' }, { v: 'marching', l: 'March' }, { v: 'pulse', l: 'Pulse' }, { v: 'breathe', l: 'Breathe' }]}
+                onChange={(v) => patch({ animation: v } as Partial<ShapeRect>)}
+              />
+            </Field>
+            <Field label="Custom properties">
+              <ShapePropsEditor
+                props={shapeProps}
+                onSet={(k, v) => setCustomProp(shape.id, k, v)}
+                onRemove={(k) => removeCustomProp(shape.id, k)}
+              />
+            </Field>
+          </>
         )}
 
         {/* Label-specific font size + colour */}
@@ -169,7 +253,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function BoxGeometry({ shape, onPatch }: { shape: ShapeRect | ShapeEllipse | ShapeImage; onPatch: (v: Partial<Shape>) => void }) {
+function BoxGeometry({ shape, onPatch }: { shape: ShapeRect | ShapeEllipse | ShapeTriangle | ShapeImage; onPatch: (v: Partial<Shape>) => void }) {
   return (
     <Field label="Geometry">
       <div className="grid grid-cols-2 gap-1">
@@ -196,7 +280,7 @@ function NumInput({ label, value, onChange }: { label: string; value: number; on
   );
 }
 
-function StrokeBlock({ shape, onPatch }: { shape: ShapeRect | ShapeEllipse | ShapeArrow; onPatch: (v: Partial<Shape>) => void }) {
+function StrokeBlock({ shape, onPatch }: { shape: ShapeRect | ShapeEllipse | ShapeTriangle | ShapeArrow; onPatch: (v: Partial<Shape>) => void }) {
   return (
     <>
       <Field label="Stroke colour">
@@ -278,7 +362,7 @@ function ConvertToElementBlock({ shape, viewKey, workspaceRoot }: {
         elementKind: kind, name,
       });
       if ('reason' in r) {
-        setToast({ kind: 'error', text: `${r.reason}: ${r.message}` });
+        setToast({ kind: 'error', text: friendlyOpError(r) });
         return;
       }
       // Find the freshly created element by (kind + name) — same heuristic the canvas drop uses.
@@ -411,5 +495,49 @@ function ArrowEndpointInfo({ arrow }: { arrow: ShapeArrow }) {
         Drag a docking dot to re-anchor. Anchored endpoints follow their target.
       </p>
     </Field>
+  );
+}
+
+function SegRow<T extends string>({ value, options, onChange }: { value: T; options: { v: T; l: string }[]; onChange: (v: T) => void }) {
+  return (
+    <div className="flex gap-1">
+      {options.map((o) => (
+        <button
+          key={o.v}
+          onClick={() => onChange(o.v)}
+          className={clsx(
+            'flex-1 px-1.5 py-1 text-[11px] rounded border transition-colors',
+            value === o.v
+              ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+              : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700',
+          )}
+        >
+          {o.l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ShapePropsEditor({ props, onSet, onRemove }: { props: Record<string, string>; onSet: (k: string, v: string) => void; onRemove: (k: string) => void }) {
+  const [k, setK] = useState('');
+  const [v, setV] = useState('');
+  const entries = Object.entries(props);
+  return (
+    <div className="space-y-1">
+      {entries.map(([key, val]) => (
+        <div key={key} className="flex items-center gap-1">
+          <span className="font-mono text-[11px] text-zinc-500 w-16 truncate" title={key}>{key}</span>
+          <input className="input-base flex-1 min-w-0 text-xs" value={val} onChange={(e) => onSet(key, e.target.value)} />
+          <button onClick={() => onRemove(key)} aria-label={`Remove ${key}`} className="p-1 rounded text-faint hover:text-rose-500"><Trash2 className="w-3 h-3" /></button>
+        </div>
+      ))}
+      <div className="flex items-center gap-1">
+        <input className="input-base w-16 min-w-0 font-mono text-[11px]" placeholder="key" value={k} onChange={(e) => setK(e.target.value)} />
+        <input className="input-base flex-1 min-w-0 text-xs" placeholder="value" value={v} onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && k.trim()) { onSet(k.trim(), v); setK(''); setV(''); } }} />
+        <button onClick={() => { if (k.trim()) { onSet(k.trim(), v); setK(''); setV(''); } }} aria-label="Add property" className="btn btn-sm btn-secondary px-2"><Plus className="w-3 h-3" /></button>
+      </div>
+    </div>
   );
 }

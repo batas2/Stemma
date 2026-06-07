@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { ArchModel, Book, BookPage, CustomView, Mode, ViewKind, Violation, WorkspaceModel, YamlConcept, YamlRelation } from './types';
-import { loadViews, saveViews, loadActiveView, saveActiveView } from './views';
+import type { ArchModel, Book, BookPage, CustomView, ViewKind, Violation, WorkspaceModel } from './types';
+import { loadViews, saveViews, loadActiveView, saveActiveView, loadOpenViews, saveOpenViews } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
 import {
@@ -29,13 +29,14 @@ interface AppState {
   workspace: WorkspaceModel | null;
   arch: ArchModel | null;
   view: ViewKind;
-  mode: Mode;
   customViews: CustomView[];
   activeCustomViewId: string | null;
+  // Saved views currently open as bottom tabs (built-ins are always present, not listed here).
+  openViewIds: string[];
   sidebarOpen: boolean;
+  inspectorOpen: boolean;
   theme: Theme;
   loading: boolean;
-  selectedTypeId: string | null;
   selectedElementId: string | null;
   selectedLinkId: string | null;
   edgeStyles: Record<string, EdgeStyle>;
@@ -46,46 +47,37 @@ interface AppState {
   snapEnabled: boolean;
   toast: { kind: 'info' | 'error' | 'success'; text: string } | null;
   paletteOpen: boolean;
-  // Epic 07 Track B — shape support on custom views.
+  // Shape support on custom views.
   canvasMode: CanvasMode;
   shapes: Record<string, Shape[]>;       // keyed by viewKey, e.g. "custom:cv_q4"
   selectedShapeId: string | null;
-  // Dependencies-view architect UX
+  // Dependencies-view architect UX.
   depFocusMode: boolean;
   depKindFilter: Set<string> | null;     // null = all kinds, otherwise the allow-list
   depDepth: number;                      // 1 = direct deps; 2 = transitive 2-hop; etc.
-  // C4 view architect UX (Epic 07 follow-on). The level decides which kinds the canvas shows;
-  // c4FocusSystemId scopes L2 to a single system when the architect drilled in from L1.
-  c4Level: 'context' | 'container' | 'component';
-  c4FocusSystemId: string | null;
-  c4FocusContainerId: string | null;
-  // Epic 08 Track A — View Books
+  // Collapsed Bounded Contexts (session-only): their child modules are hidden on the canvas.
+  collapsedBcs: Set<string>;
+  // View Books — a presentation surface over the built-in views.
   books: Book[];
   activeBookId: string | null;
   activeBookPageIndex: number;
-  // Epic 08 Tracks B/C — YAML data-layer concepts (aggregates, entities, value objects, resources).
-  // Hydrated once on workspace open; mutations are queued (writes go through the engine).
-  yamlConcepts: YamlConcept[];
-  yamlRelations: YamlRelation[];
-  selectedYamlConceptId: string | null;
-  // Epic 08 A9 — audience filter for the Books popover.
-  booksAudienceFilter: string | null;
   setWorkspace: (ws: WorkspaceModel | null) => void;
+  rehydratePresentation: () => void;
   setArch: (a: ArchModel | null) => void;
   setView: (v: ViewKind) => void;
-  setMode: (m: Mode) => void;
-  toggleMode: () => void;
   setCustomViews: (vs: CustomView[]) => void;
   upsertCustomView: (v: CustomView) => void;
   removeCustomView: (id: string) => void;
   setActiveCustomView: (id: string | null) => void;
+  openCustomView: (id: string) => void;
+  closeCustomView: (id: string) => void;
   addElementToActiveView: (elementId: string) => void;
   removeElementFromActiveView: (elementId: string) => void;
   setSidebarOpen: (b: boolean) => void;
+  setInspectorOpen: (b: boolean) => void;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   setLoading: (b: boolean) => void;
-  selectType: (id: string | null) => void;
   selectElement: (id: string | null) => void;
   selectLink: (id: string | null) => void;
   setEdgeStyleFor: (linkId: string, style: EdgeStyle) => void;
@@ -104,9 +96,7 @@ interface AppState {
   setDepFocusMode: (b: boolean) => void;
   setDepKindFilter: (k: Set<string> | null) => void;
   setDepDepth: (n: number) => void;
-  setC4Level: (l: 'context' | 'container' | 'component') => void;
-  setC4FocusSystem: (id: string | null) => void;
-  setC4FocusContainer: (id: string | null) => void;
+  toggleBcCollapsed: (id: string) => void;
   setBooks: (b: Book[]) => void;
   addBook: (b: Book) => void;
   removeBook: (id: string) => void;
@@ -119,22 +109,19 @@ interface AppState {
   setActiveBookPageIndex: (i: number) => void;
   nextBookPage: () => void;
   prevBookPage: () => void;
-  setYamlConcepts: (concepts: YamlConcept[], relations: YamlRelation[]) => void;
-  selectYamlConcept: (id: string | null) => void;
-  setBooksAudienceFilter: (audience: string | null) => void;
 }
 
 export const useApp = create<AppState>((set, get) => ({
   workspace: null,
   arch: null,
   view: 'moduleMap',
-  mode: 'edit',
   customViews: [],
   activeCustomViewId: null,
+  openViewIds: [],
   sidebarOpen: true,
+  inspectorOpen: true,
   theme: initialTheme(),
   loading: false,
-  selectedTypeId: null,
   selectedElementId: null,
   selectedLinkId: null,
   edgeStyles: {},
@@ -148,38 +135,35 @@ export const useApp = create<AppState>((set, get) => ({
   canvasMode: { kind: 'select' },
   shapes: {},
   selectedShapeId: null,
-  // Epic 07 / dep-view focus mode + kind filter (architect UX). Persisted only in-memory;
-  // architects re-tune per session without surprise.
   depFocusMode: false,
   depKindFilter: null as Set<string> | null,
   depDepth: 1,
-  c4Level: 'context' as const,
-  c4FocusSystemId: null,
-  c4FocusContainerId: null,
+  collapsedBcs: new Set<string>(),
   books: [],
   activeBookId: null,
   activeBookPageIndex: 0,
-  yamlConcepts: [],
-  yamlRelations: [],
-  selectedYamlConceptId: null,
-  booksAudienceFilter: null,
   setWorkspace: (ws) => {
-    // UX bug fix #4: hydrate from localStorage only on first open of a given rootPath.
-    // Subsequent refresh()s during the same session should NOT reset activeCustomViewId,
-    // selection, etc. — the user's in-memory choices win over stale localStorage.
+    // Hydrate from localStorage only on first open of a given rootPath. Subsequent refresh()s
+    // during the same session should NOT reset activeCustomViewId / selection — the user's
+    // in-memory choices win over stale localStorage.
     const previous = get().workspace;
     set({ workspace: ws });
     if (!ws) {
-      set({ customViews: [], activeCustomViewId: null, edgeStyles: {}, nodeStyles: {}, customProps: {} });
+      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set() });
       return;
     }
     if (previous?.rootPath === ws.rootPath) return;
     const views = loadViews(ws.rootPath);
     const active = loadActiveView(ws.rootPath);
+    const persistedOpen = loadOpenViews(ws.rootPath);
+    // First open of a workspace: start with only the previously-active view as a tab (built-ins
+    // are always shown). Closing a tab never deletes the view — it stays in the Sidebar list.
+    let openIds = (persistedOpen ?? (active ? [active] : [])).filter((id) => views.some((v) => v.id === id));
+    if (active && !openIds.includes(active)) openIds = [...openIds, active];
     const eStyles = loadEdgeStyles(ws.rootPath);
     const nStyles = loadNodeStyles(ws.rootPath);
     const cProps = loadCustomProps(ws.rootPath);
-    set({ customViews: views, activeCustomViewId: active, edgeStyles: eStyles, nodeStyles: nStyles, customProps: cProps });
+    set({ customViews: views, activeCustomViewId: active, openViewIds: openIds, edgeStyles: eStyles, nodeStyles: nStyles, customProps: cProps, collapsedBcs: new Set() });
     listServerViews().then((server) => {
       if (server.length === 0) return;
       const merged = [
@@ -190,15 +174,24 @@ export const useApp = create<AppState>((set, get) => ({
       saveViews(ws.rootPath, merged);
     }).catch(() => {});
   },
+  // Re-read styles/custom-props from the committed sidecar once it finishes loading
+  // (the localStorage values loaded synchronously on open are then superseded by the repo copy).
+  rehydratePresentation: () => {
+    const ws = get().workspace;
+    if (!ws) return;
+    set({
+      nodeStyles: loadNodeStyles(ws.rootPath),
+      edgeStyles: loadEdgeStyles(ws.rootPath),
+      customProps: loadCustomProps(ws.rootPath),
+    });
+  },
   setArch: (a) => set({ arch: a }),
-  // UX bug fix #2: setView is a no-op when the requested view matches the current one.
-  // Avoids clobbering activeCustomViewId / selectedElementId on re-clicks.
+  // setView is a no-op when the requested view matches the current one — avoids clobbering
+  // activeCustomViewId / selectedElementId on re-clicks.
   setView: (v) => {
     if (v === get().view) return;
     set({ view: v, activeCustomViewId: null, selectedElementId: null });
   },
-  setMode: (m) => set({ mode: m }),
-  toggleMode: () => set({ mode: get().mode === 'edit' ? 'view' : 'edit' }),
   setCustomViews: (vs) => {
     set({ customViews: vs });
     const ws = get().workspace;
@@ -216,23 +209,38 @@ export const useApp = create<AppState>((set, get) => ({
   },
   removeCustomView: (id) => {
     const next = get().customViews.filter((v) => v.id !== id);
-    set({ customViews: next });
-    if (get().activeCustomViewId === id) set({ activeCustomViewId: null });
+    const nextOpen = get().openViewIds.filter((x) => x !== id);
+    const wasActive = get().activeCustomViewId === id;
+    set({ customViews: next, openViewIds: nextOpen, ...(wasActive ? { activeCustomViewId: null } : {}) });
     const ws = get().workspace;
     if (ws) {
       saveViews(ws.rootPath, next);
-      if (get().activeCustomViewId === id) saveActiveView(ws.rootPath, null);
+      saveOpenViews(ws.rootPath, nextOpen);
+      if (wasActive) saveActiveView(ws.rootPath, null);
     }
     deleteServerView(id).catch(() => {});
   },
   setActiveCustomView: (id) => {
-    // UX bug fix #3: when activating a custom view, force `view` into a model-view base
-    // so the canvas can actually render it. Engineer / Decisions can't host a custom view.
-    const cur = get().view;
-    const safeBase: ViewKind = (cur === 'engineer' || cur === 'decisionLog') ? 'moduleMap' : cur;
-    set({ activeCustomViewId: id, selectedElementId: null, view: safeBase });
+    // Activating a saved view also opens it as a bottom tab (closing later only hides the tab).
+    const open = id && !get().openViewIds.includes(id) ? [...get().openViewIds, id] : get().openViewIds;
+    set({ activeCustomViewId: id, selectedElementId: null, openViewIds: open });
     const ws = get().workspace;
-    if (ws) saveActiveView(ws.rootPath, id);
+    if (ws) {
+      saveActiveView(ws.rootPath, id);
+      saveOpenViews(ws.rootPath, open);
+    }
+  },
+  openCustomView: (id) => get().setActiveCustomView(id),
+  closeCustomView: (id) => {
+    // Close the tab only — the view itself is untouched and stays in the Sidebar list.
+    const nextOpen = get().openViewIds.filter((x) => x !== id);
+    const wasActive = get().activeCustomViewId === id;
+    set({ openViewIds: nextOpen, ...(wasActive ? { activeCustomViewId: null, view: 'moduleMap', selectedElementId: null } : {}) });
+    const ws = get().workspace;
+    if (ws) {
+      saveOpenViews(ws.rootPath, nextOpen);
+      if (wasActive) saveActiveView(ws.rootPath, null);
+    }
   },
   addElementToActiveView: (elementId) => {
     const { activeCustomViewId, customViews, workspace } = get();
@@ -261,6 +269,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds }).catch(() => {});
   },
   setSidebarOpen: (b) => set({ sidebarOpen: b }),
+  setInspectorOpen: (b) => set({ inspectorOpen: b }),
   setTheme: (t) => {
     if (typeof window !== 'undefined') localStorage.setItem(THEME_KEY, t);
     set({ theme: t });
@@ -271,7 +280,6 @@ export const useApp = create<AppState>((set, get) => ({
     set({ theme: next });
   },
   setLoading: (b) => set({ loading: b }),
-  selectType: (id) => set({ selectedTypeId: id }),
   selectElement: (id) => set({ selectedElementId: id, selectedLinkId: null, selectedShapeId: null }),
   selectLink: (id) => set({ selectedLinkId: id, selectedElementId: null, selectedShapeId: null }),
   setEdgeStyleFor: (linkId, style) => {
@@ -340,9 +348,11 @@ export const useApp = create<AppState>((set, get) => ({
   setDepFocusMode: (b) => set({ depFocusMode: b }),
   setDepKindFilter: (k) => set({ depKindFilter: k }),
   setDepDepth: (n) => set({ depDepth: Math.max(1, Math.min(5, n)) }),
-  setC4Level: (l) => set({ c4Level: l }),
-  setC4FocusSystem: (id) => set({ c4FocusSystemId: id }),
-  setC4FocusContainer: (id) => set({ c4FocusContainerId: id }),
+  toggleBcCollapsed: (id) => set((s) => {
+    const next = new Set(s.collapsedBcs);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return { collapsedBcs: next };
+  }),
   setBooks: (b) => set({ books: b }),
   addBook: (b) => set((s) => ({ books: [...s.books, b] })),
   removeBook: (id) => set((s) => {
@@ -397,7 +407,4 @@ export const useApp = create<AppState>((set, get) => ({
     const s = get();
     if (s.activeBookPageIndex > 0) set({ activeBookPageIndex: s.activeBookPageIndex - 1 });
   },
-  setYamlConcepts: (concepts, relations) => set({ yamlConcepts: concepts, yamlRelations: relations }),
-  selectYamlConcept: (id) => set({ selectedYamlConceptId: id, selectedElementId: null, selectedLinkId: null, selectedShapeId: null }),
-  setBooksAudienceFilter: (audience) => set({ booksAudienceFilter: audience }),
 }));

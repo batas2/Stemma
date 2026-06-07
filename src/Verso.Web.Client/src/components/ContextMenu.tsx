@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Edit3, Trash2, Copy, Tag as TagIcon, Lightbulb, Plus, Workflow, ChevronRight } from 'lucide-react';
+import { Edit3, Trash2, Copy, Tag as TagIcon, Lightbulb, Plus, Workflow, Layers, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 
 export interface ContextMenuItem {
@@ -217,7 +217,7 @@ function nextActive(items: ContextMenuItem[], from: number, delta: number): numb
 }
 
 // Re-export common icons used by callers when constructing items.
-export const ContextIcons = { Edit3, Trash2, Copy, TagIcon, Lightbulb, Plus, Workflow };
+export const ContextIcons = { Edit3, Trash2, Copy, TagIcon, Lightbulb, Plus, Workflow, Layers };
 
 // Approximate menu height — used by callers if they want to pre-clamp.
 export function approximateMenuHeight(items: ContextMenuItem[]): number {

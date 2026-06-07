@@ -5,9 +5,22 @@
 // Per ADR-0009, shapes are not part of the canonical model. They never mutate
 // `Architecture.cs`. Deleting them is safe.
 
-import { fetchLayout, saveLayoutSidecar } from './api';
+import { loadViewShapes, saveViewShapes, primeLayoutSidecar, setSidecarCacheForTest } from './layout';
 
-export type ShapeKind = 'rect' | 'ellipse' | 'label' | 'arrow' | 'image';
+export type ShapeKind = 'rect' | 'ellipse' | 'triangle' | 'label' | 'arrow' | 'image';
+
+/** Fields shared by the box-like, text-carrying shapes (rect / ellipse / triangle). Gives shapes
+ *  the same appearance vocabulary as element nodes (fill style, shadow, motion). */
+export interface ShapeBoxText {
+  label?: string;       // bold title line
+  text?: string;        // multi-line body (wraps inside the box)
+  textColor?: string;
+  fontSize?: number;
+  radius?: number;      // corner radius (rect)
+  fillStyle?: 'solid' | 'gradient';
+  shadow?: 'none' | 'soft' | 'raised' | 'glow';
+  animation?: 'none' | 'marching' | 'pulse' | 'breathe';
+}
 
 export interface ShapeBase {
   id: string;
@@ -15,10 +28,9 @@ export interface ShapeBase {
   z: number;            // z-index inside the shapes layer; default -1 (behind nodes)
 }
 
-export interface ShapeRect extends ShapeBase {
+export interface ShapeRect extends ShapeBase, ShapeBoxText {
   kind: 'rect';
   x: number; y: number; w: number; h: number;
-  label?: string;
   fill: string;
   stroke: string;
   strokeWidth: number;
@@ -26,10 +38,18 @@ export interface ShapeRect extends ShapeBase {
   rounded?: boolean;
 }
 
-export interface ShapeEllipse extends ShapeBase {
+export interface ShapeEllipse extends ShapeBase, ShapeBoxText {
   kind: 'ellipse';
   x: number; y: number; w: number; h: number;
-  label?: string;
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
+}
+
+export interface ShapeTriangle extends ShapeBase, ShapeBoxText {
+  kind: 'triangle';
+  x: number; y: number; w: number; h: number;
   fill: string;
   stroke: string;
   strokeWidth: number;
@@ -97,62 +117,34 @@ export interface ShapeImage extends ShapeBase {
   label?: string;
 }
 
-export type Shape = ShapeRect | ShapeEllipse | ShapeLabel | ShapeArrow | ShapeImage;
+export type Shape = ShapeRect | ShapeEllipse | ShapeTriangle | ShapeLabel | ShapeArrow | ShapeImage;
 
 export const MAX_SHAPES_PER_VIEW = 256;
 export const SHAPES_WARN_THRESHOLD = 100;
 
 // ---------- Persistence ----------
 
-interface SidecarShape {
-  version?: number;
-  views?: Record<string, {
-    nodes?: Record<string, { x: number; y: number }>;
-    edges?: Record<string, unknown>;
-    shapes?: Shape[];
-  }>;
-}
+// Shapes share the one committed sidecar cache owned by ./layout (so style/note/position writes
+// never clobber shape writes and vice-versa). These are thin adapters over that cache.
 
-let cache: { rootPath: string; sidecar: SidecarShape } | null = null;
-let pendingWrite: { rootPath: string; timer: ReturnType<typeof setTimeout> } | null = null;
-
-/** Returns the shapes for a view, or [] if none. Reads from the in-memory sidecar cache. */
+/** Returns the shapes for a view, or [] if none. Reads from the shared sidecar cache. */
 export function loadShapes(workspaceRoot: string, viewKey: string): Shape[] {
-  if (cache?.rootPath !== workspaceRoot) return [];
-  return cache.sidecar.views?.[viewKey]?.shapes ?? [];
+  return loadViewShapes<Shape>(workspaceRoot, viewKey);
 }
 
 /** Replace the shapes array for a view; debounced PUT of the full sidecar. */
 export function saveShapes(workspaceRoot: string, viewKey: string, shapes: Shape[]): void {
-  if (typeof window === 'undefined') return;
-  if (!cache || cache.rootPath !== workspaceRoot) {
-    cache = { rootPath: workspaceRoot, sidecar: { version: 1, views: {} } };
-  }
-  cache.sidecar.views = cache.sidecar.views ?? {};
-  const view = cache.sidecar.views[viewKey] ?? {};
-  cache.sidecar.views[viewKey] = { ...view, shapes };
-  if (pendingWrite?.rootPath === workspaceRoot) clearTimeout(pendingWrite.timer);
-  const timer = setTimeout(() => {
-    saveLayoutSidecar(cache!.sidecar).catch(() => { /* best-effort */ });
-    pendingWrite = null;
-  }, 400);
-  pendingWrite = { rootPath: workspaceRoot, timer };
+  saveViewShapes(workspaceRoot, viewKey, shapes);
 }
 
-/** Prime the cache from the workspace's layout sidecar. Call once at workspace open. */
+/** Prime the shared sidecar cache. Call once at workspace open. */
 export async function primeShapeCache(workspaceRoot: string): Promise<void> {
-  if (typeof window === 'undefined') return;
-  try {
-    const raw = (await fetchLayout()) as SidecarShape | null;
-    cache = { rootPath: workspaceRoot, sidecar: raw ?? { version: 1, views: {} } };
-  } catch {
-    cache = { rootPath: workspaceRoot, sidecar: { version: 1, views: {} } };
-  }
+  await primeLayoutSidecar(workspaceRoot);
 }
 
-/** Test seam: inject a sidecar without going through fetch. */
-export function setShapeCacheForTest(rootPath: string, sidecar: SidecarShape): void {
-  cache = { rootPath, sidecar };
+/** Test seam: inject the shared sidecar cache without going through fetch. */
+export function setShapeCacheForTest(rootPath: string, sidecar: unknown): void {
+  setSidecarCacheForTest(rootPath, sidecar);
 }
 
 // ---------- CRUD helpers (pure; callers persist via saveShapes) ----------
@@ -199,6 +191,17 @@ export function newEllipse(x: number, y: number, w = 200, h = 120): ShapeEllipse
     x, y, w, h,
     fill: 'rgba(244, 114, 182, 0.06)',
     stroke: 'rgb(244, 114, 182)',
+    strokeWidth: 2,
+    strokeStyle: 'solid',
+  };
+}
+
+export function newTriangle(x: number, y: number, w = 200, h = 160): ShapeTriangle {
+  return {
+    id: newId('triangle'), kind: 'triangle', z: -1,
+    x, y, w, h,
+    fill: 'rgba(16, 185, 129, 0.06)',
+    stroke: 'rgb(16, 185, 129)',
     strokeWidth: 2,
     strokeStyle: 'solid',
   };

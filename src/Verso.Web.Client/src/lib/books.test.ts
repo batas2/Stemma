@@ -10,14 +10,14 @@ const book = (id: string, pages = 0): Book => ({
   id,
   name: id,
   audience: null,
-  pages: Array.from({ length: pages }, (_, i) => ({ viewId: 'c4Context', title: `P${i}`, narrative: `n${i}` })),
+  pages: Array.from({ length: pages }, (_, i) => ({ viewId: 'moduleMap', title: `P${i}`, narrative: `n${i}` })),
 });
 
 beforeEach(() => {
   useApp.setState({
     workspace: null, arch: null, view: 'moduleMap',
     customViews: [], activeCustomViewId: null,
-    selectedTypeId: null, selectedElementId: null, selectedLinkId: null,
+    selectedElementId: null, selectedLinkId: null,
     books: [], activeBookId: null, activeBookPageIndex: 0,
   });
   if (typeof window !== 'undefined') localStorage.clear();

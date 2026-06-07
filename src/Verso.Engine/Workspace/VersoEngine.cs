@@ -130,12 +130,8 @@ public sealed class VersoEngine : IAsyncDisposable
             SetOwnershipOp x => await SetOwnershipAsync(x, ct),
             RestoreElementOp x => await RestoreArchElementAsync(x, ct),
             RestoreLinkOp x => await RestoreArchLinkAsync(x, ct),
-            AddDecisionOp x => await AddDecisionAsync(x, ct),
-            SetDecisionStatusOp x => await SetDecisionStatusAsync(x, ct),
-            AddDecisionConcernsOp x => await AddDecisionConcernsAsync(x, ct),
-            RemoveDecisionOp x => await RemoveDecisionAsync(x, ct),
-            SetDecisionNarrativeOp x => await SetDecisionNarrativeAsync(x, ct),
-            SetCapabilityNarrativeOp x => await SetCapabilityNarrativeAsync(x, ct),
+            SetElementContextOp x => await SetElementContextAsync(x, ct),
+            SetElementAttributeOp x => await SetElementAttributeAsync(x, ct),
             _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
         };
 
@@ -188,6 +184,8 @@ public sealed class VersoEngine : IAsyncDisposable
         SetLinkAttributeOp x => $"Set {x.AttributeName}",
         SetLifecycleOp _ => "Set lifecycle",
         SetOwnershipOp _ => "Set ownership",
+        SetElementContextOp _ => "Move to bounded context",
+        SetElementAttributeOp _ => "Set attribute",
         _ => op.GetType().Name
     };
 
@@ -268,11 +266,19 @@ public sealed class VersoEngine : IAsyncDisposable
             foreach (var path in touchedPaths) _lastSelfWriteAt[path] = now;
         }
 
+        // Capture the errors that already exist BEFORE the edit. The compile gate must only
+        // reject errors the op itself INTRODUCES — a workspace can carry pre-existing or
+        // environmental errors (e.g. an unresolved reference, or a framework that didn't load
+        // in this host) and the user should still be able to edit it. Signatures drop source
+        // locations so a pre-existing error that merely shifts down a line when the op inserts
+        // a statement isn't mistaken for a new one.
+        var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, ct);
+
         if (!_workspace.TryApplyChanges(newSolution))
             return new OperationFailed(opId, "ApplyFailed", "TryApplyChanges returned false");
 
-        var (ok, errors) = await CheckCompileAsync(ct);
-        if (!ok)
+        var introduced = await CollectIntroducedErrorsAsync(baselineErrors, ct);
+        if (introduced.Count > 0)
         {
             foreach (var (path, original) in backups)
             {
@@ -286,7 +292,7 @@ public sealed class VersoEngine : IAsyncDisposable
                 }
             }
             _workspace.TryApplyChanges(oldSolution);
-            return new OperationFailed(opId, "WouldBreakBuild", "Compilation broke", errors);
+            return new OperationFailed(opId, "WouldBreakBuild", "This change introduced compile errors and was rolled back.", introduced);
         }
 
         await ReloadAsync(ct);
@@ -594,20 +600,45 @@ public sealed class VersoEngine : IAsyncDisposable
         File.Move(tmp, path, overwrite: true);
     }
 
-    private async Task<(bool ok, IReadOnlyList<string> errors)> CheckCompileAsync(CancellationToken ct)
+    /// <summary>
+    /// Location-independent signatures of every compile error in a solution, used to tell
+    /// errors the current op introduced apart from ones that were already present.
+    /// </summary>
+    private static async Task<HashSet<string>> CollectErrorSignaturesAsync(Solution solution, CancellationToken ct)
     {
-        var errors = new List<string>();
-        foreach (var project in _workspace.CurrentSolution.Projects)
+        var signatures = new HashSet<string>();
+        foreach (var project in solution.Projects)
         {
             var compilation = await project.GetCompilationAsync(ct);
             if (compilation is null) continue;
             foreach (var d in compilation.GetDiagnostics(ct))
             {
                 if (d.Severity == DiagnosticSeverity.Error)
-                    errors.Add($"{project.Name}: {d.Id} {d.GetMessage()} at {d.Location.GetLineSpan()}");
+                    signatures.Add($"{project.Name}|{d.Id}|{d.GetMessage()}");
             }
         }
-        return (errors.Count == 0, errors);
+        return signatures;
+    }
+
+    /// <summary>
+    /// Errors in the current workspace solution that are NOT in <paramref name="baseline"/> —
+    /// the ones the just-applied op introduced. Returned with source locations for diagnostics.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> CollectIntroducedErrorsAsync(HashSet<string> baseline, CancellationToken ct)
+    {
+        var introduced = new List<string>();
+        foreach (var project in _workspace.CurrentSolution.Projects)
+        {
+            var compilation = await project.GetCompilationAsync(ct);
+            if (compilation is null) continue;
+            foreach (var d in compilation.GetDiagnostics(ct))
+            {
+                if (d.Severity != DiagnosticSeverity.Error) continue;
+                if (baseline.Contains($"{project.Name}|{d.Id}|{d.GetMessage()}")) continue;
+                introduced.Add($"{project.Name}: {d.Id} {d.GetMessage()} at {d.Location.GetLineSpan()}");
+            }
+        }
+        return introduced;
     }
 
     private static string ToVisibilityKeyword(Visibility v) => v switch
@@ -722,8 +753,8 @@ public sealed class VersoEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// Snapshot every document's filepath + syntax root in the workspace. Used by adapters
-    /// (Views, Decisions) that scan files outside the Architecture/ folder.
+    /// Snapshot every document's filepath + syntax root in the workspace. Used by the
+    /// Views adapter, which scans files outside the Architecture/ folder.
     /// </summary>
     public async Task<IReadOnlyList<(string FilePath, SyntaxNode Root)>> CollectAllDocumentsAsync(CancellationToken ct = default)
     {
@@ -819,6 +850,57 @@ public sealed class VersoEngine : IAsyncDisposable
         SyntaxNode newRoot;
         try { newRoot = DslWriter.RemoveStatementById(root, op.ElementId); }
         catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> SetElementContextAsync(SetElementContextOp op, CancellationToken ct)
+    {
+        var doc = FindDocumentForId(op.ElementId) ?? FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        var current = await ReadArchModelAsync(ct);
+        var element = current?.Elements.FirstOrDefault(e => e.Id == op.ElementId);
+        if (element is null) return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
+        if (element.Kind is not (ArchElementKind.Module or ArchElementKind.Capability))
+            return new OperationFailed(op.OpId, "NotNestable", "Only modules and capabilities can belong to a Bounded Context");
+        if (!string.IsNullOrEmpty(op.ContextId)
+            && !current!.Elements.Any(e => e.Id == op.ContextId && e.Kind == ArchElementKind.BoundedContext))
+            return new OperationFailed(op.OpId, "ContextNotFound", op.ContextId);
+
+        var attrs = new Dictionary<string, string?>(element.Attributes);
+        if (string.IsNullOrEmpty(op.ContextId)) attrs.Remove("contextId");
+        else attrs["contextId"] = op.ContextId;
+        var updated = element with { Attributes = attrs };
+
+        var newRoot = DslWriter.SetElement(root, updated);
+        if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "No change");
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationResult> SetElementAttributeAsync(SetElementAttributeOp op, CancellationToken ct)
+    {
+        var doc = FindDocumentForId(op.ElementId) ?? FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+        var current = await ReadArchModelAsync(ct);
+        var element = current?.Elements.FirstOrDefault(e => e.Id == op.ElementId);
+        if (element is null) return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
+
+        var attrs = new Dictionary<string, string?>(element.Attributes);
+        if (string.IsNullOrEmpty(op.Value)) attrs.Remove(op.AttributeName);
+        else attrs[op.AttributeName] = op.Value;
+        var updated = element with { Attributes = attrs };
+
+        var newRoot = DslWriter.SetElement(root, updated);
+        if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "No change");
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
@@ -994,6 +1076,9 @@ public sealed class VersoEngine : IAsyncDisposable
             ArchElementKind.Person => "per",
             ArchElementKind.UseCase => "uc",
             ArchElementKind.Capability => "cap",
+            ArchElementKind.Question => "q",
+            ArchElementKind.Assumption => "asm",
+            ArchElementKind.Risk => "risk",
             _ => "elem"
         };
         var existing = current.Elements.Select(e => e.Id).ToHashSet();
@@ -1015,192 +1100,4 @@ public sealed class VersoEngine : IAsyncDisposable
         }
     }
 
-    // ---------- Decisions (Spike 04) ----------
-
-    private async Task<OperationResult> AddDecisionAsync(AddDecisionOp op, CancellationToken ct)
-    {
-        var doc = FindArchitectureDocument();
-        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-
-        var current = await ReadArchModelAsync(ct);
-        var existing = (current?.Decisions ?? Array.Empty<ArchModel.ArchDecision>()).Select(d => d.Id).ToHashSet();
-        var id = GenerateDecisionId(existing);
-        var decision = new ArchModel.ArchDecision(id, op.Title, op.Status, DateTime.UtcNow.ToString("yyyy-MM-dd"), null);
-        var newRoot = DslWriter.AddDecision(root, decision);
-        var oldSolution = _workspace.CurrentSolution;
-        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
-        var commitResult = await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
-
-        if (commitResult is OperationApplied)
-        {
-            // Scaffold the narrative file alongside.
-            await WriteDecisionNarrativeAsync(decision, body: null, ct);
-        }
-        return commitResult;
-    }
-
-    private async Task<OperationResult> SetDecisionStatusAsync(SetDecisionStatusOp op, CancellationToken ct)
-    {
-        var doc = FindDocumentForId(op.DecisionId) ?? FindArchitectureDocument();
-        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var newRoot = DslWriter.SetDecisionStatus(root, op.DecisionId, op.Status);
-        if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "DecisionNotFound", op.DecisionId);
-        var oldSolution = _workspace.CurrentSolution;
-        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
-        var commit = await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
-        if (commit is OperationApplied)
-        {
-            // Mirror status into the Markdown frontmatter.
-            await UpdateDecisionFrontmatterAsync(op.DecisionId, status: op.Status, ct);
-        }
-        return commit;
-    }
-
-    private async Task<OperationResult> AddDecisionConcernsAsync(AddDecisionConcernsOp op, CancellationToken ct)
-    {
-        var doc = FindDocumentForId(op.DecisionId) ?? FindArchitectureDocument();
-        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        SyntaxNode newRoot;
-        try { newRoot = DslWriter.AddDecisionConcerns(root, op.DecisionId, op.ElementId); }
-        catch (Exception e) { return new OperationFailed(op.OpId, "AddConcernsFailed", e.Message); }
-        var oldSolution = _workspace.CurrentSolution;
-        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
-        return await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
-    }
-
-    private async Task<OperationResult> RemoveDecisionAsync(RemoveDecisionOp op, CancellationToken ct)
-    {
-        var doc = FindDocumentForId(op.DecisionId) ?? FindArchitectureDocument();
-        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        SyntaxNode newRoot;
-        try { newRoot = DslWriter.RemoveStatementById(root, op.DecisionId); }
-        catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
-        var oldSolution = _workspace.CurrentSolution;
-        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
-        var commit = await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
-        if (commit is OperationApplied)
-        {
-            // Best-effort: also remove the narrative file.
-            try
-            {
-                var path = FindDecisionNarrativePath(op.DecisionId);
-                if (path is not null && File.Exists(path)) File.Delete(path);
-            }
-            catch { /* swallow */ }
-        }
-        return commit;
-    }
-
-    private async Task<OperationResult> SetDecisionNarrativeAsync(SetDecisionNarrativeOp op, CancellationToken ct)
-    {
-        var arch = await ReadArchModelAsync(ct);
-        var dec = arch?.Decisions?.FirstOrDefault(d => d.Id == op.DecisionId);
-        if (dec is null) return new OperationFailed(op.OpId, "DecisionNotFound", op.DecisionId);
-        await WriteDecisionNarrativeAsync(dec, op.Body, ct);
-        return new OperationApplied(op.OpId, []);
-    }
-
-    private async Task<OperationResult> SetCapabilityNarrativeAsync(SetCapabilityNarrativeOp op, CancellationToken ct)
-    {
-        var arch = await ReadArchModelAsync(ct);
-        var elem = arch?.Elements.FirstOrDefault(e => e.Id == op.ElementId);
-        if (elem is null) return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
-        await WriteElementNarrativeAsync(elem, op.Body, ct);
-        return new OperationApplied(op.OpId, []);
-    }
-
-    private async Task WriteDecisionNarrativeAsync(ArchModel.ArchDecision decision, string? body, CancellationToken ct)
-    {
-        var slug = Slugify(decision.Title);
-        var folder = Path.Combine(_model.RootPath, "Decisions");
-        Directory.CreateDirectory(folder);
-        var path = Path.Combine(folder, $"{decision.Id}-{slug}.md");
-        var existing = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : string.Empty;
-        var doc = Adapters.MarkdownAdapter.Parse(existing);
-        doc.Set("id", decision.Id);
-        doc.Set("title", decision.Title);
-        doc.Set("status", decision.Status);
-        if (decision.Date is not null) doc.Set("date", decision.Date);
-        if (body is not null) doc.Body = body;
-        else if (string.IsNullOrEmpty(doc.Body))
-        {
-            doc.Body = "## Context\n\n_Why this decision was needed._\n\n## Decision\n\n_What was chosen._\n\n## Consequences\n\n_What changes as a result._\n";
-        }
-        await File.WriteAllTextAsync(path, Adapters.MarkdownAdapter.Render(doc), ct);
-    }
-
-    private async Task UpdateDecisionFrontmatterAsync(string decisionId, string? status, CancellationToken ct)
-    {
-        var path = FindDecisionNarrativePath(decisionId);
-        if (path is null) return;
-        var existing = await File.ReadAllTextAsync(path, ct);
-        var doc = Adapters.MarkdownAdapter.Parse(existing);
-        if (status is not null) doc.Set("status", status);
-        await File.WriteAllTextAsync(path, Adapters.MarkdownAdapter.Render(doc), ct);
-    }
-
-    private string? FindDecisionNarrativePath(string decisionId)
-    {
-        var folder = Path.Combine(_model.RootPath, "Decisions");
-        if (!Directory.Exists(folder)) return null;
-        return Directory.EnumerateFiles(folder, $"{decisionId}-*.md").FirstOrDefault();
-    }
-
-    private async Task WriteElementNarrativeAsync(ArchModel.ArchElement elem, string body, CancellationToken ct)
-    {
-        var folder = elem.Kind switch
-        {
-            ArchElementKind.Capability => "Capabilities",
-            ArchElementKind.BoundedContext => "BoundedContexts",
-            _ => "Elements",
-        };
-        var dir = Path.Combine(_model.RootPath, folder);
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, $"{Slugify(elem.Name)}.md");
-        var existing = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : string.Empty;
-        var doc = Adapters.MarkdownAdapter.Parse(existing);
-        doc.Set("id", elem.Id);
-        doc.Set("title", elem.Name);
-        doc.Set("kind", elem.Kind.ToString());
-        doc.Body = body;
-        await File.WriteAllTextAsync(path, Adapters.MarkdownAdapter.Render(doc), ct);
-    }
-
-    private static string GenerateDecisionId(HashSet<string> existing)
-    {
-        for (var n = 1; ; n++)
-        {
-            var candidate = $"dec_{n:000}";
-            if (!existing.Contains(candidate)) return candidate;
-        }
-    }
-
-    private static string Slugify(string s)
-    {
-        var sb = new System.Text.StringBuilder();
-        var dashNext = false;
-        foreach (var ch in s)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                if (dashNext && sb.Length > 0) sb.Append('-');
-                sb.Append(char.ToLowerInvariant(ch));
-                dashNext = false;
-            }
-            else
-            {
-                dashNext = true;
-            }
-        }
-        return sb.Length > 0 ? sb.ToString() : "untitled";
-    }
 }

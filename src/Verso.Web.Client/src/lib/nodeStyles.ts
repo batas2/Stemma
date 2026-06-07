@@ -1,4 +1,13 @@
+import { sidecarMap, sidecarSet } from './layout';
+
 export type NodeBorderStyle = 'solid' | 'dashed' | 'dotted';
+export type NodeFillStyle = 'solid' | 'gradient' | 'glass' | 'hatch';
+export type NodeShadow = 'none' | 'soft' | 'raised' | 'glow';
+export type NodeAccentSide = 'none' | 'left' | 'top';
+export type NodeTextSize = 'sm' | 'base' | 'lg';
+export type NodeTextAlign = 'left' | 'center';
+export type NodeAnimation = 'none' | 'marching' | 'pulse' | 'glow' | 'breathe' | 'bounce' | 'shake';
+export type NodeAnimSpeed = 'slow' | 'normal' | 'fast';
 
 // Keys of the data we may render inside a node body (Q from "adjustable list of properties").
 // Names map cleanly to ArchElement attribute paths so the renderer can look them up
@@ -27,6 +36,18 @@ export interface NodeStyle {
   height?: number;
   // Built-in NodeFieldKey values OR custom property names. Renderer falls
   // through built-in field handling first, then customProps[name] for the rest.
+  radius?: number;        // corner radius px (undefined = theme default rounding)
+  animated?: boolean;     // legacy: marching-ants border (migrated to `animation: 'marching'`)
+  animation?: NodeAnimation;    // motion effect
+  animationSpeed?: NodeAnimSpeed;
+  fillStyle?: NodeFillStyle;   // solid (default) / gradient / frosted glass / hatched
+  shadow?: NodeShadow;         // elevation
+  opacity?: number;            // 0.2 – 1
+  accentSide?: NodeAccentSide; // colored accent bar on a side
+  accentColor?: string;
+  textColor?: string;          // title color override
+  textSize?: NodeTextSize;     // title size
+  textAlign?: NodeTextAlign;   // title alignment
   visibleFields?: string[];
 }
 
@@ -38,10 +59,11 @@ function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
 
 export function loadNodeStyles(rootPath: string): Record<string, NodeStyle> {
   if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(key(rootPath));
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
+  let local: Record<string, NodeStyle> = {};
+  try { const raw = localStorage.getItem(key(rootPath)); local = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
+  // The committed sidecar (verso.layout.json) wins once primed; localStorage is the offline cache.
+  const committed = sidecarMap<NodeStyle>(rootPath, 'nodeStyles');
+  return committed ? { ...local, ...committed } : local;
 }
 
 export function saveNodeStyles(rootPath: string, styles: Record<string, NodeStyle>): void {
@@ -52,6 +74,7 @@ export function saveNodeStyles(rootPath: string, styles: Record<string, NodeStyl
 export function setNodeStyle(rootPath: string, nodeId: string, style: NodeStyle): Record<string, NodeStyle> {
   const all = loadNodeStyles(rootPath);
   all[nodeId] = style;
-  saveNodeStyles(rootPath, all);
+  saveNodeStyles(rootPath, all);                 // offline cache
+  sidecarSet(rootPath, 'nodeStyles', nodeId, style); // committed → travels with the repo
   return all;
 }

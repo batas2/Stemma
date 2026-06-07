@@ -13,7 +13,7 @@ beforeEach(() => {
   useApp.setState({
     workspace: null, arch: null, view: 'moduleMap',
     customViews: [], activeCustomViewId: null,
-    selectedTypeId: null, selectedElementId: null, selectedLinkId: null,
+    selectedElementId: null, selectedLinkId: null,
   });
   if (typeof window !== 'undefined') localStorage.clear();
 });
@@ -36,21 +36,15 @@ describe('UX bug #2 — setView no-op when value matches', () => {
   });
 });
 
-describe('UX bug #3 — setActiveCustomView forces a model-view base', () => {
-  it('switches engineer → moduleMap when activating a custom view', () => {
-    useApp.setState({ view: 'engineer', workspace: baseSnapshot('/ws/x') });
+describe('setActiveCustomView', () => {
+  it('sets the active view id and clears selection', () => {
+    useApp.setState({ view: 'moduleMap', workspace: baseSnapshot('/ws/x'), selectedElementId: 'mod_001' });
     useApp.getState().setActiveCustomView('cv_q4');
-    expect(useApp.getState().view).toBe('moduleMap');
     expect(useApp.getState().activeCustomViewId).toBe('cv_q4');
+    expect(useApp.getState().selectedElementId).toBeNull();
   });
 
-  it('switches decisionLog → moduleMap when activating a custom view', () => {
-    useApp.setState({ view: 'decisionLog', workspace: baseSnapshot('/ws/x') });
-    useApp.getState().setActiveCustomView('cv_q4');
-    expect(useApp.getState().view).toBe('moduleMap');
-  });
-
-  it('preserves the model-view base when current view is already model-shaped', () => {
+  it('keeps the current model view', () => {
     useApp.setState({ view: 'dependencyGraph', workspace: baseSnapshot('/ws/x') });
     useApp.getState().setActiveCustomView('cv_q4');
     expect(useApp.getState().view).toBe('dependencyGraph');

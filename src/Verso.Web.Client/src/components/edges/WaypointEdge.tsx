@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import {
-  EdgeLabelRenderer, type EdgeProps, getSmoothStepPath, useReactFlow,
+  BaseEdge, EdgeLabelRenderer, type EdgeProps, getStraightPath,
+  type InternalNode, useInternalNode, useReactFlow,
 } from '@xyflow/react';
 import type { SavedPosition } from '@/lib/layout';
 
@@ -10,44 +11,69 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   onRemoveWaypoint?: (edgeId: string, index: number) => void;
 }
 
+interface Box { cx: number; cy: number; hw: number; hh: number; }
+
+function nodeBox(n: InternalNode): Box {
+  const w = n.measured?.width ?? n.width ?? 200;
+  const h = n.measured?.height ?? n.height ?? 60;
+  const x = n.internals.positionAbsolute.x;
+  const y = n.internals.positionAbsolute.y;
+  return { cx: x + w / 2, cy: y + h / 2, hw: w / 2, hh: h / 2 };
+}
+
 /**
- * SVG path through (sourceX, sourceY) → waypoints → (targetX, targetY) using
- * `getSmoothStepPath` between each successive pair so the line keeps the rest of
- * the canvas's smoothstep aesthetic.
+ * Where the ray from a box centre toward `toward` exits the box rectangle. This is the
+ * "floating edge" endpoint: edges dock on the box BOUNDARY (where the handle circles sit)
+ * instead of a fixed handle, so the arrowhead always lands on the visible edge of the box
+ * and never disappears behind it.
  */
-function buildPath(
-  sourceX: number, sourceY: number,
-  targetX: number, targetY: number,
-  waypoints: SavedPosition[]
-): string {
+function boundaryPoint(box: Box, toward: { x: number; y: number }): SavedPosition {
+  const dx = toward.x - box.cx;
+  const dy = toward.y - box.cy;
+  if (dx === 0 && dy === 0) return { x: box.cx, y: box.cy };
+  const scale = Math.min(
+    dx !== 0 ? box.hw / Math.abs(dx) : Infinity,
+    dy !== 0 ? box.hh / Math.abs(dy) : Infinity,
+  );
+  return { x: box.cx + dx * scale, y: box.cy + dy * scale };
+}
+
+/** Straight polyline source → waypoints → target. Floating endpoints already sit on the boxes'
+ *  boundaries, so a straight line keeps the arrowhead pointing cleanly into the box. */
+function buildPath(sx: number, sy: number, tx: number, ty: number, waypoints: SavedPosition[]): string {
   if (waypoints.length === 0) {
-    const [path] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY });
-    return path;
+    const [p] = getStraightPath({ sourceX: sx, sourceY: sy, targetX: tx, targetY: ty });
+    return p;
   }
-  const stops = [
-    { x: sourceX, y: sourceY },
-    ...waypoints,
-    { x: targetX, y: targetY },
-  ];
-  let d = '';
-  for (let i = 0; i < stops.length - 1; i++) {
-    const [seg] = getSmoothStepPath({
-      sourceX: stops[i].x, sourceY: stops[i].y,
-      targetX: stops[i + 1].x, targetY: stops[i + 1].y,
-    });
-    d += (i === 0 ? seg : seg.replace(/^M[^L]*/, ''));
-  }
-  return d;
+  const stops = [{ x: sx, y: sy }, ...waypoints, { x: tx, y: ty }];
+  return stops.map((s, i) => `${i === 0 ? 'M' : 'L'}${s.x},${s.y}`).join(' ');
 }
 
 export function WaypointEdge({
-  id, sourceX, sourceY, targetX, targetY, label, style, data, selected,
+  id, source, target,
+  sourceX, sourceY, targetX, targetY,
+  label, style, data, markerStart, markerEnd, selected,
 }: EdgeProps & { data?: WaypointEdgeData }) {
   const { screenToFlowPosition } = useReactFlow();
+  const sourceNode = useInternalNode(source);
+  const targetNode = useInternalNode(target);
   const waypoints = data?.waypoints ?? [];
-  const path = useMemo(() => buildPath(sourceX, sourceY, targetX, targetY, waypoints), [sourceX, sourceY, targetX, targetY, waypoints]);
 
-  const labelMid = waypoints[Math.floor(waypoints.length / 2)] ?? { x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 };
+  // Floating dock points on each box boundary. Fall back to React Flow's handle coords if a
+  // node hasn't been measured yet.
+  const { sx, sy, tx, ty } = useMemo(() => {
+    if (!sourceNode || !targetNode) return { sx: sourceX, sy: sourceY, tx: targetX, ty: targetY };
+    const sBox = nodeBox(sourceNode);
+    const tBox = nodeBox(targetNode);
+    const sp = boundaryPoint(sBox, waypoints[0] ?? { x: tBox.cx, y: tBox.cy });
+    const tp = boundaryPoint(tBox, waypoints[waypoints.length - 1] ?? { x: sBox.cx, y: sBox.cy });
+    return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y };
+  }, [sourceNode, targetNode, sourceX, sourceY, targetX, targetY, waypoints]);
+
+  const path = useMemo(() => buildPath(sx, sy, tx, ty, waypoints), [sx, sy, tx, ty, waypoints]);
+
+  const labelMid = waypoints[Math.floor(waypoints.length / 2)] ?? { x: (sx + tx) / 2, y: (sy + ty) / 2 };
+  const dockColor = (style?.stroke as string) ?? '#94a3b8';
 
   function onPathDoubleClick(ev: React.MouseEvent<SVGPathElement>) {
     if (!ev.shiftKey || !data?.onAddWaypoint) return;
@@ -58,18 +84,23 @@ export function WaypointEdge({
 
   return (
     <>
-      <path
+      {/* Dock markers — small rings on each box boundary so it's visible where the relationship
+          connects (the arrowhead, drawn by BaseEdge below, overlays the target dock). */}
+      <circle cx={sx} cy={sy} r={selected ? 4.5 : 3.5} fill={dockColor} stroke="white" strokeWidth={1.25} />
+      <circle cx={tx} cy={ty} r={selected ? 4.5 : 3.5} fill="none" stroke={dockColor} strokeWidth={1.5} />
+      {/* BaseEdge draws the visible path + per-edge markers; interactionWidth widens the hit-area. */}
+      <BaseEdge
         id={id}
-        d={path}
+        path={path}
         style={{ ...style, fill: 'none' }}
-        className={selected ? 'react-flow__edge-path' : 'react-flow__edge-path'}
-        markerEnd="url(#xy-edge__arrowclosed)"
-        onDoubleClick={onPathDoubleClick}
+        markerStart={markerStart}
+        markerEnd={markerEnd}
+        interactionWidth={26}
       />
-      {/* Invisible wider hit-target so shift+double-click is easy. */}
+      {/* Extra wide target for shift+double-click waypoint editing. */}
       <path
         d={path}
-        style={{ stroke: 'transparent', strokeWidth: 16, fill: 'none', cursor: 'crosshair' }}
+        style={{ stroke: 'transparent', strokeWidth: 22, fill: 'none', cursor: 'crosshair', pointerEvents: 'stroke' }}
         onDoubleClick={onPathDoubleClick}
       />
       <EdgeLabelRenderer>

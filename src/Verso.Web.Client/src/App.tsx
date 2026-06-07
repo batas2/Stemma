@@ -1,20 +1,19 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { ChevronsLeft, PanelRight } from 'lucide-react';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
-import { DataSidebar } from './components/DataSidebar';
-import { Canvas } from './components/Canvas';
 import { ArchCanvas } from './components/ArchCanvas';
-import { DataLayerCanvas } from './components/DataLayerCanvas';
-import { Inspector } from './components/Inspector';
+import { ConcernsView } from './components/ConcernsView';
+import { ViewTabs } from './components/ViewTabs';
+import { ConnectionIndicator } from './components/ConnectionIndicator';
 import { ArchInspector } from './components/ArchInspector';
-import { DataInspector } from './components/DataInspector';
 import { ShapeInspector } from './components/ShapeInspector';
 import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
 import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation } from './lib/signalr';
-import { archModel, listViolations, snapshot, yamlConcepts } from './lib/api';
+import { archModel, books as fetchBooks, listViolations, snapshot } from './lib/api';
 import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
@@ -24,24 +23,17 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { PromptDialog } from './components/PromptDialog';
 import { ToastQueue } from './components/ToastQueue';
 import { TopProgressBar } from './components/LoadingOverlay';
-import { FirstRunHints } from './components/FirstRunHints';
 import { bindShortcuts } from './lib/shortcuts';
 
-const DecisionLog = lazy(() => import('./components/DecisionLog').then((m) => ({ default: m.DecisionLog })));
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
-/** Renders the shape inspector when a shape is selected; otherwise falls back to the
- *  arch inspector. Defined at module scope so it has stable identity across App renders —
- *  inlining it inside App() caused unmount/remount churn that re-fired narrative fetches. */
+/** Renders the shape inspector when a shape is selected; otherwise the arch inspector.
+ *  Defined at module scope so it has stable identity across App renders. */
 function ArchOrShapeInspector() {
   const selectedShapeId = useApp((s) => s.selectedShapeId);
-  const view = useApp((s) => s.view);
   const workspace = useApp((s) => s.workspace);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
-  if (view === 'dataModel' || view === 'resourceTree') {
-    return <DataInspector />;
-  }
   if (selectedShapeId && workspace) {
     const activeCustomView = customViews.find((v) => v.id === activeId);
     const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : 'moduleMap';
@@ -53,11 +45,14 @@ function ArchOrShapeInspector() {
 export default function App() {
   const ws = useApp((s) => s.workspace);
   const view = useApp((s) => s.view);
+  const inspectorOpen = useApp((s) => s.inspectorOpen);
+  const setInspectorOpen = useApp((s) => s.setInspectorOpen);
+  // The inspector only exists when something is selected — otherwise the canvas gets the space.
+  const hasSelection = useApp((s) => !!(s.selectedElementId || s.selectedLinkId || s.selectedShapeId));
   const setWs = useApp((s) => s.setWorkspace);
   const setArch = useApp((s) => s.setArch);
   const setView = useApp((s) => s.setView);
   const setViolations = useApp((s) => s.setViolations);
-  const setYamlConcepts = useApp((s) => s.setYamlConcepts);
   const setBooks = useApp((s) => s.setBooks);
 
   useEffect(() => {
@@ -69,20 +64,16 @@ export default function App() {
       }
     }).catch(() => {});
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
-    yamlConcepts().then((y) => {
-      if (!y) return;
-      setYamlConcepts(y.concepts, y.relations);
-      setBooks(y.books);
-    }).catch(() => {});
-    // UX bug fix #5: a transient archModel() failure must NOT clobber a previously good arch.
-    // Use a sentinel so refresh() can preserve the prior in-memory model on a 404 / network blip.
+    fetchBooks().then((b) => { if (b) setBooks(b); }).catch(() => {});
+    // A transient archModel() failure must NOT clobber a previously good arch — use a sentinel
+    // so refresh() can preserve the prior in-memory model on a 404 / network blip.
     const PRESERVE = Symbol('preserve');
     async function refresh() {
-      const [s, a, v, y] = await Promise.all([
+      const [s, a, v, b] = await Promise.all([
         snapshot(),
         archModel().catch(() => PRESERVE as unknown as null),
         listViolations().catch(() => []),
-        yamlConcepts().catch(() => null),
+        fetchBooks().catch(() => null),
       ]);
       if (s) {
         setWs(s);
@@ -90,19 +81,28 @@ export default function App() {
       }
       if ((a as unknown) !== PRESERVE) setArch(a);
       setViolations(v);
-      if (y) {
-        setYamlConcepts(y.concepts, y.relations);
-        setBooks(y.books);
-      }
+      if (b) setBooks(b);
     }
     const offOp = onOperationApplied(refresh);
     const offExt = onExternalChange(refresh);
     return () => { offOp(); offExt(); };
-  }, [setWs, setArch, setViolations, setYamlConcepts, setBooks]);
+  }, [setWs, setArch, setViolations, setBooks]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
+  const rehydratePresentation = useApp((s) => s.rehydratePresentation);
 
-  // Epic 08 Track A — book mode: when the active page changes, drive `view` to follow.
+  // When the committed sidecar finishes loading, re-read styles/notes/props/positions from it.
+  useEffect(() => {
+    function onPrimed() {
+      rehydratePresentation();
+      window.dispatchEvent(new CustomEvent('verso:layout-changed', { detail: { viewKey: 'all' } }));
+      window.dispatchEvent(new CustomEvent('verso:notes-changed'));
+    }
+    window.addEventListener('verso:sidecar-primed', onPrimed);
+    return () => window.removeEventListener('verso:sidecar-primed', onPrimed);
+  }, [rehydratePresentation]);
+
+  // Book mode: when the active page changes, drive `view` to follow.
   const activeBookId = useApp((s) => s.activeBookId);
   const activeBookPageIndex = useApp((s) => s.activeBookPageIndex);
   const books = useApp((s) => s.books);
@@ -111,19 +111,15 @@ export default function App() {
     const book = books.find((b) => b.id === activeBookId);
     if (!book || book.pages.length === 0) return;
     const target = book.pages[activeBookPageIndex];
-    if (target && (target.viewId === 'c4Context' || target.viewId === 'moduleMap' || target.viewId === 'dependencyGraph' || target.viewId === 'dataModel' || target.viewId === 'resourceTree' || target.viewId === 'decisionLog' || target.viewId === 'engineer')) {
+    if (target && (target.viewId === 'moduleMap' || target.viewId === 'dependencyGraph')) {
       setView(target.viewId as ViewKind);
     }
   }, [activeBookId, activeBookPageIndex, books, setView]);
 
   function applyLayoutEntry(entry: { workspaceRoot: string; viewKey: string; positions: Record<string, { x: number; y: number }> }) {
-    // Merge into existing layout for the view, then write back through the layout module
-    // so localStorage and the verso.layout.json sidecar stay in sync.
     const current = loadLayout(entry.workspaceRoot, entry.viewKey as ViewKind);
     const merged = { ...current, ...entry.positions };
     saveLayout(entry.workspaceRoot, entry.viewKey as ViewKind, merged);
-    // Notify the canvas to refresh by emitting a synthetic storage event; ArchCanvas listens
-    // to view changes and re-reads layout when it's the active key.
     window.dispatchEvent(new CustomEvent('verso:layout-changed', { detail: { viewKey: entry.viewKey } }));
   }
 
@@ -174,7 +170,6 @@ export default function App() {
   }
 
   function focusInspectorForSelected() {
-    // Scroll the inspector into view; a no-op if nothing is selected.
     const aside = document.querySelector('aside.shrink-0') as HTMLElement | null;
     aside?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
@@ -207,16 +202,13 @@ export default function App() {
     document.body.style.color = theme === 'dark' ? 'rgb(244 244 245)' : 'rgb(24 24 27)';
   }, [theme]);
 
-  // UX bug fix #1: pick a default view ONCE per workspace open, not on every arch refresh.
-  // Anchored on rootPath; subsequent op refreshes that briefly null `arch` won't flip the view.
+  // Pick a default view ONCE per workspace open, anchored on rootPath.
   const initialisedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!ws) { initialisedFor.current = null; return; }
     if (initialisedFor.current === ws.rootPath) return;
     initialisedFor.current = ws.rootPath;
     setView('moduleMap');
-    // Intentionally omit `view` and `arch` from deps — we deliberately run only on workspace
-    // boundary changes. eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -227,25 +219,32 @@ export default function App() {
       <div className="flex-1 flex min-h-0">
         {ws ? (
           <>
-            {(view === 'dataModel' || view === 'resourceTree') && <DataSidebar />}
-            {view !== 'engineer' && view !== 'decisionLog' && view !== 'dataModel' && view !== 'resourceTree' && <Sidebar />}
-            <main id="verso-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0">
-              {view === 'engineer' && <Canvas />}
-              {view === 'decisionLog' && (
-                <Suspense fallback={<div className="h-full flex items-center justify-center text-xs text-faint">Loading decisions…</div>}>
-                  <DecisionLog />
-                </Suspense>
-              )}
-              {(view === 'dataModel' || view === 'resourceTree') && <DataLayerCanvas />}
-              {view !== 'engineer' && view !== 'decisionLog' && view !== 'dataModel' && view !== 'resourceTree' && <ArchCanvas />}
+            <Sidebar />
+            <main id="verso-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
+              <div className="flex-1 min-h-0 relative">
+                {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
+              </div>
             </main>
-            {view === 'engineer' && <Inspector />}
-            {view !== 'engineer' && view !== 'decisionLog' && <ArchOrShapeInspector />}
+            {hasSelection && inspectorOpen && <ArchOrShapeInspector />}
+            {hasSelection && !inspectorOpen && (
+              <aside className="w-10 shrink-0 border-l border-default bg-zinc-50 dark:bg-zinc-950/60 flex flex-col items-center py-3 gap-3">
+                <button
+                  onClick={() => setInspectorOpen(true)}
+                  title="Show inspector panel"
+                  aria-label="Show inspector"
+                  className="p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-body"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <PanelRight className="w-4 h-4 text-zinc-300 dark:text-zinc-700" />
+              </aside>
+            )}
           </>
         ) : (
           <EmptyState />
         )}
       </div>
+      {ws && <ViewTabs />}
       <BookFooter />
       <ViolationsPanel />
       <StatusBar />
@@ -256,7 +255,7 @@ export default function App() {
       <ConfirmDialog />
       <PromptDialog />
       <ToastQueue />
-      <FirstRunHints />
+      <ConnectionIndicator />
     </div>
   );
 }

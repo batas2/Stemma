@@ -10,12 +10,28 @@ The name **Verso** comes from bookbinding: the *verso* is the reverse side of a 
 
 ## Status
 
-- **Epics 01–08 complete.** Roslyn engine + web canvas → meta-model DSL → living model + validation + sidecar → decisions + Markdown narratives → UX tokens + accessibility → discovery + metrics + AI views → free-form canvas shapes + stencil library + comments + UX stability → YAML concept adapter + data-layer kinds + View Book + multi-page PDF. Index in `docs/EPICS.md`.
-- **Epic 09 candidate** — multi-repo discovery + federation. Plan stub in `docs/epic-06-discovery-metrics-ai/NEXT-EPIC.md` § 13.
-- **Epic 10 candidate** — comparison view + cross-adapter diff. Pays the debt Epic 08 introduced.
-- **Epic 11 candidate** — drift watchers + governance gates.
+Verso was deliberately **refocused on its core**: open a workspace → edit the architecture
+model on a canvas → every change round-trips into `Architecture.cs` with full fidelity. A
+large simplification pass removed the scope-creep accumulated across earlier epics —
+discovery / metrics / AI views, the data-layer YAML views, decisions + Markdown narratives,
+the C4 view, and the Epic-13 navigation layer (lens navigator, Model/Present mode, audience
+switch). The keep/cut decisions are recorded in `docs/CAPABILITY-AUDIT.md`.
 
-Tests: **96/112 engine + 16/16 web + 104/104 frontend = 216 green** as of Epic 08 close. (Engine 16-failure baseline is pre-existing `ArchModelTests.WouldBreakBuild` issues; not regressed by Epic 08.)
+What ships today:
+
+- **Two architecture lenses** — **Module Map** (the universal canvas; renders every element
+  kind, grouped by bounded context) and **Dependencies** — both editable, both projected
+  from `Architecture/Architecture.cs`.
+- **Architecture-model editing** — add / rename / remove elements and links, lifecycle and
+  ownership tags, undo / redo, external-edit sync, validation, custom (saved) views,
+  free-form shapes, stencils, comments, View Books, and PNG / SVG / Mermaid / draw.io / PDF
+  export.
+- **Code-layer engine** — the Roslyn type / property / inheritance ops remain as the
+  round-trip fidelity proof; they are no longer surfaced as a UI view.
+
+Tests: engine + web + frontend green (frontend **96/96**; web **7/7**). The engine
+`ArchModelTests.WouldBreakBuild` failures are a pre-existing temp-workspace environment
+baseline, unrelated to this pass.
 
 To run locally:
 

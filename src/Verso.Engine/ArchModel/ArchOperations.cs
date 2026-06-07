@@ -15,6 +15,11 @@ public sealed record RenameElementOp(string OpId, string ElementId, string NewNa
 
 public sealed record RemoveElementOp(string OpId, string ElementId) : OperationBase(OpId);
 
+/// <summary>Place a Module or Capability inside a Bounded Context (or clear it when null).</summary>
+public sealed record SetElementContextOp(string OpId, string ElementId, string? ContextId) : OperationBase(OpId);
+
+/// <summary>Set (or clear, when value is null) a positional attribute the element kind emits —
+/// e.g. `aboutId` on a Question/Assumption/Risk. Attributes the kind does not emit are ignored.</summary>
 public sealed record SetElementAttributeOp(string OpId, string ElementId, string AttributeName, string? Value) : OperationBase(OpId);
 
 public sealed record AddLinkOp(
@@ -43,11 +48,3 @@ public sealed record SetOwnershipOp(
     string TargetId,
     string? Squad,
     string? Domain) : OperationBase(OpId);
-
-public sealed record AddDecisionOp(string OpId, string Title, string Status = "proposed") : OperationBase(OpId);
-public sealed record RenameDecisionOp(string OpId, string DecisionId, string NewTitle) : OperationBase(OpId);
-public sealed record SetDecisionStatusOp(string OpId, string DecisionId, string Status) : OperationBase(OpId);
-public sealed record RemoveDecisionOp(string OpId, string DecisionId) : OperationBase(OpId);
-public sealed record AddDecisionConcernsOp(string OpId, string DecisionId, string ElementId) : OperationBase(OpId);
-public sealed record SetDecisionNarrativeOp(string OpId, string DecisionId, string Body) : OperationBase(OpId);
-public sealed record SetCapabilityNarrativeOp(string OpId, string ElementId, string Body) : OperationBase(OpId);

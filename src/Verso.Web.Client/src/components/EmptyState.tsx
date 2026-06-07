@@ -1,4 +1,4 @@
-import { ArrowUp, Sparkles, FileCode, Lightbulb } from 'lucide-react';
+import { ArrowUp, Sparkles, FileCode, Lightbulb, Layers } from 'lucide-react';
 import { VersoMark } from './Logo';
 
 export function EmptyState() {
@@ -21,7 +21,7 @@ export function EmptyState() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
           <Highlight icon={FileCode} title="Code as database" body="Everything is .cs and .md. No proprietary store." />
           <Highlight icon={Lightbulb} title="Decisions in source" body="ADRs, options, lifecycle — all checked in." />
-          <Highlight icon={Sparkles} title="Multi-audience" body="Capability map, dependency graph, decision log." />
+          <Highlight icon={Layers} title="Layered & multi-audience" body="Navigate by layer — System, Data, Governance, Code — re-aimed per audience." />
         </div>
 
         <div className="text-xs text-zinc-500 flex items-center justify-center gap-1.5">

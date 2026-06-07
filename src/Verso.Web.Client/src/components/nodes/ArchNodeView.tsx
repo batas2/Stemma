@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
-import { Box, Cuboid, Layers, Package, User, Server, Target, BookOpen } from 'lucide-react';
+import { Box, Cuboid, Layers, Package, User, Server, Target, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import type { ArchElement, ArchElementKind, ArchTagInfo } from '@/lib/types';
 import { DEFAULT_VISIBLE_FIELDS, type NodeFieldKey } from '@/lib/nodeStyles';
+import { RichTextEditor } from '../RichTextEditor';
+import { renderNotes } from '@/lib/notesMarkdown';
 
 export type TagsByTarget = Record<string, ArchTagInfo>;
 
@@ -17,12 +19,31 @@ export type ArchNodeData = {
     borderStyle?: 'solid' | 'dashed' | 'dotted';
     width?: number;
     height?: number;
+    radius?: number;
+    animated?: boolean;
+    animation?: 'none' | 'marching' | 'pulse' | 'glow' | 'breathe' | 'bounce' | 'shake';
+    animationSpeed?: 'slow' | 'normal' | 'fast';
+    fillStyle?: 'solid' | 'gradient' | 'glass' | 'hatch';
+    shadow?: 'none' | 'soft' | 'raised' | 'glow';
+    opacity?: number;
+    accentSide?: 'none' | 'left' | 'top';
+    accentColor?: string;
+    textColor?: string;
+    textSize?: 'sm' | 'base' | 'lg';
+    textAlign?: 'left' | 'center';
     // visibleFields is a list of string keys: built-in NodeFieldKey values
     // OR custom property names (anything in customProps). The renderer tries
     // built-in first and falls back to customProps[key].
     visibleFields?: string[];
   };
   customProps?: Record<string, string>;
+  // In-place text editing — double-click the box to write the element's text, filling the node.
+  notesEditing?: boolean;
+  noteFull?: string;
+  onStartRename?: (id: string) => void;
+  onChangeNotes?: (id: string, text: string) => void;
+  onCommitNotes?: (id: string, text: string) => void;
+  onCloseNotes?: () => void;
   violationSeverity?: 'info' | 'warning' | 'error';
   onResize?: (id: string, w: number, h: number) => void;
   resizable?: boolean;
@@ -36,6 +57,11 @@ export type ArchNodeData = {
   fanOut?: number;
   contextName?: string | null;
   isDependencyView?: boolean;
+  // Container rendering — a Bounded Context that visually wraps its child modules.
+  isContainer?: boolean;
+  childCount?: number;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 } & Record<string, unknown>;
 
 export type ArchFlowNode = Node<ArchNodeData, 'arch'>;
@@ -48,6 +74,9 @@ const iconForKind: Record<ArchElementKind, typeof Box> = {
   person: User,
   useCase: Target,
   capability: BookOpen,
+  question: HelpCircle,
+  assumption: Lightbulb,
+  risk: AlertTriangle,
 };
 
 const labelForKind: Record<ArchElementKind, string> = {
@@ -58,6 +87,9 @@ const labelForKind: Record<ArchElementKind, string> = {
   person: 'Person',
   useCase: 'Use Case',
   capability: 'Capability',
+  question: 'Question',
+  assumption: 'Assumption',
+  risk: 'Risk',
 };
 
 const accentForKind: Record<ArchElementKind, string> = {
@@ -68,6 +100,9 @@ const accentForKind: Record<ArchElementKind, string> = {
   person: 'text-amber-500',
   useCase: 'text-rose-500',
   capability: 'text-sky-500',
+  question: 'text-sky-500',
+  assumption: 'text-amber-500',
+  risk: 'text-rose-500',
 };
 
 function statusStyle(status: string | null | undefined): { className: string; outline?: string } {
@@ -136,6 +171,44 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   if (nodeStyle?.width) inlineStyle.width = nodeStyle.width;
   if (nodeStyle?.height) inlineStyle.height = nodeStyle.height;
   if (data.dimmed) inlineStyle.opacity = 0.25;
+  if (nodeStyle?.radius !== undefined) inlineStyle.borderRadius = `${nodeStyle.radius}px`;
+  // Fill style — overrides the plain background for gradient / frosted glass / hatched looks.
+  const fill = nodeStyle?.fillColor;
+  if (nodeStyle?.fillStyle === 'gradient') {
+    inlineStyle.background = fill
+      ? `linear-gradient(160deg, color-mix(in srgb, ${fill}, white 24%), ${fill})`
+      : 'linear-gradient(160deg, rgba(99,102,241,0.14), rgba(99,102,241,0.02))';
+  } else if (nodeStyle?.fillStyle === 'glass') {
+    inlineStyle.background = fill ? `color-mix(in srgb, ${fill}, transparent 55%)` : 'rgba(255,255,255,0.4)';
+    inlineStyle.backdropFilter = 'blur(6px)';
+    (inlineStyle as React.CSSProperties & { WebkitBackdropFilter?: string }).WebkitBackdropFilter = 'blur(6px)';
+  } else if (nodeStyle?.fillStyle === 'hatch') {
+    const c = fill ?? 'rgba(148,163,184,0.45)';
+    inlineStyle.backgroundImage = `repeating-linear-gradient(45deg, ${c} 0 5px, transparent 5px 11px)`;
+  }
+  // Elevation via drop-shadow so it never clashes with the selection ring's box-shadow.
+  const SHADOWS: Record<string, string> = {
+    none: 'none',
+    soft: 'drop-shadow(0 1px 2px rgba(0,0,0,0.16))',
+    raised: 'drop-shadow(0 6px 10px rgba(0,0,0,0.22))',
+    glow: `drop-shadow(0 0 6px ${nodeStyle?.borderColor ?? 'rgb(99,102,241)'})`,
+  };
+  if (nodeStyle?.shadow) inlineStyle.filter = SHADOWS[nodeStyle.shadow];
+  if (!data.dimmed && nodeStyle?.opacity !== undefined) inlineStyle.opacity = nodeStyle.opacity;
+  // Title typography.
+  const titleStyle: React.CSSProperties = {};
+  if (nodeStyle?.textColor) titleStyle.color = nodeStyle.textColor;
+  if (nodeStyle?.textAlign) titleStyle.textAlign = nodeStyle.textAlign;
+  const titleSize = nodeStyle?.textSize === 'lg' ? 'text-base' : nodeStyle?.textSize === 'sm' ? 'text-xs' : 'text-sm';
+  // Motion. Marching uses an overlay; the rest animate the inner box (a class + duration var) —
+  // independent of React Flow's wrapper transform, so positioning is unaffected.
+  const anim = nodeStyle?.animation ?? (nodeStyle?.animated ? 'marching' : 'none');
+  const animDur = nodeStyle?.animationSpeed === 'slow' ? '2.6s' : nodeStyle?.animationSpeed === 'fast' ? '0.7s' : '1.5s';
+  const animClass = anim !== 'none' && anim !== 'marching' ? `verso-anim-${anim}` : '';
+  if (animClass) {
+    (inlineStyle as React.CSSProperties & Record<string, string>)['--anim-dur'] = animDur;
+    if (anim === 'glow') (inlineStyle as React.CSSProperties & Record<string, string>)['--glow'] = nodeStyle?.borderColor ?? 'rgba(99,102,241,0.55)';
+  }
   // External SoftwareSystem (or external Person) gets a dashed boundary so architects can
   // distinguish in-scope from out-of-scope at a glance — the C4 reference convention.
   const isExternal = e.attributes?.external === 'true' || e.attributes?.role === 'external';
@@ -144,11 +217,31 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
     inlineStyle.borderWidth = inlineStyle.borderWidth ?? '1.5px';
     inlineStyle.background = inlineStyle.background ?? 'rgba(148, 163, 184, 0.08)';
   }
-  const hasCustomStyle = !!(nodeStyle?.fillColor || nodeStyle?.borderColor || nodeStyle?.borderStyle);
+  const hasCustomStyle = !!(nodeStyle?.fillColor || nodeStyle?.borderColor || nodeStyle?.borderStyle || nodeStyle?.fillStyle || nodeStyle?.shadow);
 
   // Default size hints — kept on the wrapper so the NodeResizer respects min sizes.
   const minWidth = isPerson ? 120 : 180;
   const minHeight = isPerson ? 40 : 80;
+
+  // A Bounded Context that owns modules renders as a container box wrapping them. The body
+  // is click-through (pointer-events: none) so the modules on top stay interactive; only the
+  // header chip is clickable (selects the BC).
+  if (data.isContainer) {
+    return (
+      <BcContainer
+        id={id}
+        name={e.name}
+        childCount={data.childCount}
+        collapsed={data.collapsed}
+        selected={selected}
+        editing={data.editing}
+        nodeStyle={data.nodeStyle}
+        onToggle={data.onToggleCollapse}
+        onCommit={data.onCommitName}
+        onCancel={data.onCancelEdit}
+      />
+    );
+  }
 
   return (
     <>
@@ -166,7 +259,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
       <div
         style={inlineStyle}
         className={clsx(
-          'relative rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg transition-shadow h-full',
+          'relative rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg transition-shadow h-full flex flex-col',
+          animClass,
+          data.notesEditing && 'min-h-[160px]',
           !nodeStyle?.width && 'min-w-[180px] max-w-[260px]',
           isPerson && !nodeStyle?.width ? 'rounded-full px-4 py-2.5 min-w-0' : '',
           isPerson && nodeStyle?.width ? 'rounded-full px-4 py-2.5' : '',
@@ -175,7 +270,15 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           !selected && !status && !hasCustomStyle && 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-lg dark:hover:shadow-xl'
         )}
       >
-        <Handle type="target" position={Position.Top} />
+        {anim === 'marching' && (
+          <div className="verso-march" style={{ '--march': nodeStyle?.borderColor ?? 'rgb(99 102 241)' } as React.CSSProperties} />
+        )}
+        {nodeStyle?.accentSide && nodeStyle.accentSide !== 'none' && (
+          <div
+            className={clsx('absolute pointer-events-none z-[1]', nodeStyle.accentSide === 'left' ? 'left-0 top-0 bottom-0 w-1.5 rounded-l-[inherit]' : 'left-0 right-0 top-0 h-1.5 rounded-t-[inherit]')}
+            style={{ background: nodeStyle.accentColor ?? nodeStyle.borderColor ?? 'rgb(99 102 241)' }}
+          />
+        )}
         {/* Fan-in / fan-out badges — shown only on the dependency view, where the architect
             wants to see "how many things depend on this" + "how many things this pulls from" at a glance. */}
         {data.isDependencyView && (data.fanIn !== undefined || data.fanOut !== undefined) && (
@@ -211,14 +314,19 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
             {showField('name') && (
               data.editing
                 ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
-                : <span className="text-zinc-900 dark:text-zinc-100 text-sm">{e.name}</span>
+                : <span
+                    className={clsx('text-zinc-900 dark:text-zinc-100 cursor-text', titleSize)}
+                    style={titleStyle}
+                    title="Double-click to rename"
+                    onDoubleClick={(ev) => { ev.stopPropagation(); data.onStartRename?.(id); }}
+                  >{e.name}</span>
             )}
             {showField('status') && status && <StatusBadge status={status} />}
           </div>
         ) : (
           <>
             {(showField('kind') || (showField('status') && status)) && (
-              <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
+              <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0">
                 <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
                 {showField('kind') && (
                   <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
@@ -233,51 +341,165 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                 {showField('status') && status && <StatusBadge status={status} />}
               </div>
             )}
-            <div className="px-3 py-2 space-y-0.5">
+            <div className="px-3 py-2 flex-1 min-h-0 flex flex-col">
               {showField('name') && (
                 data.editing
                   ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
-                  : <div className="font-medium text-zinc-900 dark:text-zinc-100 text-sm truncate" title={e.name}>{e.name}</div>
+                  : <div
+                      className={clsx('font-medium text-zinc-900 dark:text-zinc-100 truncate cursor-text shrink-0', titleSize)}
+                      style={titleStyle}
+                      title="Double-click to rename · double-click the box to write text"
+                      onDoubleClick={(ev) => { ev.stopPropagation(); data.onStartRename?.(id); }}
+                    >{e.name}</div>
               )}
-              {showField('id') && (
-                <div className="text-[10px] text-zinc-500 font-mono truncate">{e.id}</div>
-              )}
-              {showField('contextId') && e.attributes.contextId && (
-                <div className="text-[10px] text-zinc-500 truncate" title={`Bounded Context: ${data.contextName ?? e.attributes.contextId}`}>
-                  in <span className="font-medium text-zinc-700 dark:text-zinc-300">{data.contextName ?? e.attributes.contextId}</span>
-                </div>
-              )}
-              {showField('systemId') && e.attributes.systemId && (
-                <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.systemId}</div>
-              )}
-              {showField('containerKind') && e.attributes.containerKind && (
-                <div className="text-[10px] text-zinc-500 truncate">{e.attributes.containerKind}</div>
-              )}
-              {showField('squad') && tag?.ownership?.squad && (
-                <div className="text-[10px] text-zinc-500 truncate">👥 {tag.ownership.squad}</div>
-              )}
-              {showField('domain') && tag?.ownership?.domain && (
-                <div className="text-[10px] text-zinc-500 truncate">🏷️ {tag.ownership.domain}</div>
-              )}
-              {showField('phase') && tag?.lifecycle?.phase && (
-                <div className="text-[10px] text-zinc-500 truncate">⏱ {tag.lifecycle.phase}</div>
-              )}
-              {visibleCustomKeys.length > 0 && (
-                <div className="pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 space-y-0.5">
-                  {visibleCustomKeys.map((k) => (
-                    <div key={k} className="text-[10px] flex gap-1.5 text-zinc-600 dark:text-zinc-400">
-                      <span className="text-zinc-500 truncate shrink-0">{k}:</span>
-                      <span className="truncate text-zinc-800 dark:text-zinc-200" title={customProps[k]}>{customProps[k]}</span>
-                    </div>
-                  ))}
-                </div>
+              {data.notesEditing ? (
+                <RichTextEditor
+                  value={data.noteFull ?? ''}
+                  kind={e.kind}
+                  existingKeys={Object.keys(customProps)}
+                  autoFocus
+                  onChange={(t) => data.onChangeNotes?.(id, t)}
+                  onCommit={(t) => data.onCommitNotes?.(id, t)}
+                  onClose={() => data.onCloseNotes?.()}
+                  className="flex-1 mt-1"
+                />
+              ) : (
+                <>
+                  <div className="space-y-0.5 shrink-0">
+                    {showField('id') && (
+                      <div className="text-[10px] text-zinc-500 font-mono truncate">{e.id}</div>
+                    )}
+                    {showField('contextId') && e.attributes.contextId && (
+                      <div className="text-[10px] text-zinc-500 truncate" title={`Bounded Context: ${data.contextName ?? e.attributes.contextId}`}>
+                        in <span className="font-medium text-zinc-700 dark:text-zinc-300">{data.contextName ?? e.attributes.contextId}</span>
+                      </div>
+                    )}
+                    {showField('systemId') && e.attributes.systemId && (
+                      <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.systemId}</div>
+                    )}
+                    {showField('containerKind') && e.attributes.containerKind && (
+                      <div className="text-[10px] text-zinc-500 truncate">{e.attributes.containerKind}</div>
+                    )}
+                    {showField('squad') && tag?.ownership?.squad && (
+                      <div className="text-[10px] text-zinc-500 truncate">👥 {tag.ownership.squad}</div>
+                    )}
+                    {showField('domain') && tag?.ownership?.domain && (
+                      <div className="text-[10px] text-zinc-500 truncate">🏷️ {tag.ownership.domain}</div>
+                    )}
+                    {showField('phase') && tag?.lifecycle?.phase && (
+                      <div className="text-[10px] text-zinc-500 truncate">⏱ {tag.lifecycle.phase}</div>
+                    )}
+                    {visibleCustomKeys.length > 0 && (
+                      <div className="pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 space-y-0.5">
+                        {visibleCustomKeys.map((k) => (
+                          <div key={k} className="text-[10px] flex gap-1.5 text-zinc-600 dark:text-zinc-400">
+                            <span className="text-zinc-500 truncate shrink-0">{k}:</span>
+                            <span className="truncate text-zinc-800 dark:text-zinc-200" title={customProps[k]}>{customProps[k]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {data.noteFull && (
+                    <div
+                      className="archnote text-[11px] text-zinc-600 dark:text-zinc-300 leading-relaxed pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 overflow-auto flex-1 min-h-0 nodrag"
+                      style={nodeStyle?.height ? undefined : { maxHeight: 140 }}
+                      dangerouslySetInnerHTML={{ __html: renderNotes(data.noteFull) }}
+                    />
+                  )}
+                </>
               )}
             </div>
           </>
         )}
-        <Handle type="source" position={Position.Bottom} />
+        {/* 6 connection points (2 top, 2 bottom, 1 left, 1 right). ConnectionMode.Loose lets each
+            act as source or target; free-form arrows dock to these same points (see ShapeLayer). */}
+        <Handle type="target" position={Position.Top} style={{ left: '33%' }} />
+        <Handle id="t2" type="source" position={Position.Top} style={{ left: '67%' }} />
+        <Handle type="source" position={Position.Bottom} style={{ left: '33%' }} />
+        <Handle id="b2" type="target" position={Position.Bottom} style={{ left: '67%' }} />
+        <Handle id="l" type="source" position={Position.Left} />
+        <Handle id="r" type="target" position={Position.Right} />
       </div>
     </>
+  );
+}
+
+function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel }: {
+  id: string;
+  name: string;
+  childCount?: number;
+  collapsed?: boolean;
+  selected?: boolean;
+  editing?: boolean;
+  nodeStyle?: ArchNodeData['nodeStyle'];
+  onToggle?: () => void;
+  onCommit?: (id: string, next: string) => void;
+  onCancel?: () => void;
+}) {
+  const border = nodeStyle?.borderColor;
+  const fill = nodeStyle?.fillColor;
+
+  if (collapsed) {
+    // Compact card — the header only; child modules are hidden on the canvas.
+    return (
+      <div
+        style={{ pointerEvents: 'auto', ...(fill ? { background: fill } : {}), ...(border ? { borderColor: border } : {}) }}
+        className={clsx(
+          'rounded-xl border-2 border-dashed px-3 py-2 inline-flex items-center gap-2 shadow-sm',
+          !fill && 'bg-violet-500/10 dark:bg-violet-500/15',
+          !border && 'border-violet-400/60 dark:border-violet-500/50',
+          selected && 'ring-2 ring-violet-500/40',
+        )}
+      >
+        <button onClick={(ev) => { ev.stopPropagation(); onToggle?.(); }} title="Expand" className="nodrag text-violet-600 dark:text-violet-300">
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+        <Layers className="w-3.5 h-3.5 text-violet-600 dark:text-violet-300 shrink-0" />
+        {editing
+          ? <NameEditor id={id} initial={name} onCommit={onCommit} onCancel={onCancel} />
+          : <span className="text-sm font-medium text-violet-800 dark:text-violet-200">{name}</span>}
+        {childCount !== undefined && childCount > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-700 dark:text-violet-300">{childCount}</span>
+        )}
+      </div>
+    );
+  }
+
+  const bodyStyle: React.CSSProperties = { width: '100%', height: '100%', pointerEvents: 'none' };
+  if (border) bodyStyle.borderColor = border;
+  if (nodeStyle?.borderStyle) bodyStyle.borderStyle = nodeStyle.borderStyle;
+  if (nodeStyle?.borderWidth !== undefined) bodyStyle.borderWidth = `${nodeStyle.borderWidth}px`;
+  if (fill) bodyStyle.background = fill;
+
+  return (
+    <div
+      style={bodyStyle}
+      className={clsx(
+        'rounded-2xl border-2 transition-colors',
+        !nodeStyle?.borderStyle && 'border-dashed',
+        !border && (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40'),
+        !fill && (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]'),
+      )}
+    >
+      <div
+        style={{ pointerEvents: 'auto', ...(border ? { background: border, borderColor: border, color: '#fff' } : {}) }}
+        title={`Bounded Context: ${name}`}
+        className={clsx(
+          'absolute -top-3 left-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] border cursor-pointer',
+          !border && 'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30',
+        )}
+      >
+        <button onClick={(ev) => { ev.stopPropagation(); onToggle?.(); }} title="Collapse" className="nodrag">
+          <ChevronDown className="w-3 h-3" />
+        </button>
+        <Layers className="w-3 h-3 shrink-0" />
+        {editing
+          ? <NameEditor id={id} initial={name} onCommit={onCommit} onCancel={onCancel} />
+          : <span className="font-medium">{name}</span>}
+        {childCount !== undefined && childCount > 0 && <span className="opacity-80">· {childCount}</span>}
+      </div>
+    </div>
   );
 }
 

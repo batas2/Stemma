@@ -35,17 +35,11 @@ export function StatusBar() {
 function ActiveViewBadge() {
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
-  const mode = useApp((s) => s.mode);
   const active = customViews.find((v) => v.id === activeId);
-  if (!active && mode === 'edit') return null;
+  if (!active) return null;
   return (
     <span className="flex items-center gap-1.5">
-      {active && (
-        <span className="text-indigo-600 dark:text-indigo-400">view: {active.name} ({active.elementIds.length})</span>
-      )}
-      {mode === 'view' && (
-        <span className="text-emerald-600 dark:text-emerald-400">Read-only</span>
-      )}
+      <span className="text-indigo-600 dark:text-indigo-400">view: {active.name} ({active.elementIds.length})</span>
     </span>
   );
 }
