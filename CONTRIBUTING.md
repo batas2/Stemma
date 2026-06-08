@@ -1,52 +1,50 @@
 # Contributing
 
-This repository currently holds specifications and planning documents only. There is no production code yet. The contribution model below applies as soon as Phase 1 begins.
+The full contribution guide lives in
+[`.doc/engineering/contributing.md`](./.doc/engineering/contributing.md). This is the short version.
 
-## Working principles
+## Working principles (non-negotiable)
 
-- **Round-trip fidelity is sacred.** Any change that risks fidelity needs a test before a merge.
+- **Round-trip fidelity is sacred.** Any change that risks it needs a test before merge. A failing
+  fidelity test blocks merge — no exceptions.
 - **Code is the database.** Resist any feature that introduces a parallel, non-Git source of truth.
-- **Operations are pure.** Treat every UI gesture as a function. No hidden side effects.
+  Model → code; presentation → `verso.layout.json`; never a third store.
+- **Operations are pure.** Treat every UI gesture as a function; no hidden side effects.
 - **Stay narrow.** Verso is not an IDE. If a feature feels like one, push back.
+
+Full rules: [`.doc/engineering/conventions.md`](./.doc/engineering/conventions.md).
 
 ## How to propose a change
 
-1. **Specs and ADRs**: open a PR that updates `docs/` or `specs/`. Discuss before implementing.
-2. **New operations**: add a section to `specs/operations-catalog.md` *first*, with at least three round-trip fixtures listed. Implement after the spec is merged.
-3. **Architectural decisions**: write a new ADR in `docs/decisions/`, status `Proposed`, and request review.
+1. **Feature** → create a record from
+   [`.doc/templates/feature-template.md`](./.doc/templates/feature-template.md) in
+   [`.doc/features/`](./.doc/features/) (name a persona, value, ACs, and Product/Architecture/UX/UI
+   impact).
+2. **Bug** → [`.doc/templates/bug-template.md`](./.doc/templates/bug-template.md) in
+   [`.doc/bugs/`](./.doc/bugs/) (root cause + a named regression test).
+3. **New operation** → spec it, add ≥3 round-trip fixtures (minimal/realistic/pathological),
+   implement with `DocumentEditor`, run the fidelity suite.
+4. **Boundary decision** → an ADR via
+   [`.doc/templates/adr-template.md`](./.doc/templates/adr-template.md) in
+   [`.doc/architecture/decisions/`](./.doc/architecture/decisions/), status `Proposed`.
 
-## Spec edits
+## Definition of Done
 
-Specs are not aspirational. If a spec disagrees with the code, fix one of them in the same PR. Stale specs are worse than no specs.
+See the checklist in
+[`.doc/engineering/contributing.md`](./.doc/engineering/contributing.md#the-change-checklist-definition-of-done):
+states handled · `dotnet test` green · `tsc`/`vite build`/`vitest` green · boundary respected · tokens
+used · **docs updated in the same PR** · a regression test for every bug fix.
 
-## Round-trip tests
+## Vocabulary, commits, reviews
 
-For every operation, every fixture must pass:
-
-```
-1. load fixture input
-2. apply operation
-3. assert: textual diff between input and output equals the fixture's expected diff
-```
-
-A failing fidelity test blocks merge. There are no exceptions.
-
-## Naming
-
-Use the terms in `docs/GLOSSARY.md`. Do not invent synonyms (no "diagram", no "schema" as substitutes for "model graph"; no "save event" as a substitute for "delta").
-
-## Commit messages
-
-Conventional Commits. Subject ≤ 50 chars. Body only when "why" is non-obvious.
-
-```
-feat(engine): add RemoveProperty op
-fix(sync): close gap when delta version skips
-docs(adr): mark ADR-0003 accepted
-```
-
-## Reviews
-
-- Two approvals for any change to `specs/round-trip-fidelity.md`.
-- One approval for everything else.
-- A maintainer must sign off on any new ADR going to `Accepted`.
+- Use the terms in [`.doc/engineering/glossary.md`](./.doc/engineering/glossary.md). Don't invent
+  synonyms.
+- **Commits:** Conventional Commits; subject ≤ 50 chars; body only when the "why" is non-obvious.
+  ```
+  feat(engine): add RemoveProperty op
+  fix(canvas): preserve selection across node rebuild
+  docs(adr): mark ADR-0003 accepted
+  ```
+- **Reviews:** changes to the fidelity contract get extra scrutiny; a maintainer signs off any ADR
+  going to `Accepted`. Reviews check all four pillars — adopt the relevant
+  pillar lens.
