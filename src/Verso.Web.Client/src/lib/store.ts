@@ -245,10 +245,14 @@ export const useApp = create<AppState>((set, get) => ({
     });
   },
   setArch: (a) => set({ arch: a }),
-  // setView is a no-op when the requested view matches the current one — avoids clobbering
-  // activeCustomViewId / selectedElementId on re-clicks.
+  // Switch to a built-in view. A custom view keeps `view` at its base (e.g. 'moduleMap') while
+  // activeCustomViewId is set, so guarding on `view` alone made clicking "Module Map" a silent
+  // no-op whenever a custom view was layered on top (incl. the persisted one restored on open) —
+  // that's the "can't get back to Module Map until I toggle another tab / refresh" bug. Only skip
+  // when we're genuinely already on that built-in with no custom view active.
   setView: (v) => {
-    if (v === get().view) return;
+    const s = get();
+    if (v === s.view && s.activeCustomViewId === null) return;
     set({ view: v, activeCustomViewId: null, selectedElementId: null });
   },
   setCustomViews: (vs) => {

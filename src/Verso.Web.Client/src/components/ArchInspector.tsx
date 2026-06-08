@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Edit3, Trash2, Activity, Workflow, ChevronsRight, Plus, Maximize2, Info, FileText, Clock, Users, Palette, Tags, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
+import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight, ChevronsRight, Plus, Maximize2, Info, FileText, Clock, Users, Palette, Tags, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { InspectorActions } from './InspectorActions';
@@ -142,7 +142,6 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   const workspace = useApp((s) => s.workspace);
   const [note, setNote] = useState('');
   const [notesOpen, setNotesOpen] = useState(false);
-  const [appearanceTab, setAppearanceTab] = useState<'presets' | 'style' | 'animation'>('presets');
   const noteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const e = arch.elements.find((x) => x.id === elementId);
@@ -294,7 +293,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="flex-1 overflow-auto scrollbar-thin">
+      <div className="flex-1 min-h-0 flex flex-col">
         <Section label="Properties" persistKey="element.properties" defaultOpen icon={<Info className="w-3 h-3" />}>
           <Field label="Kind" value={e.kind} />
           <Field label="Id" value={e.id} mono />
@@ -304,10 +303,8 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
         </Section>
 
         <Section label="Appearance" persistKey="element.appearance" defaultOpen icon={<Palette className="w-3 h-3" />}>
-          <Tabs tabs={['presets', 'style', 'animation'] as const} active={appearanceTab} onChange={setAppearanceTab} />
-
-          {appearanceTab === 'presets' && (
-            <div className="grid grid-cols-2 gap-2 pt-1">
+          <SubSection title="Presets — one-click looks" defaultOpen>
+            <div className="grid grid-cols-2 gap-2">
               {STYLE_PRESETS.map((p) => (
                 <button
                   key={p.key}
@@ -320,10 +317,9 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
                 </button>
               ))}
             </div>
-          )}
+          </SubSection>
 
-          {appearanceTab === 'style' && (
-            <>
+          <SubSection title="Style — fill, border, effects, text" defaultOpen={false}>
               <GroupLabel>Fill</GroupLabel>
               <Segmented
                 label="Fill style"
@@ -430,11 +426,9 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
               <button onClick={clearStyle} className="mt-1 btn btn-md btn-ghost border-default w-full">
                 Reset appearance
               </button>
-            </>
-          )}
+          </SubSection>
 
-          {appearanceTab === 'animation' && (
-            <div className="pt-1 space-y-2">
+          <SubSection title="Animation — motion on the canvas" defaultOpen={false}>
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Effect</div>
                 <div className="grid grid-cols-3 gap-1">
@@ -466,12 +460,11 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
               <p className="text-[10px] text-faint leading-snug">
                 Motion plays on the canvas — use sparingly to spotlight what needs attention. Honors “reduce motion”.
               </p>
-            </div>
-          )}
+          </SubSection>
         </Section>
 
-        <Section label="Text & attributes" persistKey="element.notes" defaultOpen icon={<FileText className="w-3 h-3" />}>
-          <p className="text-[11px] text-faint mb-2 leading-snug">
+        <Section label="Text & attributes" persistKey="element.notes" defaultOpen icon={<FileText className="w-3 h-3" />} fill>
+          <p className="text-[11px] text-faint leading-snug shrink-0">
             Describe this {e.kind}. Type <code className="font-mono text-indigo-600 dark:text-indigo-400">#owner: ABC</code> to
             set an attribute — press <kbd className="px-1 rounded bg-zinc-200 dark:bg-zinc-800 font-mono text-[10px]">#</kbd> for
             suggestions, or tap a chip below.
@@ -488,9 +481,9 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
             }}
             kind={e.kind}
             existingKeys={Object.keys(customProps)}
-            className="min-h-[150px]"
+            className="flex-1 min-h-[150px]"
           />
-          <button onClick={() => setNotesOpen(true)} className="mt-2 w-full btn btn-md btn-secondary">
+          <button onClick={() => setNotesOpen(true)} className="w-full btn btn-md btn-secondary shrink-0">
             <Maximize2 className="w-3 h-3" /> Open full editor
           </button>
         </Section>
@@ -617,7 +610,6 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
   const [payloadEdit, setPayloadEdit] = useState('');
   const [kindEdit, setKindEdit] = useState('');
-  const [linkTab, setLinkTab] = useState<'presets' | 'style' | 'animation'>('presets');
   const [linkStatus, setLinkStatus] = useState(tag?.lifecycle?.status ?? '');
   const [linkPhase, setLinkPhase] = useState(tag?.lifecycle?.phase ?? '');
   const [linkSquad, setLinkSquad] = useState(tag?.ownership?.squad ?? '');
@@ -740,7 +732,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto scrollbar-thin">
+      <div className="flex-1 min-h-0 flex flex-col">
         <Section label="Endpoints" persistKey="link.endpoints" defaultOpen icon={<Spline className="w-3 h-3" />}>
           <Field label="From" value={from?.name ?? link.fromId} />
           <Field label="To" value={to?.name ?? link.toId} />
@@ -795,10 +787,8 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
         </Section>
 
         <Section label="Appearance" persistKey="link.appearance" defaultOpen icon={<Palette className="w-3 h-3" />}>
-          <Tabs tabs={['presets', 'style', 'animation'] as const} active={linkTab} onChange={setLinkTab} />
-
-          {linkTab === 'presets' && (
-            <div className="grid grid-cols-2 gap-2 pt-1">
+          <SubSection title="Presets — one-click looks" defaultOpen>
+            <div className="grid grid-cols-2 gap-2">
               {EDGE_PRESETS.map((p) => (
                 <button
                   key={p.key}
@@ -811,10 +801,9 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
                 </button>
               ))}
             </div>
-          )}
+          </SubSection>
 
-          {linkTab === 'style' && (
-            <>
+          <SubSection title="Style — line, routing, ends, colour" defaultOpen={false}>
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Line style</div>
                 <div className="flex gap-1">
@@ -879,11 +868,9 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
                 <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Color</div>
                 <ColorSwatches value={userStyle.color} onChange={(c) => setStyle({ color: c })} />
               </div>
-            </>
-          )}
+          </SubSection>
 
-          {linkTab === 'animation' && (
-            <div className="pt-1 space-y-2">
+          <SubSection title="Animation — flow motion" defaultOpen={false}>
               <Toggle label="Animated flow" hint="Dashes flow along the relationship" checked={!!userStyle.animated} onChange={(v) => setStyle({ animated: v })} />
               <Segmented
                 label="Flow speed"
@@ -892,8 +879,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
                 onChange={(v) => setStyle({ animSpeed: v })}
               />
               <p className="text-[10px] text-faint leading-snug">Flow shows the direction of the dependency / data. Honors “reduce motion”.</p>
-            </div>
-          )}
+          </SubSection>
         </Section>
       </div>
 
@@ -908,19 +894,40 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
 /** A single inspector panel, shown only when the right-hand icon rail has selected it
  *  (`inspectorTab === persistKey`). The rail provides the icons; this renders the active panel. */
-function Section({ label, children, persistKey, icon }: {
+/** A collapsible sub-section inside a panel — clearer than tabs for stacked option groups
+ *  (Appearance: Presets / Style / Animation). Each is a bordered card with a header you can fold. */
+function SubSection({ title, defaultOpen = true, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg border border-default overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full px-2.5 py-2 flex items-center gap-2 bg-zinc-50/70 dark:bg-zinc-900/40 hover:bg-zinc-100 dark:hover:bg-zinc-800/40 transition-colors"
+      >
+        <span className="flex-1 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-200">{title}</span>
+        {open ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
+      </button>
+      {open && <div className="px-2.5 pb-2.5 pt-2 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+function Section({ label, children, persistKey, icon, fill }: {
   label: string;
   children: React.ReactNode;
   defaultOpen?: boolean; // accepted for call-site compatibility; the rail now controls visibility
   persistKey?: string;
   icon?: React.ReactNode;
+  /** When true the body fills the panel height (for the full-height note editor) instead of
+   *  scrolling as a normal block. */
+  fill?: boolean;
 }) {
   const active = useApp((s) => s.inspectorTab);
   const setTab = useApp((s) => s.setInspectorTab);
   if (!persistKey || active !== persistKey) return null;
   return (
-    <section>
-      <div className="px-3 py-2.5 flex items-center gap-2 border-b border-default bg-zinc-50/70 dark:bg-zinc-900/40 sticky top-0 z-10">
+    <section className="flex-1 min-h-0 flex flex-col">
+      <div className="px-3 py-2.5 flex items-center gap-2 border-b border-default bg-zinc-50/70 dark:bg-zinc-900/40 shrink-0">
         {icon && (
           <span className="w-5 h-5 rounded-md flex items-center justify-center bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
             {icon}
@@ -931,7 +938,7 @@ function Section({ label, children, persistKey, icon }: {
           <ChevronsRight className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="px-3 pb-4 pt-2 space-y-2">{children}</div>
+      <div className={clsx('px-3 pb-4 pt-2', fill ? 'flex-1 min-h-0 flex flex-col gap-2' : 'flex-1 min-h-0 overflow-auto scrollbar-thin space-y-2')}>{children}</div>
     </section>
   );
 }
@@ -975,25 +982,6 @@ const STYLE_PRESETS: { key: string; label: string; style: Partial<NodeStyle> }[]
 /** Two compact controls side by side — used to pair conceptually-close properties. */
 function Row2({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-2 gap-x-3 gap-y-1 items-start">{children}</div>;
-}
-
-function Tabs<T extends string>({ tabs, active, onChange }: { tabs: readonly T[]; active: T; onChange: (t: T) => void }) {
-  return (
-    <div className="flex gap-1 p-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/60">
-      {tabs.map((t) => (
-        <button
-          key={t}
-          onClick={() => onChange(t)}
-          className={clsx(
-            'flex-1 px-2 py-1 text-[11px] rounded-md capitalize transition-colors',
-            active === t ? 'bg-white dark:bg-zinc-900 shadow-sm text-indigo-600 dark:text-indigo-300 font-medium' : 'text-zinc-500 hover:text-body',
-          )}
-        >
-          {t}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /** Render a preset pill so it *looks like* the effect it applies (fill / border / shadow / text). */

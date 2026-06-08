@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import {
-  Wand2, Network, LayoutDashboard, Target, Hand, Magnet, Maximize2, Trash2, Check,
+  Wand2, Network, LayoutDashboard, Target, Hand, Magnet, Maximize2, Trash2, Check, MousePointerSquareDashed,
   AlignLeft, AlignRight, AlignCenterHorizontal, AlignStartVertical, AlignEndVertical, AlignCenterVertical,
   StretchHorizontal, StretchVertical, RotateCcw, Crosshair,
 } from 'lucide-react';
@@ -86,28 +86,42 @@ export function LayoutPanel() {
   return (
     <div className="p-3 space-y-4 text-sm">
       <Group title="Align & distribute">
-        <p className="text-[10px] text-faint -mt-0.5 mb-1">
-          {selectedCount >= 3 ? `${selectedCount} selected.` : selectedCount === 2 ? '2 selected — align available; pick a 3rd to distribute.' : 'Select 2+ elements to align, 3+ to distribute (Shift-drag a box, or Ctrl-click).'}
-        </p>
-        <div className="grid grid-cols-6 gap-1">
-          <Mini onClick={() => send({ type: 'align', axis: 'left' })} disabled={!canAlign} title="Align left"><AlignLeft className="w-4 h-4" /></Mini>
-          <Mini onClick={() => send({ type: 'align', axis: 'centerX' })} disabled={!canAlign} title="Align centre (X)"><AlignCenterHorizontal className="w-4 h-4" /></Mini>
-          <Mini onClick={() => send({ type: 'align', axis: 'right' })} disabled={!canAlign} title="Align right"><AlignRight className="w-4 h-4" /></Mini>
-          <Mini onClick={() => send({ type: 'align', axis: 'top' })} disabled={!canAlign} title="Align top"><AlignStartVertical className="w-4 h-4" /></Mini>
-          <Mini onClick={() => send({ type: 'align', axis: 'centerY' })} disabled={!canAlign} title="Align centre (Y)"><AlignCenterVertical className="w-4 h-4" /></Mini>
-          <Mini onClick={() => send({ type: 'align', axis: 'bottom' })} disabled={!canAlign} title="Align bottom"><AlignEndVertical className="w-4 h-4" /></Mini>
+        <div className={clsx('text-[11px] mb-2 px-2 py-1.5 rounded-md flex items-center gap-1.5',
+          selectedCount >= 2 ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300' : 'bg-zinc-100 dark:bg-zinc-800/50 text-faint')}>
+          <MousePointerSquareDashed className="w-3.5 h-3.5 shrink-0" />
+          {selectedCount === 0 ? 'Select 2+ elements — Shift-drag a box, or Ctrl-click several.'
+            : selectedCount === 1 ? 'Pick at least one more element to align them.'
+            : selectedCount === 2 ? '2 selected — align ready (select a 3rd to distribute).'
+            : `${selectedCount} selected — align & distribute ready.`}
         </div>
-        <div className="flex gap-1">
-          <Mini onClick={() => send({ type: 'distribute', axis: 'horizontal' })} disabled={!canDistribute} title="Distribute horizontally"><StretchHorizontal className="w-4 h-4" /></Mini>
-          <Mini onClick={() => send({ type: 'distribute', axis: 'vertical' })} disabled={!canDistribute} title="Distribute vertically"><StretchVertical className="w-4 h-4" /></Mini>
-          <button
-            onClick={() => send({ type: 'delete' })} disabled={selectedCount === 0}
-            className={clsx('flex-1 flex items-center justify-center gap-1.5 h-8 rounded-md border text-xs',
-              selectedCount === 0 ? 'border-default text-faint cursor-not-allowed' : 'border-rose-300/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10')}
-          >
-            <Trash2 className="w-4 h-4" /> Delete{selectedCount > 0 ? ` ${selectedCount}` : ''}
-          </button>
+
+        <SubLabel>Align edges — line elements up horizontally</SubLabel>
+        <div className="grid grid-cols-3 gap-1.5">
+          <BigBtn icon={<AlignLeft className="w-4 h-4" />} label="Left" disabled={!canAlign} onClick={() => send({ type: 'align', axis: 'left' })} />
+          <BigBtn icon={<AlignCenterHorizontal className="w-4 h-4" />} label="Center" disabled={!canAlign} onClick={() => send({ type: 'align', axis: 'centerX' })} />
+          <BigBtn icon={<AlignRight className="w-4 h-4" />} label="Right" disabled={!canAlign} onClick={() => send({ type: 'align', axis: 'right' })} />
         </div>
+
+        <SubLabel>Align edges — line elements up vertically</SubLabel>
+        <div className="grid grid-cols-3 gap-1.5">
+          <BigBtn icon={<AlignStartVertical className="w-4 h-4" />} label="Top" disabled={!canAlign} onClick={() => send({ type: 'align', axis: 'top' })} />
+          <BigBtn icon={<AlignCenterVertical className="w-4 h-4" />} label="Middle" disabled={!canAlign} onClick={() => send({ type: 'align', axis: 'centerY' })} />
+          <BigBtn icon={<AlignEndVertical className="w-4 h-4" />} label="Bottom" disabled={!canAlign} onClick={() => send({ type: 'align', axis: 'bottom' })} />
+        </div>
+
+        <SubLabel>Distribute — equal gaps between 3+ elements</SubLabel>
+        <div className="grid grid-cols-2 gap-1.5">
+          <BigBtn icon={<StretchHorizontal className="w-4 h-4" />} label="Even columns" disabled={!canDistribute} onClick={() => send({ type: 'distribute', axis: 'horizontal' })} />
+          <BigBtn icon={<StretchVertical className="w-4 h-4" />} label="Even rows" disabled={!canDistribute} onClick={() => send({ type: 'distribute', axis: 'vertical' })} />
+        </div>
+
+        <button
+          onClick={() => send({ type: 'delete' })} disabled={selectedCount === 0}
+          className={clsx('w-full mt-1 flex items-center justify-center gap-1.5 h-8 rounded-md border text-xs',
+            selectedCount === 0 ? 'border-default text-faint cursor-not-allowed' : 'border-rose-300/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10')}
+        >
+          <Trash2 className="w-4 h-4" /> Delete selected{selectedCount > 0 ? ` (${selectedCount})` : ''}
+        </button>
       </Group>
 
       <Group title="View layout">
@@ -285,6 +299,25 @@ function Slider({ label, value, min, max, step, fmt, onChange }: { label: string
       </div>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(parseFloat(e.target.value))} className="w-full accent-indigo-500" />
     </div>
+  );
+}
+
+function SubLabel({ children }: { children: React.ReactNode }) {
+  return <div className="text-[10px] uppercase tracking-wider text-faint mt-2 mb-1 first:mt-0">{children}</div>;
+}
+
+/** Icon-over-label button — makes Align/Distribute actions self-explanatory at a glance. */
+function BigBtn({ icon, label, onClick, disabled }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick} disabled={disabled} title={label}
+      className={clsx('flex flex-col items-center justify-center gap-1 py-2 rounded-md border transition-colors',
+        disabled ? 'border-default text-zinc-300 dark:text-zinc-700 cursor-not-allowed'
+          : 'border-default text-body hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/10')}
+    >
+      {icon}
+      <span className="text-[10px] leading-none font-medium">{label}</span>
+    </button>
   );
 }
 

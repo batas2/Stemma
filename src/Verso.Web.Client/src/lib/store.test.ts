@@ -20,15 +20,24 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('UX bug #2 — setView no-op when value matches', () => {
-  it('does not clobber activeCustomViewId or selectedElementId when the view does not change', () => {
-    useApp.setState({ view: 'moduleMap', activeCustomViewId: 'cv_x', selectedElementId: 'mod_001' });
+describe('setView', () => {
+  it('is a true no-op only when already on that built-in view with no custom view active', () => {
+    useApp.setState({ view: 'moduleMap', activeCustomViewId: null, selectedElementId: 'mod_001' });
     useApp.getState().setView('moduleMap');
-    expect(useApp.getState().activeCustomViewId).toBe('cv_x');
-    expect(useApp.getState().selectedElementId).toBe('mod_001');
+    expect(useApp.getState().activeCustomViewId).toBeNull();
+    expect(useApp.getState().selectedElementId).toBe('mod_001'); // re-click keeps selection
   });
 
-  it('clobbers activeCustomViewId only when the view actually changes', () => {
+  it('clicking a built-in view leaves an active custom view (even if its base view matches)', () => {
+    // A custom view keeps `view` at its base ('moduleMap') while activeCustomViewId is set, so
+    // clicking Module Map must still drop back to the built-in — not silently no-op.
+    useApp.setState({ view: 'moduleMap', activeCustomViewId: 'cv_x', selectedElementId: 'mod_001' });
+    useApp.getState().setView('moduleMap');
+    expect(useApp.getState().activeCustomViewId).toBeNull();
+    expect(useApp.getState().selectedElementId).toBeNull();
+  });
+
+  it('clobbers activeCustomViewId when the view actually changes', () => {
     useApp.setState({ view: 'moduleMap', activeCustomViewId: 'cv_x', selectedElementId: 'mod_001' });
     useApp.getState().setView('dependencyGraph');
     expect(useApp.getState().activeCustomViewId).toBeNull();
