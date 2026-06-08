@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Box, Cuboid, Layers, Package, User, Server, Target, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
@@ -8,6 +8,18 @@ import { RichTextEditor } from '../RichTextEditor';
 import { renderNotes } from '@/lib/notesMarkdown';
 
 export type TagsByTarget = Record<string, ArchTagInfo>;
+
+/** The 6 connection dots, matching lib/edgeDock DockId. Each is rendered as an overlapping
+ *  source+target handle so a relationship can dock either end on any dot and a new connection can
+ *  be both started from and dropped onto it (ConnectionMode.Loose). */
+const DOCK_HANDLES: { id: string; position: Position; style?: CSSProperties }[] = [
+  { id: 't1', position: Position.Top, style: { left: '33%' } },
+  { id: 't2', position: Position.Top, style: { left: '67%' } },
+  { id: 'b1', position: Position.Bottom, style: { left: '33%' } },
+  { id: 'b2', position: Position.Bottom, style: { left: '67%' } },
+  { id: 'l', position: Position.Left },
+  { id: 'r', position: Position.Right },
+];
 
 export type ArchNodeData = {
   element: ArchElement;
@@ -412,14 +424,14 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
             </div>
           </>
         )}
-        {/* 6 connection points (2 top, 2 bottom, 1 left, 1 right). ConnectionMode.Loose lets each
-            act as source or target; free-form arrows dock to these same points (see ShapeLayer). */}
-        <Handle type="target" position={Position.Top} style={{ left: '33%' }} />
-        <Handle id="t2" type="source" position={Position.Top} style={{ left: '67%' }} />
-        <Handle type="source" position={Position.Bottom} style={{ left: '33%' }} />
-        <Handle id="b2" type="target" position={Position.Bottom} style={{ left: '67%' }} />
-        <Handle id="l" type="source" position={Position.Left} />
-        <Handle id="r" type="target" position={Position.Right} />
+        {/* 6 connection dots — relationships dock to these (see lib/edgeDock); free-form arrows dock
+            to the same points (see ShapeLayer). Each dot is a source+target pair (ConnectionMode.Loose). */}
+        {DOCK_HANDLES.map((d) => (
+          <Fragment key={d.id}>
+            <Handle id={d.id} type="source" position={d.position} style={d.style} />
+            <Handle id={d.id} type="target" position={d.position} style={d.style} />
+          </Fragment>
+        ))}
       </div>
     </>
   );

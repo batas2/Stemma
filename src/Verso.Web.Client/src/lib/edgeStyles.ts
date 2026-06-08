@@ -4,10 +4,17 @@ export type EdgeLineStyle = 'solid' | 'dashed' | 'dotted';
 /** Endpoint marker styles available at each end of a relationship. */
 export type EdgeArrow = 'none' | 'closed' | 'open' | 'circle' | 'diamond' | 'pipe';
 export type EdgeAnimSpeed = 'slow' | 'normal' | 'fast';
+/** How the line between two boxes is drawn (draw.io-style). `bezier` is the default bend. */
+export type EdgeRouting = 'bezier' | 'smoothstep' | 'step' | 'straight';
+
+/** Routing used when an edge has no explicit `routing` — a gentle curve, matching the
+ *  connection line shown while dragging a new relationship. */
+export const DEFAULT_EDGE_ROUTING: EdgeRouting = 'bezier';
 
 export interface EdgeStyle {
   thickness: number;       // 1 — 5
   lineStyle: EdgeLineStyle;
+  routing?: EdgeRouting;   // line shape: curved / elbow / step / straight
   color?: string;          // optional CSS color override
   animated?: boolean;      // animated "flow" dashes along the edge
   animSpeed?: EdgeAnimSpeed;

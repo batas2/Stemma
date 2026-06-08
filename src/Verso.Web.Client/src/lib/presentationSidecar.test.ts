@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Avoid real network for the debounced PUT.
 vi.mock('./api', () => ({ fetchLayout: vi.fn(async () => null), saveLayoutSidecar: vi.fn(async () => {}) }));
 
-import { setSidecarCacheForTest, sidecarMap } from './layout';
+import { setSidecarCacheForTest, sidecarMap, primeLayoutSidecar } from './layout';
 import { loadNodeStyles, setNodeStyle } from './nodeStyles';
 import { loadNote, saveNote } from './elementNotes';
 import { loadCustomProps, setCustomProp } from './customProps';
@@ -59,5 +59,16 @@ describe('committed presentation sidecar', () => {
     // Custom props on a shape id persist to the same committed sidecar.
     setCustomProp(ROOT, rect.id, 'owner', 'Onboard');
     expect((sidecarMap(ROOT, 'customProps') as Record<string, Record<string, string>>)[rect.id].owner).toBe('Onboard');
+  });
+
+  it('a re-prime never clobbers an in-memory edit (fetched once per workspace)', async () => {
+    // Simulates the live-server churn: the user edits, then an external-change/op refresh calls
+    // primeLayoutSidecar again. fetchLayout is mocked to return null (empty disk copy); without the
+    // once-per-workspace guard the re-prime would reset the cache and the edit would jump back.
+    setNodeStyle(ROOT, 'mod_9', { borderWidth: 3, borderStyle: 'solid', fillColor: '#abcdef' });
+    await primeLayoutSidecar(ROOT);
+    await primeLayoutSidecar(ROOT);
+    expect(loadNodeStyles(ROOT).mod_9?.fillColor).toBe('#abcdef');
+    expect((sidecarMap(ROOT, 'nodeStyles') as Record<string, { fillColor?: string }>).mod_9.fillColor).toBe('#abcdef');
   });
 });

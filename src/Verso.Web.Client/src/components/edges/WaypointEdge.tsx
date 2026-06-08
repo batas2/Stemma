@@ -1,79 +1,88 @@
 import { useMemo } from 'react';
 import {
-  BaseEdge, EdgeLabelRenderer, type EdgeProps, getStraightPath,
-  type InternalNode, useInternalNode, useReactFlow,
+  BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath, getSmoothStepPath, getStraightPath,
+  Position, useReactFlow,
 } from '@xyflow/react';
 import type { SavedPosition } from '@/lib/layout';
+import { DEFAULT_EDGE_ROUTING, type EdgeRouting } from '@/lib/edgeStyles';
 
 export interface WaypointEdgeData extends Record<string, unknown> {
   waypoints?: SavedPosition[];
+  routing?: EdgeRouting;
   onAddWaypoint?: (edgeId: string, point: SavedPosition) => void;
   onRemoveWaypoint?: (edgeId: string, index: number) => void;
 }
 
-interface Box { cx: number; cy: number; hw: number; hh: number; }
+/** Which side of a box a line heading (dx, dy) leaves from — used to give bezier/step waypoint
+ *  segments a sensible entry/exit direction. */
+function sideOf(dx: number, dy: number): Position {
+  return Math.abs(dx) >= Math.abs(dy)
+    ? (dx >= 0 ? Position.Right : Position.Left)
+    : (dy >= 0 ? Position.Bottom : Position.Top);
+}
 
-function nodeBox(n: InternalNode): Box {
-  const w = n.measured?.width ?? n.width ?? 200;
-  const h = n.measured?.height ?? n.height ?? 60;
-  const x = n.internals.positionAbsolute.x;
-  const y = n.internals.positionAbsolute.y;
-  return { cx: x + w / 2, cy: y + h / 2, hw: w / 2, hh: h / 2 };
+function segPath(
+  routing: EdgeRouting,
+  ax: number, ay: number, bx: number, by: number,
+  aPos: Position, bPos: Position,
+): string {
+  const base = { sourceX: ax, sourceY: ay, targetX: bx, targetY: by };
+  switch (routing) {
+    case 'straight':
+      return getStraightPath(base)[0];
+    case 'step':
+      return getSmoothStepPath({ ...base, sourcePosition: aPos, targetPosition: bPos, borderRadius: 0 })[0];
+    case 'smoothstep':
+      return getSmoothStepPath({ ...base, sourcePosition: aPos, targetPosition: bPos, borderRadius: 12 })[0];
+    case 'bezier':
+    default:
+      return getBezierPath({ ...base, sourcePosition: aPos, targetPosition: bPos })[0];
+  }
 }
 
 /**
- * Where the ray from a box centre toward `toward` exits the box rectangle. This is the
- * "floating edge" endpoint: edges dock on the box BOUNDARY (where the handle circles sit)
- * instead of a fixed handle, so the arrowhead always lands on the visible edge of the box
- * and never disappears behind it.
+ * Full edge path: (sx,sy) → waypoints → (tx,ty), each segment drawn with the chosen `routing`.
+ * Endpoints are the dock-handle coordinates React Flow provides, so the line starts and ends
+ * exactly on the connection dots. Exported for unit testing.
  */
-function boundaryPoint(box: Box, toward: { x: number; y: number }): SavedPosition {
-  const dx = toward.x - box.cx;
-  const dy = toward.y - box.cy;
-  if (dx === 0 && dy === 0) return { x: box.cx, y: box.cy };
-  const scale = Math.min(
-    dx !== 0 ? box.hw / Math.abs(dx) : Infinity,
-    dy !== 0 ? box.hh / Math.abs(dy) : Infinity,
-  );
-  return { x: box.cx + dx * scale, y: box.cy + dy * scale };
-}
-
-/** Straight polyline source → waypoints → target. Floating endpoints already sit on the boxes'
- *  boundaries, so a straight line keeps the arrowhead pointing cleanly into the box. */
-function buildPath(sx: number, sy: number, tx: number, ty: number, waypoints: SavedPosition[]): string {
-  if (waypoints.length === 0) {
-    const [p] = getStraightPath({ sourceX: sx, sourceY: sy, targetX: tx, targetY: ty });
-    return p;
-  }
+export function buildEdgePath(
+  routing: EdgeRouting,
+  sx: number, sy: number, tx: number, ty: number,
+  sPos: Position, tPos: Position,
+  waypoints: SavedPosition[],
+): string {
+  if (waypoints.length === 0) return segPath(routing, sx, sy, tx, ty, sPos, tPos);
   const stops = [{ x: sx, y: sy }, ...waypoints, { x: tx, y: ty }];
-  return stops.map((s, i) => `${i === 0 ? 'M' : 'L'}${s.x},${s.y}`).join(' ');
+  let d = '';
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    const aPos = i === 0 ? sPos : sideOf(b.x - a.x, b.y - a.y);
+    const bPos = i === stops.length - 2 ? tPos : sideOf(a.x - b.x, a.y - b.y);
+    const seg = segPath(routing, a.x, a.y, b.x, b.y, aPos, bPos);
+    // Drop the leading "M x,y" of follow-on segments so they continue the current path.
+    d += i === 0 ? seg : seg.replace(/^M[\s\d.,-]+/, '');
+  }
+  return d;
 }
 
 export function WaypointEdge({
-  id, source, target,
-  sourceX, sourceY, targetX, targetY,
-  label, style, data, markerStart, markerEnd, selected,
+  id,
+  sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
+  label, style, data, markerStart, markerEnd,
 }: EdgeProps & { data?: WaypointEdgeData }) {
   const { screenToFlowPosition } = useReactFlow();
-  const sourceNode = useInternalNode(source);
-  const targetNode = useInternalNode(target);
   const waypoints = data?.waypoints ?? [];
+  const routing = data?.routing ?? DEFAULT_EDGE_ROUTING;
+  const sPos = sourcePosition ?? Position.Bottom;
+  const tPos = targetPosition ?? Position.Top;
 
-  // Floating dock points on each box boundary. Fall back to React Flow's handle coords if a
-  // node hasn't been measured yet.
-  const { sx, sy, tx, ty } = useMemo(() => {
-    if (!sourceNode || !targetNode) return { sx: sourceX, sy: sourceY, tx: targetX, ty: targetY };
-    const sBox = nodeBox(sourceNode);
-    const tBox = nodeBox(targetNode);
-    const sp = boundaryPoint(sBox, waypoints[0] ?? { x: tBox.cx, y: tBox.cy });
-    const tp = boundaryPoint(tBox, waypoints[waypoints.length - 1] ?? { x: sBox.cx, y: sBox.cy });
-    return { sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y };
-  }, [sourceNode, targetNode, sourceX, sourceY, targetX, targetY, waypoints]);
+  const path = useMemo(
+    () => buildEdgePath(routing, sourceX, sourceY, targetX, targetY, sPos, tPos, waypoints),
+    [routing, sourceX, sourceY, targetX, targetY, sPos, tPos, waypoints],
+  );
 
-  const path = useMemo(() => buildPath(sx, sy, tx, ty, waypoints), [sx, sy, tx, ty, waypoints]);
-
-  const labelMid = waypoints[Math.floor(waypoints.length / 2)] ?? { x: (sx + tx) / 2, y: (sy + ty) / 2 };
-  const dockColor = (style?.stroke as string) ?? '#94a3b8';
+  const labelMid = waypoints[Math.floor(waypoints.length / 2)] ?? { x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 };
 
   function onPathDoubleClick(ev: React.MouseEvent<SVGPathElement>) {
     if (!ev.shiftKey || !data?.onAddWaypoint) return;
@@ -84,10 +93,6 @@ export function WaypointEdge({
 
   return (
     <>
-      {/* Dock markers — small rings on each box boundary so it's visible where the relationship
-          connects (the arrowhead, drawn by BaseEdge below, overlays the target dock). */}
-      <circle cx={sx} cy={sy} r={selected ? 4.5 : 3.5} fill={dockColor} stroke="white" strokeWidth={1.25} />
-      <circle cx={tx} cy={ty} r={selected ? 4.5 : 3.5} fill="none" stroke={dockColor} strokeWidth={1.5} />
       {/* BaseEdge draws the visible path + per-edge markers; interactionWidth widens the hit-area. */}
       <BaseEdge
         id={id}

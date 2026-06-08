@@ -66,6 +66,7 @@ export function saveViewShapes(rootPath: string, viewKey: string, shapes: unknow
 /** Test seam: inject the shared sidecar cache without going through fetch. */
 export function setSidecarCacheForTest(rootPath: string, sidecar: unknown): void {
   sidecarCache = { rootPath, sidecar: sidecar as SidecarShape };
+  primedRoot = rootPath;
 }
 
 const KEY_PREFIX = 'verso.layout';
@@ -82,6 +83,28 @@ function migratedKey(workspaceRoot: string): string {
 // In-memory cache of the latest sidecar so reads don't refetch every drag-stop.
 let sidecarCache: { rootPath: string; sidecar: SidecarShape } | null = null;
 let pendingWrite: { rootPath: string; sidecar: SidecarShape; timer: ReturnType<typeof setTimeout> } | null = null;
+// Workspace the committed sidecar has already been fetched for. Once set, the in-memory cache is
+// authoritative for the session and we never re-fetch (re-fetching clobbers unflushed local edits).
+let primedRoot: string | null = null;
+
+/** Combine the on-disk sidecar with in-memory edits made before the first fetch resolved. Local
+ *  wins per entry, so a position/style changed during load is never lost to the slower disk read. */
+function mergeSidecar(server: SidecarShape, local: SidecarShape): SidecarShape {
+  const mergeViews = (a: SidecarShape['views'] = {}, b: SidecarShape['views'] = {}) => {
+    const out: NonNullable<SidecarShape['views']> = { ...a };
+    for (const k of Object.keys(b)) out[k] = { ...a[k], ...b[k] };
+    return out;
+  };
+  return {
+    version: local.version ?? server.version ?? 1,
+    views: mergeViews(server.views, local.views),
+    nodeStyles: { ...server.nodeStyles, ...local.nodeStyles },
+    edgeStyles: { ...server.edgeStyles, ...local.edgeStyles },
+    notes: { ...server.notes, ...local.notes },
+    customProps: { ...server.customProps, ...local.customProps },
+    annotations: { ...server.annotations, ...local.annotations },
+  };
+}
 
 export function loadLayout(workspaceRoot: string, view: ViewKind | string): Record<string, SavedPosition> {
   if (typeof window === 'undefined') return {};
@@ -171,6 +194,46 @@ export function saveEdgeWaypoints(
   pendingWrite = { rootPath: workspaceRoot, sidecar: sidecarCache.sidecar, timer };
 }
 
+/** Which connection dot each end of a relationship is anchored to (see lib/edgeDock DockId). */
+export interface EdgeHandlePair { source?: string; target?: string; }
+
+/** Read per-edge dock-handle anchors for a view from the primed sidecar. */
+export function loadEdgeHandles(workspaceRoot: string, view: ViewKind | string): Record<string, EdgeHandlePair> {
+  if (sidecarCache?.rootPath !== workspaceRoot) return {};
+  const v = sidecarCache.sidecar.views?.[view];
+  if (!v?.edges) return {};
+  const out: Record<string, EdgeHandlePair> = {};
+  for (const [edgeId, entry] of Object.entries(v.edges)) {
+    const h = (entry as { handles?: EdgeHandlePair }).handles;
+    if (h && (h.source || h.target)) out[edgeId] = h;
+  }
+  return out;
+}
+
+/** Persist (or clear) one edge's dock-handle anchors, preserving any waypoints on the same entry. */
+export function saveEdgeHandles(
+  workspaceRoot: string,
+  view: ViewKind | string,
+  edgeId: string,
+  handles: EdgeHandlePair | null
+): void {
+  if (typeof window === 'undefined') return;
+  const s = ensureSidecar(workspaceRoot);
+  s.views = s.views ?? {};
+  const v = s.views[view] ?? {};
+  const edges = v.edges ?? {};
+  const prev = (edges[edgeId] as Record<string, unknown> | undefined) ?? {};
+  if (!handles || (!handles.source && !handles.target)) {
+    const { handles: _omit, ...rest } = prev as { handles?: unknown };
+    if (Object.keys(rest).length === 0) delete edges[edgeId];
+    else edges[edgeId] = rest;
+  } else {
+    edges[edgeId] = { ...prev, handles };
+  }
+  s.views[view] = { ...v, edges };
+  scheduleSidecarWrite(workspaceRoot);
+}
+
 /**
  * Fetch the verso.layout.json sidecar on workspace open. If the sidecar is empty
  * but localStorage has positions for known views, migrate them into the sidecar
@@ -178,9 +241,18 @@ export function saveEdgeWaypoints(
  */
 export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
   if (typeof window === 'undefined') return;
+  // Fetch the committed sidecar from disk exactly ONCE per workspace. Afterwards the in-memory
+  // cache is the session's source of truth — every local edit updates it and debounce-flushes to
+  // verso.layout.json. Re-fetching on later refreshes (which fire on every model op AND on the
+  // file-watch event our own layout PUT triggers) would overwrite not-yet-flushed edits with stale
+  // disk data — the "box jumps back / routing reverts / canvas blinks while editing" bug.
+  if (primedRoot === workspaceRoot) return;
   try {
     const raw = (await fetchLayout()) as SidecarShape | null;
-    const sidecar: SidecarShape = raw ?? { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} };
+    const server: SidecarShape = raw ?? { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} };
+    // Preserve any in-memory edits made before this first fetch resolved (local wins).
+    const pending = sidecarCache?.rootPath === workspaceRoot ? sidecarCache.sidecar : null;
+    const sidecar: SidecarShape = pending ? mergeSidecar(server, pending) : server;
     sidecarCache = { rootPath: workspaceRoot, sidecar };
 
     // First-load migration from localStorage (idempotent).
@@ -220,9 +292,11 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
       }
       localStorage.setItem(migratedKey(workspaceRoot), '1');
     }
+    // Mark primed only after a successful load so a failed fetch retries on the next call.
+    primedRoot = workspaceRoot;
     // Tell the store/canvas to re-hydrate styles/notes/props from the now-loaded committed sidecar.
     window.dispatchEvent(new CustomEvent('verso:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
   } catch {
-    // Sidecar fetch failed (engine not ready) — fall back to localStorage transparently.
+    // Sidecar fetch failed (engine not ready) — fall back to localStorage transparently; retry next call.
   }
 }

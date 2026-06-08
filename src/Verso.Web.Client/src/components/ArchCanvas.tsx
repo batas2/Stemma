@@ -16,6 +16,7 @@ import {
   type NodeMouseHandler,
   type EdgeMouseHandler,
   type EdgeMarker,
+  type Connection,
   MarkerType,
   getNodesBounds,
   getViewportForBounds,
@@ -39,6 +40,13 @@ function shapeBoundsRect(s: Shape): { x: number; y: number; width: number; heigh
   }
   return null;
 }
+
+/** Approximate box rect of a node, for picking dock dots (uses measured size when available). */
+function nodeRect(n: Node): DockRect {
+  const w = n.measured?.width ?? (n.style?.width as number | undefined) ?? 220;
+  const h = n.measured?.height ?? (n.style?.height as number | undefined) ?? 120;
+  return { x: n.position.x, y: n.position.y, w, h };
+}
 import { ContextMenu, ContextIcons, type ContextMenuState } from './ContextMenu';
 import { confirmAction } from './ConfirmDialog';
 import { promptText, pickFromList } from './PromptDialog';
@@ -47,7 +55,8 @@ import { revealNewElement, revealToast } from '@/lib/canvasReveal';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
-import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, type SavedPosition } from '@/lib/layout';
+import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
+import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
 import { loadNote, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
 import { layoutUndo, diffPositions, isEmptyDiff } from '@/lib/layoutUndo';
@@ -331,6 +340,24 @@ function CanvasInner() {
     });
   }, [workspace, layoutKey]);
 
+  // ---- Dock handles: which of the 6 connection dots each relationship anchors to. A user's
+  // explicit choice (drawing / reconnecting) is persisted and always wins; otherwise an auto dock
+  // is computed once per edge from geometry (see the effect below) so it never churns as boxes move.
+  const [edgeHandles, setEdgeHandles] = useState<Record<string, EdgeHandlePair>>({});
+  const [autoDocks, setAutoDocks] = useState<Record<string, { source: DockId; target: DockId }>>({});
+  // Dots chosen while drawing/reconnecting, waiting for the engine-assigned link id to come back.
+  const pendingDock = useRef<{ from: string; to: string; handles: EdgeHandlePair }[]>([]);
+  useEffect(() => {
+    if (!workspace) { setEdgeHandles({}); return; }
+    setEdgeHandles(loadEdgeHandles(workspace.rootPath, layoutKey as ViewKind));
+    function refresh() {
+      if (!workspace) return;
+      setEdgeHandles(loadEdgeHandles(workspace.rootPath, layoutKey as ViewKind));
+    }
+    window.addEventListener('verso:layout-changed', refresh);
+    return () => window.removeEventListener('verso:layout-changed', refresh);
+  }, [workspace, layoutKey, view, activeId]);
+
   const edges = useMemo<Edge[]>(() => filtered.links.filter((l) => !hiddenIds.has(l.fromId) && !hiddenIds.has(l.toId)).map((l) => {
     const isDataFlow = l.kind === 'dataFlow';
     const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
@@ -343,10 +370,14 @@ function CanvasInner() {
     const animated = userStyle.animated ?? (!isDataFlow && userStyle.lineStyle === 'solid' && (!waypoints || waypoints.length === 0));
     const arrowEnd = userStyle.arrowEnd ?? userStyle.arrow ?? 'closed';
     const arrowStart = userStyle.arrowStart ?? 'none';
+    const dock = edgeHandles[l.id] ?? autoDocks[l.id];
     return {
       id: l.id,
       source: l.fromId,
       target: l.toId,
+      sourceHandle: dock?.source,
+      targetHandle: dock?.target,
+      reconnectable: true,
       type: 'waypointed',
       label,
       animated,
@@ -364,11 +395,12 @@ function CanvasInner() {
       labelStyle: dimmed ? { opacity: 0.4 } : undefined,
       data: {
         waypoints,
+        routing: userStyle.routing,
         onAddWaypoint: handleAddWaypoint,
         onRemoveWaypoint: handleRemoveWaypoint,
       },
     };
-  }), [filtered.links, edgeStyles, edgeWaypoints, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds]);
+  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds]);
 
   // The unique (shape, colour) custom markers (circle / diamond / bar) actually used by edges.
   const customMarkers = useMemo<CustomMarker[]>(() => {
@@ -386,26 +418,33 @@ function CanvasInner() {
     return [...m.values()];
   }, [filtered.links, edgeStyles]);
 
-  // Dotted "about" links from each Question / Assumption / Risk to the element it concerns.
-  const aboutEdges = useMemo<Edge[]>(() => {
+  // "About" relationships (Question / Assumption / Risk → the element they concern). These are not
+  // model links (they live on the element's aboutId), so they're rendered as dotted edges only.
+  const aboutRels = useMemo(() => {
     const present = new Set(filtered.elements.map((e) => e.id));
     return filtered.elements
       .filter((e) => e.kind === 'question' || e.kind === 'assumption' || e.kind === 'risk')
-      .map((e) => ({ e, about: e.attributes.aboutId ?? null }))
-      .filter((x): x is { e: ArchElement; about: string } =>
-        !!x.about && present.has(x.about) && !hiddenIds.has(x.e.id) && !hiddenIds.has(x.about))
-      .map(({ e, about }) => ({
-        id: `__about__${e.id}`,
-        source: e.id,
-        target: about,
-        type: 'waypointed',
-        label: 'about',
-        selectable: false,
-        style: { stroke: '#a1a1aa', strokeDasharray: '3 4', strokeWidth: 1.5, opacity: 0.7 },
-        labelStyle: { fontSize: 9, fill: '#a1a1aa' },
-        labelBgStyle: { fill: 'transparent' },
-      }));
+      .map((e) => ({ id: `__about__${e.id}`, from: e.id, to: e.attributes.aboutId ?? '' }))
+      .filter((r) => r.to && present.has(r.to) && !hiddenIds.has(r.from) && !hiddenIds.has(r.to));
   }, [filtered.elements, hiddenIds]);
+
+  const aboutEdges = useMemo<Edge[]>(() => aboutRels.map((r) => {
+    const dock = autoDocks[r.id];
+    return {
+      id: r.id,
+      source: r.from,
+      target: r.to,
+      sourceHandle: dock?.source,
+      targetHandle: dock?.target,
+      type: 'waypointed',
+      label: 'about',
+      selectable: false,
+      reconnectable: false,
+      style: { stroke: '#a1a1aa', strokeDasharray: '3 4', strokeWidth: 1.5, opacity: 0.7 },
+      labelStyle: { fontSize: 9, fill: '#a1a1aa' },
+      labelBgStyle: { fill: 'transparent' },
+    };
+  }), [aboutRels, autoDocks]);
 
   const allEdges = useMemo<Edge[]>(() => aboutEdges.length ? [...edges, ...aboutEdges] : edges, [edges, aboutEdges]);
 
@@ -415,6 +454,45 @@ function CanvasInner() {
     const current = useApp.getState().nodeStyles[nodeId] ?? { borderWidth: 1, borderStyle: 'solid' as const };
     useApp.getState().setNodeStyleFor(nodeId, { ...current, width: w, height: h });
   }, []);
+
+  // Fill an auto dock (nearest sensible dots) for any relationship without an explicit anchor.
+  // Idempotent — only fills *missing* entries, so it never re-docks while boxes are dragged.
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    setAutoDocks((prev) => {
+      const rectById = new Map(nodes.map((n) => [n.id, nodeRect(n)]));
+      let changed = false;
+      const next = { ...prev };
+      const consider = (id: string, from: string, to: string) => {
+        if (next[id] || edgeHandles[id]) return;
+        const a = rectById.get(from);
+        const b = rectById.get(to);
+        if (!a || !b) return;
+        next[id] = autoDock(a, b);
+        changed = true;
+      };
+      for (const l of filtered.links) consider(l.id, l.fromId, l.toId);
+      for (const r of aboutRels) consider(r.id, r.from, r.to);
+      return changed ? next : prev;
+    });
+  }, [nodes, filtered.links, aboutRels, edgeHandles]);
+
+  // Reconcile dots chosen while drawing/reconnecting with the engine-assigned link id, once the
+  // model refresh brings the new link in.
+  useEffect(() => {
+    if (pendingDock.current.length === 0 || !workspace) return;
+    const remaining: typeof pendingDock.current = [];
+    for (const p of pendingDock.current) {
+      const link = filtered.links.find((l) => l.fromId === p.from && l.toId === p.to && !edgeHandles[l.id]);
+      if (link) {
+        saveEdgeHandles(workspace.rootPath, layoutKey as ViewKind, link.id, p.handles);
+        setEdgeHandles((prev) => ({ ...prev, [link.id]: p.handles }));
+      } else {
+        remaining.push(p);
+      }
+    }
+    pendingDock.current = remaining;
+  }, [filtered.links, edgeHandles, workspace, layoutKey]);
 
   // Inline edit (Q "puting text into box on canvas") — double-click a node to
   // edit its name. We carry the editing id in component state and pass the
@@ -482,6 +560,10 @@ function CanvasInner() {
     return m;
   }, [workspace, filtered.elements, notesVersion]);
 
+  // Positions captured when a drag begins (null when not dragging). Declared here — above the
+  // node-build effect — because that effect reads it to avoid rebuilding nodes mid-drag.
+  const dragStartPositions = useRef<Record<string, SavedPosition> | null>(null);
+
   useEffect(() => {
     if (!workspace || !arch) {
       setNodes([]);
@@ -492,6 +574,11 @@ function CanvasInner() {
     const merged = { ...defaults, ...saved };
 
     setNodes((prev) => {
+      // Never rebuild node objects while a drag is in flight: swapping the dragged node's identity
+      // mid-drag makes React Flow abandon the gesture and the node snaps back to its pre-drag spot.
+      // The ~1.5s violations poll (and other store churn) re-runs this effect under the user's
+      // cursor otherwise. Any skipped update re-applies on the first render after the drop.
+      if (dragStartPositions.current !== null) return prev;
       const prevById = new Map(prev.map((n) => [n.id, n]));
       const tagsById = new Map((arch?.tags ?? []).map((t) => [t.targetId, t]));
       // Build per-element worst-severity map.
@@ -671,8 +758,6 @@ function CanvasInner() {
     for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
     saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
   }, [workspace, layoutKey]);
-
-  const dragStartPositions = useRef<Record<string, SavedPosition> | null>(null);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
@@ -1017,9 +1102,17 @@ function CanvasInner() {
     });
   }, [screenToFlowPosition, addElementAt, templateBoundedContextWithModules, templateSystemWithContainer]);
 
-  const onConnect = async (params: { source: string | null; target: string | null }) => {
+  const onConnect = async (params: Connection) => {
     if (!arch || !params.source || !params.target) return;
     const linkKind = view === 'dependencyGraph' ? 'dependency' : 'dataFlow';
+    // Remember the exact dots the user drew between; reconciled to the new link id on refresh so
+    // the relationship stays on those dots instead of snapping to the geometric auto dock.
+    if (params.sourceHandle || params.targetHandle) {
+      pendingDock.current.push({
+        from: params.source, to: params.target,
+        handles: { source: params.sourceHandle ?? undefined, target: params.targetHandle ?? undefined },
+      });
+    }
     const result = await applyOperation({
       kind: 'AddLink', opId: `op_${Date.now()}`,
       linkKind, fromId: params.source, toId: params.target,
@@ -1029,6 +1122,30 @@ function CanvasInner() {
     if ('reason' in result) setToast({ kind: 'error', text: friendlyOpError(result) });
     else setToast({ kind: 'success', text: 'Link added' });
   };
+
+  // Drag a relationship endpoint to a new dot/box (draw.io-style). Same boxes, different dot →
+  // presentation only (re-anchor the persisted handle). Different box → a model change (the old
+  // link is removed and a new one added between the new endpoints).
+  const onReconnect = useCallback(async (oldEdge: Edge, conn: Connection) => {
+    if (oldEdge.id.startsWith('__about__') || !conn.source || !conn.target) return;
+    const handles: EdgeHandlePair = { source: conn.sourceHandle ?? undefined, target: conn.targetHandle ?? undefined };
+    if (conn.source === oldEdge.source && conn.target === oldEdge.target) {
+      if (workspace) saveEdgeHandles(workspace.rootPath, layoutKey as ViewKind, oldEdge.id, handles);
+      setEdgeHandles((prev) => ({ ...prev, [oldEdge.id]: handles }));
+      return;
+    }
+    const linkKind = view === 'dependencyGraph' ? 'dependency' : 'dataFlow';
+    await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: oldEdge.id });
+    pendingDock.current.push({ from: conn.source, to: conn.target, handles });
+    const result = await applyOperation({
+      kind: 'AddLink', opId: `op_${Date.now() + 1}`,
+      linkKind, fromId: conn.source, toId: conn.target,
+      payload: linkKind === 'dataFlow' ? 'Event' : null,
+      dependencyKind: linkKind === 'dependency' ? 'uses' : null,
+    });
+    if ('reason' in result) setToast({ kind: 'error', text: friendlyOpError(result) });
+    else setToast({ kind: 'success', text: 'Relationship reconnected' });
+  }, [arch, view, workspace, layoutKey, setToast]);
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/verso-palette')
@@ -1386,6 +1503,7 @@ function CanvasInner() {
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         onConnect={onConnect}
+        onReconnect={onReconnect}
         proOptions={{ hideAttribution: true }}
         colorMode={isDark ? 'dark' : 'light'}
       >

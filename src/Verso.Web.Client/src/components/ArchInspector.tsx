@@ -6,7 +6,7 @@ import { InspectorActions, SECTIONS_EVENT } from './InspectorActions';
 import { MarkerSelect } from './MarkerSelect';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
-import { DEFAULT_EDGE_STYLE, type EdgeLineStyle, type EdgeStyle, type EdgeAnimSpeed } from '@/lib/edgeStyles';
+import { DEFAULT_EDGE_STYLE, DEFAULT_EDGE_ROUTING, type EdgeLineStyle, type EdgeStyle, type EdgeAnimSpeed, type EdgeRouting } from '@/lib/edgeStyles';
 import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle, type NodeFillStyle, type NodeShadow, type NodeAccentSide, type NodeTextSize, type NodeTextAlign, type NodeAnimation, type NodeAnimSpeed } from '@/lib/nodeStyles';
 import { RESERVED_KEYS, type CustomProps } from '@/lib/customProps';
 import { CommentsPanel } from './CommentsPanel';
@@ -768,6 +768,27 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
                 </div>
               </div>
               <div>
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Routing</div>
+                <div className="flex gap-1">
+                  {EDGE_ROUTINGS.map((r) => (
+                    <button
+                      key={r.value}
+                      onClick={() => setStyle({ routing: r.value })}
+                      title={r.label}
+                      className={clsx(
+                        'flex-1 px-1 py-1.5 rounded border transition-colors',
+                        (userStyle.routing ?? DEFAULT_EDGE_ROUTING) === r.value
+                          ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                          : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700'
+                      )}
+                    >
+                      <RoutingPreview r={r.value} />
+                      <span className="block mt-0.5 text-[9px]">{r.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
                 <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 flex justify-between">
                   <span>Thickness</span><span className="font-mono normal-case tracking-normal">{userStyle.thickness.toFixed(1)}px</span>
                 </div>
@@ -1210,6 +1231,30 @@ function LinePreview({ style }: { style: EdgeLineStyle }) {
   return (
     <svg width="100%" height="6" viewBox="0 0 60 6" preserveAspectRatio="none">
       <line x1="0" y1="3" x2="60" y2="3" stroke="currentColor" strokeWidth="1.5" strokeDasharray={dash} />
+    </svg>
+  );
+}
+
+const EDGE_ROUTINGS: { value: EdgeRouting; label: string }[] = [
+  { value: 'bezier', label: 'Curved' },
+  { value: 'smoothstep', label: 'Elbow' },
+  { value: 'step', label: 'Step' },
+  { value: 'straight', label: 'Straight' },
+];
+
+/** Tiny glyph of each routing shape, mirroring draw.io's connector picker. */
+function RoutingPreview({ r }: { r: EdgeRouting }) {
+  const d: Record<EdgeRouting, string> = {
+    straight: 'M3,17 L25,5',
+    bezier: 'M3,17 C12,17 16,5 25,5',
+    smoothstep: 'M3,17 L3,10 Q3,6 7,6 L25,6',
+    step: 'M3,17 L14,17 L14,6 L25,6',
+  };
+  return (
+    <svg width={28} height={22} viewBox="0 0 28 22" className="mx-auto" aria-hidden>
+      <path d={d[r]} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={3} cy={17} r={1.8} fill="currentColor" />
+      <circle cx={25} cy={r === 'straight' ? 5 : 6} r={1.8} fill="currentColor" />
     </svg>
   );
 }
