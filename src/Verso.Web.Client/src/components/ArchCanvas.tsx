@@ -24,7 +24,7 @@ import {
 import { ArchNodeView } from './nodes/ArchNodeView';
 import { WaypointEdge } from './edges/WaypointEdge';
 import { EdgeMarkerDefs, customMarkerId, type CustomMarker } from './edges/EdgeMarkerDefs';
-import { CanvasToolbar } from './CanvasToolbar';
+import { LAYOUT_ACTION_EVENT, type LayoutAction } from './LayoutPanel';
 import { ShapeLayer } from './ShapeLayer';
 import { StencilDrawer } from './StencilDrawer';
 import { loadShapes, primeShapeCache, type Shape } from '@/lib/shapes';
@@ -200,6 +200,7 @@ function CanvasInner() {
   const violations = useApp((s) => s.violations);
   const select = useApp((s) => s.selectElement);
   const selectLink = useApp((s) => s.selectLink);
+  const selectedLinkId = useApp((s) => s.selectedLinkId);
   const setToast = useApp((s) => s.setToast);
   const addElementToActiveView = useApp((s) => s.addElementToActiveView);
   const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport } = useReactFlow();
@@ -378,6 +379,7 @@ function CanvasInner() {
       sourceHandle: dock?.source,
       targetHandle: dock?.target,
       reconnectable: true,
+      selected: l.id === selectedLinkId,
       type: 'waypointed',
       label,
       animated,
@@ -400,7 +402,7 @@ function CanvasInner() {
         onRemoveWaypoint: handleRemoveWaypoint,
       },
     };
-  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds]);
+  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, selectedLinkId, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds]);
 
   // The unique (shape, colour) custom markers (circle / diamond / bar) actually used by edges.
   const customMarkers = useMemo<CustomMarker[]>(() => {
@@ -607,6 +609,9 @@ function CanvasInner() {
           id: e.id,
           type: 'arch',
           position: pos,
+          // Preserve React Flow's selection across rebuilds — otherwise the ~1.5s violations poll
+          // (and any other rebuild) wipes a Ctrl-click / marquee multi-selection a moment after it's made.
+          selected: existing?.selected ?? false,
           draggable: !editing && !notesEditing,
           ...(ns?.width && ns?.height ? { style: { width: ns.width, height: ns.height } } : {}),
           data: {
@@ -719,6 +724,8 @@ function CanvasInner() {
     function placeNode(ev: Event) {
       const detail = (ev as CustomEvent).detail as { nodeId: string; pos: SavedPosition };
       if (!workspace) return;
+      // A newly-placed element takes this view off an auto layout (it would otherwise be re-arranged).
+      useApp.getState().setViewLayout(String(layoutKey), 'custom');
       setNodes((current) => {
         if (!current.some((n) => n.id === detail.nodeId)) return current;
         const next = current.map((n) => n.id === detail.nodeId ? { ...n, position: detail.pos } : n);
@@ -787,6 +794,9 @@ function CanvasInner() {
               description: movedCount === 1 ? 'Move node' : `Move ${movedCount} nodes`,
               ts: Date.now(),
             });
+            // A manual move takes this view off an auto layout so it stops re-arranging. Deferred
+            // out of the setNodes updater so it doesn't set another store mid-render.
+            queueMicrotask(() => useApp.getState().setViewLayout(String(layoutKey), 'custom'));
           }
           dragStartPositions.current = null;
         }
@@ -1278,17 +1288,19 @@ function CanvasInner() {
         const b = bounds[n.id];
         if (b) sizes[n.id] = { w: b.w, h: b.h };
       }
+      // User-tuned layout knobs from the Layout panel (read at call time, not closed over).
+      const st = useApp.getState();
       let fresh: Record<string, SavedPosition>;
       switch (algo) {
-        case 'hierarchical': fresh = layoutHierarchical(filtered.elements, filtered.links); break;
-        case 'force':        fresh = layoutForceDirected(filtered.elements, filtered.links, {}, { sizes }); break;
-        case 'byType':       fresh = layoutByType(filtered.elements, filtered.links, { view, sizes }); break;
+        case 'hierarchical': fresh = layoutHierarchical(filtered.elements, filtered.links, st.hierParams); break;
+        case 'force':        fresh = layoutForceDirected(filtered.elements, filtered.links, {}, { sizes, ...st.forceParams }); break;
+        case 'byType':       fresh = layoutByType(filtered.elements, filtered.links, { view, sizes, ...st.byTypeParams }); break;
         case 'focused': {
           // The dropdown gates this entry on selection, but defend anyway: if no selection
           // is present, fall back to force-directed so the user always gets *some* result.
           const focusId = useApp.getState().selectedElementId;
           if (!focusId || !filtered.elements.some((e) => e.id === focusId)) {
-            fresh = layoutForceDirected(filtered.elements, filtered.links, {}, { sizes });
+            fresh = layoutForceDirected(filtered.elements, filtered.links, {}, { sizes, ...st.forceParams });
           } else {
             fresh = layoutFocused(focusId, filtered.elements, filtered.links);
           }
@@ -1366,6 +1378,23 @@ function CanvasInner() {
     });
   }, [persistPositions, nodeBounds]);
 
+  // The Layout panel (right-hand rail) drives arrange/align/distribute/fit/delete via this event,
+  // since it lives outside the canvas component tree and can't call these handlers directly.
+  useEffect(() => {
+    function onLayoutAction(ev: Event) {
+      const a = (ev as CustomEvent).detail as LayoutAction;
+      switch (a.type) {
+        case 'auto': handleAutoLayout(a.algorithm); break;
+        case 'align': handleAlign(a.axis); break;
+        case 'distribute': handleDistribute(a.axis); break;
+        case 'fit': handleFitSelection(); break;
+        case 'delete': handleDeleteSelected(); break;
+      }
+    }
+    window.addEventListener(LAYOUT_ACTION_EVENT, onLayoutAction);
+    return () => window.removeEventListener(LAYOUT_ACTION_EVENT, onLayoutAction);
+  }, [handleAutoLayout, handleAlign, handleDistribute, handleFitSelection, handleDeleteSelected]);
+
   // A Bounded Context that owns modules renders as a container box wrapping them: its position
   // + size are derived from the children's bounding box, it is drawn first (below the modules)
   // so they stay clickable on top, and it is not directly draggable — moving its modules
@@ -1413,6 +1442,13 @@ function CanvasInner() {
   }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed]);
 
   const selectedCount = nodes.filter((n) => n.selected).length;
+  // Publish the multi-selection count so the right-hand Layout panel can gate align/distribute.
+  // Selecting 2+ elements jumps the inspector to the Layout panel (Align & distribute sits on top).
+  useEffect(() => {
+    const st = useApp.getState();
+    st.setCanvasSelection(selectedCount);
+    if (selectedCount >= 2) st.setInspectorTab('layout');
+  }, [selectedCount]);
   const isDark = theme === 'dark';
   const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(248 250 252)';
   const dotColor = isDark ? 'rgb(45 45 50)' : 'rgb(212 217 224)';
@@ -1455,14 +1491,7 @@ function CanvasInner() {
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <CanvasToolbar
-        onAutoLayout={handleAutoLayout}
-        onAlign={handleAlign}
-        onDistribute={handleDistribute}
-        onFitSelection={handleFitSelection}
-        onDeleteSelected={handleDeleteSelected}
-        selectedCount={selectedCount}
-      />
+      {/* Canvas toolbar removed — arrange / align / snap now live in the right-hand Layout panel. */}
       {shapesEnabled && stencilOpen && workspace && (
         <StencilDrawer
           viewKey={layoutKey}

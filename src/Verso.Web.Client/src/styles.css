@@ -154,6 +154,26 @@
 .archnote p, .archnote div { margin: 0; }
 .archnote:focus { outline: none; }
 
+/* Turbo "full editor" content (.archnote-rich) — headings, quotes, code blocks, tables, etc. */
+.archnote-rich h1 { font-size: 1.6rem; font-weight: 700; line-height: 1.2; margin: 0.6em 0 0.3em; }
+.archnote-rich h2 { font-size: 1.3rem; font-weight: 700; line-height: 1.25; margin: 0.55em 0 0.28em; }
+.archnote-rich h3 { font-size: 1.1rem; font-weight: 600; line-height: 1.3; margin: 0.5em 0 0.25em; }
+.archnote-rich blockquote { border-left: 3px solid rgb(165 180 252); padding: 0.1rem 0 0.1rem 0.8rem; margin: 0.45em 0; color: rgb(82 82 91); }
+.dark .archnote-rich blockquote { border-left-color: rgb(99 102 241); color: rgb(161 161 170); }
+.archnote-rich pre { background: rgb(244 244 245); border: 1px solid rgb(228 228 231); border-radius: 6px; padding: 0.6rem 0.75rem; margin: 0.45em 0; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.86em; overflow-x: auto; white-space: pre-wrap; }
+.dark .archnote-rich pre { background: rgb(24 24 27); border-color: rgb(39 39 42); }
+.archnote-rich table { border-collapse: collapse; margin: 0.5em 0; }
+.archnote-rich th, .archnote-rich td { border: 1px solid rgb(212 212 216); padding: 0.32rem 0.55rem; min-width: 3.5rem; vertical-align: top; }
+.dark .archnote-rich th, .dark .archnote-rich td { border-color: rgb(63 63 70); }
+.archnote-rich th { background: rgb(244 244 245); font-weight: 600; text-align: left; }
+.dark .archnote-rich th { background: rgb(39 39 42); }
+.archnote-rich hr { border: none; border-top: 2px solid rgb(228 228 231); margin: 0.85em 0; }
+.dark .archnote-rich hr { border-top-color: rgb(63 63 70); }
+.archnote-rich mark { background: #fde68a; color: inherit; padding: 0 2px; border-radius: 2px; }
+.archnote-rich ul[data-task] { list-style: none; padding-left: 0.2rem; }
+.archnote-rich ul[data-task] li { display: block; }
+.archnote-rich .task-box { cursor: pointer; user-select: none; margin-right: 0.3rem; font-size: 1.05em; }
+
 /* Animated "marching ants" border overlay for an element (Appearance → Animate border). */
 .verso-march {
   position: absolute;

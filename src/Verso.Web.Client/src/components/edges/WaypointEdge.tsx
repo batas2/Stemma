@@ -66,16 +66,19 @@ export function buildEdgePath(
   return d;
 }
 
+const SELECT_COLOR = 'rgb(99 102 241)';
+
 export function WaypointEdge({
   id,
   sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
-  label, style, data, markerStart, markerEnd,
+  label, style, data, markerStart, markerEnd, selected,
 }: EdgeProps & { data?: WaypointEdgeData }) {
   const { screenToFlowPosition } = useReactFlow();
   const waypoints = data?.waypoints ?? [];
   const routing = data?.routing ?? DEFAULT_EDGE_ROUTING;
   const sPos = sourcePosition ?? Position.Bottom;
   const tPos = targetPosition ?? Position.Top;
+  const baseWidth = Number(style?.strokeWidth) || 1.5;
 
   const path = useMemo(
     () => buildEdgePath(routing, sourceX, sourceY, targetX, targetY, sPos, tPos, waypoints),
@@ -93,11 +96,25 @@ export function WaypointEdge({
 
   return (
     <>
+      {/* Selection halo — a soft wide indigo stroke behind the line so a selected relationship is
+          obvious on the canvas, not just in the inspector. */}
+      {selected && (
+        <path
+          d={path}
+          fill="none"
+          stroke={SELECT_COLOR}
+          strokeOpacity={0.3}
+          strokeWidth={baseWidth + 7}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
       {/* BaseEdge draws the visible path + per-edge markers; interactionWidth widens the hit-area. */}
       <BaseEdge
         id={id}
         path={path}
-        style={{ ...style, fill: 'none' }}
+        style={{ ...style, fill: 'none', ...(selected ? { strokeWidth: baseWidth + 1 } : {}) }}
         markerStart={markerStart}
         markerEnd={markerEnd}
         interactionWidth={26}
@@ -108,13 +125,22 @@ export function WaypointEdge({
         style={{ stroke: 'transparent', strokeWidth: 22, fill: 'none', cursor: 'crosshair', pointerEvents: 'stroke' }}
         onDoubleClick={onPathDoubleClick}
       />
+      {/* Endpoint pins make the selected relationship's two docked ends pop. */}
+      {selected && (
+        <>
+          <circle cx={sourceX} cy={sourceY} r={4.5} fill={SELECT_COLOR} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+          <circle cx={targetX} cy={targetY} r={4.5} fill={SELECT_COLOR} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+        </>
+      )}
       <EdgeLabelRenderer>
         {label ? (
           <div
             style={{
               position: 'absolute', transform: `translate(-50%, -50%) translate(${labelMid.x}px, ${labelMid.y}px)`,
               pointerEvents: 'none', fontSize: 10, padding: '1px 4px',
-              background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 3,
+              background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.85)',
+              border: `1px solid ${selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
+              color: selected ? SELECT_COLOR : undefined, fontWeight: selected ? 600 : undefined,
             }}
             className="dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700"
           >

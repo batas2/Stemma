@@ -47,8 +47,6 @@ export default function App() {
   const view = useApp((s) => s.view);
   const inspectorOpen = useApp((s) => s.inspectorOpen);
   const setInspectorOpen = useApp((s) => s.setInspectorOpen);
-  // The inspector only exists when something is selected — otherwise the canvas gets the space.
-  const hasSelection = useApp((s) => !!(s.selectedElementId || s.selectedLinkId || s.selectedShapeId));
   const setWs = useApp((s) => s.setWorkspace);
   const setArch = useApp((s) => s.setArch);
   const setView = useApp((s) => s.setView);
@@ -225,8 +223,8 @@ export default function App() {
                 {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
               </div>
             </main>
-            {hasSelection && inspectorOpen && <ArchOrShapeInspector />}
-            {hasSelection && !inspectorOpen && (
+            {inspectorOpen && <ArchOrShapeInspector />}
+            {!inspectorOpen && (
               <aside className="w-10 shrink-0 border-l border-default bg-zinc-50 dark:bg-zinc-950/60 flex flex-col items-center py-3 gap-3">
                 <button
                   onClick={() => setInspectorOpen(true)}

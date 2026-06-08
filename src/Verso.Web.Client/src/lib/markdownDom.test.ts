@@ -52,4 +52,41 @@ describe('markdown <-> editable DOM', () => {
   it('empty stays empty', () => {
     expect(roundTrip('')).toBe('');
   });
+
+  it('round-trips headings', () => {
+    expect(roundTrip('# Title')).toBe('# Title');
+    expect(roundTrip('## Sub')).toBe('## Sub');
+    expect(roundTrip('### Deep')).toBe('### Deep');
+  });
+
+  it('round-trips blockquotes (incl. multi-line)', () => {
+    expect(roundTrip('> a quote')).toBe('> a quote');
+    expect(roundTrip('> line one\n> line two')).toBe('> line one\n> line two');
+  });
+
+  it('round-trips a fenced code block', () => {
+    expect(roundTrip('```\nconst x = 1;\n```')).toBe('```\nconst x = 1;\n```');
+  });
+
+  it('round-trips a horizontal rule', () => {
+    expect(roundTrip('above\n\n---\n\nbelow')).toBe('above\n\n---\n\nbelow');
+  });
+
+  it('round-trips task lists', () => {
+    expect(roundTrip('- [ ] todo\n- [x] done')).toBe('- [ ] todo\n- [x] done');
+  });
+
+  it('round-trips a GFM table', () => {
+    expect(roundTrip('| a | b |\n| --- | --- |\n| 1 | 2 |')).toBe('| a | b |\n| --- | --- |\n| 1 | 2 |');
+  });
+
+  it('round-trips underline / highlight / colour (inline HTML)', () => {
+    expect(roundTrip('an <u>underlined</u> word')).toBe('an <u>underlined</u> word');
+    expect(roundTrip('a <mark>highlighted</mark> word')).toBe('a <mark>highlighted</mark> word');
+    expect(roundTrip('a <span style="color: rgb(1, 2, 3);">red</span> word')).toBe('a <span style="color: rgb(1, 2, 3);">red</span> word');
+  });
+
+  it('does not mangle plain numbers in text', () => {
+    expect(roundTrip('we shipped 3 things in 2026')).toBe('we shipped 3 things in 2026');
+  });
 });

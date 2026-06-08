@@ -17,6 +17,38 @@ export type CanvasMode =
 
 export type Theme = 'dark' | 'light';
 
+/** Tunable knobs for the force-directed ("organic") auto-layout. */
+export interface ForceParams {
+  gravity: number;      // pull toward the centre — higher packs the graph tighter
+  clusterPull: number;  // extra pull between same-Bounded-Context nodes
+  spacing: number;      // multiplies the ideal node distance (k) — higher spreads nodes out
+  iterations: number;   // simulation steps — higher settles more but costs time
+}
+
+export const DEFAULT_FORCE_PARAMS: ForceParams = { gravity: 0.06, clusterPull: 0.022, spacing: 1, iterations: 320 };
+
+/** Knobs for the hierarchical (layered) auto-layout. */
+export interface HierParams { colGap: number; rowGap: number; }
+export const DEFAULT_HIER_PARAMS: HierParams = { colGap: 240, rowGap: 170 };
+
+/** Knobs for the architectural ("by type") auto-layout. */
+export interface ByTypeParams { gap: number; groupGap: number; rowGap: number; }
+export const DEFAULT_BYTYPE_PARAMS: ByTypeParams = { gap: 40, groupGap: 100, rowGap: 120 };
+
+/** A view's layout mode: an auto algorithm that re-applies live, or 'custom' (manual positions).
+ *  Manually moving or adding a node flips an auto view to 'custom' so it stops re-arranging. */
+export type LayoutMode = 'custom' | 'force' | 'hierarchical' | 'byType';
+
+function viewLayoutsKey(root: string): string { return `verso.viewLayouts:${root}`; }
+function loadViewLayouts(root: string): Record<string, LayoutMode> {
+  if (typeof window === 'undefined') return {};
+  try { const raw = localStorage.getItem(viewLayoutsKey(root)); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+function saveViewLayouts(root: string, m: Record<string, LayoutMode>): void {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(viewLayoutsKey(root), JSON.stringify(m)); } catch { /* ignore */ }
+}
+
 const THEME_KEY = 'verso.theme';
 function initialTheme(): Theme {
   if (typeof window === 'undefined') return 'dark';
@@ -35,6 +67,18 @@ interface AppState {
   openViewIds: string[];
   sidebarOpen: boolean;
   inspectorOpen: boolean;
+  /** Which inspector panel the right-hand icon rail has open (e.g. 'element.appearance',
+   *  'link.appearance', 'layout'), or null when the rail is collapsed to icons only. */
+  inspectorTab: string | null;
+  /** Tunable layout parameters per algorithm, editable from the Layout panel. */
+  forceParams: ForceParams;
+  hierParams: HierParams;
+  byTypeParams: ByTypeParams;
+  /** The chosen layout mode per view key (e.g. 'moduleMap', 'custom:cv_1'). Missing = 'custom'. */
+  viewLayouts: Record<string, LayoutMode>;
+  /** How many canvas nodes are currently multi-selected (published by ArchCanvas for the Layout
+   *  panel, which lives outside the canvas tree and can't see React Flow's selection). */
+  canvasSelection: number;
   theme: Theme;
   loading: boolean;
   selectedElementId: string | null;
@@ -75,6 +119,15 @@ interface AppState {
   removeElementFromActiveView: (elementId: string) => void;
   setSidebarOpen: (b: boolean) => void;
   setInspectorOpen: (b: boolean) => void;
+  setInspectorTab: (id: string | null) => void;
+  setForceParams: (p: Partial<ForceParams>) => void;
+  resetForceParams: () => void;
+  setHierParams: (p: Partial<HierParams>) => void;
+  resetHierParams: () => void;
+  setByTypeParams: (p: Partial<ByTypeParams>) => void;
+  resetByTypeParams: () => void;
+  setViewLayout: (viewKey: string, mode: LayoutMode) => void;
+  setCanvasSelection: (n: number) => void;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   setLoading: (b: boolean) => void;
@@ -120,6 +173,12 @@ export const useApp = create<AppState>((set, get) => ({
   openViewIds: [],
   sidebarOpen: true,
   inspectorOpen: true,
+  inspectorTab: null,
+  forceParams: { ...DEFAULT_FORCE_PARAMS },
+  hierParams: { ...DEFAULT_HIER_PARAMS },
+  byTypeParams: { ...DEFAULT_BYTYPE_PARAMS },
+  viewLayouts: {},
+  canvasSelection: 0,
   theme: initialTheme(),
   loading: false,
   selectedElementId: null,
@@ -149,7 +208,7 @@ export const useApp = create<AppState>((set, get) => ({
     const previous = get().workspace;
     set({ workspace: ws });
     if (!ws) {
-      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set() });
+      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {} });
       return;
     }
     if (previous?.rootPath === ws.rootPath) return;
@@ -163,7 +222,7 @@ export const useApp = create<AppState>((set, get) => ({
     const eStyles = loadEdgeStyles(ws.rootPath);
     const nStyles = loadNodeStyles(ws.rootPath);
     const cProps = loadCustomProps(ws.rootPath);
-    set({ customViews: views, activeCustomViewId: active, openViewIds: openIds, edgeStyles: eStyles, nodeStyles: nStyles, customProps: cProps, collapsedBcs: new Set() });
+    set({ customViews: views, activeCustomViewId: active, openViewIds: openIds, edgeStyles: eStyles, nodeStyles: nStyles, customProps: cProps, collapsedBcs: new Set(), viewLayouts: loadViewLayouts(ws.rootPath) });
     listServerViews().then((server) => {
       if (server.length === 0) return;
       const merged = [
@@ -270,6 +329,20 @@ export const useApp = create<AppState>((set, get) => ({
   },
   setSidebarOpen: (b) => set({ sidebarOpen: b }),
   setInspectorOpen: (b) => set({ inspectorOpen: b }),
+  setInspectorTab: (id) => set({ inspectorTab: id }),
+  setForceParams: (p) => set((s) => ({ forceParams: { ...s.forceParams, ...p } })),
+  resetForceParams: () => set({ forceParams: { ...DEFAULT_FORCE_PARAMS } }),
+  setHierParams: (p) => set((s) => ({ hierParams: { ...s.hierParams, ...p } })),
+  resetHierParams: () => set({ hierParams: { ...DEFAULT_HIER_PARAMS } }),
+  setByTypeParams: (p) => set((s) => ({ byTypeParams: { ...s.byTypeParams, ...p } })),
+  resetByTypeParams: () => set({ byTypeParams: { ...DEFAULT_BYTYPE_PARAMS } }),
+  setViewLayout: (viewKey, mode) => set((s) => {
+    if (s.viewLayouts[viewKey] === mode) return {} as Partial<AppState>;
+    const next = { ...s.viewLayouts, [viewKey]: mode };
+    if (s.workspace) saveViewLayouts(s.workspace.rootPath, next);
+    return { viewLayouts: next };
+  }),
+  setCanvasSelection: (n) => set({ canvasSelection: n }),
   setTheme: (t) => {
     if (typeof window !== 'undefined') localStorage.setItem(THEME_KEY, t);
     set({ theme: t });
@@ -280,8 +353,21 @@ export const useApp = create<AppState>((set, get) => ({
     set({ theme: next });
   },
   setLoading: (b) => set({ loading: b }),
-  selectElement: (id) => set({ selectedElementId: id, selectedLinkId: null, selectedShapeId: null }),
-  selectLink: (id) => set({ selectedLinkId: id, selectedElementId: null, selectedShapeId: null }),
+  // Selecting opens the relevant inspector panel (keeping the current section if it already fits
+  // the new selection); deselecting collapses element/link panels back to the icon rail but leaves
+  // a non-element panel (e.g. Layout) untouched.
+  selectElement: (id) => set((s) => ({
+    selectedElementId: id, selectedLinkId: null, selectedShapeId: null,
+    inspectorTab: id
+      ? (s.inspectorTab?.startsWith('element.') ? s.inspectorTab : 'element.appearance')
+      : (s.inspectorTab?.startsWith('element.') ? null : s.inspectorTab),
+  })),
+  selectLink: (id) => set((s) => ({
+    selectedLinkId: id, selectedElementId: null, selectedShapeId: null,
+    inspectorTab: id
+      ? (s.inspectorTab?.startsWith('link.') ? s.inspectorTab : 'link.appearance')
+      : (s.inspectorTab?.startsWith('link.') ? null : s.inspectorTab),
+  })),
   setEdgeStyleFor: (linkId, style) => {
     const ws = get().workspace;
     if (!ws) {

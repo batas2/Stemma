@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight, Plus, Maximize2, Info, FileText, Clock, Users, Palette, Tags, MessageSquare, Spline, ArrowLeftRight } from 'lucide-react';
+import { X, Edit3, Trash2, Activity, Workflow, ChevronsRight, Plus, Maximize2, Info, FileText, Clock, Users, Palette, Tags, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
-import { InspectorActions, SECTIONS_EVENT } from './InspectorActions';
+import { InspectorActions } from './InspectorActions';
 import { MarkerSelect } from './MarkerSelect';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
@@ -16,40 +16,108 @@ import { ALL_FIELD_KEYS, fieldLabel } from './nodes/ArchNodeView';
 const EMPTY_CUSTOM_PROPS: CustomProps = Object.freeze({}) as CustomProps;
 import { confirmAction } from './ConfirmDialog';
 import { ResizableAside } from './ResizableAside';
+import { LayoutPanel } from './LayoutPanel';
 import { RichTextEditor } from './RichTextEditor';
 import { NotesModal } from './NotesModal';
 import { loadNote, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
 
+interface RailTab { id: string; icon: React.ReactNode; label: string; }
+
+const LAYOUT_TAB: RailTab = { id: 'layout', icon: <LayoutDashboard className="w-4 h-4" />, label: 'Layout & arrange' };
+const ELEMENT_TABS: RailTab[] = [
+  { id: 'element.properties', icon: <Info className="w-4 h-4" />, label: 'Properties' },
+  { id: 'element.appearance', icon: <Palette className="w-4 h-4" />, label: 'Appearance' },
+  { id: 'element.notes', icon: <FileText className="w-4 h-4" />, label: 'Text & attributes' },
+  { id: 'element.lifecycle', icon: <Clock className="w-4 h-4" />, label: 'Lifecycle' },
+  { id: 'element.ownership', icon: <Users className="w-4 h-4" />, label: 'Ownership' },
+  { id: 'element.customProps', icon: <Tags className="w-4 h-4" />, label: 'Custom properties' },
+  { id: 'element.comments', icon: <MessageSquare className="w-4 h-4" />, label: 'Comments' },
+];
+const LINK_TABS: RailTab[] = [
+  { id: 'link.endpoints', icon: <Spline className="w-4 h-4" />, label: 'Endpoints' },
+  { id: 'link.properties', icon: <Info className="w-4 h-4" />, label: 'Properties' },
+  { id: 'link.lifecycle', icon: <Clock className="w-4 h-4" />, label: 'Lifecycle & owner' },
+  { id: 'link.appearance', icon: <Palette className="w-4 h-4" />, label: 'Appearance' },
+];
+
 export function ArchInspector() {
   const arch = useApp((s) => s.arch);
   const elementId = useApp((s) => s.selectedElementId);
   const linkId = useApp((s) => s.selectedLinkId);
+  const tab = useApp((s) => s.inspectorTab);
+  const setTab = useApp((s) => s.setInspectorTab);
 
-  if (!arch || (!elementId && !linkId)) {
-    return (
-      <ResizableAside className="hidden lg:flex">
-        <div className="flex justify-end px-2 pt-2">
-          <InspectorActions showCollapseAll={false} />
-        </div>
-        <div className="p-6 text-center mt-8">
-          <Activity className="w-7 h-7 text-zinc-300 dark:text-zinc-700 mb-3 mx-auto" />
-          <p className="text-sm font-medium text-body mb-1">Inspector</p>
-          <p className="text-xs text-faint mb-4">Select an element or relationship to inspect and edit.</p>
-          <ul className="text-[11px] text-muted space-y-1.5 text-left max-w-[220px] mx-auto">
-            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Click a node or edge on the canvas.</span></li>
-            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Right-click for quick actions.</span></li>
-            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Press <kbd className="px-1 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 font-mono text-[10px]">Tab</kbd> to cycle elements.</span></li>
-            <li className="flex gap-2"><span className="text-faint shrink-0">•</span><span>Drag the left edge to resize this panel.</span></li>
-          </ul>
-        </div>
-      </ResizableAside>
-    );
+  // Element icons are always available (clicking with nothing selected shows a "pick one" prompt);
+  // they swap to relationship icons while a relationship is selected.
+  const railTabs = [LAYOUT_TAB, ...(linkId ? LINK_TABS : ELEMENT_TABS)];
+
+  let panel: React.ReactNode = null;
+  if (tab === 'layout') {
+    panel = <PanelShell title="Layout & arrange" icon={LAYOUT_TAB.icon} onClose={() => setTab(null)}><LayoutPanel /></PanelShell>;
+  } else if (tab?.startsWith('link.')) {
+    panel = arch && linkId ? <LinkInspectorBody linkId={linkId} /> : <SelectPrompt what="relationship" onClose={() => setTab(null)} />;
+  } else if (tab?.startsWith('element.')) {
+    panel = arch && elementId ? <ElementInspectorBody elementId={elementId} /> : <SelectPrompt what="element" onClose={() => setTab(null)} />;
   }
 
-  if (linkId) return <LinkInspectorBody linkId={linkId} />;
-  if (elementId) return <ElementInspectorBody elementId={elementId} />;
-  return null;
+  return (
+    <div className="hidden lg:flex h-full">
+      {panel}
+      <InspectorRail tabs={railTabs} active={tab} onPick={(id) => setTab(tab === id ? null : id)} />
+    </div>
+  );
+}
+
+function InspectorRail({ tabs, active, onPick }: { tabs: RailTab[]; active: string | null; onPick: (id: string) => void }) {
+  const setInspectorOpen = useApp((s) => s.setInspectorOpen);
+  return (
+    <div className="w-11 shrink-0 border-l border-default bg-zinc-50 dark:bg-zinc-950/60 flex flex-col items-center py-2 gap-1">
+      <button onClick={() => setInspectorOpen(false)} title="Hide inspector" className="p-1.5 mb-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-body">
+        <ChevronsRight className="w-4 h-4" />
+      </button>
+      {tabs.map((t) => (
+        <button
+          key={t.id} onClick={() => onPick(t.id)} title={t.label} aria-label={t.label} aria-pressed={active === t.id}
+          className={clsx('w-8 h-8 rounded-md flex items-center justify-center transition-colors',
+            active === t.id
+              ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-500/30'
+              : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 hover:text-body')}
+        >
+          {t.icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Resizable panel shell with a header + collapse button, used by the Layout panel and the
+ *  "nothing selected" prompt (the element/link bodies bring their own header). */
+function PanelShell({ title, icon, onClose, children }: { title: string; icon?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <ResizableAside>
+      <div className="px-3 py-2.5 flex items-center gap-2 border-b border-default shrink-0">
+        {icon && <span className="w-5 h-5 rounded-md flex items-center justify-center bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">{icon}</span>}
+        <h3 className="flex-1 text-[11px] uppercase tracking-wide font-semibold text-zinc-700 dark:text-zinc-200">{title}</h3>
+        <button onClick={onClose} title="Collapse panel" className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-body">
+          <ChevronsRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto scrollbar-thin">{children}</div>
+    </ResizableAside>
+  );
+}
+
+function SelectPrompt({ what, onClose }: { what: 'element' | 'relationship'; onClose: () => void }) {
+  return (
+    <PanelShell title={what === 'element' ? 'Inspect element' : 'Inspect relationship'} onClose={onClose}>
+      <div className="p-6 text-center mt-8">
+        <Activity className="w-7 h-7 text-zinc-300 dark:text-zinc-700 mb-3 mx-auto" />
+        <p className="text-sm font-medium text-body mb-1">No {what} selected</p>
+        <p className="text-xs text-faint">Click {what === 'element' ? 'an element (node)' : 'a relationship (edge)'} on the canvas to edit it here.</p>
+      </div>
+    </PanelShell>
+  );
 }
 
 const STATUS_OPTIONS = ['', 'current', 'target', 'to-adapt', 'to-be-created', 'deprecated', 'proposed'];
@@ -221,7 +289,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
             </button>
           </>
         )}
-        <InspectorActions />
+        <InspectorActions showCollapseAll={false} />
         <button className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => select(null)} title="Close">
           <X className="w-3.5 h-3.5" />
         </button>
@@ -666,7 +734,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
         <h2 className="text-sm font-semibold flex-1 truncate">
           {isDataFlow ? 'Data Flow' : 'Dependency'}
         </h2>
-        <InspectorActions />
+        <InspectorActions showCollapseAll={false} />
         <button className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => selectLink(null)} title="Close">
           <X className="w-3.5 h-3.5" />
         </button>
@@ -838,58 +906,32 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   );
 }
 
-function Section({ label, children, defaultOpen = true, persistKey, icon }: {
+/** A single inspector panel, shown only when the right-hand icon rail has selected it
+ *  (`inspectorTab === persistKey`). The rail provides the icons; this renders the active panel. */
+function Section({ label, children, persistKey, icon }: {
   label: string;
   children: React.ReactNode;
-  defaultOpen?: boolean;
+  defaultOpen?: boolean; // accepted for call-site compatibility; the rail now controls visibility
   persistKey?: string;
   icon?: React.ReactNode;
 }) {
-  // Per-section open/closed state persisted in localStorage so each user keeps the
-  // sections they actually use unfolded on next visit.
-  const storageKey = persistKey ? `verso.inspector.section:${persistKey}` : null;
-  const [open, setOpen] = useState<boolean>(() => {
-    if (typeof window === 'undefined' || !storageKey) return defaultOpen;
-    const v = localStorage.getItem(storageKey);
-    return v === null ? defaultOpen : v === '1';
-  });
-  function toggle() {
-    setOpen((prev) => {
-      const next = !prev;
-      if (storageKey) localStorage.setItem(storageKey, next ? '1' : '0');
-      return next;
-    });
-  }
-  // Fold/unfold together when the header's collapse-all button fires.
-  useEffect(() => {
-    function onAll(ev: Event) {
-      const next = (ev as CustomEvent).detail?.open as boolean;
-      setOpen(next);
-      if (storageKey) localStorage.setItem(storageKey, next ? '1' : '0');
-    }
-    window.addEventListener(SECTIONS_EVENT, onAll);
-    return () => window.removeEventListener(SECTIONS_EVENT, onAll);
-  }, [storageKey]);
+  const active = useApp((s) => s.inspectorTab);
+  const setTab = useApp((s) => s.setInspectorTab);
+  if (!persistKey || active !== persistKey) return null;
   return (
-    <section className="border-b-2 border-zinc-100 dark:border-zinc-800/80">
-      <button
-        onClick={toggle}
-        className={clsx(
-          'w-full px-3 py-2.5 flex items-center gap-2 transition-colors',
-          open ? 'bg-zinc-100/70 dark:bg-zinc-800/40' : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/40',
-        )}
-      >
+    <section>
+      <div className="px-3 py-2.5 flex items-center gap-2 border-b border-default bg-zinc-50/70 dark:bg-zinc-900/40 sticky top-0 z-10">
         {icon && (
           <span className="w-5 h-5 rounded-md flex items-center justify-center bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
             {icon}
           </span>
         )}
         <h3 className="flex-1 text-left text-[11px] uppercase tracking-wide text-zinc-700 dark:text-zinc-200 font-semibold">{label}</h3>
-        {open
-          ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-          : <ChevronRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />}
-      </button>
-      {open && <div className="px-3 pb-3 pt-1 space-y-2">{children}</div>}
+        <button onClick={() => setTab(null)} title="Collapse panel" className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-body">
+          <ChevronsRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="px-3 pb-4 pt-2 space-y-2">{children}</div>
     </section>
   );
 }

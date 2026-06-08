@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Bold, Italic, Strikethrough, Code, List, ListOrdered, Link2, PenLine, Code2, X } from 'lucide-react';
+import {
+  Bold, Italic, Underline, Strikethrough, Code, List, ListOrdered, ListChecks, Link2,
+  Quote, Table, Minus, Palette, Highlighter, Eraser, PenLine, Code2, X,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { ArchElementKind } from '@/lib/types';
 import { schemaFor } from '@/lib/propertySchema';
@@ -18,11 +21,16 @@ interface Props {
   autoFocus?: boolean;
   placeholder?: string;
   toolbar?: boolean;
+  /** Turbo toolbar (headings, colour, highlight, quote, code block, tables, task lists, rule). */
+  rich?: boolean;
   className?: string;
 }
 
 type Mode = 'rich' | 'code';
 interface Auto { items: string[]; index: number; left: number; top: number; }
+
+const TEXT_COLORS = ['#ef4444', '#f59e0b', '#eab308', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#111827', '#6b7280'];
+const HILITE_COLORS = ['#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#e9d5ff', '#fed7aa', '#fecaca'];
 
 /** Inline WYSIWYG editor with a raw-Markdown source mode. You edit formatted text directly;
  *  markdown is the stored format (serialized on every change). The rich surface is uncontrolled —
@@ -30,7 +38,7 @@ interface Auto { items: string[]; index: number; left: number; top: number; }
  *  typing. Safe inside React Flow (keys/drag/wheel don't escape; toolbar presses don't blur). */
 export function RichTextEditor({
   value, kind, existingKeys, onChange, onCommit, onClose, autoFocus,
-  placeholder = 'Write text…  type # for attributes', toolbar = true, className,
+  placeholder = 'Write text…  type # for attributes', toolbar = true, rich = false, className,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const lastMd = useRef(value);
@@ -38,6 +46,7 @@ export function RichTextEditor({
   const [codeText, setCodeText] = useState(value);
   const [empty, setEmpty] = useState(!value.trim());
   const [auto, setAuto] = useState<Auto | null>(null);
+  const [palette, setPalette] = useState<'color' | 'highlight' | null>(null);
   const schemaKeys = schemaFor(kind).map((p) => p.key);
 
   useEffect(() => {
@@ -158,6 +167,82 @@ export function RichTextEditor({
     emit();
   }
 
+  // ---- Rich (full-editor) commands ----
+  function setBlock(tag: string) {
+    ref.current?.focus();
+    try { document.execCommand('formatBlock', false, tag); } catch { /* unsupported */ }
+    emit();
+  }
+  function applyColor(which: 'fore' | 'back', color: string) {
+    ref.current?.focus();
+    try {
+      document.execCommand('styleWithCSS', false, 'true');
+      if (which === 'fore') document.execCommand('foreColor', false, color);
+      else if (!document.execCommand('hiliteColor', false, color)) document.execCommand('backColor', false, color);
+      document.execCommand('styleWithCSS', false, 'false');
+    } catch { /* unsupported */ }
+    setPalette(null);
+    emit();
+  }
+  function insertHtml(html: string) {
+    ref.current?.focus();
+    try { document.execCommand('insertHTML', false, html); } catch { /* unsupported */ }
+    emit();
+  }
+  function insertRule() { insertHtml('<hr><div><br></div>'); }
+  function insertTaskList() {
+    insertHtml('<ul data-task="true"><li data-task="true"><span class="task-box" contenteditable="false" data-checked="false">☐</span>&nbsp;</li></ul>');
+  }
+  function insertTable() {
+    const td = '<td>&nbsp;</td>';
+    const row = `<tr>${td}${td}${td}</tr>`;
+    insertHtml(`<table><thead><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr></thead><tbody>${row}${row}</tbody></table><div><br></div>`);
+  }
+  function currentTable(): HTMLTableElement | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    let n: Node | null = sel.getRangeAt(0).startContainer;
+    while (n && n !== ref.current) {
+      if (n.nodeType === Node.ELEMENT_NODE && (n as HTMLElement).tagName === 'TABLE') return n as HTMLTableElement;
+      n = n.parentNode;
+    }
+    return null;
+  }
+  function addTableRow() {
+    const t = currentTable();
+    if (!t) return;
+    const body = t.tBodies[0] ?? t.appendChild(document.createElement('tbody'));
+    const cols = t.rows[0]?.cells.length ?? 2;
+    const tr = body.insertRow(-1);
+    for (let i = 0; i < cols; i++) tr.insertCell(-1).innerHTML = '&nbsp;';
+    emit();
+  }
+  function addTableCol() {
+    const t = currentTable();
+    if (!t) return;
+    Array.from(t.rows).forEach((r) => {
+      const inHead = r.parentElement?.tagName === 'THEAD';
+      const cell = document.createElement(inHead ? 'th' : 'td');
+      cell.innerHTML = inHead ? 'Column' : '&nbsp;';
+      r.appendChild(cell);
+    });
+    emit();
+  }
+  function clearFormat() {
+    ref.current?.focus();
+    try { document.execCommand('removeFormat'); document.execCommand('formatBlock', false, 'div'); } catch { /* unsupported */ }
+    emit();
+  }
+  // Toggle a task-list checkbox when its glyph is clicked.
+  function onEditorClick(e: React.MouseEvent) {
+    const box = (e.target as HTMLElement)?.closest?.('.task-box') as HTMLElement | null;
+    if (!box) return;
+    const checked = box.getAttribute('data-checked') === 'true';
+    box.setAttribute('data-checked', String(!checked));
+    box.textContent = !checked ? '☑' : '☐';
+    emit();
+  }
+
   function showRich() {
     setMode('rich');
     requestAnimationFrame(() => {
@@ -183,7 +268,7 @@ export function RichTextEditor({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-1 mb-1 shrink-0">
-        {fmt && (
+        {fmt && !rich && (
           <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-thin min-w-0">
             <Tool onClick={() => exec('bold')} title="Bold (⌘B)"><Bold className="w-3 h-3" /></Tool>
             <Tool onClick={() => exec('italic')} title="Italic (⌘I)"><Italic className="w-3 h-3" /></Tool>
@@ -192,6 +277,52 @@ export function RichTextEditor({
             <Tool onClick={() => exec('insertUnorderedList')} title="Bullet list"><List className="w-3 h-3" /></Tool>
             <Tool onClick={() => exec('insertOrderedList')} title="Numbered list"><ListOrdered className="w-3 h-3" /></Tool>
             <Tool onClick={addLink} title="Link"><Link2 className="w-3 h-3" /></Tool>
+          </div>
+        )}
+        {fmt && rich && (
+          <div className="flex flex-wrap items-center gap-0.5 min-w-0">
+            <select
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => { setBlock(e.target.value); e.currentTarget.selectedIndex = 0; }}
+              className="h-7 text-xs rounded border border-default bg-white dark:bg-zinc-900 px-1.5 text-body cursor-pointer"
+              title="Paragraph format" defaultValue=""
+            >
+              <option value="" disabled>Format</option>
+              <option value="div">Normal text</option>
+              <option value="h1">Heading 1</option>
+              <option value="h2">Heading 2</option>
+              <option value="h3">Heading 3</option>
+              <option value="blockquote">Quote</option>
+              <option value="pre">Code block</option>
+            </select>
+            <Sep />
+            <Tool onClick={() => exec('bold')} title="Bold (⌘B)"><Bold className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={() => exec('italic')} title="Italic (⌘I)"><Italic className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={() => exec('underline')} title="Underline (⌘U)"><Underline className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={() => exec('strikeThrough')} title="Strikethrough (⌘⇧X)"><Strikethrough className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={toggleCode} title="Inline code"><Code className="w-3.5 h-3.5" /></Tool>
+            <Sep />
+            <div className="relative">
+              <Tool onClick={() => setPalette(palette === 'color' ? null : 'color')} title="Text colour"><Palette className="w-3.5 h-3.5" /></Tool>
+              {palette === 'color' && <Swatches colors={TEXT_COLORS} onPick={(c) => applyColor('fore', c)} onClose={() => setPalette(null)} />}
+            </div>
+            <div className="relative">
+              <Tool onClick={() => setPalette(palette === 'highlight' ? null : 'highlight')} title="Highlight"><Highlighter className="w-3.5 h-3.5" /></Tool>
+              {palette === 'highlight' && <Swatches colors={HILITE_COLORS} onPick={(c) => applyColor('back', c)} onClose={() => setPalette(null)} />}
+            </div>
+            <Sep />
+            <Tool onClick={() => exec('insertUnorderedList')} title="Bullet list"><List className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={() => exec('insertOrderedList')} title="Numbered list"><ListOrdered className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={insertTaskList} title="Task list"><ListChecks className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={() => setBlock('blockquote')} title="Quote"><Quote className="w-3.5 h-3.5" /></Tool>
+            <Sep />
+            <Tool onClick={insertTable} title="Insert table"><Table className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={addTableRow} title="Add row (caret inside a table)"><span className="text-[10px] font-semibold px-0.5">+Row</span></Tool>
+            <Tool onClick={addTableCol} title="Add column (caret inside a table)"><span className="text-[10px] font-semibold px-0.5">+Col</span></Tool>
+            <Sep />
+            <Tool onClick={addLink} title="Link"><Link2 className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={insertRule} title="Divider"><Minus className="w-3.5 h-3.5" /></Tool>
+            <Tool onClick={clearFormat} title="Clear formatting"><Eraser className="w-3.5 h-3.5" /></Tool>
           </div>
         )}
         <span className="flex-1 min-w-0" />
@@ -222,10 +353,12 @@ export function RichTextEditor({
           onKeyDown={onRichKeyDown}
           onKeyUp={refreshAuto}
           onMouseUp={refreshAuto}
+          onClick={onEditorClick}
           onBlur={() => { window.setTimeout(() => setAuto(null), 150); onCommit?.(lastMd.current); }}
           onDoubleClick={(e) => e.stopPropagation()}
           className={clsx(
-            'nodrag nopan nowheel archnote w-full h-full overflow-auto text-xs leading-relaxed outline-none bg-white dark:bg-zinc-900 border border-default rounded p-2 focus:border-indigo-500 text-zinc-900 dark:text-zinc-100',
+            'nodrag nopan nowheel archnote w-full h-full overflow-auto leading-relaxed outline-none bg-white dark:bg-zinc-900 border border-default rounded focus:border-indigo-500 text-zinc-900 dark:text-zinc-100',
+            rich ? 'archnote-rich text-sm p-4' : 'text-xs p-2',
             mode !== 'rich' && 'hidden',
           )}
         />
@@ -280,6 +413,31 @@ function Tool({ onClick, title, children }: { onClick: () => void; title: string
     >
       {children}
     </button>
+  );
+}
+
+function Sep() {
+  return <span className="mx-0.5 h-5 w-px bg-zinc-200 dark:bg-zinc-700 shrink-0" aria-hidden />;
+}
+
+function Swatches({ colors, onPick, onClose }: { colors: string[]; onPick: (c: string) => void; onClose: () => void }) {
+  return (
+    <div
+      className="absolute left-0 top-full mt-1 z-popover flex flex-wrap gap-1 w-[8.5rem] p-1.5 rounded-md surface-overlay shadow-lg"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {colors.map((c) => (
+        <button
+          key={c} type="button" title={c}
+          onMouseDown={(e) => { e.preventDefault(); onPick(c); }}
+          className="w-5 h-5 rounded-full border border-black/10 dark:border-white/15 hover:scale-110 transition-transform"
+          style={{ background: c }}
+        />
+      ))}
+      <button type="button" title="Cancel" onMouseDown={(e) => { e.preventDefault(); onClose(); }} className="w-5 h-5 rounded flex items-center justify-center text-muted hover:text-body">
+        <X className="w-3 h-3" />
+      </button>
+    </div>
   );
 }
 

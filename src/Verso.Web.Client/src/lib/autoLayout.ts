@@ -56,9 +56,17 @@ function countCrossings(
  *   3. Coordinate assignment on a fixed grid with BC-aware horizontal alignment so the
  *      same context column-aligns across layers when possible.
  */
+export interface HierarchicalLayoutOptions {
+  /** Horizontal pitch between nodes in a layer. Defaults to 240. */
+  colGap?: number;
+  /** Vertical pitch between layers. Defaults to 170. */
+  rowGap?: number;
+}
+
 export function layoutHierarchical(
   elements: ArchElement[],
   links: ArchLink[],
+  opts: HierarchicalLayoutOptions = {},
 ): Record<string, SavedPosition> {
   if (elements.length === 0) return {};
 
@@ -165,8 +173,8 @@ export function layoutHierarchical(
 
   // ----- 5. Coordinate assignment. Centre each row around 0; tighter horizontal pitch
   //         when a layer has few nodes, looser when there are many (auto-fit-ish). -----
-  const COL_W = 240;
-  const ROW_H = 170;
+  const COL_W = opts.colGap ?? 240;
+  const ROW_H = opts.rowGap ?? 170;
   const PAD_Y = 60;
   const out: Record<string, SavedPosition> = {};
   const minLayer = layerKeys[0];
@@ -202,6 +210,10 @@ export interface ForceLayoutOptions {
   padding?: number;
   /** Strength of pull toward the global centroid; counteracts isolated-node drift. */
   gravity?: number;
+  /** Extra pull between same-Bounded-Context nodes so contexts cohere. Defaults to 0.022. */
+  clusterPull?: number;
+  /** Multiplies the ideal node distance `k`; >1 spreads nodes out, <1 packs them. Defaults to 1. */
+  spacing?: number;
   /** Per-node rendered size so repulsion accounts for box dimensions, not just centres. */
   sizes?: Record<string, { w: number; h: number }>;
 }
@@ -248,7 +260,7 @@ export function layoutForceDirected(
   const avgH = elements.reduce((s, e) => s + sizeOf(e).h, 0) / n;
   const W = Math.max(800, 1.9 * avgW * Math.sqrt(n));
   const H = Math.max(600, 1.9 * avgH * Math.sqrt(n));
-  const k = Math.sqrt((W * H) / n);
+  const k = Math.sqrt((W * H) / n) * (opts.spacing ?? 1);
 
   type P = { x: number; y: number; dx: number; dy: number; w: number; h: number };
   const pos: Record<string, P> = {};
@@ -363,7 +375,7 @@ export function layoutForceDirected(
       centroids.set(c, cur);
     }
     for (const c of centroids.values()) { c.x /= c.n; c.y /= c.n; }
-    const clusterPull = 0.022;
+    const clusterPull = opts.clusterPull ?? 0.022;
     for (const id of idList) {
       const c = cluster.get(id)!;
       if (c === '__none') continue;
