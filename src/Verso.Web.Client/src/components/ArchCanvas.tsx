@@ -211,7 +211,7 @@ function CanvasInner() {
   const selectedLinkId = useApp((s) => s.selectedLinkId);
   const setToast = useApp((s) => s.setToast);
   const addElementToActiveView = useApp((s) => s.addElementToActiveView);
-  const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport } = useReactFlow();
+  const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport, zoomIn, zoomOut } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const activeCustomView = customViews.find((v) => v.id === activeId) ?? null;
@@ -624,6 +624,39 @@ function CanvasInner() {
     setEditingNodeId(nodeId);
     setNotesEditingId(null);
   }, []);
+
+  // Global keyboard shortcuts (bound in App) drive the canvas through window events:
+  // F2 rename / edit, ⌘= / ⌘- zoom, ⌘0 fit, ⌘A select all.
+  useEffect(() => {
+    function onStartRename() {
+      const st = useApp.getState();
+      if (st.selectedLinkId) { startEdgeEdit(st.selectedLinkId); return; }
+      if (st.selectedElementId) { setEditingNodeId(st.selectedElementId); setNotesEditingId(null); }
+    }
+    function onZoom(ev: Event) {
+      const dir = ((ev as CustomEvent).detail?.dir as number) ?? 1;
+      if (dir > 0) zoomIn({ duration: 150 }); else zoomOut({ duration: 150 });
+    }
+    function onFit() { fitView({ padding: 0.2, duration: 300 }); }
+    function onSelectAll() { setNodes((ns) => ns.map((n) => (n.selected ? n : { ...n, selected: true }))); }
+    function onClearSelection() {
+      setNodes((ns) => ns.some((n) => n.selected) ? ns.map((n) => (n.selected ? { ...n, selected: false } : n)) : ns);
+      setEditingNodeId(null);
+      setNotesEditingId(null);
+    }
+    window.addEventListener('verso:start-rename', onStartRename);
+    window.addEventListener('verso:zoom', onZoom);
+    window.addEventListener('verso:fit-view', onFit);
+    window.addEventListener('verso:select-all', onSelectAll);
+    window.addEventListener('verso:clear-selection', onClearSelection);
+    return () => {
+      window.removeEventListener('verso:start-rename', onStartRename);
+      window.removeEventListener('verso:zoom', onZoom);
+      window.removeEventListener('verso:fit-view', onFit);
+      window.removeEventListener('verso:select-all', onSelectAll);
+      window.removeEventListener('verso:clear-selection', onClearSelection);
+    };
+  }, [startEdgeEdit, zoomIn, zoomOut, fitView]);
 
   const handleCommitName = useCallback(async (nodeId: string, next: string) => {
     setEditingNodeId(null);
@@ -1651,6 +1684,9 @@ function CanvasInner() {
         onPaneContextMenu={onPaneContextMenu}
         onConnect={onConnect}
         onReconnect={onReconnect}
+        // Deletion is owned by the global Delete/Backspace shortcut (App), which routes through
+        // model operations with confirmation — React Flow's local delete would desync the model.
+        deleteKeyCode={null}
         proOptions={{ hideAttribution: true }}
         colorMode={isDark ? 'dark' : 'light'}
       >

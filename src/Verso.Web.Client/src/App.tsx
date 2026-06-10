@@ -11,7 +11,10 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation, applyOperation } from './lib/signalr';
+import { friendlyOpError } from './lib/opError';
+import { confirmAction } from './components/ConfirmDialog';
+import { removeShape, saveShapes } from './lib/shapes';
 import { archModel, books as fetchBooks, listViolations, snapshot } from './lib/api';
 import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
@@ -155,9 +158,72 @@ export default function App() {
       { key: 'arrowdown', description: 'Nudge down', handler: () => nudgeSelected(0, 10) },
       { key: 'arrowleft', description: 'Nudge left', handler: () => nudgeSelected(-10, 0) },
       { key: 'arrowright', description: 'Nudge right', handler: () => nudgeSelected(10, 0) },
+      { key: 'arrowup', shift: true, description: 'Nudge up 1px', handler: () => nudgeSelected(0, -1) },
+      { key: 'arrowdown', shift: true, description: 'Nudge down 1px', handler: () => nudgeSelected(0, 1) },
+      { key: 'arrowleft', shift: true, description: 'Nudge left 1px', handler: () => nudgeSelected(-1, 0) },
+      { key: 'arrowright', shift: true, description: 'Nudge right 1px', handler: () => nudgeSelected(1, 0) },
       { key: 'enter', description: 'Open inspector for selected', handler: () => focusInspectorForSelected() },
+      { key: 'delete', description: 'Delete selection', handler: () => { deleteSelection(); } },
+      { key: 'backspace', description: 'Delete selection', handler: () => { deleteSelection(); } },
+      { key: 'f2', description: 'Rename element / edit relationship', handler: () => window.dispatchEvent(new CustomEvent('verso:start-rename')) },
+      { key: 'escape', description: 'Clear selection', handler: () => { setHelpOpen(false); clearSelection(); } },
+      { key: 'a', primary: true, description: 'Select all elements', handler: () => window.dispatchEvent(new CustomEvent('verso:select-all')) },
+      { key: '=', primary: true, description: 'Zoom in', handler: () => window.dispatchEvent(new CustomEvent('verso:zoom', { detail: { dir: 1 } })) },
+      { key: '+', primary: true, description: 'Zoom in', handler: () => window.dispatchEvent(new CustomEvent('verso:zoom', { detail: { dir: 1 } })) },
+      { key: '-', primary: true, description: 'Zoom out', handler: () => window.dispatchEvent(new CustomEvent('verso:zoom', { detail: { dir: -1 } })) },
+      { key: '0', primary: true, description: 'Fit view', handler: () => window.dispatchEvent(new CustomEvent('verso:fit-view')) },
+      { key: '1', description: 'Module Map view', handler: () => useApp.getState().setView('moduleMap') },
+      { key: '2', description: 'Dependencies view', handler: () => useApp.getState().setView('dependencyGraph') },
+      { key: '3', description: 'Concerns view', handler: () => useApp.getState().setView('concerns') },
     ]);
   }, [setPaletteOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Delete whatever is selected: shape (presentation only, no confirm), relationship or element
+  // (model operations, confirmed first — same flow as the context menu / inspector).
+  async function deleteSelection() {
+    const st = useApp.getState();
+    if (st.selectedShapeId && st.workspace) {
+      const viewKey = st.activeCustomViewId ? `custom:${st.activeCustomViewId}` : st.view;
+      const next = removeShape(st.shapes[viewKey] ?? [], st.selectedShapeId);
+      st.setShapesFor(viewKey, next);
+      saveShapes(st.workspace.rootPath, viewKey, next);
+      st.selectShape(null);
+      st.setToast({ kind: 'info', text: 'Shape removed' });
+      return;
+    }
+    if (st.selectedLinkId) {
+      const linkId = st.selectedLinkId;
+      const ok = await confirmAction({ title: 'Remove this relationship?', confirmLabel: 'Remove', destructive: true });
+      if (!ok) return;
+      const r = await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId });
+      if ('reason' in r) st.setToast({ kind: 'error', text: friendlyOpError(r) });
+      else { st.setToast({ kind: 'success', text: 'Relationship removed' }); useApp.getState().selectLink(null); }
+      return;
+    }
+    if (st.selectedElementId) {
+      const el = st.arch?.elements.find((x) => x.id === st.selectedElementId);
+      if (!el) return;
+      const ok = await confirmAction({
+        title: `Remove ${el.name}?`,
+        body: 'This element will be removed from the model. Linked relationships and decisions will be detached.',
+        confirmLabel: 'Remove',
+        destructive: true,
+      });
+      if (!ok) return;
+      const r = await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: el.id });
+      if ('reason' in r) st.setToast({ kind: 'error', text: friendlyOpError(r) });
+      else { st.setToast({ kind: 'success', text: 'Removed' }); useApp.getState().selectElement(null); }
+    }
+  }
+
+  function clearSelection() {
+    const st = useApp.getState();
+    st.selectElement(null);
+    st.selectLink(null);
+    st.selectShape(null);
+    // Also clear React Flow's own node/edge highlight, which lives in canvas state.
+    window.dispatchEvent(new CustomEvent('verso:clear-selection'));
+  }
 
   function focusSidebarSearch() {
     const input = document.querySelector('aside input[placeholder*="Search"]') as HTMLInputElement | null;
