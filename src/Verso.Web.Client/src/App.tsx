@@ -55,14 +55,7 @@ export default function App() {
 
   useEffect(() => {
     ensureConnection().catch(() => {});
-    snapshot().then((s) => {
-      if (s) {
-        setWs(s);
-        primeLayoutSidecar(s.rootPath).catch(() => {});
-      }
-    }).catch(() => {});
-    archModel().then((a) => setArch(a)).catch(() => setArch(null));
-    fetchBooks().then((b) => { if (b) setBooks(b); }).catch(() => {});
+    snapshot().then((s) => { if (s) setWs(s); }).catch(() => {});
     // A transient archModel() failure must NOT clobber a previously good arch — use a sentinel
     // so refresh() can preserve the prior in-memory model on a 404 / network blip.
     const PRESERVE = Symbol('preserve');
@@ -85,6 +78,19 @@ export default function App() {
     const offExt = onExternalChange(refresh);
     return () => { offOp(); offExt(); };
   }, [setWs, setArch, setViolations, setBooks]);
+
+  // Load the active workspace's model + presentation whenever the workspace changes — on the
+  // initial snapshot, but also when one is opened from Recents / by path / via Init. Previously
+  // only the initial mount fetched these, so opening a workspace mid-session left the canvas
+  // empty until a full page reload.
+  const wsRoot = ws?.rootPath ?? null;
+  useEffect(() => {
+    if (!wsRoot) { setArch(null); return; }
+    primeLayoutSidecar(wsRoot).catch(() => {});
+    archModel().then((a) => setArch(a)).catch(() => setArch(null));
+    fetchBooks().then((b) => { if (b) setBooks(b); }).catch(() => {});
+    listViolations().then((v) => setViolations(v)).catch(() => {});
+  }, [wsRoot, setArch, setBooks, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
   const rehydratePresentation = useApp((s) => s.rehydratePresentation);
