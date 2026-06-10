@@ -412,17 +412,22 @@ function CanvasInner() {
     else setToast({ kind: 'success', text: field === 'payload' ? 'Payload updated' : 'Kind updated' });
   }, [cancelEdgeEdit, setToast]);
 
-  // ---- Selection toolbar on the edge: choose which end carries the arrowhead (presentation,
-  // edge style) or reverse the relationship in the model (remove + re-add swapped).
-  const handleSetEdgeDirection = useCallback((edgeId: string, dir: 'forward' | 'backward') => {
+  // ---- Selection toolbar on the edge: each end's arrowhead is an independent toggle
+  // (presentation only, edge style). Click to add the arrowhead, click again to remove it.
+  const handleToggleEdgeArrow = useCallback((edgeId: string, end: 'start' | 'end') => {
     const st = useApp.getState();
     const cur = st.edgeStyles[edgeId] ?? DEFAULT_EDGE_STYLE;
     // Keep the user's marker shape if one is set anywhere; default to the closed arrowhead.
     const pick = (a?: EdgeArrow) => (a && a !== 'none' ? a : undefined);
     const shape: EdgeArrow = pick(cur.arrowEnd) ?? pick(cur.arrowStart) ?? pick(cur.arrow) ?? 'closed';
-    st.setEdgeStyleFor(edgeId, dir === 'forward'
-      ? { ...cur, arrowEnd: shape, arrowStart: 'none' }
-      : { ...cur, arrowStart: shape, arrowEnd: 'none' });
+    if (end === 'start') {
+      const active = (cur.arrowStart ?? 'none') !== 'none';
+      st.setEdgeStyleFor(edgeId, { ...cur, arrowStart: active ? 'none' : shape });
+    } else {
+      // The target end defaults to a closed arrow when unset (legacy `arrow` included).
+      const active = (cur.arrowEnd ?? cur.arrow ?? 'closed') !== 'none';
+      st.setEdgeStyleFor(edgeId, { ...cur, arrow: undefined, arrowEnd: active ? 'none' : shape });
+    }
   }, []);
 
   // Apply a predefined relationship type: write the attribute into the model (kind for a
@@ -443,22 +448,6 @@ function CanvasInner() {
     if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
     else setToast({ kind: 'success', text: `Relationship set to ${t.value}` });
   }, [setToast]);
-
-  const handleReverseEdge = useCallback(async (edgeId: string) => {
-    const link = useApp.getState().arch?.links.find((l) => l.id === edgeId);
-    if (!link) return;
-    const kind = link.kind === 'dataFlow' ? 'dataFlow' : 'dependency';
-    const r1 = await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: link.id });
-    if ('reason' in r1) { setToast({ kind: 'error', text: friendlyOpError(r1) }); return; }
-    const r2 = await applyOperation({
-      kind: 'AddLink', opId: `op_${Date.now()}_r`,
-      linkKind: kind, fromId: link.toId, toId: link.fromId,
-      payload: kind === 'dataFlow' ? (link.attributes.payload ?? 'Event') : null,
-      dependencyKind: kind === 'dependency' ? (link.attributes.kind ?? 'uses') : null,
-    });
-    if ('reason' in r2) setToast({ kind: 'error', text: friendlyOpError(r2) });
-    else { setToast({ kind: 'success', text: 'Relationship reversed' }); selectLink(null); }
-  }, [setToast, selectLink]);
 
   const edges = useMemo<Edge[]>(() => filtered.links.filter((l) => !hiddenIds.has(l.fromId) && !hiddenIds.has(l.toId)).map((l) => {
     const isDataFlow = l.kind === 'dataFlow';
@@ -509,15 +498,14 @@ function CanvasInner() {
         onEditChange: handleEdgeEditChange,
         onEditCommit: commitEdgeEdit,
         onEditCancel: cancelEdgeEdit,
-        direction: arrowEnd !== 'none' && arrowStart === 'none' ? 'forward' as const
-          : arrowStart !== 'none' && arrowEnd === 'none' ? 'backward' as const : undefined,
-        onSetDirection: handleSetEdgeDirection,
-        onReverse: handleReverseEdge,
+        arrowStartActive: arrowStart !== 'none',
+        arrowEndActive: arrowEnd !== 'none',
+        onToggleArrow: handleToggleEdgeArrow,
         typeValue: label,
         onSetType: handleSetEdgeType,
       },
     };
-  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, selectedLinkId, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds, linkDraft, editingEdgeId, startEdgeEdit, handleEdgeEditChange, commitEdgeEdit, cancelEdgeEdit, handleSetEdgeDirection, handleReverseEdge, handleSetEdgeType]);
+  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, selectedLinkId, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds, linkDraft, editingEdgeId, startEdgeEdit, handleEdgeEditChange, commitEdgeEdit, cancelEdgeEdit, handleToggleEdgeArrow, handleSetEdgeType]);
 
   // The unique (shape, colour) custom markers (circle / diamond / bar) actually used by edges.
   const customMarkers = useMemo<CustomMarker[]>(() => {

@@ -3,7 +3,7 @@ import {
   BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath, getSmoothStepPath, getStraightPath,
   Position, useReactFlow,
 } from '@xyflow/react';
-import { ArrowLeft, ArrowLeftRight, ArrowRight, ChevronDown } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import type { SavedPosition } from '@/lib/layout';
 import { DEFAULT_EDGE_ROUTING, type EdgeRouting } from '@/lib/edgeStyles';
@@ -22,10 +22,10 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   onEditChange?: (edgeId: string, value: string) => void;
   onEditCommit?: (edgeId: string, value: string) => void;
   onEditCancel?: (edgeId: string) => void;
-  // Selection toolbar — direction (which end carries the arrowhead), type picker, model reverse.
-  direction?: 'forward' | 'backward';
-  onSetDirection?: (edgeId: string, dir: 'forward' | 'backward') => void;
-  onReverse?: (edgeId: string) => void;
+  // Selection toolbar — per-end arrowhead toggles and the relationship type picker.
+  arrowStartActive?: boolean;
+  arrowEndActive?: boolean;
+  onToggleArrow?: (edgeId: string, end: 'start' | 'end') => void;
   typeValue?: string;
   onSetType?: (edgeId: string, t: RelationshipType) => void;
 }
@@ -152,10 +152,9 @@ export function WaypointEdge({
       )}
       <EdgeLabelRenderer>
         {/* Selection toolbar — floats above the label midpoint and follows the line while nodes
-            move. Left/right set which end carries the arrowhead, the dropdown picks a predefined
-            relationship type (writes the model attribute + applies its style), ⇄ reverses the
-            relationship in the model. */}
-        {selected && !data?.editing && data?.onSetDirection && (
+            move. ← / → toggle the arrowhead at that end (click again to remove it); the dropdown
+            picks a predefined relationship type (writes the model attribute + applies its style). */}
+        {selected && !data?.editing && data?.onToggleArrow && (
           <div
             className="nodrag nopan"
             style={{
@@ -169,10 +168,11 @@ export function WaypointEdge({
           >
             <div className="flex items-center gap-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-md px-0.5 py-0.5">
               <button
-                title="Arrowhead at the source end"
-                onClick={() => data.onSetDirection?.(id, 'backward')}
+                title="Toggle the arrowhead at the source end"
+                aria-pressed={!!data.arrowStartActive}
+                onClick={() => data.onToggleArrow?.(id, 'start')}
                 className={clsx('p-1 rounded transition-colors',
-                  data.direction === 'backward'
+                  data.arrowStartActive
                     ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
                     : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
               >
@@ -192,17 +192,11 @@ export function WaypointEdge({
                 </button>
               )}
               <button
-                title="Reverse the relationship (swap source and target)"
-                onClick={() => data.onReverse?.(id)}
-                className="p-1 rounded text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-              >
-                <ArrowLeftRight className="w-3 h-3" />
-              </button>
-              <button
-                title="Arrowhead at the target end"
-                onClick={() => data.onSetDirection?.(id, 'forward')}
+                title="Toggle the arrowhead at the target end"
+                aria-pressed={!!data.arrowEndActive}
+                onClick={() => data.onToggleArrow?.(id, 'end')}
                 className={clsx('p-1 rounded transition-colors',
-                  data.direction === 'forward'
+                  data.arrowEndActive
                     ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
                     : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
               >
