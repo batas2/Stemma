@@ -33,6 +33,11 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Search & filter on the canvas**, deep-linkable views.
 - **Broader vision items** (from the archived `VISION`/`ROADMAP`): heterogeneous storage adapters and a richer projection layer are *aspirational*; the current engine is intentionally lean (single Roslyn adapter + presentation sidecar). Re-open these only when a concrete user need demands them.
 
+## Commercial direction
+
+How Verso could earn as a side income — local-first tool, paid sharing layer — lives in
+[`commercialization.md`](./commercialization.md) (working plan with open decision points).
+
 ## How roadmap items become work
 
 A "Later" item earns a feature record (`features/`) using
