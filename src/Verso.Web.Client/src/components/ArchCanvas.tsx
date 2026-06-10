@@ -119,9 +119,11 @@ function applyBuiltIn(arch: ArchModel, view: ViewKind): FilteredView {
     const links = arch.links.filter((l) => l.kind === 'dependency' && ids.has(l.fromId) && ids.has(l.toId));
     return { elements, links };
   }
-  // Module Map (and the fallback): every element kind, with its dataFlow links.
+  // Module Map (and the fallback) is the universal canvas: every element kind and EVERY
+  // relationship — data flows and dependencies alike. Hiding dependency arrows here made
+  // module-to-module `uses` links invisible on the default view.
   const ids = new Set(arch.elements.map((e) => e.id));
-  const links = arch.links.filter((l) => l.kind === 'dataFlow' && ids.has(l.fromId) && ids.has(l.toId));
+  const links = arch.links.filter((l) => ids.has(l.fromId) && ids.has(l.toId));
   return { elements: arch.elements, links };
 }
 
