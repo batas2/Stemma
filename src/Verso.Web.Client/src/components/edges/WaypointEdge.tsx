@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath, getSmoothStepPath, getStraightPath,
   Position, useReactFlow,
 } from '@xyflow/react';
-import { ArrowLeft, ArrowLeftRight, ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, ArrowRight, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import type { SavedPosition } from '@/lib/layout';
 import { DEFAULT_EDGE_ROUTING, type EdgeRouting } from '@/lib/edgeStyles';
+import { RELATIONSHIP_TYPES, type RelationshipType } from '@/lib/relationshipTypes';
 
 export interface WaypointEdgeData extends Record<string, unknown> {
   waypoints?: SavedPosition[];
@@ -21,10 +22,12 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   onEditChange?: (edgeId: string, value: string) => void;
   onEditCommit?: (edgeId: string, value: string) => void;
   onEditCancel?: (edgeId: string) => void;
-  // Selection toolbar — direction (which end carries the arrowhead) and model reverse.
+  // Selection toolbar — direction (which end carries the arrowhead), type picker, model reverse.
   direction?: 'forward' | 'backward';
   onSetDirection?: (edgeId: string, dir: 'forward' | 'backward') => void;
   onReverse?: (edgeId: string) => void;
+  typeValue?: string;
+  onSetType?: (edgeId: string, t: RelationshipType) => void;
 }
 
 /** Which side of a box a line heading (dx, dy) leaves from — used to give bezier/step waypoint
@@ -88,6 +91,7 @@ export function WaypointEdge({
   label, style, data, markerStart, markerEnd, selected,
 }: EdgeProps & { data?: WaypointEdgeData }) {
   const { screenToFlowPosition } = useReactFlow();
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const waypoints = data?.waypoints ?? [];
   const routing = data?.routing ?? DEFAULT_EDGE_ROUTING;
   const sPos = sourcePosition ?? Position.Bottom;
@@ -148,11 +152,12 @@ export function WaypointEdge({
       )}
       <EdgeLabelRenderer>
         {/* Selection toolbar — floats above the label midpoint and follows the line while nodes
-            move. Left/right set which end carries the arrowhead; the middle swaps the
-            relationship's direction in the model. */}
+            move. Left/right set which end carries the arrowhead, the dropdown picks a predefined
+            relationship type (writes the model attribute + applies its style), ⇄ reverses the
+            relationship in the model. */}
         {selected && !data?.editing && data?.onSetDirection && (
           <div
-            className="nodrag nopan flex items-center gap-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-md px-0.5 py-0.5"
+            className="nodrag nopan"
             style={{
               position: 'absolute',
               transform: `translate(-50%, -100%) translate(${labelMid.x}px, ${labelMid.y - 14}px)`,
@@ -162,33 +167,69 @@ export function WaypointEdge({
             onClick={(ev) => ev.stopPropagation()}
             onDoubleClick={(ev) => ev.stopPropagation()}
           >
-            <button
-              title="Arrowhead at the source end"
-              onClick={() => data.onSetDirection?.(id, 'backward')}
-              className={clsx('p-1 rounded transition-colors',
-                data.direction === 'backward'
-                  ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
-            >
-              <ArrowLeft className="w-3 h-3" />
-            </button>
-            <button
-              title="Reverse the relationship (swap source and target)"
-              onClick={() => data.onReverse?.(id)}
-              className="p-1 rounded text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <ArrowLeftRight className="w-3 h-3" />
-            </button>
-            <button
-              title="Arrowhead at the target end"
-              onClick={() => data.onSetDirection?.(id, 'forward')}
-              className={clsx('p-1 rounded transition-colors',
-                data.direction === 'forward'
-                  ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
-            >
-              <ArrowRight className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-md px-0.5 py-0.5">
+              <button
+                title="Arrowhead at the source end"
+                onClick={() => data.onSetDirection?.(id, 'backward')}
+                className={clsx('p-1 rounded transition-colors',
+                  data.direction === 'backward'
+                    ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
+              >
+                <ArrowLeft className="w-3 h-3" />
+              </button>
+              {data.onSetType && (
+                <button
+                  title="Relationship type"
+                  onClick={() => setTypeMenuOpen((o) => !o)}
+                  className={clsx('px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px] font-medium transition-colors max-w-[96px]',
+                    typeMenuOpen
+                      ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
+                      : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
+                >
+                  <span className="truncate">{data.typeValue || 'type'}</span>
+                  <ChevronDown className="w-2.5 h-2.5 shrink-0" />
+                </button>
+              )}
+              <button
+                title="Reverse the relationship (swap source and target)"
+                onClick={() => data.onReverse?.(id)}
+                className="p-1 rounded text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <ArrowLeftRight className="w-3 h-3" />
+              </button>
+              <button
+                title="Arrowhead at the target end"
+                onClick={() => data.onSetDirection?.(id, 'forward')}
+                className={clsx('p-1 rounded transition-colors',
+                  data.direction === 'forward'
+                    ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
+              >
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+            {typeMenuOpen && data.onSetType && (
+              <div className="absolute left-1/2 -translate-x-1/2 mt-1 w-[200px] rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg py-1">
+                {RELATIONSHIP_TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    onClick={() => { setTypeMenuOpen(false); data.onSetType?.(id, t); }}
+                    className={clsx('w-full px-2 py-1.5 flex items-center gap-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800',
+                      data.typeValue === t.value && 'bg-indigo-500/10')}
+                  >
+                    <span
+                      className="block w-7 shrink-0"
+                      style={{ borderTop: `${Math.min(t.style.thickness ?? 1.5, 3)}px ${t.style.lineStyle ?? 'solid'} ${t.style.color ?? '#71717a'}` }}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-medium text-zinc-800 dark:text-zinc-100">{t.value}</span>
+                      <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 truncate">{t.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {data?.editing ? (

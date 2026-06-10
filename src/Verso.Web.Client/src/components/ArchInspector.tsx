@@ -7,6 +7,7 @@ import { MarkerSelect } from './MarkerSelect';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
 import { DEFAULT_EDGE_STYLE, DEFAULT_EDGE_ROUTING, type EdgeLineStyle, type EdgeStyle, type EdgeAnimSpeed, type EdgeRouting } from '@/lib/edgeStyles';
+import { RELATIONSHIP_TYPES, type RelationshipType } from '@/lib/relationshipTypes';
 import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle, type NodeFillStyle, type NodeShadow, type NodeAccentSide, type NodeTextSize, type NodeTextAlign, type NodeAnimation, type NodeAnimSpeed, type NodeFieldKey } from '@/lib/nodeStyles';
 import { RESERVED_KEYS, type CustomProps } from '@/lib/customProps';
 import { CommentsPanel } from './CommentsPanel';
@@ -756,6 +757,23 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
     else setToast({ kind: 'success', text: 'Kind updated' });
   }
 
+  // Pick a predefined relationship type: write the model attribute + apply the style preset
+  // (keeps the user's routing choice). Free text still goes through the plain commit handlers.
+  async function applyRelType(t: RelationshipType) {
+    if (!link) return;
+    if (isDataFlow) setPayloadEdit(t.value); else setKindEdit(t.value);
+    setLinkDraft(null);
+    setEdgeStyleFor(linkId, { ...userStyle, ...t.style });
+    const field = isDataFlow ? 'payload' : 'kind';
+    if ((link.attributes[field] ?? '') === t.value) { setToast({ kind: 'success', text: `Styled as ${t.value}` }); return; }
+    const r = await applyOperation({
+      kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
+      linkId: link.id, attributeName: field, value: t.value,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+    else setToast({ kind: 'success', text: `Relationship set to ${t.value}` });
+  }
+
   async function handleRemove() {
     if (!link) return;
     const ok = await confirmAction({
@@ -815,19 +833,21 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
         <Section label="Properties" persistKey="link.properties" defaultOpen icon={<Info className="w-3 h-3" />}>
           {isDataFlow ? (
-            <LabeledInput
+            <RelTypeCombobox
               label="Payload"
               value={payloadEdit}
               onChange={(v) => { setPayloadEdit(v); setLinkDraft({ linkId, field: 'payload', value: v }); }}
               onCommit={handlePayloadSave}
+              onPickType={applyRelType}
               placeholder="EventName"
             />
           ) : (
-            <LabeledInput
+            <RelTypeCombobox
               label="Kind"
               value={kindEdit}
               onChange={(v) => { setKindEdit(v); setLinkDraft({ linkId, field: 'kind', value: v }); }}
               onCommit={handleKindSave}
+              onPickType={applyRelType}
               placeholder="uses, calls, reads…"
             />
           )}
@@ -1189,6 +1209,62 @@ function BuiltinValueEditor({ row }: { row: BuiltinRow }) {
       onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); if (ev.key === 'Escape') { setVal(row.value); (ev.target as HTMLInputElement).blur(); } }}
       className="flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded px-1.5 py-0.5 text-[11px] outline-none focus:border-indigo-500"
     />
+  );
+}
+
+/** Combobox for the relationship type/payload: free text input plus a dropdown of predefined
+ *  architecture relationship types (with style previews). Picking one commits the value AND
+ *  applies its style preset; typed text commits as-is and leaves the style alone. */
+function RelTypeCombobox({ label, value, onChange, onCommit, onPickType, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; onCommit: () => void;
+  onPickType: (t: RelationshipType) => void; placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">{label}</div>
+      <div className="relative">
+        <input
+          value={value}
+          placeholder={placeholder}
+          onChange={(ev) => onChange(ev.target.value)}
+          onBlur={() => { setOpen(false); onCommit(); }}
+          onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }}
+          className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded pl-2 pr-7 py-1.5 text-xs outline-none focus:border-indigo-500"
+        />
+        <button
+          onMouseDown={(ev) => ev.preventDefault()}
+          onClick={() => setOpen((o) => !o)}
+          title="Pick a predefined relationship type"
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+        {open && (
+          <div className="absolute z-20 left-0 right-0 mt-1 rounded-md border border-default bg-white dark:bg-zinc-900 shadow-lg py-1">
+            {RELATIONSHIP_TYPES.map((t) => (
+              <button
+                key={t.value}
+                onMouseDown={(ev) => ev.preventDefault()}
+                onClick={() => { setOpen(false); onPickType(t); }}
+                className={clsx('w-full px-2 py-1.5 flex items-center gap-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800',
+                  value === t.value && 'bg-indigo-500/10')}
+              >
+                <span
+                  className="block w-7 shrink-0"
+                  style={{ borderTop: `${Math.min(t.style.thickness ?? 1.5, 3)}px ${t.style.lineStyle ?? 'solid'} ${t.style.color ?? '#71717a'}` }}
+                />
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-medium text-zinc-800 dark:text-zinc-100">{t.value}</span>
+                  <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 truncate">{t.hint}</span>
+                </span>
+              </button>
+            ))}
+            <p className="px-2 pt-1 text-[10px] text-faint leading-snug">Picking a type also styles the line. Custom text is fine too — just type it above.</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -66,6 +66,7 @@ import {
   type LayoutAlgorithm,
 } from '@/lib/autoLayout';
 import { dashArrayFor, DEFAULT_EDGE_STYLE, type EdgeArrow } from '@/lib/edgeStyles';
+import { type RelationshipType } from '@/lib/relationshipTypes';
 
 /** React Flow's default edge stroke — markers must carry an explicit colour because RF renders
  *  a built-in marker with `color: undefined` as stroke/fill "none", i.e. an invisible arrowhead. */
@@ -424,6 +425,25 @@ function CanvasInner() {
       : { ...cur, arrowStart: shape, arrowEnd: 'none' });
   }, []);
 
+  // Apply a predefined relationship type: write the attribute into the model (kind for a
+  // dependency, payload for a data flow) and apply the type's style preset, keeping the
+  // user's routing/docking choices.
+  const handleSetEdgeType = useCallback(async (edgeId: string, t: RelationshipType) => {
+    const st = useApp.getState();
+    const link = st.arch?.links.find((l) => l.id === edgeId);
+    if (!link) return;
+    const cur = st.edgeStyles[edgeId] ?? DEFAULT_EDGE_STYLE;
+    st.setEdgeStyleFor(edgeId, { ...cur, ...t.style });
+    const field = link.kind === 'dataFlow' ? 'payload' : 'kind';
+    if ((link.attributes[field] ?? '') === t.value) { setToast({ kind: 'success', text: `Styled as ${t.value}` }); return; }
+    const r = await applyOperation({
+      kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
+      linkId: edgeId, attributeName: field, value: t.value,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+    else setToast({ kind: 'success', text: `Relationship set to ${t.value}` });
+  }, [setToast]);
+
   const handleReverseEdge = useCallback(async (edgeId: string) => {
     const link = useApp.getState().arch?.links.find((l) => l.id === edgeId);
     if (!link) return;
@@ -493,9 +513,11 @@ function CanvasInner() {
           : arrowStart !== 'none' && arrowEnd === 'none' ? 'backward' as const : undefined,
         onSetDirection: handleSetEdgeDirection,
         onReverse: handleReverseEdge,
+        typeValue: label,
+        onSetType: handleSetEdgeType,
       },
     };
-  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, selectedLinkId, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds, linkDraft, editingEdgeId, startEdgeEdit, handleEdgeEditChange, commitEdgeEdit, cancelEdgeEdit, handleSetEdgeDirection, handleReverseEdge]);
+  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, selectedLinkId, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds, linkDraft, editingEdgeId, startEdgeEdit, handleEdgeEditChange, commitEdgeEdit, cancelEdgeEdit, handleSetEdgeDirection, handleReverseEdge, handleSetEdgeType]);
 
   // The unique (shape, colour) custom markers (circle / diamond / bar) actually used by edges.
   const customMarkers = useMemo<CustomMarker[]>(() => {
