@@ -106,11 +106,21 @@
 
 /* Q116: connection handles enlarge on node hover so they're easier to grab.
    Default xyflow handles are 6px; we boost to 9px (1.5x) when the node is
-   hovered or selected. */
+   hovered or selected.
+   Readability: the 6 docking dots stay invisible until the node is hovered or
+   selected (they remain interactive, so docked edges are unaffected). While a
+   new connection is being dragged, every node shows its dots so drop targets
+   are discoverable. */
 .react-flow__handle {
   width: 6px;
   height: 6px;
-  transition: transform 120ms ease, background 120ms ease;
+  opacity: 0;
+  transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle,
+.react-flow:has(.react-flow__connection) .react-flow__handle {
+  opacity: 1;
 }
 .react-flow__node:hover .react-flow__handle,
 .react-flow__node.selected .react-flow__handle {
