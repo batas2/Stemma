@@ -54,6 +54,33 @@
     container: 'Container', person: 'Person', useCase: 'Use Case', capability: 'Capability',
     question: 'Question', assumption: 'Assumption', risk: 'Risk',
   };
+  // Kind icons (lucide path data, ISC) + accent colours — same pairs as the canvas ArchNodeView.
+  var KIND_ICON = {
+    module: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"/><path d="m7.5 4.27 9 5.15"/>',
+    boundedContext: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+    softwareSystem: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+    container: '<path d="m21.12 6.4-6.05-4.06a2 2 0 0 0-2.17-.05L2.95 8.41a2 2 0 0 0-.95 1.7v5.82a2 2 0 0 0 .88 1.66l6.05 4.07a2 2 0 0 0 2.17.05l9.95-6.12a2 2 0 0 0 .95-1.7V8.06a2 2 0 0 0-.88-1.66Z"/><path d="M10 22v-8L2.25 9.15"/><path d="m10 14 11.77-6.87"/>',
+    person: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    useCase: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    capability: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+    question: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    assumption: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+    risk: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  };
+  var KIND_ACCENT = {
+    module: '#6366f1', boundedContext: '#8b5cf6', softwareSystem: '#10b981', container: '#34d399',
+    person: '#f59e0b', useCase: '#f43f5e', capability: '#0ea5e9', question: '#0ea5e9',
+    assumption: '#f59e0b', risk: '#f43f5e',
+  };
+  /** Inline lucide icon, coloured per kind. The markup is a static constant — never user input. */
+  function kindIcon(kind, size) {
+    var span = document.createElement('span');
+    span.style.display = 'inline-flex';
+    span.innerHTML = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="'
+      + (KIND_ACCENT[kind] || '#6366f1') + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+      + (KIND_ICON[kind] || KIND_ICON.module) + '</svg>';
+    return span.firstChild;
+  }
   var REL_TYPE_VALUES = data.relationshipTypes.map(function (t) { return t.value; });
   function linkTypeOf(l) {
     var v = l.kind === 'dataFlow' ? (l.attributes.payload || '') : (l.attributes.kind || 'uses');
@@ -132,8 +159,23 @@
   // ---------- geometry ----------
   function nodeSize(e) {
     var st = data.nodeStyles[e.id] || {};
-    var w = st.width || (e.kind === 'person' ? 150 : 190);
-    var hgt = st.height || (e.kind === 'person' ? 56 : 88);
+    if (e.kind === 'person') {
+      return { w: st.width || Math.max(130, e.name.length * 7 + 70), h: st.height || 42 };
+    }
+    var w = st.width || 200;
+    var hgt = st.height;
+    if (!hgt) {
+      hgt = 58; // header + name + padding
+      if (state.layers.ids) hgt += 14;
+      if (e.attributes.contextId && elById[e.attributes.contextId]) hgt += 13;
+      if (state.layers.notes) {
+        var props = data.customProps[e.id] || {};
+        hgt += Math.min(Object.keys(props).length, 2) * 13;
+        if (squadOf(e.id)) hgt += 13;
+        if (data.notes[e.id]) hgt += 42;
+      }
+      hgt = Math.max(hgt, 72);
+    }
     return { w: w, h: hgt };
   }
   function positionsFor(view) {
@@ -410,15 +452,129 @@
     return m;
   }
 
-  function statusBadge(g, status, x, y) {
-    var color = STATUS_COLOR[status] || '#a1a1aa';
-    var label = status.toUpperCase();
-    var w = label.length * 5.4 + 12;
-    var badge = s('g', { class: 'vr-badge' }, [
-      s('rect', { x: x - w, y: y, width: w, height: 13, fill: color, opacity: '0.16' }),
-      s('text', { x: x - w / 2, y: y + 9.5, 'text-anchor': 'middle', fill: color, text: label }),
-    ]);
-    g.appendChild(badge);
+  var STATUS_GLYPH = { current: '●', target: '◆', 'to-adapt': '◇', 'to-be-created': '○', deprecated: '━', proposed: '◌' };
+  function statusBadgeEl(status) {
+    var b = h('span', { class: 'vrn-badge st-' + status });
+    b.appendChild(h('span', { text: (STATUS_GLYPH[status] || '') + ' ' }));
+    b.appendChild(document.createTextNode(status));
+    return b;
+  }
+
+  var SHADOWS = {
+    none: 'none',
+    soft: 'drop-shadow(0 1px 2px rgba(0,0,0,0.16))',
+    raised: 'drop-shadow(0 6px 10px rgba(0,0,0,0.22))',
+  };
+
+  /** A node card mirroring the canvas ArchNodeView: header (icon + kind + status badge), body
+   *  (name, id, context, props, squad, notes), custom node styles (fills, borders, shadows,
+   *  accent bars), lifecycle looks and motion effects. All text via textContent. */
+  function buildNodeCard(e) {
+    var st = data.nodeStyles[e.id] || {};
+    var status = statusOf(e.id);
+    var sel = state.selected && state.selected.type === 'element' && state.selected.id === e.id;
+    var isPerson = e.kind === 'person';
+    var hasCustomStyle = !!(st.fillColor || st.borderColor || st.borderStyle || st.fillStyle || st.shadow);
+    var isExternal = e.attributes.external === 'true' || e.attributes.role === 'external';
+
+    var card = h('div', { class: 'vrn' + (isPerson ? ' vrn-person' : '') + (sel ? ' sel' : '') });
+    if (!hasCustomStyle && status) card.classList.add('vrn-st-' + status);
+
+    // ---- custom appearance (mirrors ArchNodeView inlineStyle) ----
+    var fill = st.fillColor;
+    if (st.fillStyle === 'gradient') {
+      card.style.background = fill
+        ? 'linear-gradient(160deg, color-mix(in srgb, ' + fill + ', white 24%), ' + fill + ')'
+        : 'linear-gradient(160deg, rgba(99,102,241,0.14), rgba(99,102,241,0.02))';
+    } else if (st.fillStyle === 'glass') {
+      card.style.background = fill ? 'color-mix(in srgb, ' + fill + ', transparent 55%)' : 'rgba(255,255,255,0.4)';
+      card.style.backdropFilter = 'blur(6px)';
+    } else if (st.fillStyle === 'hatch') {
+      var hc = fill || 'rgba(148,163,184,0.45)';
+      card.style.backgroundImage = 'repeating-linear-gradient(45deg, ' + hc + ' 0 5px, transparent 5px 11px)';
+    } else if (fill) {
+      card.style.background = fill;
+    }
+    if (st.borderColor) card.style.borderColor = st.borderColor;
+    if (st.borderWidth !== undefined) card.style.borderWidth = st.borderWidth + 'px';
+    if (st.borderStyle) card.style.borderStyle = st.borderStyle;
+    if (st.radius !== undefined && !isPerson) card.style.borderRadius = st.radius + 'px';
+    if (st.opacity !== undefined) card.style.opacity = String(st.opacity);
+    if (st.shadow === 'glow') card.style.filter = 'drop-shadow(0 0 6px ' + (st.borderColor || 'rgb(99,102,241)') + ')';
+    else if (st.shadow && SHADOWS[st.shadow]) card.style.filter = SHADOWS[st.shadow];
+    if (isExternal) {
+      if (!st.borderStyle) card.style.borderStyle = 'dashed';
+      if (!fill && st.fillStyle === undefined) card.style.background = 'rgba(148, 163, 184, 0.08)';
+    }
+
+    // ---- motion (mirrors verso-anim-*) ----
+    var anim = st.animation || (st.animated ? 'marching' : 'none');
+    var dur = st.animationSpeed === 'slow' ? '2.6s' : st.animationSpeed === 'fast' ? '0.7s' : '1.5s';
+    if (anim && anim !== 'none' && anim !== 'marching') {
+      card.classList.add('vrn-anim-' + anim);
+      card.style.setProperty('--anim-dur', dur);
+      if (anim === 'glow') card.style.setProperty('--glow', st.borderColor || 'rgba(99,102,241,0.55)');
+    }
+    if (anim === 'marching') {
+      var march = h('div', { class: 'vrn-march' });
+      march.style.setProperty('--march', st.borderColor || 'rgb(99 102 241)');
+      card.appendChild(march);
+    }
+    if (st.accentSide && st.accentSide !== 'none') {
+      var bar = h('div', { class: 'vrn-accent ' + st.accentSide });
+      bar.style.background = st.accentColor || st.borderColor || 'rgb(99 102 241)';
+      card.appendChild(bar);
+    }
+
+    // ---- comment indicator ----
+    var cc = commentsFor(e.id).length;
+    if (cc) card.appendChild(h('span', { class: 'vrn-cdot', text: String(cc) }));
+
+    // ---- title typography ----
+    var nameCls = 'vrn-name' + (st.textSize === 'sm' ? ' sm' : st.textSize === 'lg' ? ' lg' : '');
+    function nameEl() {
+      var n = h('div', { class: nameCls, text: e.name });
+      if (st.textColor) n.style.color = st.textColor;
+      if (st.textAlign === 'center') n.style.textAlign = 'center';
+      return n;
+    }
+
+    if (isPerson) {
+      card.appendChild(kindIcon('person', 13));
+      card.appendChild(nameEl());
+      if (state.layers.status && status) card.appendChild(statusBadgeEl(status));
+    } else {
+      var head = h('div', { class: 'vrn-head' });
+      head.appendChild(kindIcon(e.kind, 13));
+      head.appendChild(h('span', { class: 'vrn-kind', text: KIND_LABEL[e.kind] || e.kind }));
+      if (isExternal) head.appendChild(h('span', { class: 'vrn-ext', text: 'external' }));
+      if (state.layers.status && status) head.appendChild(statusBadgeEl(status));
+      card.appendChild(head);
+
+      var body = h('div', { class: 'vrn-body' });
+      body.appendChild(nameEl());
+      if (state.layers.ids) body.appendChild(h('div', { class: 'vrn-sub mono', text: e.id }));
+      var ctx = e.attributes.contextId && elById[e.attributes.contextId];
+      if (ctx) {
+        var ctxRow = h('div', { class: 'vrn-sub' });
+        ctxRow.appendChild(document.createTextNode('in '));
+        ctxRow.appendChild(h('b', { text: ctx.name }));
+        body.appendChild(ctxRow);
+      }
+      if (state.layers.notes) {
+        var props = data.customProps[e.id] || {};
+        Object.keys(props).slice(0, 2).forEach(function (k) {
+          body.appendChild(h('div', { class: 'vrn-sub', text: k + ': ' + props[k] }));
+        });
+        var sq = squadOf(e.id);
+        if (sq) body.appendChild(h('div', { class: 'vrn-sub', text: '👥 ' + sq }));
+        if (data.notes[e.id]) body.appendChild(h('div', { class: 'vrn-notes', text: data.notes[e.id] }));
+      }
+      card.appendChild(body);
+    }
+
+    card.addEventListener('click', function (ev) { ev.stopPropagation(); select('element', e.id); });
+    return card;
   }
 
   function renderView(view) {
@@ -457,8 +613,16 @@
         }
         var g = s('g', { class: 'vr-bc' }, [
           s('rect', { x: bx, y: by, width: bw, height: bh }),
-          s('text', { x: bx + 12, y: by + 17, text: bc.name }),
         ]);
+        // Header chip like the canvas BcContainer (icon + name + member count).
+        var chipFo = s('foreignObject', { x: bx + 10, y: by - 11, width: bw - 20, height: 24 });
+        var chip = h('span', { class: 'vr-bc-chip' });
+        chip.appendChild(kindIcon('boundedContext', 11));
+        chip.appendChild(h('span', { text: bc.name }));
+        if (members.length) chip.appendChild(h('span', { class: 'n', text: '· ' + members.length }));
+        chip.addEventListener('click', function (ev) { ev.stopPropagation(); select('element', bc.id); });
+        chipFo.appendChild(chip);
+        g.appendChild(chipFo);
         g.addEventListener('click', function (ev) { ev.stopPropagation(); select('element', bc.id); });
         svgEl.appendChild(g);
       });
@@ -470,9 +634,14 @@
       var color = st.color || '#94a3b8';
       var thickness = st.thickness || 1.5;
       var isFlow = l.kind === 'dataFlow';
-      var dash = st.lineStyle === 'dashed' ? '8 4' : st.lineStyle === 'dotted' ? '2 4' : (st.lineStyle === 'solid' ? null : (isFlow ? null : '4 4'));
-      var ends = edgeEndpoints(view, l, pos);
       var wps = (data.waypoints[view.key] || {})[l.id];
+      var dash = st.lineStyle === 'dashed' ? '8 4' : st.lineStyle === 'dotted' ? '2 4' : (st.lineStyle === 'solid' ? null : (isFlow ? null : '4 4'));
+      // Flow animation — same default rule as the canvas: dependencies with a plain solid line
+      // and no waypoints march by default; explicit `animated` wins either way.
+      var animated = st.animated != null ? st.animated
+        : (!isFlow && (st.lineStyle || 'solid') === 'solid' && !(wps && wps.length));
+      if (animated) dash = '5';
+      var ends = edgeEndpoints(view, l, pos);
       var d = edgePath(ends.s, ends.t, wps);
       var aEnd = st.arrowEnd != null ? st.arrowEnd : (st.arrow != null ? st.arrow : 'closed');
       var aStart = st.arrowStart || 'none';
@@ -480,7 +649,8 @@
         if (a && a !== 'none' && !markerSeen[markerId(a, color)]) { defs.appendChild(buildMarker(a, color)); markerSeen[markerId(a, color)] = 1; }
       });
       var sel = state.selected && state.selected.type === 'link' && state.selected.id === l.id;
-      var attrs = { d: d, class: 'line', stroke: color, 'stroke-width': sel ? thickness + 1 : thickness };
+      var lineClass = 'line' + (animated ? ' vr-flow' + (st.animSpeed === 'slow' ? ' slow' : st.animSpeed === 'fast' ? ' fast' : '') : '');
+      var attrs = { d: d, class: lineClass, stroke: color, 'stroke-width': sel ? thickness + 1 : thickness };
       if (dash) attrs['stroke-dasharray'] = dash;
       if (aEnd && aEnd !== 'none') attrs['marker-end'] = 'url(#' + markerId(aEnd, color) + ')';
       if (aStart && aStart !== 'none') attrs['marker-start'] = 'url(#' + markerId(aStart, color) + ')';
@@ -491,9 +661,9 @@
       var label = isFlow ? (l.attributes.payload || '') : (l.attributes.kind || 'uses');
       if (label) {
         var mid = midOf(ends.s, ends.t, wps);
-        var lw = label.length * 5.6 + 10;
-        g.appendChild(s('g', { class: 'vr-edgelabel' }, [
-          s('rect', { x: mid.x - lw / 2, y: mid.y - 8, width: lw, height: 15 }),
+        var lw = label.length * 5.9 + 10;
+        g.appendChild(s('g', { class: 'vr-edgelabel' + (sel ? ' sel' : '') }, [
+          s('rect', { x: mid.x - lw / 2, y: mid.y - 8.5, width: lw, height: 16 }),
           s('text', { x: mid.x, y: mid.y + 3.5, 'text-anchor': 'middle', text: label }),
         ]));
       }
@@ -512,48 +682,12 @@
       });
     }
 
-    // Nodes.
-    var CONCERN_TINT = { question: '#0ea5e9', assumption: '#f59e0b', risk: '#f43f5e' };
+    // Nodes — HTML cards inside foreignObjects, styled like the canvas ArchNodeView.
     els.filter(function (e) { return e.kind !== 'boundedContext'; }).forEach(function (e) {
       var p = pos[e.id], sz = nodeSize(e);
-      var st = data.nodeStyles[e.id] || {};
-      var status = statusOf(e.id);
-      var sel = state.selected && state.selected.type === 'element' && state.selected.id === e.id;
-      var g = s('g', { class: 'vr-node' + (sel ? ' sel' : ''), 'data-el': e.id });
-      var body = s('rect', { class: 'body', x: p.x, y: p.y, width: sz.w, height: sz.h });
-      if (st.fillColor) body.setAttribute('fill', st.fillColor);
-      var borderColor = st.borderColor || (CONCERN_TINT[e.kind] ? CONCERN_TINT[e.kind] : (status && STATUS_COLOR[status] && status !== 'current' ? STATUS_COLOR[status] : null));
-      if (borderColor && !sel) body.setAttribute('stroke', borderColor);
-      if (st.borderStyle === 'dashed' || status === 'to-be-created') body.setAttribute('stroke-dasharray', '6 4');
-      if (st.borderStyle === 'dotted' || status === 'proposed') body.setAttribute('stroke-dasharray', '2 3');
-      if (status === 'deprecated') g.setAttribute('opacity', '0.55');
-      g.appendChild(body);
-      g.appendChild(s('text', { class: 'kind', x: p.x + 12, y: p.y + 16, text: (KIND_LABEL[e.kind] || e.kind).toUpperCase() }));
-      g.appendChild(s('text', { class: 'name', x: p.x + 12, y: p.y + 34, text: e.name.length > 26 ? e.name.slice(0, 25) + '…' : e.name }));
-      var line = p.y + 48;
-      if (state.layers.ids) { g.appendChild(s('text', { class: 'sub', x: p.x + 12, y: line, text: e.id })); line += 12; }
-      if (state.layers.notes) {
-        var props = data.customProps[e.id] || {};
-        var keys = Object.keys(props).slice(0, 2);
-        keys.forEach(function (k) {
-          if (line > p.y + sz.h - 6) return;
-          var txt = k + ': ' + props[k];
-          g.appendChild(s('text', { class: 'prop', x: p.x + 12, y: line, text: txt.length > 30 ? txt.slice(0, 29) + '…' : txt }));
-          line += 11;
-        });
-        var sq = squadOf(e.id);
-        if (sq && line <= p.y + sz.h - 6) { g.appendChild(s('text', { class: 'prop', x: p.x + 12, y: line, text: '👥 ' + sq })); }
-      }
-      if (state.layers.status && status) statusBadge(g, status, p.x + sz.w - 6, p.y + 6);
-      var cc = commentsFor(e.id).length;
-      if (cc) {
-        g.appendChild(s('g', { class: 'vr-comment-dot' }, [
-          s('circle', { cx: p.x + sz.w - 2, cy: p.y - 2, r: 7.5 }),
-          s('text', { x: p.x + sz.w - 2, y: p.y + 1, 'text-anchor': 'middle', text: String(cc) }),
-        ]));
-      }
-      g.addEventListener('click', function (ev) { ev.stopPropagation(); select('element', e.id); });
-      svgEl.appendChild(g);
+      var fo = s('foreignObject', { x: p.x, y: p.y, width: sz.w, height: sz.h });
+      fo.appendChild(buildNodeCard(e));
+      svgEl.appendChild(fo);
     });
 
     // Pan / zoom.
