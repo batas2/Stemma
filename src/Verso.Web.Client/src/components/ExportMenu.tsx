@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, ChevronDown, FileImage, FileCode, FileText } from 'lucide-react';
+import { Download, ChevronDown, FileImage, FileCode, FileText, Globe } from 'lucide-react';
 import { exportMermaid, exportDrawio } from '@/lib/api';
 import { useApp } from '@/lib/store';
+import { generateAndDownloadReport } from '@/report/generateReport';
 
 function download(filename: string, content: string | Blob, mime = 'text/plain') {
   const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
@@ -32,6 +33,24 @@ export function ExportMenu() {
       document.removeEventListener('keydown', onEsc);
     };
   }, [open]);
+
+  // F-001: single-file interactive HTML report. Recipients download it from Drive (or wherever
+  // it's shared) and open it locally — Drive's preview doesn't run JavaScript (spec Q1-A).
+  async function exportReport() {
+    setOpen(false);
+    const ws = useApp.getState().workspace;
+    if (!ws) { setToast({ kind: 'error', text: 'Open a workspace first' }); return; }
+    try {
+      const r = await generateAndDownloadReport(ws.rootPath);
+      const mb = (r.bytes / 1024 / 1024).toFixed(1);
+      setToast({
+        kind: r.oversize ? 'info' : 'success',
+        text: `Report exported (${mb} MB). Share it anywhere — recipients download and open it.`,
+      });
+    } catch (e) {
+      setToast({ kind: 'error', text: `Report failed: ${(e as Error).message}` });
+    }
+  }
 
   async function exportFormat(format: 'mermaid' | 'drawio' | 'png' | 'svg') {
     setOpen(false);
@@ -73,7 +92,8 @@ export function ExportMenu() {
           role="menu"
           className="absolute right-0 top-full mt-1 w-48 rounded surface-overlay z-popover overflow-hidden"
         >
-          <ExportItem onClick={() => exportFormat('png')} icon={FileImage} accent="text-rose-500" label="PNG" />
+          <ExportItem onClick={exportReport} icon={Globe} accent="text-sky-500" label="Architecture report (.html)" />
+          <ExportItem onClick={() => exportFormat('png')} icon={FileImage} accent="text-rose-500" label="PNG" border />
           <ExportItem onClick={() => exportFormat('svg')} icon={FileImage} accent="text-amber-500" label="SVG" border />
           <ExportItem onClick={() => exportFormat('drawio')} icon={FileCode} accent="text-emerald-500" label="draw.io XML" border />
           <ExportItem onClick={() => exportFormat('mermaid')} icon={FileText} accent="text-indigo-500" label="Mermaid (.md)" border />

@@ -68,3 +68,62 @@ export function appendReply(sidecar: CommentsSidecar, id: string, reply: Comment
 export function commentsForTarget(sidecar: CommentsSidecar, kind: CommentEntry['targetKind'], targetId: string): CommentEntry[] {
   return sidecar.comments.filter((c) => c.targetKind === kind && c.targetId === targetId);
 }
+
+// ---- F-001 comment pack: feedback written inside an exported architecture report, sent back as
+// a JSON file and merged here. The pack is a transport envelope only — the sidecar stays the
+// single durable home for comments.
+
+export interface CommentPack {
+  version: number;
+  kind?: string;            // 'verso-comment-pack'
+  exportedAt?: string;
+  author?: string;
+  workspaceRoot?: string;
+  comments: CommentEntry[];
+}
+
+export function parseCommentPack(raw: string): CommentPack {
+  const p = JSON.parse(raw) as CommentPack;
+  if (!p || !Array.isArray(p.comments)) throw new Error('Not a Verso comment pack');
+  for (const c of p.comments) {
+    if (!c.id || !c.targetId || typeof c.body !== 'string') throw new Error('Malformed comment in pack');
+  }
+  return p;
+}
+
+/** Merge a pack into the sidecar. Idempotent: comments merge by id; for an id that already
+ *  exists, only thread replies not yet present (by author+createdAt+body) are appended and the
+ *  local `resolved` flag is kept. Returns the merged sidecar plus what actually changed. */
+export function mergeCommentPack(sidecar: CommentsSidecar, pack: CommentPack): {
+  merged: CommentsSidecar; added: number; repliesAdded: number;
+} {
+  let added = 0;
+  let repliesAdded = 0;
+  const merged = sidecar.comments.map((c) => ({ ...c, thread: [...c.thread] }));
+  const mergedById = new Map(merged.map((c) => [c.id, c]));
+  for (const incoming of pack.comments) {
+    const existing = mergedById.get(incoming.id);
+    if (!existing) {
+      const fresh: CommentEntry = {
+        id: incoming.id,
+        targetKind: incoming.targetKind ?? 'element',
+        targetId: incoming.targetId,
+        author: incoming.author || pack.author || 'anonymous',
+        createdAt: incoming.createdAt || new Date().toISOString(),
+        body: incoming.body,
+        resolved: false,
+        thread: [...(incoming.thread ?? [])],
+      };
+      merged.push(fresh);
+      mergedById.set(fresh.id, fresh);
+      added++;
+      continue;
+    }
+    const seen = new Set(existing.thread.map((r) => `${r.author}|${r.createdAt}|${r.body}`));
+    for (const r of incoming.thread ?? []) {
+      const key = `${r.author}|${r.createdAt}|${r.body}`;
+      if (!seen.has(key)) { existing.thread.push(r); seen.add(key); repliesAdded++; }
+    }
+  }
+  return { merged: { ...sidecar, comments: merged }, added, repliesAdded };
+}

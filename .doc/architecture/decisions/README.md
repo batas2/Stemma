@@ -25,6 +25,7 @@ removed).
 | 0011 | **YAML adapter shape.** | 🗄️ Historical — YAML adapter removed. |
 | 0012 | **View Books governance concept.** | 🟡 Directional — see [`../../product/roadmap.md`](../../product/roadmap.md). |
 | 0013 | **Cross-adapter references.** | 🗄️ Historical — single adapter now. |
+| [0014](./0014-architecture-report-rendering-and-comment-pack.md) | **Architecture report** — embedded-JSON standalone renderer + comment-pack round-trip. | ✅ Current — see [F-001](../../features/F-001-architecture-report-export.md). |
 
 ## Legend
 

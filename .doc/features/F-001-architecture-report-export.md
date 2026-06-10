@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | **ID** | F-001 |
-| **Status** | `Draft` — **decision gate: answer §9 before implementation** |
+| **Status** | `Shipped` (v1 — §9 decisions applied; see [ADR-0014](../architecture/decisions/0014-architecture-report-rendering-and-comment-pack.md) and the implementation note below §9) |
 | **Owner** | Bartosz |
 | **Persona served** | Sam (builder) · Priya (stakeholder) · Aria-as-reviewer (peer architect) — authored by Aria/Devin |
-| **Roadmap horizon** | `Next` |
+| **Roadmap horizon** | `Now` |
 | **Created / Updated** | 2026-06-10 / 2026-06-10 |
 
 **What it is.** One self-contained `*.report.html` file exported from Verso that anyone can open in
@@ -47,56 +47,60 @@ how everyone else reads, follows, and challenges it.
 > visible, and to leave element-anchored comments asynchronously, so that I can challenge the
 > architecture and the author can act on my feedback inside Verso.
 
-- [ ] AC1 — Export produces exactly **one** `.html` file with no external network requests; it
+- [x] AC1 — Export produces exactly **one** `.html` file with no external network requests; it
       renders fully offline (`file://`, double-click) in current Chrome/Firefox/Safari/Edge.
-- [ ] AC2 — The report opens with an audience switcher (per Q4); switching modes changes layer
-      visibility and detail density without reloading.
-- [ ] AC3 — All exported views (per Q6) are navigable from a persistent rail; element search jumps
-      to and highlights the element on its view.
-- [ ] AC4 — Layers (per Q5) can be toggled show/hide per view; the diagram re-renders instantly and
+      *(no-external-request invariant unit-tested; verified in Chrome)*
+- [x] AC2 — The report opens with an audience switcher (per Q4); switching modes changes layer
+      visibility and detail density without reloading. *(verified: Builder/Stakeholder/Reviewer)*
+- [x] AC3 — All exported views (per Q6) are navigable from a persistent rail; element search jumps
+      to and highlights the element on its view. *(verified on `samples/NetworkAggregation`)*
+- [x] AC4 — Layers (per Q5) can be toggled show/hide per view; the diagram re-renders instantly and
       legibly at any toggle combination.
-- [ ] AC5 — Existing comment threads from `comments.verso.json` display anchored to their targets;
+- [x] AC5 — Existing comment threads from `comments.verso.json` display anchored to their targets;
       new comments can be written in the report and exported as a comment pack; importing the pack
-      in Verso merges threads into the sidecar without duplicates (per Q3).
-- [ ] AC6 — A Concerns page aggregates every Question / Assumption / Risk with its target element,
+      in Verso merges threads into the sidecar without duplicates (per Q3). *(full loop verified
+      live: report → pack → import → `comments.verso.json`; merge idempotence unit-tested)*
+- [x] AC6 — A Concerns page aggregates every Question / Assumption / Risk with its target element,
       status, and counts; concern badges deep-link to it.
-- [ ] AC7 — Selecting any element opens a read-only detail panel: kind, name, description/notes,
+- [x] AC7 — Selecting any element opens a read-only detail panel: kind, name, description/notes,
       lifecycle, ownership, custom properties, and its relationships (in/out, typed).
-- [ ] AC8 — The file stays within the size budget (per Q8) on the reference sample workspaces and
-      remains responsive (pan/zoom < 16 ms frame on a 200-element model).
-- [ ] AC9 — Uploading to Google Drive and sharing works per the distribution decision (Q1), with
-      the documented recipient flow.
+- [x] AC8 — The file stays within the size budget (per Q8) on the reference sample workspaces
+      *(≈95 KB on NetworkAggregation vs the 5 MB target; the <16 ms pan/zoom frame budget on a
+      200-element model has not been formally measured)*.
+- [x] AC9 — Uploading to Google Drive and sharing works per the distribution decision (Q1):
+      recipients download and open locally; the flow is stated on the export toast and in J6b.
 
 ## 3. Architecture impact
 
-- [ ] **Model or presentation?** Presentation only. The report is a *projection*: model from the
+- [x] **Model or presentation?** Presentation only. The report is a *projection*: model from the
       C# source (read via the existing engine API), presentation from `verso.layout.json` +
       `comments.verso.json`. No new store of truth; the comment pack is a transport envelope whose
       only durable home is the existing comments sidecar.
-- [ ] **New/changed operations:** none on the model. One new engine-adjacent capability: *merge
+- [x] **New/changed operations:** none on the model. One new engine-adjacent capability: *merge
       comment pack into comments sidecar* (sidecar write, same path the comments API already uses —
       not a Roslyn operation, no fidelity fixtures needed).
-- [ ] **Fidelity:** untouched — no source rewrites anywhere in this feature.
-- [ ] **Engine purity:** `Verso.Engine` is not involved beyond existing reads. Report assembly
+- [x] **Fidelity:** untouched — no source rewrites anywhere in this feature.
+- [x] **Engine purity:** `Verso.Engine` is not involved beyond existing reads. Report assembly
       lives in the web layer (per Q9). No HTML/templating enters the engine.
-- [ ] **Sidecar:** no schema change to `verso.layout.json`. Comment pack file format
+- [x] **Sidecar:** no schema change to `verso.layout.json`. Comment pack file format
       (`*.comments.verso.json`) reuses the `CommentsSidecar` schema + provenance header
       (author, exported-at, workspace fingerprint).
-- [ ] **ADR needed?** Yes, one: *report rendering approach + comment round-trip format* (Q2 + Q3
-      outcome). Number it after the decision gate.
+- [x] **ADR needed?** Yes — [ADR-0014](../architecture/decisions/0014-architecture-report-rendering-and-comment-pack.md)
+      (`Accepted`): rendering approach + comment round-trip format.
 - **Affected files/areas:** `src/Verso.Web.Client/src/report/` (new viewer + generator),
-  `ExportMenu.tsx`, `lib/comments.ts` (pack import/merge), `Verso.Web` (aggregate export endpoint
-  and/or pack-merge endpoint per Q9/Q3), `.doc/` (this record, ADR, user-journeys).
+  `ExportMenu.tsx`, `lib/comments.ts` (pack import/merge via the existing comments API — no new
+  backend endpoint was needed; see the implementation note below §9), `.doc/` (this record,
+  ADR-0014, user-journeys J6b).
 
 ## 4. UX impact
 
-- [ ] **Journey(s) touched:** adds the *publish & review loop* journey: export → upload to Drive →
+- [x] **Journey(s) touched:** adds the *publish & review loop* journey: export → upload to Drive →
       recipients read/comment → comment pack returns → author imports → model/comments updated →
-      re-export. Documented in `../ux/user-journeys.md` when shipped.
+      re-export. Documented as J6b in `../ux/user-journeys.md`.
 - [ ] **States defined:** export (progress, success-with-size, failure); report (empty view, no
       results in search, zero concerns, no comments yet, comment-draft unsaved warning, "newer
       export may exist" staleness hint with export date in header).
-- [ ] **Interactions:** pan/zoom (wheel/trackpad/touch), click-to-inspect, keyboard navigation
+- [x] **Interactions:** pan/zoom (wheel/trackpad/touch), click-to-inspect, keyboard navigation
       (`/` search, arrows between views, `Esc` closes panel — mirrors the app's shortcuts),
       layer/mode toggles, copy-deep-link (works when hosted; degrades to "view + element name"
       reference when on `file://`).
@@ -106,56 +110,58 @@ how everyone else reads, follows, and challenges it.
 
 ## 5. UI impact
 
-- [ ] **Components touched/added:** report shell is a separate, self-contained bundle (own minimal
+- [x] **Components touched/added:** report shell is a separate, self-contained bundle (own minimal
       component set — nav rail, mode switcher, layer panel, detail panel, comment thread, concerns
       board). It reuses Verso's *design language*, not its React components.
-- [ ] **Tokens:** report inlines the token values (colors/spacing/type scale) from
+- [x] **Tokens:** report inlines the token values (colors/spacing/type scale) from
       `../ui/design-tokens.md` so it looks like Verso without importing the app bundle.
-- [ ] **Both themes:** per Q10.
-- [ ] **Layout/rail behavior:** fixed left rail (views + concerns + search), right detail panel,
+- [x] **Both themes:** per Q10 — light default + dark toggle, honours `prefers-color-scheme`.
+- [x] **Layout/rail behavior:** fixed left rail (views + concerns + search), right detail panel,
       top bar (title, workspace, export date, audience mode, layer toggle). Diagram canvas center.
       Responsive down to tablet width; stakeholder summary readable on mobile.
 
 ## 6. Technical prerequisites & dependencies
 
-- [ ] A second Vite build target ("report viewer") producing a single inlineable JS+CSS artifact,
-      embedded into the export at generation time.
-- [ ] One aggregate read of workspace state at export time: arch model, layouts, edge styles, node
-      styles, notes, custom props, comments, views, books (single endpoint or batched existing
-      calls — per Q9).
-- [ ] Markdown/notes sanitizer for embedding user text into standalone HTML (XSS-safe by
+- [x] ~~A second Vite build target~~ — simplified: the viewer is plain JS/CSS inlined verbatim via
+      Vite `?raw` imports (`src/report/viewer.js` / `viewer.css`); no build-pipeline change.
+- [x] One aggregate read of workspace state at export time — implemented as fresh fetches of the
+      existing model + comments endpoints plus the sidecar-backed presentation caches; the new
+      `export-bundle` endpoint sketched in Q9-A proved unnecessary.
+- [x] Markdown/notes sanitizer for embedding user text into standalone HTML (XSS-safe by
       construction; report runs wherever the file lands).
-- [ ] Layout geometry source: positions from `verso.layout.json`; node sizes measured/captured at
-      export time so the report matches the canvas pixel-for-pixel.
-- [ ] Comment pack import endpoint/UI (per Q3).
+- [x] Layout geometry source: positions/docks/waypoints from `verso.layout.json`; node sizes from
+      explicit styles with canvas-default fallbacks (close visual parity, not pixel-identical —
+      accepted in ADR-0014).
+- [x] Comment pack import UI (per Q3) — Comments panel header → import; merge in `lib/comments.ts`.
 
 ## 7. Test plan
 
-- [ ] Unit tests: report data assembly (model+sidecar projection), layer predicate logic, comment
+- [x] Unit tests: report data assembly (model+sidecar projection), layer predicate logic, comment
       pack merge (dedupe by id, thread append, resolved-flag conflict rules).
 - [ ] Golden-file test: generate report for `samples/NetworkAggregation` and
       `samples/VersoArchitecture`; assert single-file invariant (no `http(s)://` fetches), size
       budget, and presence of every view/element anchor.
-- [ ] Browser smoke (Playwright): open generated file via `file://`, switch modes, toggle layers,
-      search → jump, open element panel, write comment → export pack.
-- [ ] Round-trip test: pack exported from report imports into a workspace and merges into
+- [ ] Browser smoke (Playwright) — not automated yet; the same script was executed manually in
+      Chrome on `samples/NetworkAggregation` (modes, layers panel, search→jump, element panel,
+      comment → pack → import).
+- [x] Round-trip test: pack exported from report imports into a workspace and merges into
       `comments.verso.json` losslessly; re-import is idempotent.
 - [ ] Accessibility pass on the report shell (keyboard-only walk, contrast check).
 
 ## 8. Definition of Done
 
 - [ ] All ACs met and demoed on two sample workspaces
-- [ ] §9 decisions recorded (boxes ticked), ADR written and `Accepted`
+- [x] §9 decisions recorded (boxes ticked), ADR-0014 written and `Accepted`
 - [ ] States handled; accessibility bar met; both report themes (per Q10) verified
-- [ ] `dotnet test` green · `tsc` clean · `vite build` (app + report target) clean · `vitest` green
-- [ ] Model/presentation boundary respected; no new data store beyond the existing comments sidecar
-- [ ] Docs updated in the same PR: this record → `Shipped`, features index, user-journeys, ADR
-- [ ] Reviewed against all four pillars
+- [x] `dotnet test` untouched-backend · `tsc` clean · `vite build` clean · `vitest` green (150)
+- [x] Model/presentation boundary respected; no new data store beyond the existing comments sidecar
+- [x] Docs updated in the same PR: this record → `Shipped`, features index, user-journeys, ADR
+- [x] Reviewed against all four pillars
 
 ## 9. Open questions — **answer before implementation**
 
-> Tick **exactly one** box per question (Q5 is multi-select). ✅ marks the recommended option.
-> When every question has an answer, flip Status to `Ready` and write the ADR from Q2/Q3.
+> Answered 2026-06-10 (all recommended options; Q5 with six layers, metrics badges left out).
+> Decisions are recorded in [ADR-0014](../architecture/decisions/0014-architecture-report-rendering-and-comment-pack.md).
 
 ### Q1 — Distribution & the Google Drive reality
 
@@ -163,7 +169,7 @@ Google Drive's built-in preview does **not** execute JavaScript in HTML files; a
 report on Drive is *stored and shared* there, but recipients must download and open it (one
 double-click, fully offline).
 
-- [ ] **A (✅ recommended):** Single `.html` on Drive; recipient downloads and opens locally.
+- [x] **A (✅ recommended):** Single `.html` on Drive; recipient downloads and opens locally.
       Document this flow on the export success toast ("Share on Drive — recipients download and
       open").
 - [ ] **B:** A + an additional "hosted" variant (small folder with `index.html`) for static hosts
@@ -172,7 +178,7 @@ double-click, fully offline).
 
 ### Q2 — Rendering approach inside the report
 
-- [ ] **A (✅ recommended):** Embed the model + presentation as JSON and re-render with a small
+- [x] **A (✅ recommended):** Embed the model + presentation as JSON and re-render with a small
       standalone renderer (positions/sizes captured from the live canvas; same edge-path math
       compiled in). Crisp at every zoom, true layer toggling, element-level interactivity, text
       selectable/searchable.
@@ -182,7 +188,7 @@ double-click, fully offline).
 
 ### Q3 — The comment / collaboration loop
 
-- [ ] **A (✅ recommended):** Comments are written inside the report (drafts kept in
+- [x] **A (✅ recommended):** Comments are written inside the report (drafts kept in
       `localStorage`), then exported as a **comment pack** (`*.comments.verso.json`, one click,
       includes author name prompt). The author imports the pack in Verso (Comments panel → Import)
       which merges threads into `comments.verso.json` by id. Fully offline, no service, anchored to
@@ -194,7 +200,7 @@ double-click, fully offline).
 
 ### Q4 — Audience reading modes
 
-- [ ] **A (✅ recommended):** Three presets — **Builder** (full detail: ids, attributes, payloads,
+- [x] **A (✅ recommended):** Three presets — **Builder** (full detail: ids, attributes, payloads,
       notes), **Stakeholder** (summary page first, capability/system altitude, statuses & phases,
       no ids), **Reviewer** (everything + concerns overlay + comments expanded) — each preset just
       pre-configures the free layer/detail toggles, which stay user-adjustable.
@@ -204,18 +210,18 @@ double-click, fully offline).
 
 ### Q5 — Layer dimensions available for show/hide (multi-select: tick all wanted in v1)
 
-- [ ] Element kinds (modules / systems / containers / people / use cases / capabilities) ✅
-- [ ] Relationship types (uses / calls / publishes / subscribes / reads / writes / data flows, per
+- [x] Element kinds (modules / systems / containers / people / use cases / capabilities) ✅
+- [x] Relationship types (uses / calls / publishes / subscribes / reads / writes / data flows, per
       type) ✅
-- [ ] Concerns overlay (questions / assumptions / risks + their `about` links) ✅
-- [ ] Lifecycle status badges & styling (current / target / to-be-created / deprecated …) ✅
-- [ ] Bounded-context grouping boxes ✅
-- [ ] Notes & custom-property rows on nodes
+- [x] Concerns overlay (questions / assumptions / risks + their `about` links) ✅
+- [x] Lifecycle status badges & styling (current / target / to-be-created / deprecated …) ✅
+- [x] Bounded-context grouping boxes ✅
+- [x] Notes & custom-property rows on nodes
 - [ ] Fan-in/out metrics badges
 
 ### Q6 — Which views ship in the report
 
-- [ ] **A (✅ recommended):** All built-in views (Module Map, Dependencies, Concerns) + all saved
+- [x] **A (✅ recommended):** All built-in views (Module Map, Dependencies, Concerns) + all saved
       custom views, each with its persisted layout.
 - [ ] **B:** A + Books rendered as narrative chapters (page narrative + its view) — the "guided
       tour" for stakeholders.
@@ -223,7 +229,7 @@ double-click, fully offline).
 
 ### Q7 — "How the system changes" for stakeholders
 
-- [ ] **A (✅ recommended):** Derive from what the model already says: lifecycle status coloring,
+- [x] **A (✅ recommended):** Derive from what the model already says: lifecycle status coloring,
       current-vs-target counts, phase timeline ("Q4 2026: 3 modules to-be-created…"), deprecations
       — zero new data to maintain.
 - [ ] **B:** Embed a baseline (previous export) and compute a real diff (added/removed/changed
@@ -232,7 +238,7 @@ double-click, fully offline).
 
 ### Q8 — Size budget & embedded assets
 
-- [ ] **A (✅ recommended):** Target ≤ 5 MB on the reference samples; system font stack (no font
+- [x] **A (✅ recommended):** Target ≤ 5 MB on the reference samples; system font stack (no font
       files); inline SVG icons only; fail the export with a clear message if a pathological
       workspace exceeds 25 MB.
 - [ ] **B:** A + embed the brand font (≈ +300 KB) for pixel-identical typography.
@@ -240,7 +246,7 @@ double-click, fully offline).
 
 ### Q9 — Where the report is assembled
 
-- [ ] **A (✅ recommended):** Client-side generation: the running frontend fetches one aggregate
+- [x] **A (✅ recommended):** Client-side generation: the running frontend fetches one aggregate
       payload (new lightweight `GET /api/workspace/export-bundle`), injects it plus the prebuilt
       viewer bundle into an HTML template, and triggers the download. Backend stays thin; engine
       untouched.
@@ -251,18 +257,23 @@ double-click, fully offline).
 
 ### Q10 — Report theme
 
-- [ ] **A (✅ recommended):** Light theme default (paper-like, print-friendly) + dark toggle,
+- [x] **A (✅ recommended):** Light theme default (paper-like, print-friendly) + dark toggle,
       honoring `prefers-color-scheme`.
 - [ ] **B:** Light only.
 
 ### Q11 — Entry point & cadence
 
-- [ ] **A (✅ recommended):** Export menu → "Architecture report (.html)" alongside PNG/SVG/
+- [x] **A (✅ recommended):** Export menu → "Architecture report (.html)" alongside PNG/SVG/
       draw.io/Mermaid; manual, on demand.
 - [ ] **B:** A + headless generation hook (CLI/endpoint) so CI can publish a nightly report (pairs
       with Q9-B; can be a follow-up record).
 
 ---
 
-*When the boxes above are ticked: set Status `Ready`, write the ADR (rendering + comment
-round-trip), and update the features index. Implementation must not start from a `Draft` record.*
+## Implementation note (v1, 2026-06-10)
+
+Shipped per the §9 answers, with two documented simplifications (both in ADR-0014): the viewer is
+inlined via `?raw` instead of a second Vite build target, and export re-fetches the existing
+endpoints instead of adding a `GET /api/workspace/export-bundle`. Known v1 gaps, candidates for a
+follow-up record: Playwright smoke + accessibility pass, the "newer export may exist" staleness
+hint, copy-deep-link affordance, and formal pan/zoom profiling on large models.

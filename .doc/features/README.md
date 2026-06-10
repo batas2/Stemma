@@ -16,7 +16,7 @@ Living feature records — one Markdown file per feature, created from
 
 | ID | Feature | Status | Horizon | Owner |
 |---|---|---|---|---|
-| [F-001](./F-001-architecture-report-export.md) | Architecture Report — single-file interactive HTML export | Draft (decision gate §9) | Next | Bartosz |
+| [F-001](./F-001-architecture-report-export.md) | Architecture Report — single-file interactive HTML export | Shipped (v1) | Now | Bartosz |
 
 > Keep this table in sync as records are added (the Product Manager
 > and Docs Librarian own it). Already-shipped capabilities are

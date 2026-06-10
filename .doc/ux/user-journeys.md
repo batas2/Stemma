@@ -54,6 +54,18 @@ deselecting collapses the inspector to the rail.
 1. Export the current canvas (including shapes) to PNG/SVG.
 2. Commit the model + sidecar; reviewers see the change in both the code diff and the canvas.
 
+## J6b — Publish & review loop ([F-001](../features/F-001-architecture-report-export.md), ADR-0014)
+
+1. **Export → Architecture report (.html)**: one self-contained file with every view, audience
+   modes (Builder / Stakeholder / Reviewer), layer toggles, search, the concerns board and a
+   change summary.
+2. Share it anywhere (Drive, mail, chat). Recipients download and double-click — Drive's preview
+   does not run JavaScript, the file itself needs no install and makes no network requests.
+3. Reviewers select elements and write comments in the report (kept locally), then **Export
+   comment pack** (`<workspace>.comments.verso.json`) and send it back.
+4. The architect imports the pack (inspector → Comments → import); threads merge idempotently into
+   `comments.verso.json`, anchored to the elements they concern. Act, re-export, repeat.
+
 ## J7 — Onboard via samples (any persona)
 
 1. Open a sample workspace (e.g. `samples/NetworkAggregation`) to see every feature exercised across

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Check, MessageSquare, Send, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, MessageSquare, Send, Trash2, Upload, X } from 'lucide-react';
 import {
   type CommentEntry, type CommentsSidecar,
   addComment, appendReply, commentsForTarget, fetchAuthor, fetchComments,
-  newCommentId, removeComment, saveComments, updateComment,
+  mergeCommentPack, newCommentId, parseCommentPack, removeComment, saveComments, updateComment,
 } from '@/lib/comments';
+import { useApp } from '@/lib/store';
 
 interface Props {
   /** What is the comment attached to? */
@@ -50,6 +51,23 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
     await persist(addComment(sidecar, c));
   }
 
+  // F-001: merge a comment pack exported from an architecture report (.comments.verso.json).
+  const fileRef = useRef<HTMLInputElement>(null);
+  async function onImportPack(file: File) {
+    const setToast = useApp.getState().setToast;
+    try {
+      const pack = parseCommentPack(await file.text());
+      const fresh = await fetchComments();
+      const { merged, added, repliesAdded } = mergeCommentPack(fresh, pack);
+      if (!added && !repliesAdded) { setToast({ kind: 'info', text: 'Pack already imported — nothing new.' }); return; }
+      await saveComments(merged);
+      setSidecar(merged);
+      setToast({ kind: 'success', text: `Imported ${added} comment${added === 1 ? '' : 's'}${repliesAdded ? ` + ${repliesAdded} repl${repliesAdded === 1 ? 'y' : 'ies'}` : ''} from ${pack.author ?? 'pack'}` });
+    } catch (e) {
+      setToast({ kind: 'error', text: `Pack import failed: ${(e as Error).message}` });
+    }
+  }
+
   return (
     <div className="border-t border-default mt-2 pt-2">
       <div className="flex items-center gap-2 px-3 mb-2">
@@ -59,6 +77,20 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
           {title && <span className="text-faint font-normal"> on {title}</span>}
         </span>
         <span className="ml-auto text-[10px] text-faint">{items.length}</span>
+        <button
+          onClick={() => fileRef.current?.click()}
+          title="Import a comment pack exported from an architecture report"
+          className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          <Upload className="w-3 h-3" />
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportPack(f); e.target.value = ''; }}
+        />
       </div>
       <div className="px-3 space-y-2">
         {items.map((c) => (
