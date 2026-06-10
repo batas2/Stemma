@@ -67,12 +67,17 @@ import {
 } from '@/lib/autoLayout';
 import { dashArrayFor, DEFAULT_EDGE_STYLE, type EdgeArrow } from '@/lib/edgeStyles';
 
+/** React Flow's default edge stroke — markers must carry an explicit colour because RF renders
+ *  a built-in marker with `color: undefined` as stroke/fill "none", i.e. an invisible arrowhead. */
+const DEFAULT_MARKER_COLOR = '#b1b1b7';
+
 /** Resolve an endpoint style to a React Flow marker. Common arrows use built-in (reliably
  *  coloured) markers; the exotic shapes use the custom SVG markers in EdgeMarkerDefs. */
 function edgeMarkerSpec(a: EdgeArrow | undefined, color?: string): EdgeMarker | string | undefined {
+  const c = color ?? DEFAULT_MARKER_COLOR;
   switch (a) {
-    case 'closed': return { type: MarkerType.ArrowClosed, color, width: 18, height: 18 };
-    case 'open': return { type: MarkerType.Arrow, color, width: 18, height: 18 };
+    case 'closed': return { type: MarkerType.ArrowClosed, color: c, width: 18, height: 18 };
+    case 'open': return { type: MarkerType.Arrow, color: c, width: 18, height: 18 };
     case 'circle': case 'diamond': case 'pipe': return `url(#${customMarkerId(a, color)})`;
     default: return undefined; // 'none' / unset
   }
