@@ -38,6 +38,9 @@ cleanup_stale() {
   fi
   if command -v fuser >/dev/null 2>&1; then
     fuser -k 5050/tcp 2>/dev/null || true
+    # An orphaned Vite squatting 5173 makes the next dev server drift to 5174 while the browser
+    # keeps hitting the dead-backed 5173 (endless proxy ECONNREFUSED) — reclaim it too.
+    fuser -k 5173/tcp 2>/dev/null || true
   fi
 }
 cleanup_stale

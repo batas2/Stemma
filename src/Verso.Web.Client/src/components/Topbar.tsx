@@ -3,7 +3,7 @@ import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clo
 import { VersoLockup } from './Logo';
 import { useApp } from '@/lib/store';
 import { initWorkspace, openWorkspace, listRecents, closeWorkspace } from '@/lib/api';
-import { fetchUndoState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
+import { ensureConnection, fetchUndoState, getConnectionState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
 import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
 import type { RecentEntry } from '@/lib/types';
@@ -28,7 +28,20 @@ export function Topbar() {
   useEffect(() => {
     if (!ws) return;
     let stop = false;
+    let lastReconnectAttempt = 0;
     async function poll() {
+      // Only poll over a live hub — otherwise every 1.5 s tick would re-trigger a connection
+      // attempt and flood the dev console/proxy with ECONNREFUSED while the backend is down.
+      // Once SignalR's automatic reconnect has given up (Disconnected), retry gently every 10 s
+      // so the app still recovers by itself when the backend comes back.
+      const cs = getConnectionState();
+      if (cs !== 'Connected') {
+        if (cs === 'Disconnected' && Date.now() - lastReconnectAttempt > 10_000) {
+          lastReconnectAttempt = Date.now();
+          try { await ensureConnection(); } catch { /* still down */ }
+        }
+        return;
+      }
       try { const s = await fetchUndoState(); if (!stop) setUndoState(s); } catch { /* ignore */ }
     }
     poll();
