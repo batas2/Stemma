@@ -1,5 +1,4 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { ChevronsLeft, PanelRight } from 'lucide-react';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
 import { ArchCanvas } from './components/ArchCanvas';
@@ -45,8 +44,6 @@ function ArchOrShapeInspector() {
 export default function App() {
   const ws = useApp((s) => s.workspace);
   const view = useApp((s) => s.view);
-  const inspectorOpen = useApp((s) => s.inspectorOpen);
-  const setInspectorOpen = useApp((s) => s.setInspectorOpen);
   const setWs = useApp((s) => s.setWorkspace);
   const setArch = useApp((s) => s.setArch);
   const setView = useApp((s) => s.setView);
@@ -223,20 +220,7 @@ export default function App() {
                 {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
               </div>
             </main>
-            {inspectorOpen && <ArchOrShapeInspector />}
-            {!inspectorOpen && (
-              <aside className="w-10 shrink-0 border-l border-default bg-zinc-50 dark:bg-zinc-950/60 flex flex-col items-center py-3 gap-3">
-                <button
-                  onClick={() => setInspectorOpen(true)}
-                  title="Show inspector panel"
-                  aria-label="Show inspector"
-                  className="p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-body"
-                >
-                  <ChevronsLeft className="w-4 h-4" />
-                </button>
-                <PanelRight className="w-4 h-4 text-zinc-300 dark:text-zinc-700" />
-              </aside>
-            )}
+            <ArchOrShapeInspector />
           </>
         ) : (
           <EmptyState />

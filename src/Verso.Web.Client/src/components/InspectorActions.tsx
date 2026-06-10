@@ -5,10 +5,10 @@ import { useApp } from '@/lib/store';
 /** Event every inspector Section listens for to fold/unfold in unison. */
 export const SECTIONS_EVENT = 'verso:inspector-sections';
 
-/** The collapse-all-sections + hide-panel buttons shared by every inspector header.
+/** The collapse-all-sections + collapse-panel buttons shared by every inspector header.
  *  `showCollapseAll` is off for inspectors with no foldable sections (shapes, empty state). */
 export function InspectorActions({ showCollapseAll = true }: { showCollapseAll?: boolean }) {
-  const setInspectorOpen = useApp((s) => s.setInspectorOpen);
+  const setInspectorTab = useApp((s) => s.setInspectorTab);
   const [allOpen, setAllOpen] = useState(true);
 
   function toggleAll() {
@@ -25,7 +25,7 @@ export function InspectorActions({ showCollapseAll = true }: { showCollapseAll?:
           {allOpen ? <ChevronsDownUp className="w-3.5 h-3.5" /> : <ChevronsUpDown className="w-3.5 h-3.5" />}
         </button>
       )}
-      <button onClick={() => setInspectorOpen(false)} className={btn} title="Hide inspector panel">
+      <button onClick={() => setInspectorTab(null)} className={btn} title="Collapse">
         <ChevronsRight className="w-3.5 h-3.5" />
       </button>
     </>

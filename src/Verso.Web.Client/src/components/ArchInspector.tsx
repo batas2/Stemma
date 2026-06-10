@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight, ChevronsRight, Plus, Maximize2, Info, FileText, Clock, Users, Palette, Tags, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
+import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Plus, Maximize2, Info, FileText, Palette, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { InspectorActions } from './InspectorActions';
@@ -7,7 +7,7 @@ import { MarkerSelect } from './MarkerSelect';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
 import { DEFAULT_EDGE_STYLE, DEFAULT_EDGE_ROUTING, type EdgeLineStyle, type EdgeStyle, type EdgeAnimSpeed, type EdgeRouting } from '@/lib/edgeStyles';
-import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle, type NodeFillStyle, type NodeShadow, type NodeAccentSide, type NodeTextSize, type NodeTextAlign, type NodeAnimation, type NodeAnimSpeed } from '@/lib/nodeStyles';
+import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle, type NodeFillStyle, type NodeShadow, type NodeAccentSide, type NodeTextSize, type NodeTextAlign, type NodeAnimation, type NodeAnimSpeed, type NodeFieldKey } from '@/lib/nodeStyles';
 import { RESERVED_KEYS, type CustomProps } from '@/lib/customProps';
 import { CommentsPanel } from './CommentsPanel';
 import { ALL_FIELD_KEYS, fieldLabel } from './nodes/ArchNodeView';
@@ -29,15 +29,11 @@ const ELEMENT_TABS: RailTab[] = [
   { id: 'element.properties', icon: <Info className="w-4 h-4" />, label: 'Properties' },
   { id: 'element.appearance', icon: <Palette className="w-4 h-4" />, label: 'Appearance' },
   { id: 'element.notes', icon: <FileText className="w-4 h-4" />, label: 'Text & attributes' },
-  { id: 'element.lifecycle', icon: <Clock className="w-4 h-4" />, label: 'Lifecycle' },
-  { id: 'element.ownership', icon: <Users className="w-4 h-4" />, label: 'Ownership' },
-  { id: 'element.customProps', icon: <Tags className="w-4 h-4" />, label: 'Custom properties' },
   { id: 'element.comments', icon: <MessageSquare className="w-4 h-4" />, label: 'Comments' },
 ];
 const LINK_TABS: RailTab[] = [
   { id: 'link.endpoints', icon: <Spline className="w-4 h-4" />, label: 'Endpoints' },
   { id: 'link.properties', icon: <Info className="w-4 h-4" />, label: 'Properties' },
-  { id: 'link.lifecycle', icon: <Clock className="w-4 h-4" />, label: 'Lifecycle & owner' },
   { id: 'link.appearance', icon: <Palette className="w-4 h-4" />, label: 'Appearance' },
 ];
 
@@ -70,19 +66,30 @@ export function ArchInspector() {
 }
 
 function InspectorRail({ tabs, active, onPick }: { tabs: RailTab[]; active: string | null; onPick: (id: string) => void }) {
-  const setInspectorOpen = useApp((s) => s.setInspectorOpen);
+  // Expand mirrors the left sidebar's collapsed rail: a chevron pointing into the screen that
+  // reopens the user's remembered panel for the current selection domain.
+  function expand() {
+    const st = useApp.getState();
+    onPick(st.selectedLinkId ? st.lastLinkTab : st.lastElementTab);
+  }
   return (
-    <div className="w-11 shrink-0 border-l border-default bg-zinc-50 dark:bg-zinc-950/60 flex flex-col items-center py-2 gap-1">
-      <button onClick={() => setInspectorOpen(false)} title="Hide inspector" className="p-1.5 mb-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-400 hover:text-body">
-        <ChevronsRight className="w-4 h-4" />
-      </button>
+    <div className="w-12 shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 flex flex-col items-center py-3 gap-2">
+      {active === null && (
+        <button
+          onClick={expand}
+          title="Expand inspector"
+          className="p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400"
+        >
+          <ChevronsLeft className="w-4 h-4" />
+        </button>
+      )}
       {tabs.map((t) => (
         <button
           key={t.id} onClick={() => onPick(t.id)} title={t.label} aria-label={t.label} aria-pressed={active === t.id}
-          className={clsx('w-8 h-8 rounded-md flex items-center justify-center transition-colors',
+          className={clsx('p-1.5 rounded transition-colors',
             active === t.id
               ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-500/30'
-              : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200/70 dark:hover:bg-zinc-800/60 hover:text-body')}
+              : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-body')}
         >
           {t.icon}
         </button>
@@ -224,6 +231,56 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
     else setToast({ kind: 'success', text: 'Ownership saved' });
   }
 
+  async function commitElementAttr(name: string, value: string) {
+    const r = await applyOperation({
+      kind: 'SetElementAttribute', opId: `op_${Date.now()}`,
+      elementId, attributeName: name, value: value.trim() || null,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+    else setToast({ kind: 'success', text: 'Saved' });
+  }
+
+  async function commitContext(ctxId: string) {
+    const r = await applyOperation({
+      kind: 'SetElementContext', opId: `op_${Date.now()}`,
+      elementId, contextId: ctxId || null,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+    else setToast({ kind: 'success', text: 'Context saved' });
+  }
+
+  async function commitName(next: string) {
+    const v = next.trim();
+    if (!v || v === e?.name) return;
+    const r = await applyOperation({
+      kind: 'RenameElement', opId: `op_${Date.now()}`, elementId, newName: v,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+    else setToast({ kind: 'success', text: 'Renamed' });
+  }
+
+  // Built-in model fields, each editable where an operation exists for it. Rendered in the
+  // Custom properties sub-section beside their show-on-canvas ticks.
+  const bcs = arch.elements.filter((x) => x.kind === 'boundedContext');
+  const builtinRows: BuiltinRow[] = [
+    { key: 'kind', value: e.kind },
+    { key: 'name', value: e.name, commit: commitName },
+    { key: 'id', value: e.id },
+    {
+      key: 'contextId', value: e.attributes.contextId ?? '', commit: commitContext,
+      options: [{ value: '', label: '(none)' }, ...bcs.map((c) => ({ value: c.id, label: c.name }))],
+    },
+    { key: 'systemId', value: e.attributes.systemId ?? '', commit: (v) => commitElementAttr('systemId', v) },
+    { key: 'containerKind', value: e.attributes.containerKind ?? '', commit: (v) => commitElementAttr('containerKind', v) },
+    { key: 'squad', value: squad, commit: (v) => { setSquad(v); commitOwnership(v, domain); } },
+    { key: 'domain', value: domain, commit: (v) => { setDomain(v); commitOwnership(squad, v); } },
+    {
+      key: 'status', value: status, commit: (v) => { setStatus(v); commitLifecycle(v, phase); },
+      options: STATUS_OPTIONS.map((s) => ({ value: s, label: s || '(none)' })),
+    },
+    { key: 'phase', value: phase, commit: (v) => { setPhase(v); commitLifecycle(status, v); } },
+  ];
+
   function setStyle(s: Partial<NodeStyle>) {
     setNodeStyleFor(elementId, { ...userNodeStyle, ...s });
   }
@@ -295,11 +352,66 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
       </div>
       <div className="flex-1 min-h-0 flex flex-col">
         <Section label="Properties" persistKey="element.properties" defaultOpen icon={<Info className="w-3 h-3" />}>
-          <Field label="Kind" value={e.kind} />
-          <Field label="Id" value={e.id} mono />
-          {Object.entries(e.attributes).filter(([k]) => k !== 'external').map(([k, v]) =>
-            v ? <Field key={k} label={k} value={v} mono /> : null
-          )}
+          <SubSection title="Identity" defaultOpen>
+            <Field label="Kind" value={e.kind} />
+            <Field label="Id" value={e.id} mono />
+            {Object.entries(e.attributes).filter(([k]) => k !== 'external').map(([k, v]) =>
+              v ? <Field key={k} label={k} value={v} mono /> : null
+            )}
+          </SubSection>
+
+          <SubSection title="Custom properties" defaultOpen>
+            <p className="text-[11px] text-faint mb-2 leading-snug">
+              Tick a row to render it inside the box on the canvas. Custom rows take a free-form key + value; built-in fields read from the element itself.
+            </p>
+            <CustomPropsPanel
+              visible={userNodeStyle.visibleFields ?? DEFAULT_VISIBLE_FIELDS}
+              onVisibleChange={(next) => setStyle({ visibleFields: next })}
+              onResetVisible={() => setStyle({ visibleFields: DEFAULT_VISIBLE_FIELDS })}
+              props={customProps}
+              onSet={(k, v) => setCustomProp(elementId, k, v)}
+              onRemove={(k) => removeCustomProp(elementId, k)}
+              onRename={(oldK, newK) => renameCustomProp(elementId, oldK, newK)}
+              builtins={builtinRows}
+            />
+          </SubSection>
+
+          <SubSection title="Lifecycle" defaultOpen={false}>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
+              <select
+                value={status}
+                onChange={(ev) => { setStatus(ev.target.value); commitLifecycle(ev.target.value, phase); }}
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
+              >
+                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
+              </select>
+            </div>
+            <LabeledInput
+              label="Phase"
+              value={phase}
+              onChange={setPhase}
+              onCommit={() => commitLifecycle(status, phase)}
+              placeholder="e.g. Q4 2026"
+            />
+          </SubSection>
+
+          <SubSection title="Ownership" defaultOpen={false}>
+            <LabeledInput
+              label="Squad"
+              value={squad}
+              onChange={setSquad}
+              onCommit={() => commitOwnership(squad, domain)}
+              placeholder="e.g. Onboarding Squad"
+            />
+            <LabeledInput
+              label="Domain"
+              value={domain}
+              onChange={setDomain}
+              onCommit={() => commitOwnership(squad, domain)}
+              placeholder="e.g. Buyer"
+            />
+          </SubSection>
         </Section>
 
         <Section label="Appearance" persistKey="element.appearance" defaultOpen icon={<Palette className="w-3 h-3" />}>
@@ -488,58 +600,6 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
           </button>
         </Section>
 
-        <Section label="Lifecycle" persistKey="element.lifecycle" icon={<Clock className="w-3 h-3" />}>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
-            <select
-              value={status}
-              onChange={(ev) => { setStatus(ev.target.value); commitLifecycle(ev.target.value, phase); }}
-              className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
-            >
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
-            </select>
-          </div>
-          <LabeledInput
-            label="Phase"
-            value={phase}
-            onChange={setPhase}
-            onCommit={() => commitLifecycle(status, phase)}
-            placeholder="e.g. Q4 2026"
-          />
-        </Section>
-
-        <Section label="Ownership" persistKey="element.ownership" defaultOpen={false} icon={<Users className="w-3 h-3" />}>
-          <LabeledInput
-            label="Squad"
-            value={squad}
-            onChange={setSquad}
-            onCommit={() => commitOwnership(squad, domain)}
-            placeholder="e.g. Onboarding Squad"
-          />
-          <LabeledInput
-            label="Domain"
-            value={domain}
-            onChange={setDomain}
-            onCommit={() => commitOwnership(squad, domain)}
-            placeholder="e.g. Buyer"
-          />
-        </Section>
-
-        <Section label="Custom properties" persistKey="element.customProps" defaultOpen={Object.keys(customProps).length > 0} icon={<Tags className="w-3 h-3" />}>
-          <p className="text-[11px] text-faint mb-2 leading-snug">
-            Tick a row to render it inside the box on the canvas. Custom rows take a free-form key + value; built-in fields read from the element itself.
-          </p>
-          <CustomPropsPanel
-            visible={userNodeStyle.visibleFields ?? DEFAULT_VISIBLE_FIELDS}
-            onVisibleChange={(next) => setStyle({ visibleFields: next })}
-            onResetVisible={() => setStyle({ visibleFields: DEFAULT_VISIBLE_FIELDS })}
-            props={customProps}
-            onSet={(k, v) => setCustomProp(elementId, k, v)}
-            onRemove={(k) => removeCustomProp(elementId, k)}
-            onRename={(oldK, newK) => renameCustomProp(elementId, oldK, newK)}
-          />
-        </Section>
-
         <Section label="Comments" persistKey="element.comments" defaultOpen={false} icon={<MessageSquare className="w-3 h-3" />}>
           <CommentsPanel targetKind="element" targetId={e.id} title={e.name} />
         </Section>
@@ -604,6 +664,8 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   const setToast = useApp((s) => s.setToast);
   const edgeStyles = useApp((s) => s.edgeStyles);
   const setEdgeStyleFor = useApp((s) => s.setEdgeStyleFor);
+  const linkDraft = useApp((s) => s.linkDraft);
+  const setLinkDraft = useApp((s) => s.setLinkDraft);
   const link = arch.links.find((x) => x.id === linkId);
   const tag = arch.tags.find((t) => t.targetId === linkId);
   const userStyle: EdgeStyle = edgeStyles[linkId] ?? DEFAULT_EDGE_STYLE;
@@ -616,13 +678,23 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
   useEffect(() => {
     if (link) {
-      setPayloadEdit(link.attributes.payload ?? '');
-      setKindEdit(link.attributes.kind ?? 'uses');
+      // Don't clobber an in-flight draft (e.g. the canvas inline editor) with the stale model value.
+      const draft = useApp.getState().linkDraft;
+      const mine = draft && draft.linkId === link.id ? draft : null;
+      setPayloadEdit(mine?.field === 'payload' ? mine.value : (link.attributes.payload ?? ''));
+      setKindEdit(mine?.field === 'kind' ? mine.value : (link.attributes.kind ?? 'uses'));
     }
     setLinkStatus(tag?.lifecycle?.status ?? '');
     setLinkPhase(tag?.lifecycle?.phase ?? '');
     setLinkSquad(tag?.ownership?.squad ?? '');
   }, [link, tag?.targetId, tag?.lifecycle?.status, tag?.lifecycle?.phase, tag?.ownership?.squad]);
+
+  // Mirror the shared draft (canvas inline editor ↔ inspector) keystroke-by-keystroke.
+  useEffect(() => {
+    if (!linkDraft || linkDraft.linkId !== linkId) return;
+    if (linkDraft.field === 'payload') setPayloadEdit(linkDraft.value);
+    else setKindEdit(linkDraft.value);
+  }, [linkDraft, linkId]);
 
   async function commitLinkLifecycle(status: string, phase: string) {
     const r = await applyOperation({
@@ -662,6 +734,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
   async function handlePayloadSave() {
     if (!link || !isDataFlow) return;
+    if (linkDraft?.linkId === linkId) setLinkDraft(null);
     if (payloadEdit === (link.attributes.payload ?? '')) return;
     const r = await applyOperation({
       kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
@@ -673,6 +746,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
 
   async function handleKindSave() {
     if (!link || isDataFlow) return;
+    if (linkDraft?.linkId === linkId) setLinkDraft(null);
     if (kindEdit === (link.attributes.kind ?? '')) return;
     const r = await applyOperation({
       kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
@@ -744,7 +818,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
             <LabeledInput
               label="Payload"
               value={payloadEdit}
-              onChange={setPayloadEdit}
+              onChange={(v) => { setPayloadEdit(v); setLinkDraft({ linkId, field: 'payload', value: v }); }}
               onCommit={handlePayloadSave}
               placeholder="EventName"
             />
@@ -752,38 +826,38 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
             <LabeledInput
               label="Kind"
               value={kindEdit}
-              onChange={setKindEdit}
+              onChange={(v) => { setKindEdit(v); setLinkDraft({ linkId, field: 'kind', value: v }); }}
               onCommit={handleKindSave}
               placeholder="uses, calls, reads…"
             />
           )}
-        </Section>
 
-        <Section label="Lifecycle & Owner" persistKey="link.lifecycle" defaultOpen={false} icon={<Clock className="w-3 h-3" />}>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
-            <select
-              value={linkStatus}
-              onChange={(ev) => { setLinkStatus(ev.target.value); commitLinkLifecycle(ev.target.value, linkPhase); }}
-              className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
-            >
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
-            </select>
-          </div>
-          <LabeledInput
-            label="Phase"
-            value={linkPhase}
-            onChange={setLinkPhase}
-            onCommit={() => commitLinkLifecycle(linkStatus, linkPhase)}
-            placeholder="e.g. Q4 2026"
-          />
-          <LabeledInput
-            label="Squad"
-            value={linkSquad}
-            onChange={setLinkSquad}
-            onCommit={() => commitLinkOwnership(linkSquad)}
-            placeholder="e.g. Onboarding Squad"
-          />
+          <SubSection title="Lifecycle & Owner" defaultOpen={false}>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
+              <select
+                value={linkStatus}
+                onChange={(ev) => { setLinkStatus(ev.target.value); commitLinkLifecycle(ev.target.value, linkPhase); }}
+                className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
+              >
+                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || '(none)'}</option>)}
+              </select>
+            </div>
+            <LabeledInput
+              label="Phase"
+              value={linkPhase}
+              onChange={setLinkPhase}
+              onCommit={() => commitLinkLifecycle(linkStatus, linkPhase)}
+              placeholder="e.g. Q4 2026"
+            />
+            <LabeledInput
+              label="Squad"
+              value={linkSquad}
+              onChange={setLinkSquad}
+              onCommit={() => commitLinkOwnership(linkSquad)}
+              placeholder="e.g. Onboarding Squad"
+            />
+          </SubSection>
         </Section>
 
         <Section label="Appearance" persistKey="link.appearance" defaultOpen icon={<Palette className="w-3 h-3" />}>
@@ -1080,9 +1154,47 @@ function LabeledInput({ label, value, onChange, onCommit, placeholder }: {
   );
 }
 
+/** A built-in (model) field shown in the properties panel: current value plus, where the model
+ *  supports it, an inline editor (text or select) that commits the matching operation. */
+interface BuiltinRow {
+  key: NodeFieldKey;
+  value: string;
+  commit?: (v: string) => void;
+  options?: { value: string; label: string }[];
+}
+
+function BuiltinValueEditor({ row }: { row: BuiltinRow }) {
+  const [val, setVal] = useState(row.value);
+  useEffect(() => setVal(row.value), [row.value]);
+  if (!row.commit) {
+    return <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-mono truncate flex-1 text-right" title={row.value}>{row.value || '—'}</span>;
+  }
+  if (row.options) {
+    return (
+      <select
+        value={row.value}
+        onChange={(ev) => row.commit!(ev.target.value)}
+        className="flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded px-1.5 py-0.5 text-[11px] outline-none focus:border-indigo-500"
+      >
+        {row.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input
+      value={val}
+      placeholder="—"
+      onChange={(ev) => setVal(ev.target.value)}
+      onBlur={() => { if (val !== row.value) row.commit!(val); }}
+      onKeyDown={(ev) => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); if (ev.key === 'Escape') { setVal(row.value); (ev.target as HTMLInputElement).blur(); } }}
+      className="flex-1 min-w-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded px-1.5 py-0.5 text-[11px] outline-none focus:border-indigo-500"
+    />
+  );
+}
+
 function CustomPropsPanel({
   visible, onVisibleChange, onResetVisible,
-  props, onSet, onRemove, onRename,
+  props, onSet, onRemove, onRename, builtins,
 }: {
   visible: string[];
   onVisibleChange: (next: string[]) => void;
@@ -1091,6 +1203,7 @@ function CustomPropsPanel({
   onSet: (key: string, value: string) => void;
   onRemove: (key: string) => void;
   onRename: (oldKey: string, newKey: string) => void;
+  builtins: BuiltinRow[];
 }) {
   const customKeys = Object.keys(props);
   const set = new Set(visible);
@@ -1128,18 +1241,20 @@ function CustomPropsPanel({
     <div className="space-y-3">
       <div>
         <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">Built-in fields</div>
+        <p className="text-[10px] text-faint mb-1.5 leading-snug">Tick = show on the canvas box. Fields with an editor write straight to the model.</p>
         <ul className="space-y-1">
-          {ALL_FIELD_KEYS.map((k) => (
-            <li key={k}>
-              <label className="flex items-center gap-2 text-xs cursor-pointer text-body">
+          {builtins.map((row) => (
+            <li key={row.key} className="flex items-center gap-2 text-xs text-body">
+              <label className="flex items-center gap-2 cursor-pointer shrink-0 w-[92px]" title={`Show ${fieldLabel(row.key)} on the canvas`}>
                 <input
                   type="checkbox"
-                  checked={set.has(k)}
-                  onChange={() => toggle(k)}
+                  checked={set.has(row.key)}
+                  onChange={() => toggle(row.key)}
                   className="accent-indigo-500"
                 />
-                <span>{fieldLabel(k)}</span>
+                <span className="truncate">{fieldLabel(row.key)}</span>
               </label>
+              <BuiltinValueEditor row={row} />
             </li>
           ))}
         </ul>

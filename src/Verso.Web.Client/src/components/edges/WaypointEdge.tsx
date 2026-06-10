@@ -11,6 +11,14 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   routing?: EdgeRouting;
   onAddWaypoint?: (edgeId: string, point: SavedPosition) => void;
   onRemoveWaypoint?: (edgeId: string, index: number) => void;
+  // Inline label editing — when `editing` is true the label renders as an input. The draft value
+  // lives in the app store so the inspector mirrors every keystroke.
+  editing?: boolean;
+  editValue?: string;
+  onEditStart?: (edgeId: string) => void;
+  onEditChange?: (edgeId: string, value: string) => void;
+  onEditCommit?: (edgeId: string, value: string) => void;
+  onEditCancel?: (edgeId: string) => void;
 }
 
 /** Which side of a box a line heading (dx, dy) leaves from — used to give bezier/step waypoint
@@ -133,16 +141,45 @@ export function WaypointEdge({
         </>
       )}
       <EdgeLabelRenderer>
-        {label ? (
+        {data?.editing ? (
+          <input
+            autoFocus
+            value={data.editValue ?? ''}
+            onFocus={(ev) => ev.currentTarget.select()}
+            onChange={(ev) => data.onEditChange?.(id, ev.target.value)}
+            onKeyDown={(ev) => {
+              ev.stopPropagation();
+              if (ev.key === 'Enter') data.onEditCommit?.(id, ev.currentTarget.value);
+              else if (ev.key === 'Escape') data.onEditCancel?.(id);
+            }}
+            onBlur={(ev) => data.onEditCommit?.(id, ev.currentTarget.value)}
+            onMouseDown={(ev) => ev.stopPropagation()}
+            onClick={(ev) => ev.stopPropagation()}
+            onDoubleClick={(ev) => ev.stopPropagation()}
+            className="nodrag nopan dark:!bg-zinc-900 dark:!text-zinc-100"
+            style={{
+              position: 'absolute', transform: `translate(-50%, -50%) translate(${labelMid.x}px, ${labelMid.y}px)`,
+              pointerEvents: 'all', fontSize: 10, padding: '1px 4px',
+              width: Math.max(64, (data.editValue?.length ?? 0) * 6.5 + 16),
+              background: 'white', border: `1px solid ${SELECT_COLOR}`, borderRadius: 3,
+              color: SELECT_COLOR, fontWeight: 600, outline: 'none', textAlign: 'center',
+              boxShadow: '0 0 0 3px rgba(99,102,241,0.18)',
+            }}
+          />
+        ) : label ? (
           <div
             style={{
               position: 'absolute', transform: `translate(-50%, -50%) translate(${labelMid.x}px, ${labelMid.y}px)`,
-              pointerEvents: 'none', fontSize: 10, padding: '1px 4px',
+              pointerEvents: data?.onEditStart ? 'all' : 'none',
+              cursor: data?.onEditStart ? 'text' : undefined,
+              fontSize: 10, padding: '1px 4px',
               background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.85)',
               border: `1px solid ${selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
               color: selected ? SELECT_COLOR : undefined, fontWeight: selected ? 600 : undefined,
             }}
             className="dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700"
+            title={data?.onEditStart ? 'Double-click to edit' : undefined}
+            onDoubleClick={data?.onEditStart ? (ev) => { ev.stopPropagation(); data.onEditStart?.(id); } : undefined}
           >
             {label}
           </div>

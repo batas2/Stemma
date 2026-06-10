@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock, LogOut, ArrowLeftRight, PanelRight } from 'lucide-react';
+import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock, LogOut, ArrowLeftRight } from 'lucide-react';
 import { VersoLockup } from './Logo';
 import { useApp } from '@/lib/store';
 import { initWorkspace, openWorkspace, listRecents, closeWorkspace } from '@/lib/api';
@@ -17,8 +17,6 @@ export function Topbar() {
   const setToast = useApp((s) => s.setToast);
   const theme = useApp((s) => s.theme);
   const toggleTheme = useApp((s) => s.toggleTheme);
-  const inspectorOpen = useApp((s) => s.inspectorOpen);
-  const setInspectorOpen = useApp((s) => s.setInspectorOpen);
   const [pathInput, setPathInput] = useState('');
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [recentsOpen, setRecentsOpen] = useState(false);
@@ -186,16 +184,6 @@ export function Topbar() {
           </div>
         )}
       </div>
-      {ws && (
-        <button
-          onClick={() => setInspectorOpen(!inspectorOpen)}
-          aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'}
-          title={inspectorOpen ? 'Hide inspector panel' : 'Show inspector panel'}
-          className={`p-1.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 ${inspectorOpen ? 'text-indigo-600 dark:text-indigo-400' : 'text-muted hover:text-body'}`}
-        >
-          <PanelRight className="w-3.5 h-3.5" />
-        </button>
-      )}
       <button
         onClick={toggleTheme}
         aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}

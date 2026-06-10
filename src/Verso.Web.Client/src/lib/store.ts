@@ -66,10 +66,13 @@ interface AppState {
   // Saved views currently open as bottom tabs (built-ins are always present, not listed here).
   openViewIds: string[];
   sidebarOpen: boolean;
-  inspectorOpen: boolean;
   /** Which inspector panel the right-hand icon rail has open (e.g. 'element.appearance',
    *  'link.appearance', 'layout'), or null when the rail is collapsed to icons only. */
   inspectorTab: string | null;
+  /** The element-domain / link-domain tab the user last picked from the rail — restored when the
+   *  selection crosses domains so the user's choice survives canvas clicks. */
+  lastElementTab: string;
+  lastLinkTab: string;
   /** Tunable layout parameters per algorithm, editable from the Layout panel. */
   forceParams: ForceParams;
   hierParams: HierParams;
@@ -83,6 +86,9 @@ interface AppState {
   loading: boolean;
   selectedElementId: string | null;
   selectedLinkId: string | null;
+  /** In-progress edit of a relationship's payload/kind, shared keystroke-by-keystroke between the
+   *  canvas inline editor and the inspector so both surfaces stay in sync while typing. */
+  linkDraft: { linkId: string; field: 'payload' | 'kind'; value: string } | null;
   edgeStyles: Record<string, EdgeStyle>;
   nodeStyles: Record<string, NodeStyle>;
   customProps: Record<string, CustomProps>;
@@ -118,7 +124,6 @@ interface AppState {
   addElementToActiveView: (elementId: string) => void;
   removeElementFromActiveView: (elementId: string) => void;
   setSidebarOpen: (b: boolean) => void;
-  setInspectorOpen: (b: boolean) => void;
   setInspectorTab: (id: string | null) => void;
   setForceParams: (p: Partial<ForceParams>) => void;
   resetForceParams: () => void;
@@ -133,6 +138,7 @@ interface AppState {
   setLoading: (b: boolean) => void;
   selectElement: (id: string | null) => void;
   selectLink: (id: string | null) => void;
+  setLinkDraft: (d: AppState['linkDraft']) => void;
   setEdgeStyleFor: (linkId: string, style: EdgeStyle) => void;
   setNodeStyleFor: (nodeId: string, style: NodeStyle) => void;
   setCustomProp: (nodeId: string, key: string, value: string) => void;
@@ -172,8 +178,9 @@ export const useApp = create<AppState>((set, get) => ({
   activeCustomViewId: null,
   openViewIds: [],
   sidebarOpen: true,
-  inspectorOpen: true,
   inspectorTab: null,
+  lastElementTab: 'element.properties',
+  lastLinkTab: 'link.properties',
   forceParams: { ...DEFAULT_FORCE_PARAMS },
   hierParams: { ...DEFAULT_HIER_PARAMS },
   byTypeParams: { ...DEFAULT_BYTYPE_PARAMS },
@@ -183,6 +190,7 @@ export const useApp = create<AppState>((set, get) => ({
   loading: false,
   selectedElementId: null,
   selectedLinkId: null,
+  linkDraft: null,
   edgeStyles: {},
   nodeStyles: {},
   customProps: {},
@@ -332,8 +340,12 @@ export const useApp = create<AppState>((set, get) => ({
     if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds }).catch(() => {});
   },
   setSidebarOpen: (b) => set({ sidebarOpen: b }),
-  setInspectorOpen: (b) => set({ inspectorOpen: b }),
-  setInspectorTab: (id) => set({ inspectorTab: id }),
+  // Remember the user's explicit panel choice per domain so selection changes restore it.
+  setInspectorTab: (id) => set((s) => ({
+    inspectorTab: id,
+    lastElementTab: id?.startsWith('element.') ? id : s.lastElementTab,
+    lastLinkTab: id?.startsWith('link.') ? id : s.lastLinkTab,
+  })),
   setForceParams: (p) => set((s) => ({ forceParams: { ...s.forceParams, ...p } })),
   resetForceParams: () => set({ forceParams: { ...DEFAULT_FORCE_PARAMS } }),
   setHierParams: (p) => set((s) => ({ hierParams: { ...s.hierParams, ...p } })),
@@ -357,21 +369,20 @@ export const useApp = create<AppState>((set, get) => ({
     set({ theme: next });
   },
   setLoading: (b) => set({ loading: b }),
-  // Selecting opens the relevant inspector panel (keeping the current section if it already fits
-  // the new selection); deselecting collapses element/link panels back to the icon rail but leaves
-  // a non-element panel (e.g. Layout) untouched.
+  // The user's tab choice is sticky: selecting never forces a default panel and a collapsed blade
+  // stays collapsed. Only crossing domains (element ↔ link) swaps to the tab the user last chose
+  // for that domain; changing or clearing the selection inside a domain leaves the tab alone.
   selectElement: (id) => set((s) => ({
-    selectedElementId: id, selectedLinkId: null, selectedShapeId: null,
-    inspectorTab: id
-      ? (s.inspectorTab?.startsWith('element.') ? s.inspectorTab : 'element.appearance')
-      : (s.inspectorTab?.startsWith('element.') ? null : s.inspectorTab),
+    selectedElementId: id, selectedLinkId: null, selectedShapeId: null, linkDraft: null,
+    inspectorTab: id && s.inspectorTab?.startsWith('link.') ? s.lastElementTab : s.inspectorTab,
   })),
   selectLink: (id) => set((s) => ({
     selectedLinkId: id, selectedElementId: null, selectedShapeId: null,
-    inspectorTab: id
-      ? (s.inspectorTab?.startsWith('link.') ? s.inspectorTab : 'link.appearance')
-      : (s.inspectorTab?.startsWith('link.') ? null : s.inspectorTab),
+    // A draft only survives while its link stays selected.
+    linkDraft: s.linkDraft && s.linkDraft.linkId === id ? s.linkDraft : null,
+    inspectorTab: id && s.inspectorTab?.startsWith('element.') ? s.lastLinkTab : s.inspectorTab,
   })),
+  setLinkDraft: (d) => set({ linkDraft: d }),
   setEdgeStyleFor: (linkId, style) => {
     const ws = get().workspace;
     if (!ws) {
@@ -434,7 +445,7 @@ export const useApp = create<AppState>((set, get) => ({
   setPaletteOpen: (b) => set({ paletteOpen: b }),
   setCanvasMode: (m) => set({ canvasMode: m }),
   setShapesFor: (viewKey, shapes) => set((s) => ({ shapes: { ...s.shapes, [viewKey]: shapes } })),
-  selectShape: (id) => set({ selectedShapeId: id, selectedElementId: null, selectedLinkId: null }),
+  selectShape: (id) => set({ selectedShapeId: id, selectedElementId: null, selectedLinkId: null, linkDraft: null }),
   setDepFocusMode: (b) => set({ depFocusMode: b }),
   setDepKindFilter: (k) => set({ depKindFilter: k }),
   setDepDepth: (n) => set({ depDepth: Math.max(1, Math.min(5, n)) }),

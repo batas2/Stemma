@@ -1,4 +1,4 @@
-import { Trash2, Wand2, Plus } from 'lucide-react';
+import { Trash2, Wand2, Plus, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import {
@@ -6,7 +6,6 @@ import {
   removeShape, saveShapes, styleForLinkKind, updateShape,
 } from '@/lib/shapes';
 import { CommentsPanel } from './CommentsPanel';
-import { InspectorActions } from './InspectorActions';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
 import { loadLayout, saveLayout } from '@/lib/layout';
@@ -55,7 +54,13 @@ export function ShapeInspector({ viewKey, workspaceRoot }: Props) {
         </span>
         <span className="text-xs text-faint truncate font-mono">{shape.id}</span>
         <span className="ml-auto flex items-center">
-          <InspectorActions showCollapseAll={false} />
+          <button
+            onClick={() => selectShape(null)}
+            title="Close"
+            className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </span>
       </div>
 

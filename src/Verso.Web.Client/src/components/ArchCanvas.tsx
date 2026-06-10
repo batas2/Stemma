@@ -359,10 +359,57 @@ function CanvasInner() {
     return () => window.removeEventListener('verso:layout-changed', refresh);
   }, [workspace, layoutKey, view, activeId]);
 
+  // ---- Inline payload/kind editing: double-click a relationship (or its label) to edit the
+  // payload (data flow) / kind (dependency) in place. The draft lives in the store so the
+  // inspector's field mirrors every keystroke, and vice versa.
+  const linkDraft = useApp((s) => s.linkDraft);
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
+
+  const startEdgeEdit = useCallback((edgeId: string) => {
+    const link = useApp.getState().arch?.links.find((l) => l.id === edgeId);
+    if (!link) return;
+    selectLink(edgeId);
+    const field = link.kind === 'dataFlow' ? 'payload' as const : 'kind' as const;
+    const value = field === 'payload' ? (link.attributes.payload ?? '') : (link.attributes.kind ?? 'uses');
+    useApp.getState().setLinkDraft({ linkId: edgeId, field, value });
+    setEditingEdgeId(edgeId);
+  }, [selectLink]);
+
+  const handleEdgeEditChange = useCallback((edgeId: string, value: string) => {
+    const prev = useApp.getState().linkDraft;
+    if (prev?.linkId === edgeId) useApp.getState().setLinkDraft({ ...prev, value });
+  }, []);
+
+  const cancelEdgeEdit = useCallback((edgeId: string) => {
+    setEditingEdgeId((cur) => (cur === edgeId ? null : cur));
+    if (useApp.getState().linkDraft?.linkId === edgeId) useApp.getState().setLinkDraft(null);
+  }, []);
+
+  const commitEdgeEdit = useCallback(async (edgeId: string, value: string) => {
+    // Enter commits and the input may then blur on unmount — the draft guard makes this idempotent.
+    const wasMine = useApp.getState().linkDraft?.linkId === edgeId;
+    cancelEdgeEdit(edgeId);
+    if (!wasMine) return;
+    const link = useApp.getState().arch?.links.find((l) => l.id === edgeId);
+    if (!link) return;
+    const field = link.kind === 'dataFlow' ? 'payload' : 'kind';
+    const current = field === 'payload' ? (link.attributes.payload ?? '') : (link.attributes.kind ?? 'uses');
+    const next = value.trim();
+    if (!next || next === current) return;
+    const r = await applyOperation({
+      kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
+      linkId: edgeId, attributeName: field, value: next,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+    else setToast({ kind: 'success', text: field === 'payload' ? 'Payload updated' : 'Kind updated' });
+  }, [cancelEdgeEdit, setToast]);
+
   const edges = useMemo<Edge[]>(() => filtered.links.filter((l) => !hiddenIds.has(l.fromId) && !hiddenIds.has(l.toId)).map((l) => {
     const isDataFlow = l.kind === 'dataFlow';
     const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
-    const label = isDataFlow ? l.attributes.payload ?? '' : l.attributes.kind ?? 'uses';
+    // While a draft edit is in flight (inline editor or inspector), the label shows it live.
+    const draftValue = linkDraft && linkDraft.linkId === l.id ? linkDraft.value : null;
+    const label = draftValue ?? (isDataFlow ? l.attributes.payload ?? '' : l.attributes.kind ?? 'uses');
     const dash = dashArrayFor(userStyle.lineStyle) ?? (isDataFlow ? undefined : '4 4');
     const waypoints = edgeWaypoints[l.id];
     // Dim edges that connect dimmed nodes in focus mode. Both endpoints have to be in
@@ -400,9 +447,15 @@ function CanvasInner() {
         routing: userStyle.routing,
         onAddWaypoint: handleAddWaypoint,
         onRemoveWaypoint: handleRemoveWaypoint,
+        editing: l.id === editingEdgeId,
+        editValue: draftValue ?? label,
+        onEditStart: startEdgeEdit,
+        onEditChange: handleEdgeEditChange,
+        onEditCommit: commitEdgeEdit,
+        onEditCancel: cancelEdgeEdit,
       },
     };
-  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, selectedLinkId, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds]);
+  }), [filtered.links, edgeStyles, edgeWaypoints, edgeHandles, autoDocks, selectedLinkId, handleAddWaypoint, handleRemoveWaypoint, focusSet, hiddenIds, linkDraft, editingEdgeId, startEdgeEdit, handleEdgeEditChange, commitEdgeEdit, cancelEdgeEdit]);
 
   // The unique (shape, colour) custom markers (circle / diamond / bar) actually used by edges.
   const customMarkers = useMemo<CustomMarker[]>(() => {
@@ -858,6 +911,11 @@ function CanvasInner() {
     select(node.id);
   };
   const onEdgeClick: EdgeMouseHandler = (_, edge) => selectLink(edge.id);
+  // Double-click a relationship → edit its payload/kind in place (shift+dbl-click adds a waypoint).
+  const onEdgeDoubleClick: EdgeMouseHandler = useCallback((ev, edge) => {
+    if (ev.shiftKey || edge.id.startsWith('__about__')) return;
+    startEdgeEdit(edge.id);
+  }, [startEdgeEdit]);
   const onPaneClick = () => { if (notesEditingId) setNotesEditingId(null); select(null); selectLink(null); useApp.getState().selectShape(null); setMenu(null); };
   const onCanvasMove = useCallback(() => setMenu(null), []);
 
@@ -979,8 +1037,8 @@ function CanvasInner() {
           },
         },
         {
-          id: 'edit-payload', label: 'Edit payload / kind', icon: ContextIcons.Edit3, opensDialog: true,
-          onClick: () => selectLink(edge.id),
+          id: 'edit-payload', label: 'Edit payload / kind', icon: ContextIcons.Edit3, hint: 'dbl-click',
+          onClick: () => startEdgeEdit(edge.id),
         },
         { id: 'sep', label: '', onClick: () => {}, separator: true },
         {
@@ -993,7 +1051,7 @@ function CanvasInner() {
         },
       ],
     });
-  }, [selectLink]);
+  }, [selectLink, startEdgeEdit]);
 
   const addElementAt = useCallback(async (kind: ArchElementKind, pos: SavedPosition) => {
     const fresh = useApp.getState().arch;
@@ -1443,11 +1501,20 @@ function CanvasInner() {
 
   const selectedCount = nodes.filter((n) => n.selected).length;
   // Publish the multi-selection count so the right-hand Layout panel can gate align/distribute.
-  // Selecting 2+ elements jumps the inspector to the Layout panel (Align & distribute sits on top).
+  // Selecting 2+ elements jumps the inspector to the Layout panel (Align & distribute sits on top),
+  // but the user's own tab choice is restored once the multi-selection is gone.
+  const tabBeforeLayoutJump = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const st = useApp.getState();
     st.setCanvasSelection(selectedCount);
-    if (selectedCount >= 2) st.setInspectorTab('layout');
+    if (selectedCount >= 2) {
+      if (st.inspectorTab !== 'layout' && tabBeforeLayoutJump.current === undefined) tabBeforeLayoutJump.current = st.inspectorTab;
+      st.setInspectorTab('layout');
+    } else if (tabBeforeLayoutJump.current !== undefined) {
+      // Only restore if the user didn't pick another panel while multi-selected.
+      if (st.inspectorTab === 'layout') st.setInspectorTab(tabBeforeLayoutJump.current);
+      tabBeforeLayoutJump.current = undefined;
+    }
   }, [selectedCount]);
   const isDark = theme === 'dark';
   const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(248 250 252)';
@@ -1526,6 +1593,7 @@ function CanvasInner() {
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         onEdgeClick={onEdgeClick}
+        onEdgeDoubleClick={onEdgeDoubleClick}
         onPaneClick={onPaneClick}
         onMove={onCanvasMove}
         onNodeContextMenu={onNodeContextMenu}
