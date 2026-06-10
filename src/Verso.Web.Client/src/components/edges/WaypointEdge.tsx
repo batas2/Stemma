@@ -3,6 +3,8 @@ import {
   BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath, getSmoothStepPath, getStraightPath,
   Position, useReactFlow,
 } from '@xyflow/react';
+import { ArrowLeft, ArrowLeftRight, ArrowRight } from 'lucide-react';
+import clsx from 'clsx';
 import type { SavedPosition } from '@/lib/layout';
 import { DEFAULT_EDGE_ROUTING, type EdgeRouting } from '@/lib/edgeStyles';
 
@@ -19,6 +21,10 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   onEditChange?: (edgeId: string, value: string) => void;
   onEditCommit?: (edgeId: string, value: string) => void;
   onEditCancel?: (edgeId: string) => void;
+  // Selection toolbar — direction (which end carries the arrowhead) and model reverse.
+  direction?: 'forward' | 'backward';
+  onSetDirection?: (edgeId: string, dir: 'forward' | 'backward') => void;
+  onReverse?: (edgeId: string) => void;
 }
 
 /** Which side of a box a line heading (dx, dy) leaves from — used to give bezier/step waypoint
@@ -141,6 +147,50 @@ export function WaypointEdge({
         </>
       )}
       <EdgeLabelRenderer>
+        {/* Selection toolbar — floats above the label midpoint and follows the line while nodes
+            move. Left/right set which end carries the arrowhead; the middle swaps the
+            relationship's direction in the model. */}
+        {selected && !data?.editing && data?.onSetDirection && (
+          <div
+            className="nodrag nopan flex items-center gap-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-md px-0.5 py-0.5"
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -100%) translate(${labelMid.x}px, ${labelMid.y - 14}px)`,
+              pointerEvents: 'all', zIndex: 1000,
+            }}
+            onMouseDown={(ev) => ev.stopPropagation()}
+            onClick={(ev) => ev.stopPropagation()}
+            onDoubleClick={(ev) => ev.stopPropagation()}
+          >
+            <button
+              title="Arrowhead at the source end"
+              onClick={() => data.onSetDirection?.(id, 'backward')}
+              className={clsx('p-1 rounded transition-colors',
+                data.direction === 'backward'
+                  ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
+            >
+              <ArrowLeft className="w-3 h-3" />
+            </button>
+            <button
+              title="Reverse the relationship (swap source and target)"
+              onClick={() => data.onReverse?.(id)}
+              className="p-1 rounded text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <ArrowLeftRight className="w-3 h-3" />
+            </button>
+            <button
+              title="Arrowhead at the target end"
+              onClick={() => data.onSetDirection?.(id, 'forward')}
+              className={clsx('p-1 rounded transition-colors',
+                data.direction === 'forward'
+                  ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
+            >
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         {data?.editing ? (
           <input
             autoFocus
