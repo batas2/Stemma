@@ -13,7 +13,7 @@ namespace Stemma.Engine.Workspace;
 
 public sealed class StemmaEngine : IAsyncDisposable
 {
-    private readonly MSBuildWorkspace _workspace;
+    private readonly Microsoft.CodeAnalysis.Workspace _workspace;
     private WorkspaceModel _model;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly UndoStack _undo = new();
@@ -28,7 +28,7 @@ public sealed class StemmaEngine : IAsyncDisposable
     public Microsoft.CodeAnalysis.Solution Solution => _workspace.CurrentSolution;
     public event Action<string>? ExternalChange;
 
-    private StemmaEngine(MSBuildWorkspace workspace, WorkspaceModel model)
+    private StemmaEngine(Microsoft.CodeAnalysis.Workspace workspace, WorkspaceModel model)
     {
         _workspace = workspace;
         _model = model;
@@ -82,8 +82,25 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     public static async Task<StemmaEngine> OpenAsync(string rootPath, CancellationToken ct = default)
     {
-        var (ws, model) = await new WorkspaceLoader().LoadAsync(rootPath, ct);
-        return new StemmaEngine(ws, model);
+        // A repository is loaded through MSBuild; a model that is only model needs no project system
+        // and no installed SDK to read (ADR-0016).
+        switch (ModelWorkspaceLoader.DetectKind(rootPath))
+        {
+            case WorkspaceKind.MsBuild:
+            {
+                var (ws, model) = await new WorkspaceLoader().LoadAsync(rootPath, ct);
+                return new StemmaEngine(ws, model);
+            }
+            case WorkspaceKind.ModelOnly:
+            {
+                var (ws, model) = ModelWorkspaceLoader.Load(rootPath);
+                return new StemmaEngine(ws, model);
+            }
+            default:
+                throw new InvalidOperationException(
+                    $"Nothing to open in {rootPath}: expected a .sln, a .csproj, " +
+                    $"or an {ModelWorkspaceLoader.ArchitectureDir}/ directory containing C# model files.");
+        }
     }
 
     public async Task<OperationResult> ApplyAsync(OperationBase op, CancellationToken ct = default)

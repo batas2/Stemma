@@ -4,6 +4,12 @@
     <AssemblyName>Stemma.Engine</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Model-only workspaces are compiled against the shipped Stemma.Model assembly (ADR-0016), so
+         it has to sit next to the engine wherever the engine is deployed. Conventions rule 6 allows
+         exactly this dependency: Roslyn + Stemma.Model, nothing else. -->
+    <ProjectReference Include="..\Stemma.Model\Stemma.Model.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.14.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.14.0" />
