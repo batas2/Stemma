@@ -17,6 +17,8 @@ Living feature records — one Markdown file per feature, created from
 | ID | Feature | Status | Horizon | Owner |
 |---|---|---|---|---|
 | [F-001](./F-001-architecture-report-export.md) | Architecture Report — single-file interactive HTML export | Shipped (v1) | Now | Bartosz |
+| [F-002](./F-002-desktop-shell.md) | Desktop shell — run Stemma in its own window | Draft | Next | Bartosz |
+| [F-003](./F-003-from-scratch-onboarding.md) | Designing from scratch — the first ten minutes | Draft | Now | Bartosz |
 
 > Keep this table in sync as records are added (the Product Manager
 > and Docs Librarian own it). Already-shipped capabilities are
