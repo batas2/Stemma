@@ -1,8 +1,8 @@
 # Stemma
 
-> Architecture modeling where **the source code is the model database**. UI edits become Roslyn
-> rewrites of real `.cs` files — so the diagram can't drift from the code, because the diagram *is*
-> the code.
+> **Your architecture, written in your source.** Humans and AI agents edit the same model, and every
+> change arrives as a reviewable diff. UI edits become Roslyn rewrites of real `.cs` files — the
+> diagram can't drift from the code, because the diagram *is* the code.
 
 Stemma is a web-based architecture modeling tool for **solution and data architects**. You build one
 long-living model — bounded contexts, capabilities, containers, data flows, dependencies, decisions,

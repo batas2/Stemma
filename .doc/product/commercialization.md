@@ -68,6 +68,7 @@ D bundles into A/B. E enabled passively. F only if a client shows up by themselv
    into Teradata in 2023 and no longer trades.
    Remaining: buy `stemma.dev` (~€15/yr), reserve the NuGet id and GitHub org, and run an
    EUIPO/USPTO class 9/42 search to confirm no live word mark survives the acquisition.
+   Full rationale, alternatives and consequences: [ADR-0015](../architecture/decisions/0015-project-name-and-market-positioning.md).
 2. **License.** Recommended default: **FSL (Functional Source License)** or BSL for the whole
    repo — source-available, free for non-commercial/internal use, converts to Apache-2.0 after
    2 years; sell commercial licenses on top. Alternative: MIT core + closed `Publish` service.

@@ -26,6 +26,7 @@ removed).
 | 0012 | **View Books governance concept.** | 🟡 Directional — see [`../../product/roadmap.md`](../../product/roadmap.md). |
 | 0013 | **Cross-adapter references.** | 🗄️ Historical — single adapter now. |
 | [0014](./0014-architecture-report-rendering-and-comment-pack.md) | **Architecture report** — embedded-JSON standalone renderer + comment-pack round-trip. | ✅ Current — see [F-001](../../features/F-001-architecture-report-export.md). |
+| [0015](./0015-project-name-and-market-positioning.md) | **Name and positioning** — the project is Stemma; the pitch is one source both humans and agents edit. | ✅ Current — see [value-proposition](../../product/value-proposition.md). |
 
 ## Legend
 
