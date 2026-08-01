@@ -12,7 +12,7 @@ but they are **read-only**. An architect cannot *redesign* in the diagram and ha
 
 ## The thesis: code is the database
 
-Verso eliminates the gap between the architecture artifact and the source by treating **the code on
+Stemma eliminates the gap between the architecture artifact and the source by treating **the code on
 disk as the model database**. There is no separate file format, no export step, no synchronization
 job. The `.cs` files (and a small committed presentation sidecar) *are* the model; the UI is a live
 projection of them.
@@ -27,13 +27,13 @@ loss. That contract is the spine of the whole product.
 
 ## Who it's for
 
-Verso serves **solution and data architects** first — the people who work at the level of abstract
+Stemma serves **solution and data architects** first — the people who work at the level of abstract
 domain models that must evolve over years, span products, and live across organizations. Everyone
 else is served through **views projected from the architects' canonical model**.
 
 See [`users-and-personas.md`](./users-and-personas.md) for the full audience breakdown.
 
-## What makes a Verso model special
+## What makes a Stemma model special
 
 - **Long-lived.** A model is meant to outlive any one repository, product, or org chart. It is
   started for a program, evolved as concepts split/merge/rename/retire, forked and re-merged with
@@ -48,7 +48,7 @@ See [`users-and-personas.md`](./users-and-personas.md) for the full audience bre
 ## Non-goals
 
 - **Not a browser IDE.** Method bodies, control flow, and inline logic are out of scope.
-- **Not a runtime observability tool.** Verso models *structure*, not behavior.
+- **Not a runtime observability tool.** Stemma models *structure*, not behavior.
 - **Not a parallel data store.** There is no SQLite/Postgres/embedded DB. If a feature seems to need
   one, the feature is wrong. (Presentation-only state lives in the committed sidecar — see
   [`../architecture/data-flow-and-sync.md`](../architecture/data-flow-and-sync.md).)
@@ -57,6 +57,6 @@ See [`users-and-personas.md`](./users-and-personas.md) for the full audience bre
 
 1. **Fidelity:** editing via the UI yields a diff with only the intended change. (If this breaks,
    trust is lost and is not recoverable.)
-2. **Adoption:** a team uses Verso for a real architecture review and chooses to keep using it.
+2. **Adoption:** a team uses Stemma for a real architecture review and chooses to keep using it.
 3. **Drift becomes meaningless:** "is this diagram current?" stops being a question, because the
    diagram *is* the code.

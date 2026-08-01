@@ -1,6 +1,6 @@
 # Engine & Backend
 
-The engine (`src/Verso.Engine`) is the heart of Verso. It loads a workspace, holds the canonical
+The engine (`src/Stemma.Engine`) is the heart of Stemma. It loads a workspace, holds the canonical
 model in memory, and applies edits as **fidelity-preserving Roslyn rewrites**. It depends only on
 Roslyn and the Model project — never on the web or LLM layers.
 
@@ -10,7 +10,7 @@ Roslyn and the Model project — never on the web or LLM layers.
 2. Parse `Architecture/Architecture.cs` — the engine finds the static `Build()` method and reads the
    `Model.Of(...)` call to materialise elements, links, and tags.
 3. Parse `Views/*.cs` — each file exposes a static `Define()` returning a `View` (the `ViewsAdapter`).
-4. Load the presentation sidecar `verso.layout.json` (positions, styles, notes, shapes, per-view
+4. Load the presentation sidecar `stemma.layout.json` (positions, styles, notes, shapes, per-view
    layout). It is a *pass-through* cache of presentation data; the engine round-trips it but does
    not interpret most of it.
 
@@ -47,7 +47,7 @@ recoverable via Git as well.
 3. **Apply targeted node replacements only** — never re-emit a whole file.
 4. **Preserve `SyntaxTrivia`** on every replaced node (copy it from the original before editing).
 5. **Cross-file rename uses `Renamer.RenameSymbolAsync`**, which preserves trivia by design.
-6. **Never invent a parallel data store.** Presentation-only state goes in `verso.layout.json`; the
+6. **Never invent a parallel data store.** Presentation-only state goes in `stemma.layout.json`; the
    model goes in code. If a feature seems to need a database, the feature is wrong.
 7. **Never edit method bodies** (out of scope for v1) and **never edit generated files** (`*.g.cs` /
    generator output) — refuse the operation.
@@ -69,13 +69,13 @@ and are the first thing the Software Architect checks.
 
 | Concern | Where |
 |---|---|
-| Engine entry / workspace | `Verso.Engine/Workspace/VersoEngine.cs` |
-| Architecture-model operations | `Verso.Engine/ArchModel/ArchOperations.cs` |
-| DSL read / write | `Verso.Engine/ArchModel/DslReader.cs`, `DslWriter.cs` |
-| Views | `Verso.Engine/ArchModel/ViewsAdapter.cs` |
-| Undo | `Verso.Engine/Workspace/UndoStack.cs` |
-| Presentation sidecar | `Verso.Engine/Workspace/LayoutSidecar.cs` |
-| Operation polymorphism | `Verso.Engine/Operations/Operations.cs` |
+| Engine entry / workspace | `Stemma.Engine/Workspace/StemmaEngine.cs` |
+| Architecture-model operations | `Stemma.Engine/ArchModel/ArchOperations.cs` |
+| DSL read / write | `Stemma.Engine/ArchModel/DslReader.cs`, `DslWriter.cs` |
+| Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` |
+| Undo | `Stemma.Engine/Workspace/UndoStack.cs` |
+| Presentation sidecar | `Stemma.Engine/Workspace/LayoutSidecar.cs` |
+| Operation polymorphism | `Stemma.Engine/Operations/Operations.cs` |
 
 ## Testing
 

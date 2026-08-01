@@ -1,6 +1,6 @@
 # Client & Frontend
 
-`src/Verso.Web.Client` is a React 19 + Vite single-page app. The canvas is `@xyflow/react` (React
+`src/Stemma.Web.Client` is a React 19 + Vite single-page app. The canvas is `@xyflow/react` (React
 Flow); state is `zustand`; styling is Tailwind. It renders the active view, captures gestures as
 operations, and patches its local graph from server deltas. **It holds no authoritative model
 state** — a refresh re-fetches the snapshot.
@@ -26,11 +26,11 @@ annotations, per-view layout choices — is routed through **one shared cache** 
 (`sidecarMap` / `sidecarSet` / `loadViewShapes` / `saveViewShapes`). The cache:
 
 - is **fetched once per workspace** (`primeLayoutSidecar` with a `primedRoot` guard); after that the
-  in-memory cache is the session's source of truth and is debounce-flushed to `verso.layout.json`;
+  in-memory cache is the session's source of truth and is debounce-flushed to `stemma.layout.json`;
 - must **never be re-fetched mid-session** — re-fetching clobbers unflushed edits (the cause of the
   "box jumps back / routing reverts / canvas blinks while editing" class of bugs).
 
-A `verso:sidecar-primed` event triggers `store.rehydratePresentation()` exactly once.
+A `stemma:sidecar-primed` event triggers `store.rehydratePresentation()` exactly once.
 
 ## The canvas (`ArchCanvas.tsx`)
 
@@ -42,7 +42,7 @@ A `verso:sidecar-primed` event triggers `store.rehydratePresentation()` exactly 
 - Edges render through `WaypointEdge` with floating, dock-aware endpoints (draw.io-style) and a
   routing property; relationships connect to the 6 connection handles per node.
 - Auto-layout lives in `lib/autoLayout.ts` (force-directed, hierarchical, by-type, focused). The
-  Layout panel drives it via a `verso:layout-action` event because it lives outside the canvas tree.
+  Layout panel drives it via a `stemma:layout-action` event because it lives outside the canvas tree.
 
 ## Inspector (`ArchInspector.tsx`)
 

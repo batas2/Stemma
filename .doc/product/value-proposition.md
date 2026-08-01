@@ -2,7 +2,7 @@
 
 ## The one-liner
 
-**Verso is a web-based architecture modeling tool where the C# source on disk is the model
+**Stemma is a web-based architecture modeling tool where the C# source on disk is the model
 database; UI edits are translated into Roslyn rewrites of real `.cs` files.** The diagram cannot
 drift from the code because the diagram *is* the code.
 
@@ -22,7 +22,7 @@ drift from the code because the diagram *is* the code.
 
 ## How it compares
 
-| | Verso | draw.io / Lucidchart | Structurizr | Reverse-eng (NDepend, …) |
+| | Stemma | draw.io / Lucidchart | Structurizr | Reverse-eng (NDepend, …) |
 |---|---|---|---|---|
 | Source of truth | **The code** | A separate file | A separate DSL | The code (read-only) |
 | Edit the picture → code follows | **Yes** | No | DSL is the picture, not the code | **No** |
@@ -44,6 +44,6 @@ tools) that is *the actual code* (unlike draw.io/Structurizr) with a *fidelity g
 ## Proof points to protect
 
 - A realistic `Architecture.cs` edited via the UI yields a clean, intent-only diff.
-- A real architecture review is run on Verso and the team keeps using it.
+- A real architecture review is run on Stemma and the team keeps using it.
 - A sample workspace (see [`../../samples/`](../../samples/)) opens, renders three perspective views,
   and round-trips edits with no fidelity loss.

@@ -1,6 +1,6 @@
 # Domain Model & DSL
 
-The canonical model is written by architects as plain C# records in `src/Verso.Model`
+The canonical model is written by architects as plain C# records in `src/Stemma.Model`
 (`Concepts.cs`). A workspace's `Architecture/Architecture.cs` constructs them inside a static
 `Build()` method and returns `Model.Of(...)`. Views are separate `Views/*.cs` files. This file is
 the contract for what those records mean.
@@ -79,7 +79,7 @@ Links render in a view when **both** endpoints are present.
 ## Decision vocabulary (inert)
 
 `Decision` / `DecisionOption` records still exist as model vocabulary so older workspaces compile,
-but Verso no longer reads, edits, or renders them — the decision-editing feature was removed. Do not
+but Stemma no longer reads, edits, or renders them — the decision-editing feature was removed. Do not
 build new features on them; use `Risk`/`Question`/`Assumption` for live design concerns.
 
 ## Worked example

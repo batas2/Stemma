@@ -1,7 +1,7 @@
 # Design Tokens
 
 Tokens are expressed as Tailwind utilities and a small set of CSS variables/utility classes in
-`src/Verso.Web.Client/src/styles.css`. **Use the shared tokens; do not hard-code raw colours or
+`src/Stemma.Web.Client/src/styles.css`. **Use the shared tokens; do not hard-code raw colours or
 z-indexes.** Both themes are always defined.
 
 ## Colour roles
@@ -54,7 +54,7 @@ CSS variables in `styles.css`, exposed as utilities:
 
 - Node animations: `marching` · `pulse` · `glow` · `breathe` · `bounce` · `shake`, with a speed
   (`slow`/`normal`/`fast`).
-- Edge "flow" animation: marching dashes with a speed class (`verso-edge-slow/fast`).
+- Edge "flow" animation: marching dashes with a speed class (`stemma-edge-slow/fast`).
 - All of the above are gated by `prefers-reduced-motion`.
 
 ## Rich-text content tokens

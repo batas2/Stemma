@@ -15,12 +15,12 @@ canvas gesture (drag/rename/link/style/note)
    │                                                       recompute model ► delta ► all clients
    │
    └── presentation change?  ──► lib/layout.ts sidecar cache (in-memory)
-                                      └── debounced PUT /api/workspace/layout ──► verso.layout.json
+                                      └── debounced PUT /api/workspace/layout ──► stemma.layout.json
 ```
 
 The decisive question for any edit is **"does this change the model or only its presentation?"**
 
-| Model (→ code, via operations) | Presentation (→ `verso.layout.json`, via the sidecar) |
+| Model (→ code, via operations) | Presentation (→ `stemma.layout.json`, via the sidecar) |
 |---|---|
 | Add/rename/remove elements, links | Node positions, per-view layout mode |
 | Re-parent a module (contextId) | Node styles (fill, border, shadow, animation) |
@@ -33,7 +33,7 @@ code, stop — the boundary is wrong.
 
 ## Operations (the model edit primitive)
 
-Operations are a closed, polymorphic set (`Verso.Engine/Operations/Operations.cs`) — e.g.
+Operations are a closed, polymorphic set (`Stemma.Engine/Operations/Operations.cs`) — e.g.
 `AddElement`, `RenameElement`, `RemoveElement`, `SetElementContext`, `SetElementAttribute`,
 `AddLink`, `RemoveLink`, `SetLinkAttribute`, `SetLifecycle`, `SetOwnership`. Each:
 
@@ -43,7 +43,7 @@ Operations are a closed, polymorphic set (`Verso.Engine/Operations/Operations.cs
 
 To add one, follow the procedure in [`engine-backend.md`](./engine-backend.md#adding-or-changing-an-operation-the-procedure).
 
-## The presentation sidecar (`verso.layout.json`)
+## The presentation sidecar (`stemma.layout.json`)
 
 A committed JSON file with top-level sections: `views` (per-view `nodes` positions, `edges`
 waypoints/handles, `shapes`), `nodeStyles`, `edgeStyles`, `notes`, `customProps`, `annotations`.
@@ -59,7 +59,7 @@ Frontend rules that keep it correct:
 ## The read path & live sync
 
 - On open: REST returns the model snapshot + the engine primes the sidecar; the client hydrates
-  presentation once (`verso:sidecar-primed` → `rehydratePresentation`).
+  presentation once (`stemma:sidecar-primed` → `rehydratePresentation`).
 - During a session: model edits broadcast as **deltas** over SignalR; the client merges them.
   External file edits (git pull, IDE) are picked up by the engine and broadcast too.
 - The client merges deltas **without clobbering in-flight local edits** — the same discipline as the

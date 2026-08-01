@@ -1,7 +1,7 @@
 # UI Components
 
 The frontend's building blocks, what they own, and the rules for changing them. Files are under
-`src/Verso.Web.Client/src/components` unless noted.
+`src/Stemma.Web.Client/src/components` unless noted.
 
 ## Layout shell
 
@@ -46,7 +46,7 @@ The frontend's building blocks, what they own, and the rules for changing them. 
 `LayoutPanel.tsx` — per-view layout. Mode selector (Architectural / Hierarchical / Organic / Custom +
 one-shot Focus), the active mode's tunable sliders (with Reset and live re-apply), snap toggle, Fit,
 and **Align & distribute** on top (labelled icon-over-text buttons, disabled until enough is
-selected). Drives the canvas via the `verso:layout-action` event.
+selected). Drives the canvas via the `stemma:layout-action` event.
 
 ## Editors & overlays
 

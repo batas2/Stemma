@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Stemma.Model</RootNamespace>
+    <AssemblyName>Stemma.Model</AssemblyName>
+    <PackageId>Stemma.Model</PackageId>
+    <Description>Architecture meta-model used by Stemma. Reference this package from a workspace to model with Stemma.</Description>
+    <Authors>Bartosz Frąckowiak</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Version>0.1.0</Version>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+</Project>

@@ -10,7 +10,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Roslyn engine + round-trip fidelity** — operations rewrite `Architecture.cs` via `DocumentEditor`; the fidelity test suite gates every change.
 - **Canonical model** — elements (person, software system, container, bounded context, module, capability, use case, risk, question, assumption), `DataFlow`/`Dependency` links, `Lifecycle`/`Ownership` tags, code-defined `View`s.
 - **React Flow canvas** — module map, dependency graph, and custom views; bounded-context grouping; pan/zoom/minimap; PNG/SVG export of the whole graph including shapes.
-- **Committed presentation sidecar** (`verso.layout.json`) — positions, node/edge styles, notes, custom props, free-form shapes, per-view layout choices; travels in Git.
+- **Committed presentation sidecar** (`stemma.layout.json`) — positions, node/edge styles, notes, custom props, free-form shapes, per-view layout choices; travels in Git.
 - **Inline + full rich-text editing** — markdown-backed; a simple inline editor and a turbo full-screen editor (headings, lists, tables, color, highlight, code blocks).
 - **Appearance system** — node and edge styling (fills, borders, shadows, presets, animations); edge routing (curved / elbow / step / straight); both-end markers.
 - **draw.io-style edge docking** — relationships anchor to connection dots; reconnect endpoints to another box.
@@ -35,7 +35,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 
 ## Commercial direction
 
-How Verso could earn as a side income — local-first tool, paid sharing layer — lives in
+How Stemma could earn as a side income — local-first tool, paid sharing layer — lives in
 [`commercialization.md`](./commercialization.md) (working plan with open decision points).
 
 ## How roadmap items become work

@@ -1,11 +1,11 @@
 # User Journeys
 
-The canonical paths through Verso. Each names the persona, the steps, the system response, and the
+The canonical paths through Stemma. Each names the persona, the steps, the system response, and the
 states that must be handled (cross-reference [`states-and-interactions.md`](./states-and-interactions.md)).
 
 ## J1 — Open a workspace and orient (Architect)
 
-1. Point Verso at a folder (a Git working tree with `Architecture/Architecture.cs`).
+1. Point Stemma at a folder (a Git working tree with `Architecture/Architecture.cs`).
 2. **Loading state** while the engine parses with Roslyn and primes the sidecar.
 3. Land on the default **Module Map** view: bounded contexts as lanes, modules nested, links drawn.
 4. Switch views via the bottom tab bar (Module Map · Dependencies · saved custom views).
@@ -41,7 +41,7 @@ deselecting collapses the inspector to the rail.
 
 1. Appearance panel: presets, fills, borders, shadows, animations; edge routing and markers.
 2. Add free-form shapes/labels/arrows (the annotation layer) for emphasis.
-3. All of this is **presentation** → saved to `verso.layout.json`, per view, committable in Git.
+3. All of this is **presentation** → saved to `stemma.layout.json`, per view, committable in Git.
 
 ## J5 — Capture intent (Architect)
 
@@ -62,9 +62,9 @@ deselecting collapses the inspector to the rail.
 2. Share it anywhere (Drive, mail, chat). Recipients download and double-click — Drive's preview
    does not run JavaScript, the file itself needs no install and makes no network requests.
 3. Reviewers select elements and write comments in the report (kept locally), then **Export
-   comment pack** (`<workspace>.comments.verso.json`) and send it back.
+   comment pack** (`<workspace>.comments.stemma.json`) and send it back.
 4. The architect imports the pack (inspector → Comments → import); threads merge idempotently into
-   `comments.verso.json`, anchored to the elements they concern. Act, re-export, repeat.
+   `comments.stemma.json`, anchored to the elements they concern. Act, re-export, repeat.
 
 ## J7 — Onboard via samples (any persona)
 

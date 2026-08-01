@@ -1,6 +1,6 @@
 # Design Language
 
-Verso looks like a calm, dense, professional tool — closer to a code editor than a consumer app. The
+Stemma looks like a calm, dense, professional tool — closer to a code editor than a consumer app. The
 visual system serves long sessions: low chrome, high information density, strong but quiet structure.
 
 ## Principles

@@ -14,12 +14,12 @@ removed).
 |---|---|---|
 | 0001 | **Roslyn as the engine** — parse/edit C# via Roslyn `DocumentEditor`. | ✅ Current — foundational. |
 | 0002 | **Git as storage** — no runtime DB; the working tree is the database. | ✅ Current — foundational. |
-| 0003 | **Layout sidecar** — presentation state in a committed `verso.layout.json`, not the code. | ✅ Current — see [`../data-flow-and-sync.md`](../data-flow-and-sync.md). |
+| 0003 | **Layout sidecar** — presentation state in a committed `stemma.layout.json`, not the code. | ✅ Current — see [`../data-flow-and-sync.md`](../data-flow-and-sync.md). |
 | 0004 | **In-memory canonical model** — the model lives in memory while open. | ✅ Current. |
 | 0005 | **Projection system** — views as pure functions of the model. | 🟡 Partial — views exist (`moduleMap`/`dependencyGraph`/custom); the standalone projection layer and code/Mermaid projections are not built. |
 | 0006 | **Heterogeneous storage formats** (.cs/.md/.yaml adapters). | 🗄️ Historical — the multi-adapter design was removed; the engine is Roslyn-only today. |
-| 0007 | **Discovery as cache** (`discovered.verso.json` regenerable). | 🗄️ Historical — discovery subsystem removed. |
-| 0008 | **LLM via the Web layer** — engine stays pure; LLM calls live in `Verso.Web`. | ✅ Current — engine purity boundary. |
+| 0007 | **Discovery as cache** (`discovered.stemma.json` regenerable). | 🗄️ Historical — discovery subsystem removed. |
+| 0008 | **LLM via the Web layer** — engine stays pure; LLM calls live in `Stemma.Web`. | ✅ Current — engine purity boundary. |
 | 0009 | **Canvas shapes in the layout sidecar** — free-form shapes are presentation. | ✅ Current. |
 | 0010 | **Comments as a Git sidecar.** | 🟡 Partial — revisit if comments are reintroduced. |
 | 0011 | **YAML adapter shape.** | 🗄️ Historical — YAML adapter removed. |

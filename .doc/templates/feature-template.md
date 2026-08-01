@@ -36,7 +36,7 @@ is not ready to build. Delete the guidance comments as you go.
 - [ ] **New/changed operations:** <list; each needs ≥3 fidelity fixtures>
 - [ ] **Fidelity:** <does it touch source rewrites? confirm the inviolable rules hold>
 - [ ] **Engine purity:** <no web/LLM creep into the engine>
-- [ ] **Sidecar:** <new `verso.layout.json` section/field? schema?>
+- [ ] **Sidecar:** <new `stemma.layout.json` section/field? schema?>
 - [ ] **ADR needed?** <link or "no">
 - **Affected files/areas:** <`path` list>
 

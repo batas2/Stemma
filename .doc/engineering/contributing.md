@@ -1,6 +1,6 @@
 # Contributing
 
-How work flows into Verso. (The historical guide is archived at
+How work flows into Stemma. (The historical guide is archived at
 [`../../.doc.legacy/CONTRIBUTING.md`](../../.doc.legacy/CONTRIBUTING.md).)
 
 ## Before you start

@@ -8,9 +8,9 @@ The full contribution guide lives in
 - **Round-trip fidelity is sacred.** Any change that risks it needs a test before merge. A failing
   fidelity test blocks merge — no exceptions.
 - **Code is the database.** Resist any feature that introduces a parallel, non-Git source of truth.
-  Model → code; presentation → `verso.layout.json`; never a third store.
+  Model → code; presentation → `stemma.layout.json`; never a third store.
 - **Operations are pure.** Treat every UI gesture as a function; no hidden side effects.
-- **Stay narrow.** Verso is not an IDE. If a feature feels like one, push back.
+- **Stay narrow.** Stemma is not an IDE. If a feature feels like one, push back.
 
 Full rules: [`.doc/engineering/conventions.md`](./.doc/engineering/conventions.md).
 

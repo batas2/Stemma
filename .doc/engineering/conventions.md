@@ -8,12 +8,12 @@ breaks the product's core promise.
 1. **Never call `SyntaxNode.NormalizeWhitespace()`.** It destroys trivia and the fidelity contract.
 2. **Never reconstruct a source file via string concatenation.** Use `DocumentEditor` /
    `SyntaxNode.WithX(...)` exclusively.
-3. **Never invent a parallel data store.** Model → code; presentation → `verso.layout.json`. If a
+3. **Never invent a parallel data store.** Model → code; presentation → `stemma.layout.json`. If a
    feature seems to need a third store, the feature is wrong.
 4. **Never edit method bodies in v1.** Out of scope.
 5. **Never edit `*.g.cs` or generator-output files.** Refuse the operation.
-6. **Engine purity.** `Verso.Engine` depends only on Roslyn + `Verso.Model`. LLM/web concerns stay in
-   `Verso.Web`.
+6. **Engine purity.** `Stemma.Engine` depends only on Roslyn + `Stemma.Model`. LLM/web concerns stay in
+   `Stemma.Web`.
 
 Background and the full fidelity rationale: [`../architecture/engine-backend.md`](../architecture/engine-backend.md).
 

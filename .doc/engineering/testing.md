@@ -1,6 +1,6 @@
 # Testing
 
-Tests are how Verso keeps its central promise. The fidelity suite is not optional polish — it is the
+Tests are how Stemma keeps its central promise. The fidelity suite is not optional polish — it is the
 product's load-bearing wall.
 
 ## The pyramid
@@ -30,7 +30,7 @@ fidelity test means the **implementation** is wrong — fix the code, never the 
 # Backend
 dotnet test                                   # full suite incl. fidelity
 
-# Frontend (from src/Verso.Web.Client)
+# Frontend (from src/Stemma.Web.Client)
 npx tsc --noEmit -p tsconfig.json             # typecheck (must be clean)
 npx vite build                                # build (must succeed)
 npx vitest run                                # unit/integration (must be green)

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Verso — local run script
+# Stemma — local run script
 # Usage: ./run.sh [--dev | --prod] [--workspace <path>]
 #   --dev        Run backend (port 5050) + Vite dev (port 5173) with HMR. Default.
-#   --prod       Build frontend bundle into Verso.Web/wwwroot, then run backend only.
+#   --prod       Build frontend bundle into Stemma.Web/wwwroot, then run backend only.
 #   --workspace  Optional absolute or relative path to a workspace to auto-open.
 
 set -euo pipefail
@@ -22,14 +22,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Stale-process cleanup -------------------------------------------------
-# Kill any leftover Verso.Web binary or dotnet host bound to our backend port.
+# Kill any leftover Stemma.Web binary or dotnet host bound to our backend port.
 # Without this, a previous run that exited via Ctrl-C without reaping its
 # grandchild leaves the port held and the new backend fails to bind.
 cleanup_stale() {
   local pids
-  pids="$(pgrep -f 'Verso\.Web($|/| )' 2>/dev/null || true)"
+  pids="$(pgrep -f 'Stemma\.Web($|/| )' 2>/dev/null || true)"
   if [ -n "$pids" ]; then
-    echo "==> Cleaning up stale Verso.Web processes: $pids"
+    echo "==> Cleaning up stale Stemma.Web processes: $pids"
     # shellcheck disable=SC2086
     kill $pids 2>/dev/null || true
     sleep 1
@@ -45,45 +45,45 @@ cleanup_stale() {
 }
 cleanup_stale
 
-echo "==> Verso starting (mode=$MODE)"
+echo "==> Stemma starting (mode=$MODE)"
 
 # --- Claude transport advisory --------------------------------------------
 # The default in appsettings.json is `cli` (Claude Code subprocess; uses your
-# `claude login` session). Override at runtime with `VERSO_AI_TRANSPORT=http`
+# `claude login` session). Override at runtime with `STEMMA_AI_TRANSPORT=http`
 # plus an Anthropic API key.
-ACTIVE_TRANSPORT="${VERSO_AI_TRANSPORT:-cli}"
+ACTIVE_TRANSPORT="${STEMMA_AI_TRANSPORT:-cli}"
 if [ "$ACTIVE_TRANSPORT" = "cli" ]; then
   if command -v claude >/dev/null 2>&1; then
     echo "==> Claude transport: cli (claude $(claude --version 2>/dev/null | head -n1 | awk '{print $1}'))"
   else
     echo "==> Claude transport: cli — but \`claude\` is NOT on PATH."
     echo "    Install:  npm i -g @anthropic-ai/claude-code  &&  claude login"
-    echo "    Or pin HTTP:  VERSO_AI_TRANSPORT=http ANTHROPIC_API_KEY=sk-ant-... ./run.sh"
+    echo "    Or pin HTTP:  STEMMA_AI_TRANSPORT=http ANTHROPIC_API_KEY=sk-ant-... ./run.sh"
   fi
 elif [ "$ACTIVE_TRANSPORT" = "http" ]; then
   if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     echo "==> Claude transport: http (ANTHROPIC_API_KEY set, ${#ANTHROPIC_API_KEY} chars)"
-  elif [ -f "${HOME:-}/.verso/credentials.json" ]; then
-    echo "==> Claude transport: http (~/.verso/credentials.json found)"
+  elif [ -f "${HOME:-}/.stemma/credentials.json" ]; then
+    echo "==> Claude transport: http (~/.stemma/credentials.json found)"
   else
-    echo "==> Claude transport: http — no API key found in env or ~/.verso/credentials.json."
+    echo "==> Claude transport: http — no API key found in env or ~/.stemma/credentials.json."
     echo "    Set:  export ANTHROPIC_API_KEY=sk-ant-..."
   fi
 fi
 
-if [ ! -d src/Verso.Web.Client/node_modules ]; then
+if [ ! -d src/Stemma.Web.Client/node_modules ]; then
   echo "==> Installing frontend deps"
-  (cd src/Verso.Web.Client && npm install --no-fund --no-audit --progress=false)
+  (cd src/Stemma.Web.Client && npm install --no-fund --no-audit --progress=false)
 fi
 
 echo "==> Restoring .NET deps"
-dotnet restore Verso.slnx > /dev/null
+dotnet restore Stemma.slnx > /dev/null
 
 if [ "$MODE" = "prod" ]; then
   echo "==> Building frontend (production)"
-  (cd src/Verso.Web.Client && npm run build)
+  (cd src/Stemma.Web.Client && npm run build)
   echo "==> Running backend on http://localhost:5050"
-  ASPNETCORE_URLS="http://localhost:5050" exec dotnet run --project src/Verso.Web -c Release
+  ASPNETCORE_URLS="http://localhost:5050" exec dotnet run --project src/Stemma.Web -c Release
 fi
 
 # Dev mode: track children explicitly and reap descendants on exit.
@@ -92,19 +92,19 @@ FRONT_PID=""
 
 shutdown() {
   echo "==> Shutting down"
-  # Kill direct children, then any descendant Verso.Web that dotnet spawned.
+  # Kill direct children, then any descendant Stemma.Web that dotnet spawned.
   for pid in "$BACK_PID" "$FRONT_PID"; do
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   done
   pkill -P $$ 2>/dev/null || true
-  pkill -f 'Verso\.Web($|/| )' 2>/dev/null || true
+  pkill -f 'Stemma\.Web($|/| )' 2>/dev/null || true
   pkill -f 'vite.*--port 5173' 2>/dev/null || true
   exit 0
 }
 trap shutdown EXIT INT TERM
 
 echo "==> Backend on http://localhost:5050"
-ASPNETCORE_URLS="http://localhost:5050" dotnet run --project src/Verso.Web --no-launch-profile &
+ASPNETCORE_URLS="http://localhost:5050" dotnet run --project src/Stemma.Web --no-launch-profile &
 BACK_PID=$!
 
 # Wait for the backend port to actually accept connections before opening Vite,
@@ -122,7 +122,7 @@ for i in {1..40}; do
 done
 
 echo "==> Frontend (Vite) on http://localhost:5173"
-(cd src/Verso.Web.Client && npm run dev) &
+(cd src/Stemma.Web.Client && npm run dev) &
 FRONT_PID=$!
 
 if [ -n "$WORKSPACE" ]; then

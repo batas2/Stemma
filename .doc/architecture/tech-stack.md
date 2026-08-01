@@ -11,9 +11,9 @@
 | Export | `html-to-image` (PNG/SVG) |
 | Backend tests | xUnit + FluentAssertions |
 | Frontend tests | vitest (+ happy-dom for DOM-touching units) |
-| Storage | Git working tree — `.cs` model + `verso.layout.json` sidecar |
+| Storage | Git working tree — `.cs` model + `stemma.layout.json` sidecar |
 
-Sample workspaces target `net8.0` and reference `src/Verso.Model` (they only need the DSL
+Sample workspaces target `net8.0` and reference `src/Stemma.Model` (they only need the DSL
 vocabulary), e.g. [`../../samples/NetworkAggregation/NetworkAggregation.csproj`](../../samples/NetworkAggregation/NetworkAggregation.csproj).
 
 ## Build & test commands
@@ -23,7 +23,7 @@ vocabulary), e.g. [`../../samples/NetworkAggregation/NetworkAggregation.csproj`]
 dotnet build
 dotnet test                              # xUnit; round-trip fidelity suite is the core gate
 
-# Frontend (from src/Verso.Web.Client)
+# Frontend (from src/Stemma.Web.Client)
 npx tsc --noEmit -p tsconfig.json        # typecheck
 npx vite build                           # build
 npx vitest run                           # tests
@@ -33,8 +33,8 @@ Green tests are required per change — see [`../engineering/testing.md`](../eng
 
 ## Conventions that are load-bearing
 
-- **Engine purity.** `Verso.Engine` depends only on Roslyn + `Verso.Model`. LLM/web concerns live in
-  `Verso.Web`. Do not add web or LLM references to the engine.
+- **Engine purity.** `Stemma.Engine` depends only on Roslyn + `Stemma.Model`. LLM/web concerns live in
+  `Stemma.Web`. Do not add web or LLM references to the engine.
 - **Fidelity first.** All the engine rules in [`engine-backend.md`](./engine-backend.md) apply to every
   backend change.
 - **Presentation vs model.** The split in [`data-flow-and-sync.md`](./data-flow-and-sync.md) is

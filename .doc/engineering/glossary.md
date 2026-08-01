@@ -38,7 +38,7 @@ The shared vocabulary. When a term here appears in code or docs, it means exactl
 
 ## Presentation concepts
 
-- **Presentation sidecar** — `verso.layout.json`: committed, presentation-only state (positions,
+- **Presentation sidecar** — `stemma.layout.json`: committed, presentation-only state (positions,
   styles, notes, custom props, shapes, per-view layout). Never holds model data.
 - **Sidecar cache** — the single in-memory cache (`lib/layout.ts`) that owns presentation during a
   session; primed once, debounce-flushed, never re-fetched mid-session.

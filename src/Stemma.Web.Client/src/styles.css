@@ -1,0 +1,230 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  :root {
+    --accent: 99 102 241;
+
+    /* Z-index ladder (Q99). Single source of truth — every floating surface
+       picks the layer it belongs to instead of inventing magic numbers. */
+    --z-canvas: 1;
+    --z-chrome: 20;
+    --z-popover: 40;
+    --z-menu: 50;
+    --z-modal: 70;
+    --z-toast: 90;
+  }
+
+  /* Visible focus ring across every interactive element (Q120). */
+  *:focus-visible {
+    outline: 2px solid rgb(99 102 241 / 0.7);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* Surfaces */
+  .surface         { @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800; }
+  .surface-elevated { @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-md; }
+  .surface-overlay { @apply bg-white/95 dark:bg-zinc-900/95 backdrop-blur border border-zinc-200 dark:border-zinc-800 shadow-xl; }
+
+  /* Z-index utilities mirroring the CSS variables */
+  .z-chrome   { z-index: var(--z-chrome); }
+  .z-popover  { z-index: var(--z-popover); }
+  .z-menu     { z-index: var(--z-menu); }
+  .z-modal    { z-index: var(--z-modal); }
+  .z-toast    { z-index: var(--z-toast); }
+
+  /* Text colours (Q104) */
+  .text-body  { @apply text-zinc-900 dark:text-zinc-100; }
+  .text-muted { @apply text-zinc-600 dark:text-zinc-400; }
+  .text-faint { @apply text-zinc-500 dark:text-zinc-500; }
+
+  /* Borders */
+  .border-subtle  { @apply border-zinc-100 dark:border-zinc-800/60; }
+  .border-default { @apply border-zinc-200 dark:border-zinc-800; }
+  .border-strong  { @apply border-zinc-300 dark:border-zinc-700; }
+
+  /* Buttons (Q105) — four variants × two sizes. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded font-medium
+           transition-colors focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-sm { @apply text-xs px-2.5 py-1; }
+  .btn-md { @apply text-xs px-3 py-1.5; }
+
+  .btn-primary {
+    @apply bg-indigo-500 hover:bg-indigo-400 text-white border border-transparent;
+  }
+  .btn-secondary {
+    @apply bg-indigo-500/15 hover:bg-indigo-500/25
+           border border-indigo-500/40 dark:border-indigo-500/30
+           text-indigo-700 dark:text-indigo-300;
+  }
+  .btn-ghost {
+    @apply bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/60
+           text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100
+           border border-transparent;
+  }
+  .btn-destructive {
+    @apply bg-transparent hover:bg-rose-500/10
+           border border-rose-500/40 dark:border-rose-500/30
+           text-rose-600 dark:text-rose-400;
+  }
+
+  /* Inputs (Q104) */
+  .input-base {
+    @apply w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700
+           rounded px-2 py-1.5 text-xs outline-none
+           focus:border-indigo-500 dark:focus:border-indigo-500
+           placeholder:text-zinc-400 dark:placeholder:text-zinc-600;
+  }
+
+  /* Badge */
+  .badge {
+    @apply text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border font-medium;
+  }
+}
+
+.react-flow__node { font-size: 13px; }
+
+/* Layout-animation hook. The canvas wrapper toggles `stemma-anim-layout` for ~600 ms
+   after a relayout commits; during that window every React Flow node tweens its
+   transform to its new position. We target the wrapper-level class so a single rule
+   covers all node types without per-node inline-style management. The dragging
+   class is excluded so a user dragging a node doesn't see lag while the animation
+   window is still open. */
+.stemma-anim-layout .react-flow__node:not(.dragging) {
+  transition: transform 450ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.stemma-anim-layout .react-flow__edge path {
+  transition: opacity 350ms ease;
+}
+
+/* Q116: connection handles enlarge on node hover so they're easier to grab.
+   Default xyflow handles are 6px; we boost to 9px (1.5x) when the node is
+   hovered or selected.
+   Readability: the 6 docking dots stay invisible until the node is hovered or
+   selected (they remain interactive, so docked edges are unaffected). While a
+   new connection is being dragged, every node shows its dots so drop targets
+   are discoverable. */
+.react-flow__handle {
+  width: 6px;
+  height: 6px;
+  opacity: 0;
+  transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle,
+.react-flow:has(.react-flow__connection) .react-flow__handle {
+  opacity: 1;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle {
+  transform: scale(1.5);
+  background: rgb(99 102 241);
+}
+
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgb(212 212 216);
+  border-radius: 3px;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb { background: rgb(63 63 70); }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* Skip-to-canvas link (Q119) — visually hidden until focused. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: var(--z-modal);
+  padding: 8px 16px;
+  background: white;
+  color: rgb(24 24 27);
+  border: 2px solid rgb(99 102 241);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.skip-link:focus { left: 8px; }
+
+/* Rich notes (.archnote) — shared by the WYSIWYG editor and the read-only render. */
+.archnote ul { list-style: disc; padding-left: 1.1rem; margin: 0.15rem 0; }
+.archnote ol { list-style: decimal; padding-left: 1.1rem; margin: 0.15rem 0; }
+.archnote li { display: list-item; }
+.archnote strong, .archnote b { font-weight: 600; }
+.archnote em, .archnote i { font-style: italic; }
+.archnote code { background: rgb(228 228 231); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em; }
+.dark .archnote code { background: rgb(39 39 42); }
+.archnote a { color: rgb(99 102 241); text-decoration: underline; }
+.archnote s, .archnote del, .archnote strike { text-decoration: line-through; }
+.archnote p, .archnote div { margin: 0; }
+.archnote:focus { outline: none; }
+
+/* Turbo "full editor" content (.archnote-rich) — headings, quotes, code blocks, tables, etc. */
+.archnote-rich h1 { font-size: 1.6rem; font-weight: 700; line-height: 1.2; margin: 0.6em 0 0.3em; }
+.archnote-rich h2 { font-size: 1.3rem; font-weight: 700; line-height: 1.25; margin: 0.55em 0 0.28em; }
+.archnote-rich h3 { font-size: 1.1rem; font-weight: 600; line-height: 1.3; margin: 0.5em 0 0.25em; }
+.archnote-rich blockquote { border-left: 3px solid rgb(165 180 252); padding: 0.1rem 0 0.1rem 0.8rem; margin: 0.45em 0; color: rgb(82 82 91); }
+.dark .archnote-rich blockquote { border-left-color: rgb(99 102 241); color: rgb(161 161 170); }
+.archnote-rich pre { background: rgb(244 244 245); border: 1px solid rgb(228 228 231); border-radius: 6px; padding: 0.6rem 0.75rem; margin: 0.45em 0; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.86em; overflow-x: auto; white-space: pre-wrap; }
+.dark .archnote-rich pre { background: rgb(24 24 27); border-color: rgb(39 39 42); }
+.archnote-rich table { border-collapse: collapse; margin: 0.5em 0; }
+.archnote-rich th, .archnote-rich td { border: 1px solid rgb(212 212 216); padding: 0.32rem 0.55rem; min-width: 3.5rem; vertical-align: top; }
+.dark .archnote-rich th, .dark .archnote-rich td { border-color: rgb(63 63 70); }
+.archnote-rich th { background: rgb(244 244 245); font-weight: 600; text-align: left; }
+.dark .archnote-rich th { background: rgb(39 39 42); }
+.archnote-rich hr { border: none; border-top: 2px solid rgb(228 228 231); margin: 0.85em 0; }
+.dark .archnote-rich hr { border-top-color: rgb(63 63 70); }
+.archnote-rich mark { background: #fde68a; color: inherit; padding: 0 2px; border-radius: 2px; }
+.archnote-rich ul[data-task] { list-style: none; padding-left: 0.2rem; }
+.archnote-rich ul[data-task] li { display: block; }
+.archnote-rich .task-box { cursor: pointer; user-select: none; margin-right: 0.3rem; font-size: 1.05em; }
+
+/* Animated "marching ants" border overlay for an element (Appearance → Animate border). */
+.stemma-march {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    linear-gradient(90deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-x,
+    linear-gradient(90deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-x,
+    linear-gradient(0deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-y,
+    linear-gradient(0deg, var(--march, rgb(99 102 241)) 50%, transparent 0) repeat-y;
+  background-size: 12px 2px, 12px 2px, 2px 12px, 2px 12px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  animation: stemma-march 0.5s infinite linear;
+}
+@keyframes stemma-march {
+  to { background-position: 12px 0, -12px 100%, 0 -12px, 100% 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .stemma-march { animation: none; } }
+
+/* Element motion effects (Appearance → Animation). Duration via --anim-dur (set per speed). */
+@keyframes stemma-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+@keyframes stemma-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes stemma-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes stemma-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-2px); } 40% { transform: translateX(2px); } 60% { transform: translateX(-2px); } 80% { transform: translateX(2px); } }
+@keyframes stemma-glow { 0%, 100% { box-shadow: 0 0 0 0 var(--glow, rgba(99,102,241,0.5)); } 50% { box-shadow: 0 0 14px 2px var(--glow, rgba(99,102,241,0.55)); } }
+.stemma-anim-pulse   { animation: stemma-pulse var(--anim-dur, 1.5s) ease-in-out infinite; }
+.stemma-anim-breathe { animation: stemma-breathe var(--anim-dur, 1.5s) ease-in-out infinite; }
+.stemma-anim-bounce  { animation: stemma-bounce var(--anim-dur, 1.5s) ease-in-out infinite; }
+.stemma-anim-shake   { animation: stemma-shake var(--anim-dur, 1.5s) ease-in-out infinite; }
+.stemma-anim-glow    { animation: stemma-glow var(--anim-dur, 1.5s) ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { [class*="stemma-anim-"] { animation: none !important; } }
+
+/* Relationship flow-animation speed overrides (edge className). */
+.react-flow__edge.stemma-edge-slow path { animation-duration: 1.1s; }
+.react-flow__edge.stemma-edge-fast path { animation-duration: 0.25s; }
+
+/* Free-form shape motion (Shape inspector → Animation). SVG-friendly. */
+@keyframes stemma-shape-march { to { stroke-dashoffset: -12; } }
+.stemma-shape-marching { stroke-dasharray: 7 4; animation: stemma-shape-march 0.5s linear infinite; }
+.stemma-shape-pulse { transform-box: fill-box; transform-origin: center; animation: stemma-pulse 1.6s ease-in-out infinite; }
+.stemma-shape-breathe { animation: stemma-breathe 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { [class*="stemma-shape-"] { animation: none !important; } }

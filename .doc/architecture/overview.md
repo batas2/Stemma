@@ -2,38 +2,38 @@
 
 ## The shape of the system
 
-Verso is a .NET backend that owns a Roslyn-parsed model and a React frontend that renders and edits
+Stemma is a .NET backend that owns a Roslyn-parsed model and a React frontend that renders and edits
 it. There is **no runtime database** — the model is the source files in Git, held in memory while a
 workspace is open.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Client  ·  src/Verso.Web.Client                             │
+│  Client  ·  src/Stemma.Web.Client                             │
 │  React 19 + Vite + @xyflow/react canvas + zustand + Tailwind │
 │  Renders the active view; emits operations; applies deltas.  │
 └──────────────────────────────────────────────────────────────┘
             ▲ REST (load/snapshot/layout/views/violations)
             ▼ SignalR (operation stream + deltas)
 ┌──────────────────────────────────────────────────────────────┐
-│  Web  ·  src/Verso.Web                                        │
+│  Web  ·  src/Stemma.Web                                        │
 │  ASP.NET Core 10 · REST endpoints · SignalR hub · LLM access │
 │  Translates wire operations (polymorphic JSON) into engine.  │
 └──────────────────────────────────────────────────────────────┘
             ▲ ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Engine  ·  src/Verso.Engine   (pure, no web/LLM deps)       │
+│  Engine  ·  src/Stemma.Engine   (pure, no web/LLM deps)       │
 │  Roslyn MSBuildWorkspace · in-memory model · operations ·    │
 │  DocumentEditor rewrites · DSL reader/writer · layout sidecar│
 └──────────────────────────────────────────────────────────────┘
             ▲ ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Model  ·  src/Verso.Model                                   │
+│  Model  ·  src/Stemma.Model                                   │
 │  The DSL vocabulary: elements, links, tags, views (records). │
 └──────────────────────────────────────────────────────────────┘
             ▲ ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Storage  ·  the Git working tree                            │
-│  Architecture/Architecture.cs · Views/*.cs · verso.layout.json│
+│  Architecture/Architecture.cs · Views/*.cs · stemma.layout.json│
 │  No SQLite, no Postgres, no embedded store.                  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -72,9 +72,9 @@ in [`engine-backend.md`](./engine-backend.md) and enforced in [`../engineering/c
 
 | Concern | Path |
 |---|---|
-| DSL vocabulary | `src/Verso.Model/` |
-| Engine, operations, sidecar | `src/Verso.Engine/` |
-| Web host, SignalR, REST, LLM | `src/Verso.Web/` |
-| Frontend | `src/Verso.Web.Client/` |
+| DSL vocabulary | `src/Stemma.Model/` |
+| Engine, operations, sidecar | `src/Stemma.Engine/` |
+| Web host, SignalR, REST, LLM | `src/Stemma.Web/` |
+| Frontend | `src/Stemma.Web.Client/` |
 | Sample workspaces | `samples/` |
 | Architecture decisions | [`decisions/README.md`](./decisions/README.md) |

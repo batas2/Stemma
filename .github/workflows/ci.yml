@@ -17,18 +17,18 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Restore
-        run: dotnet restore Verso.slnx
+        run: dotnet restore Stemma.slnx
       - name: Build
-        run: dotnet build Verso.slnx --no-restore -c Release
+        run: dotnet build Stemma.slnx --no-restore -c Release
       - name: Test
-        run: dotnet test Verso.slnx --no-build -c Release --logger "console;verbosity=normal"
+        run: dotnet test Stemma.slnx --no-build -c Release --logger "console;verbosity=normal"
 
   frontend:
     name: Frontend (Vite + React)
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: src/Verso.Web.Client
+        working-directory: src/Stemma.Web.Client
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node 24
@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: src/Verso.Web.Client/package-lock.json
+          cache-dependency-path: src/Stemma.Web.Client/package-lock.json
       - name: Install
         run: npm ci --no-fund --no-audit
       - name: Test

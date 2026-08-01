@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Stemma.Engine/Stemma.Engine.csproj" />
+    <Project Path="src/Stemma.Model/Stemma.Model.csproj" />
+    <Project Path="src/Stemma.Web/Stemma.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Stemma.Engine.Tests/Stemma.Engine.Tests.csproj" />
+    <Project Path="tests/Stemma.Web.Tests/Stemma.Web.Tests.csproj" />
+  </Folder>
+</Solution>

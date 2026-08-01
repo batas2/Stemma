@@ -9,23 +9,23 @@
 | **Roadmap horizon** | `Now` |
 | **Created / Updated** | 2026-06-10 / 2026-06-10 |
 
-**What it is.** One self-contained `*.report.html` file exported from Verso that anyone can open in
+**What it is.** One self-contained `*.report.html` file exported from Stemma that anyone can open in
 a browser with zero installation: an interactive, read-only publication of the architecture model —
 all views, navigable and searchable, with show/hide layers, per-audience reading modes, the
 concerns board, and an asynchronous comment loop that round-trips feedback back into the workspace.
-It is the async counterpart of the live canvas: Verso is where the model is edited; the report is
+It is the async counterpart of the live canvas: Stemma is where the model is edited; the report is
 how everyone else reads, follows, and challenges it.
 
 ## 1. Product — why
 
-- **Problem:** The model lives in a repo and renders only inside a running Verso instance. The
+- **Problem:** The model lives in a repo and renders only inside a running Stemma instance. The
   people who must consume it — engineers implementing it, stakeholders tracking how the system
-  changes, peer architects challenging decisions — don't run Verso. Today they get lossy artifacts
+  changes, peer architects challenging decisions — don't run Stemma. Today they get lossy artifacts
   (PNG/SVG screenshots, Mermaid text, a PDF book): static, single-view, comment-less, and quickly
   stale. Feedback arrives over chat/email, detached from the elements it concerns.
 - **Why now:** The model substrate is ready to be published: typed relationships, lifecycle/status
   tags, notes, concerns (questions/assumptions/risks), saved views, and a comments sidecar
-  (`comments.verso.json`) all exist. What's missing is purely the distribution surface.
+  (`comments.stemma.json`) all exist. What's missing is purely the distribution surface.
 - **Value:** Extends "the architecture is the deliverable" beyond the repo: one beautiful, legible
   file that is the shared reference for build, review, and status — and a feedback channel that
   lands back in the model instead of in chat scrollback.
@@ -45,7 +45,7 @@ how everyone else reads, follows, and challenges it.
 
 > As a **peer Solution Architect**, I want to inspect every view with concerns and rationale
 > visible, and to leave element-anchored comments asynchronously, so that I can challenge the
-> architecture and the author can act on my feedback inside Verso.
+> architecture and the author can act on my feedback inside Stemma.
 
 - [x] AC1 — Export produces exactly **one** `.html` file with no external network requests; it
       renders fully offline (`file://`, double-click) in current Chrome/Firefox/Safari/Edge.
@@ -56,10 +56,10 @@ how everyone else reads, follows, and challenges it.
       to and highlights the element on its view. *(verified on `samples/NetworkAggregation`)*
 - [x] AC4 — Layers (per Q5) can be toggled show/hide per view; the diagram re-renders instantly and
       legibly at any toggle combination.
-- [x] AC5 — Existing comment threads from `comments.verso.json` display anchored to their targets;
+- [x] AC5 — Existing comment threads from `comments.stemma.json` display anchored to their targets;
       new comments can be written in the report and exported as a comment pack; importing the pack
-      in Verso merges threads into the sidecar without duplicates (per Q3). *(full loop verified
-      live: report → pack → import → `comments.verso.json`; merge idempotence unit-tested)*
+      in Stemma merges threads into the sidecar without duplicates (per Q3). *(full loop verified
+      live: report → pack → import → `comments.stemma.json`; merge idempotence unit-tested)*
 - [x] AC6 — A Concerns page aggregates every Question / Assumption / Risk with its target element,
       status, and counts; concern badges deep-link to it.
 - [x] AC7 — Selecting any element opens a read-only detail panel: kind, name, description/notes,
@@ -73,21 +73,21 @@ how everyone else reads, follows, and challenges it.
 ## 3. Architecture impact
 
 - [x] **Model or presentation?** Presentation only. The report is a *projection*: model from the
-      C# source (read via the existing engine API), presentation from `verso.layout.json` +
-      `comments.verso.json`. No new store of truth; the comment pack is a transport envelope whose
+      C# source (read via the existing engine API), presentation from `stemma.layout.json` +
+      `comments.stemma.json`. No new store of truth; the comment pack is a transport envelope whose
       only durable home is the existing comments sidecar.
 - [x] **New/changed operations:** none on the model. One new engine-adjacent capability: *merge
       comment pack into comments sidecar* (sidecar write, same path the comments API already uses —
       not a Roslyn operation, no fidelity fixtures needed).
 - [x] **Fidelity:** untouched — no source rewrites anywhere in this feature.
-- [x] **Engine purity:** `Verso.Engine` is not involved beyond existing reads. Report assembly
+- [x] **Engine purity:** `Stemma.Engine` is not involved beyond existing reads. Report assembly
       lives in the web layer (per Q9). No HTML/templating enters the engine.
-- [x] **Sidecar:** no schema change to `verso.layout.json`. Comment pack file format
-      (`*.comments.verso.json`) reuses the `CommentsSidecar` schema + provenance header
+- [x] **Sidecar:** no schema change to `stemma.layout.json`. Comment pack file format
+      (`*.comments.stemma.json`) reuses the `CommentsSidecar` schema + provenance header
       (author, exported-at, workspace fingerprint).
 - [x] **ADR needed?** Yes — [ADR-0014](../architecture/decisions/0014-architecture-report-rendering-and-comment-pack.md)
       (`Accepted`): rendering approach + comment round-trip format.
-- **Affected files/areas:** `src/Verso.Web.Client/src/report/` (new viewer + generator),
+- **Affected files/areas:** `src/Stemma.Web.Client/src/report/` (new viewer + generator),
   `ExportMenu.tsx`, `lib/comments.ts` (pack import/merge via the existing comments API — no new
   backend endpoint was needed; see the implementation note below §9), `.doc/` (this record,
   ADR-0014, user-journeys J6b).
@@ -112,9 +112,9 @@ how everyone else reads, follows, and challenges it.
 
 - [x] **Components touched/added:** report shell is a separate, self-contained bundle (own minimal
       component set — nav rail, mode switcher, layer panel, detail panel, comment thread, concerns
-      board). It reuses Verso's *design language*, not its React components.
+      board). It reuses Stemma's *design language*, not its React components.
 - [x] **Tokens:** report inlines the token values (colors/spacing/type scale) from
-      `../ui/design-tokens.md` so it looks like Verso without importing the app bundle.
+      `../ui/design-tokens.md` so it looks like Stemma without importing the app bundle.
 - [x] **Both themes:** per Q10 — light default + dark toggle, honours `prefers-color-scheme`.
 - [x] **Layout/rail behavior:** fixed left rail (views + concerns + search), right detail panel,
       top bar (title, workspace, export date, audience mode, layer toggle). Diagram canvas center.
@@ -129,7 +129,7 @@ how everyone else reads, follows, and challenges it.
       `export-bundle` endpoint sketched in Q9-A proved unnecessary.
 - [x] Markdown/notes sanitizer for embedding user text into standalone HTML (XSS-safe by
       construction; report runs wherever the file lands).
-- [x] Layout geometry source: positions/docks/waypoints from `verso.layout.json`; node sizes from
+- [x] Layout geometry source: positions/docks/waypoints from `stemma.layout.json`; node sizes from
       explicit styles with canvas-default fallbacks (close visual parity, not pixel-identical —
       accepted in ADR-0014).
 - [x] Comment pack import UI (per Q3) — Comments panel header → import; merge in `lib/comments.ts`.
@@ -139,13 +139,13 @@ how everyone else reads, follows, and challenges it.
 - [x] Unit tests: report data assembly (model+sidecar projection), layer predicate logic, comment
       pack merge (dedupe by id, thread append, resolved-flag conflict rules).
 - [ ] Golden-file test: generate report for `samples/NetworkAggregation` and
-      `samples/VersoArchitecture`; assert single-file invariant (no `http(s)://` fetches), size
+      `samples/StemmaArchitecture`; assert single-file invariant (no `http(s)://` fetches), size
       budget, and presence of every view/element anchor.
 - [ ] Browser smoke (Playwright) — not automated yet; the same script was executed manually in
       Chrome on `samples/NetworkAggregation` (modes, layers panel, search→jump, element panel,
       comment → pack → import).
 - [x] Round-trip test: pack exported from report imports into a workspace and merges into
-      `comments.verso.json` losslessly; re-import is idempotent.
+      `comments.stemma.json` losslessly; re-import is idempotent.
 - [ ] Accessibility pass on the report shell (keyboard-only walk, contrast check).
 
 ## 8. Definition of Done
@@ -189,9 +189,9 @@ double-click, fully offline).
 ### Q3 — The comment / collaboration loop
 
 - [x] **A (✅ recommended):** Comments are written inside the report (drafts kept in
-      `localStorage`), then exported as a **comment pack** (`*.comments.verso.json`, one click,
-      includes author name prompt). The author imports the pack in Verso (Comments panel → Import)
-      which merges threads into `comments.verso.json` by id. Fully offline, no service, anchored to
+      `localStorage`), then exported as a **comment pack** (`*.comments.stemma.json`, one click,
+      includes author name prompt). The author imports the pack in Stemma (Comments panel → Import)
+      which merges threads into `comments.stemma.json` by id. Fully offline, no service, anchored to
       elements/views.
 - [ ] **B:** Rely on Google Drive's own file-level comments only (zero build cost, but feedback is
       not anchored to elements and never lands in the model).

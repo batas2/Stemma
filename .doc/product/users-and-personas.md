@@ -1,6 +1,6 @@
 # Users & Personas
 
-Verso has one source-of-truth audience and several projection audiences. The architect owns the
+Stemma has one source-of-truth audience and several projection audiences. The architect owns the
 canonical model; everyone else consumes views derived from it.
 
 ## Primary — Solution Architect ("Aria")
@@ -10,7 +10,7 @@ canonical model; everyone else consumes views derived from it.
 - **Needs:** one living model whose properties she can change as understanding deepens; rich
   relationship semantics; confidence that the picture matches reality.
 - **Pain today:** diagrams drift; redesign means re-drawing; decisions are lost in wikis.
-- **Verso for Aria:** the canvas *is* the model; every change is a real, reviewable code edit;
+- **Stemma for Aria:** the canvas *is* the model; every change is a real, reviewable code edit;
   decisions/risks/assumptions live next to the elements they concern.
 
 ## Primary — Data Architect ("Devin")
@@ -19,21 +19,21 @@ canonical model; everyone else consumes views derived from it.
   and how data flows between bounded contexts.
 - **Needs:** evolve a model without losing prior decisions; express ownership, lifecycle, and data
   flow explicitly.
-- **Verso for Devin:** `DataFlow` and `Dependency` relationships, `Ownership`/`Lifecycle` tags, and
+- **Stemma for Devin:** `DataFlow` and `Dependency` relationships, `Ownership`/`Lifecycle` tags, and
   views that isolate a single data path.
 
 ## Secondary — Senior Engineer ("Sam")
 
 - **Job-to-be-done:** consume a code projection of the architects' model to scaffold real services,
   and push structural refinements back upstream.
-- **Verso for Sam:** opens the same workspace, reads the C# model and the dependency view, edits a
+- **Stemma for Sam:** opens the same workspace, reads the C# model and the dependency view, edits a
   module, and the architect sees it in their canvas.
 
 ## Consuming — Non-technical stakeholders ("Priya", product/exec/security/compliance)
 
 - **Job-to-be-done:** understand capability maps, decisions, and governance overlays without
   touching code.
-- **Verso for Priya:** dedicated **views** (capability map, ownership, risk) projected from the same
+- **Stemma for Priya:** dedicated **views** (capability map, ownership, risk) projected from the same
   model — never editing code, always seeing the current truth.
 
 ## Persona → perspective map

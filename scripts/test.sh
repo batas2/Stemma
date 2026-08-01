@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> dotnet test"
-dotnet test Verso.slnx --nologo --logger "console;verbosity=normal"
+dotnet test Stemma.slnx --nologo --logger "console;verbosity=normal"
 
 echo "==> vitest (frontend)"
-(cd src/Verso.Web.Client && npm test)
+(cd src/Stemma.Web.Client && npm test)

@@ -9,7 +9,7 @@
 ## Context
 
 F-001 publishes the architecture as a single self-contained HTML file for three audiences
-(builders, stakeholders, peer architects) who do not run Verso. Two structural choices needed a
+(builders, stakeholders, peer architects) who do not run Stemma. Two structural choices needed a
 record: how the diagrams are rendered inside a file that must work offline with zero dependencies
 (spec Q2), and how feedback written in that file finds its way back into the workspace without any
 server (spec Q3). A constraint discovered during specification: Google Drive's preview does not
@@ -25,10 +25,10 @@ execute JavaScript, so the report is *shared* via Drive but *opened* locally (Q1
    any zoom. A second Vite build target was considered and dropped: `?raw` inlining achieves the
    single-artifact goal with no build-pipeline changes.
 2. **Comment pack as the feedback transport (Q3-A).** Comments written in the report are drafts in
-   the reader's `localStorage`, exported on demand as `<workspace>.comments.verso.json` — the
-   `CommentsSidecar` schema plus a provenance header. Verso imports a pack (Comments panel →
+   the reader's `localStorage`, exported on demand as `<workspace>.comments.stemma.json` — the
+   `CommentsSidecar` schema plus a provenance header. Stemma imports a pack (Comments panel →
    import) and merges by comment id: new ids append, existing ids only gain unseen thread replies,
-   and the local `resolved` flag always wins. The merge is idempotent; `comments.verso.json`
+   and the local `resolved` flag always wins. The merge is idempotent; `comments.stemma.json`
    remains the only durable home for comments.
 3. **Assembly stays in the client (Q9-A, simplified).** The exporting browser re-fetches the model
    and comments from the backend at export time and reads presentation from the sidecar-backed
@@ -66,6 +66,6 @@ purity and the model/presentation boundary are untouched.
 ## References
 
 - Feature record: [`.doc/features/F-001-architecture-report-export.md`](../../features/F-001-architecture-report-export.md)
-- Generator: `src/Verso.Web.Client/src/report/` (`reportData.ts`, `template.ts`, `viewer.js`, `generateReport.ts`)
-- Pack merge: `src/Verso.Web.Client/src/lib/comments.ts` (`mergeCommentPack`), import UI in `CommentsPanel.tsx`
+- Generator: `src/Stemma.Web.Client/src/report/` (`reportData.ts`, `template.ts`, `viewer.js`, `generateReport.ts`)
+- Pack merge: `src/Stemma.Web.Client/src/lib/comments.ts` (`mergeCommentPack`), import UI in `CommentsPanel.tsx`
 - Related: ADR-0003 (layout sidecar), ADR-0010 (comments as a Git sidecar)

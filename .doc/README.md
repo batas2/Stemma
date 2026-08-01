@@ -1,6 +1,6 @@
-# Verso Documentation — Single Source of Truth (SSOT)
+# Stemma Documentation — Single Source of Truth (SSOT)
 
-This directory is the authoritative, structured home for everything about Verso: why it exists,
+This directory is the authoritative, structured home for everything about Stemma: why it exists,
 how it is built, how it should look and feel, and how it is extended. It supersedes the historical
 notes now archived under [`../.doc.legacy/`](../.doc.legacy/).
 
@@ -14,7 +14,7 @@ UX, UI** — plus the shared engineering standards and the actionable templates.
 
 | Area | Read it when… |
 |---|---|
-| [`product/`](./product/) | You want to know *why* Verso exists, who it's for, and where it's going. |
+| [`product/`](./product/) | You want to know *why* Stemma exists, who it's for, and where it's going. |
 | [`architecture/`](./architecture/) | You need to understand how the system is built and the rules you must not break. |
 | [`ux/`](./ux/) | You're designing a flow, a state, or an interaction. |
 | [`ui/`](./ui/) | You're touching the visual system, tokens, or components. |
@@ -32,13 +32,13 @@ UX, UI** — plus the shared engineering standards and the actionable templates.
 
 ## Start here
 
-- New to Verso? → [`product/vision.md`](./product/vision.md) then [`architecture/overview.md`](./architecture/overview.md).
+- New to Stemma? → [`product/vision.md`](./product/vision.md) then [`architecture/overview.md`](./architecture/overview.md).
 - Implementing a change? → [`templates/feature-template.md`](./templates/feature-template.md).
 - Fixing something? → [`templates/bug-template.md`](./templates/bug-template.md).
 
 ## The one rule that overrides everything
 
-Verso's promise is **round-trip fidelity**: a UI edit must produce a `git diff` containing *only* the
+Stemma's promise is **round-trip fidelity**: a UI edit must produce a `git diff` containing *only* the
 intended change. This constraint is described in [`architecture/engine-backend.md`](./architecture/engine-backend.md)
 and [`engineering/conventions.md`](./engineering/conventions.md) and is non-negotiable. When in doubt,
 favour fidelity over features.

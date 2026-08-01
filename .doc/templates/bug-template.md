@@ -45,7 +45,7 @@ A bug is not "understood" until root cause is identified and a regression test i
 
 ## 5. Root cause
 
-<The actual cause, not the symptom. Cite `path:line`. Common Verso pitfalls to check:>
+<The actual cause, not the symptom. Cite `path:line`. Common Stemma pitfalls to check:>
 
 - [ ] Sidecar **re-fetched mid-session** (clobbers unflushed edits)?
 - [ ] Node objects **rebuilt mid-drag** / `selected` not preserved across rebuilds?

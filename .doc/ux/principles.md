@@ -1,6 +1,6 @@
 # UX Principles
 
-Verso's UX exists to make a powerful, slightly dangerous idea — *the diagram is the code* — feel
+Stemma's UX exists to make a powerful, slightly dangerous idea — *the diagram is the code* — feel
 safe, direct, and fast. These principles are the lens every interaction is judged through.
 
 ## 1. Direct manipulation, real consequences

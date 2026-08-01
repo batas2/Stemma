@@ -17,7 +17,7 @@ Living bug records — one Markdown file per bug, created from
 |---|---|---|---|---|
 | _—_ | _No open bug records. File the first with the template._ | | | |
 
-## Known failure modes to check first (Verso-specific)
+## Known failure modes to check first (Stemma-specific)
 
 Before deep-diving, rule these out — they cause a recurring class of canvas bugs:
 
