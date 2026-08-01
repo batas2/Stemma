@@ -40,11 +40,13 @@ workspaceApi.MapPost("/open", async (OpenWorkspaceRequest req, EngineHost host, 
     if (!Directory.Exists(resolved))
         return Results.BadRequest(new { error = $"Directory not found: {resolved}" });
 
-    var hasSln = Directory.EnumerateFiles(resolved, "*.sln", SearchOption.TopDirectoryOnly).Any()
-              || Directory.EnumerateFiles(resolved, "*.slnx", SearchOption.TopDirectoryOnly).Any();
-    var hasProj = Directory.EnumerateFiles(resolved, "*.csproj", SearchOption.AllDirectories).Any();
-    if (!hasSln && !hasProj)
-        return Results.BadRequest(new { error = $"No .sln or .csproj found under {resolved}" });
+    // A model-only folder is openable too — it needs no project file at all (ADR-0016).
+    if (ModelWorkspaceLoader.DetectKind(resolved) == WorkspaceKind.None)
+        return Results.BadRequest(new
+        {
+            error = $"Nothing to open in {resolved}. Expected a .sln, a .csproj, " +
+                    "or an Architecture/ folder containing the model."
+        });
 
     try
     {
@@ -71,71 +73,39 @@ workspaceApi.MapPost("/close", async (EngineHost host) =>
 
 workspaceApi.MapPost("/init", async (InitWorkspaceRequest req, EngineHost host, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(req.RootPath))
-        return Results.BadRequest(new { error = "rootPath is required" });
-    var resolved = Path.GetFullPath(req.RootPath);
-    var name = string.IsNullOrWhiteSpace(req.Name) ? Path.GetFileName(resolved.TrimEnd('/', '\\')) : req.Name!;
-    if (string.IsNullOrWhiteSpace(name)) name = "Workspace";
-
-    Directory.CreateDirectory(resolved);
-    Directory.CreateDirectory(Path.Combine(resolved, "Architecture"));
-
-    // Locate Stemma.Model.csproj relative to the running app for development; in production users
-    // would reference the published NuGet package instead. Spike 02 supports both via the env var.
-    var modelPath = Environment.GetEnvironmentVariable("STEMMA_MODEL_PROJECT")
-                    ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Stemma.Model", "Stemma.Model.csproj"));
-    var hasLocalModel = File.Exists(modelPath);
-
-    var csprojRef = hasLocalModel
-        ? $"<ProjectReference Include=\"{modelPath}\" />"
-        : "<PackageReference Include=\"Stemma.Model\" Version=\"0.1.0\" />";
-
-    var csproj = $"""
-        <Project Sdk="Microsoft.NET.Sdk">
-          <PropertyGroup>
-            <TargetFramework>net8.0</TargetFramework>
-            <Nullable>enable</Nullable>
-            <ImplicitUsings>enable</ImplicitUsings>
-            <LangVersion>latest</LangVersion>
-            <NoWarn>$(NoWarn);CS1591;CS8019</NoWarn>
-          </PropertyGroup>
-          <ItemGroup>
-            {csprojRef}
-          </ItemGroup>
-        </Project>
-        """;
-    var csprojPath = Path.Combine(resolved, $"{name}.csproj");
-    if (!File.Exists(csprojPath)) await File.WriteAllTextAsync(csprojPath, csproj, ct);
-
-    var archPath = Path.Combine(resolved, "Architecture", "Architecture.cs");
-    if (!File.Exists(archPath))
-    {
-        var archStub = $$"""
-            using Stemma.Model;
-
-            namespace {{name}};
-
-            public static class Architecture
-            {
-                public static Model Build()
-                {
-                    return Model.Of();
-                }
-            }
-            """;
-        await File.WriteAllTextAsync(archPath, archStub, ct);
-    }
+    // Name is enough: a model created by name lands in ~/stemma/<name>, so nobody has to type a
+    // filesystem path to start. An explicit rootPath still wins when one is given.
+    var name = (req.Name ?? "").Trim();
+    if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(req.RootPath))
+        name = Path.GetFileName(Path.GetFullPath(req.RootPath).TrimEnd('/', '\\'));
+    if (string.IsNullOrWhiteSpace(name))
+        return Results.BadRequest(new { error = "A model name is required" });
 
     try
     {
-        var snapshot = await host.OpenAsync(resolved, ct);
-        return Results.Ok(snapshot);
+        var created = await WorkspaceScaffold.CreateAsync(name, req.RootPath, ct);
+        var snapshot = await host.OpenAsync(created.RootPath, ct);
+        return Results.Ok(new
+        {
+            snapshot.RootPath,
+            snapshot.Projects,
+            gitInitialised = created.GitInitialised,
+            gitError = created.GitError,
+        });
     }
     catch (Exception ex)
     {
         return Results.BadRequest(new { error = ex.Message });
     }
 });
+
+// Lets the client show where a new model will live without asking the user to know or type it.
+workspaceApi.MapGet("/default-root", (string? name) => Results.Ok(new
+{
+    root = WorkspaceScaffold.DefaultRoot,
+    path = string.IsNullOrWhiteSpace(name) ? WorkspaceScaffold.DefaultRoot : WorkspaceScaffold.PathFor(name!),
+}));
+
 
 workspaceApi.MapGet("/arch", async (EngineHost host, CancellationToken ct) =>
 {

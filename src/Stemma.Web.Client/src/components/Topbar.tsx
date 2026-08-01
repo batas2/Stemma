@@ -3,6 +3,7 @@ import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clo
 import { StemmaLockup } from './Logo';
 import { useApp } from '@/lib/store';
 import { initWorkspace, openWorkspace, listRecents, closeWorkspace } from '@/lib/api';
+import { promptText } from './PromptDialog';
 import { ensureConnection, fetchUndoState, getConnectionState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
 import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
@@ -62,14 +63,26 @@ export function Topbar() {
     }
   }
 
+  // Creating a model asks for a name, not a filesystem path: the model lands in ~/stemma/<name>
+  // unless the user has typed an explicit path into the workspace field.
   async function handleInit() {
-    const path = pathInput.trim();
-    if (!path) return;
+    const explicitPath = pathInput.trim();
+    const name = await promptText({
+      title: 'New model',
+      body: explicitPath
+        ? `Created in ${explicitPath}.`
+        : 'Stemma will create it in your home folder and start a Git repository for it.',
+      placeholder: 'Payments Platform',
+      confirmLabel: 'Create',
+      validate: (v) => (v.trim().length === 0 ? 'Give the model a name' : null),
+    });
+    if (!name) return;
+
     setLoading(true);
     try {
-      const w = await initWorkspace(path);
+      const w = await initWorkspace(explicitPath || undefined, name.trim());
       setWs(w);
-      setToast({ kind: 'success', text: `Created and opened ${path}` });
+      setToast({ kind: 'success', text: `Created ${name.trim()} in ${w.rootPath}` });
     } catch (e) {
       setToast({ kind: 'error', text: (e as Error).message });
     } finally {

@@ -48,6 +48,7 @@ function nodeRect(n: Node): DockRect {
   return { x: n.position.x, y: n.position.y, w, h };
 }
 import { ContextMenu, ContextIcons, type ContextMenuState } from './ContextMenu';
+import { EmptyCanvasGuide } from './EmptyCanvasGuide';
 import { confirmAction } from './ConfirmDialog';
 import { promptText, pickFromList } from './PromptDialog';
 import { suggestElementName } from '@/lib/naming';
@@ -1143,9 +1144,13 @@ function CanvasInner() {
     const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
     if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return; }
     const revealed = await revealNewElement(prevIds, { dropPos: pos });
-    if (revealed) setToast({ kind: 'success', text: revealToast(revealed) });
+    if (revealed) {
+      setToast({ kind: 'success', text: revealToast(revealed) });
+      // Land straight in the name field: creating an element is a typing flow, not a menu hunt.
+      handleStartRename(revealed.id);
+    }
     else setToast({ kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` });
-  }, [setToast]);
+  }, [setToast, handleStartRename]);
 
   const templateBoundedContextWithModules = useCallback(async (pos: SavedPosition) => {
     const fresh = useApp.getState().arch;
@@ -1203,21 +1208,29 @@ function CanvasInner() {
     }, 200);
   }, [workspace, layoutKey, setToast]);
 
+  // Middle of whatever the user is currently looking at — where a click-to-add element should land.
+  const centreOfCanvas = useCallback((): SavedPosition => {
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    return rect
+      ? screenToFlowPosition({ x: rect.left + rect.width / 2 - 120, y: rect.top + rect.height / 2 - 60 })
+      : { x: 200, y: 160 };
+  }, [screenToFlowPosition]);
+
+  // An open workspace whose model is still empty gets in-canvas guidance rather than a bare grid.
+  const modelIsEmpty = !!workspace && (arch?.elements.length ?? 0) === 0;
+
   // Epic 13 — templates can be clicked from the sidebar palette (not just dragged). Drop them
   // near the centre of the current viewport so they land somewhere visible.
   useEffect(() => {
     function applyTemplate(ev: Event) {
       const which = (ev as CustomEvent).detail?.template as string | undefined;
-      const rect = wrapperRef.current?.getBoundingClientRect();
-      const center = rect
-        ? screenToFlowPosition({ x: rect.left + rect.width / 2 - 120, y: rect.top + rect.height / 2 - 60 })
-        : { x: 200, y: 160 };
+      const center = centreOfCanvas();
       if (which === 'bcWithModules') templateBoundedContextWithModules(center);
       else if (which === 'systemWithContainer') templateSystemWithContainer(center);
     }
     window.addEventListener('stemma:apply-template', applyTemplate);
     return () => window.removeEventListener('stemma:apply-template', applyTemplate);
-  }, [screenToFlowPosition, templateBoundedContextWithModules, templateSystemWithContainer]);
+  }, [centreOfCanvas, templateBoundedContextWithModules, templateSystemWithContainer]);
 
   const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
     e.preventDefault();
@@ -1697,6 +1710,9 @@ function CanvasInner() {
           <ShapeLayer viewKey={layoutKey} workspaceRoot={workspace.rootPath} enabled />
         )}
       </ReactFlow>
+      {modelIsEmpty && (
+        <EmptyCanvasGuide onAdd={(kind) => addElementAt(kind, centreOfCanvas())} />
+      )}
       <ContextMenu state={menu} onClose={() => setMenu(null)} />
     </div>
   );

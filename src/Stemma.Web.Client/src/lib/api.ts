@@ -12,7 +12,7 @@ export async function openWorkspace(rootPath: string): Promise<WorkspaceModel> {
   return r.json();
 }
 
-export async function initWorkspace(rootPath: string, name?: string): Promise<WorkspaceModel> {
+export async function initWorkspace(rootPath?: string, name?: string): Promise<WorkspaceModel> {
   const r = await fetch(`${BASE}/api/workspace/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
