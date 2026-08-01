@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stemma canvas benchmark</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font: 13px/1.4 system-ui, sans-serif;
+               background: #fafafa; color: #18181b; }
+  #stage { position: absolute; inset: 0; }
+  /* mirrors react-flow: one transformed viewport containing an SVG edge layer + absolutely
+     positioned node elements. Keep the structure faithful — that is what is being measured. */
+  #viewport { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+  #edges { position: absolute; top: 0; left: 0; overflow: visible; }
+  .edge { fill: none; stroke: #94a3b8; stroke-width: 1.5px; }
+  .node { position: absolute; width: 172px; min-height: 44px; padding: 8px 10px;
+          background: #fff; border: 1px solid #d4d4d8; border-radius: 8px;
+          box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 1px 1px rgba(0,0,0,.04); }
+  .node .kind { font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: #71717a; }
+  .node .name { font-weight: 600; font-size: 12px; }
+  .node.ctx { background: #f4f4f5; border-style: dashed; }
+  .dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #a1a1aa; }
+  #hud { position: absolute; left: 12px; top: 12px; z-index: 10; background: #18181b; color: #fafafa;
+         padding: 10px 14px; border-radius: 8px; font-variant-numeric: tabular-nums;
+         white-space: pre; font-family: ui-monospace, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="viewport"><svg id="edges"></svg></div></div>
+<div id="hud">starting…</div>
+<script>
+const q = new URLSearchParams(location.search);
+const NODES  = +(q.get('nodes')  || 60);
+const EDGES  = +(q.get('edges')  || 70);
+const LABEL  = q.get('label') || 'realistic';
+const FRAMES = +(q.get('frames') || 900);
+const WARMUP = 30;
+const POST   = q.get('post');   // where to send the result, if driven by run-bench.py
+
+const viewport = document.getElementById('viewport');
+const svg = document.getElementById('edges');
+const hud = document.getElementById('hud');
+
+// deterministic layout — same scene in every engine
+let seed = 12345;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+const COLS = Math.ceil(Math.sqrt(NODES)) + 1;
+const positions = [];
+for (let i = 0; i < NODES; i++) {
+  const x = (i % COLS) * 240 + Math.floor(rnd() * 30);
+  const y = Math.floor(i / COLS) * 150 + Math.floor(rnd() * 24);
+  positions.push({ x, y });
+  const n = document.createElement('div');
+  n.className = 'node' + (i % 7 === 0 ? ' ctx' : '');
+  n.style.transform = `translate(${x}px, ${y}px)`;
+  n.innerHTML = `<div class="kind">${i % 7 === 0 ? 'bounded context' : 'module'}</div>` +
+                `<div class="name">Element ${i}</div>`;
+  const d1 = document.createElement('div'); d1.className = 'dot';
+  d1.style.transform = `translate(${x + 169}px, ${y + 19}px)`;
+  const d2 = document.createElement('div'); d2.className = 'dot';
+  d2.style.transform = `translate(${x - 4}px, ${y + 19}px)`;
+  viewport.append(n, d1, d2);
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+for (let i = 0; i < EDGES; i++) {
+  const a = positions[i % NODES];
+  const b = positions[(i * 7 + 3) % NODES];
+  const x1 = a.x + 172, y1 = a.y + 22, x2 = b.x, y2 = b.y + 22;
+  const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
+  const p = document.createElementNS(SVG_NS, 'path');
+  p.setAttribute('class', 'edge');
+  p.setAttribute('d', `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
+  svg.appendChild(p);
+}
+svg.setAttribute('width', COLS * 240 + 400);
+svg.setAttribute('height', Math.ceil(NODES / COLS) * 150 + 400);
+
+// scripted pan → zoom-out → combined drift; the phases a user actually performs
+function transformAt(f) {
+  const t = f / FRAMES;
+  if (t < 1 / 3) { const p = t * 3;            return { x: -900 * p, y: -120 * p, k: 1 }; }
+  if (t < 2 / 3) { const p = (t - 1 / 3) * 3;  return { x: -900,     y: -120,     k: 1 - 0.55 * p }; }
+  const p = (t - 2 / 3) * 3;
+  return { x: -900 + 700 * p, y: -120 + 260 * p, k: 0.45 + 0.35 * p };
+}
+
+const deltas = [];
+let frame = 0, prev = 0;
+
+function step(ts) {
+  if (prev) deltas.push(ts - prev);
+  prev = ts;
+  const { x, y, k } = transformAt(frame);
+  viewport.style.transform = `translate(${x}px, ${y}px) scale(${k})`;
+  if (++frame <= FRAMES) { hud.textContent = `frame ${frame}/${FRAMES}`; requestAnimationFrame(step); }
+  else finish();
+}
+
+function pct(sorted, p) { return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))]; }
+
+function finish() {
+  const d = deltas.slice(WARMUP).sort((a, b) => a - b);
+  const sum = d.reduce((s, v) => s + v, 0);
+  const result = {
+    label: LABEL, nodes: NODES, edges: EDGES, frames: d.length,
+    ua: navigator.userAgent,
+    engine: /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
+            ? 'WebKit' : (/Chrome/.test(navigator.userAgent) ? 'Chromium' : 'other'),
+    meanFps: +(1000 / (sum / d.length)).toFixed(1),
+    p50: +pct(d, 0.50).toFixed(2),
+    p95: +pct(d, 0.95).toFixed(2),
+    p99: +pct(d, 0.99).toFixed(2),
+    worst: +d[d.length - 1].toFixed(2),
+    over16: +(d.filter(v => v > 16.7).length / d.length * 100).toFixed(1),
+    over33: +(d.filter(v => v > 33.3).length / d.length * 100).toFixed(1),
+  };
+  hud.textContent = Object.entries(result)
+    .filter(([k]) => !['ua', 'label'].includes(k))
+    .map(([k, v]) => `${k.padEnd(8)} ${v}`).join('\n');
+  console.log('BENCH_RESULT ' + JSON.stringify(result));
+  if (POST) fetch(POST, { method: 'POST', body: JSON.stringify(result) }).catch(() => {});
+}
+
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

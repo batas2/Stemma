@@ -27,6 +27,8 @@ removed).
 | 0013 | **Cross-adapter references.** | 🗄️ Historical — single adapter now. |
 | [0014](./0014-architecture-report-rendering-and-comment-pack.md) | **Architecture report** — embedded-JSON standalone renderer + comment-pack round-trip. | ✅ Current — see [F-001](../../features/F-001-architecture-report-export.md). |
 | [0015](./0015-project-name-and-market-positioning.md) | **Name and positioning** — the project is Stemma; the pitch is one source both humans and agents edit. | ✅ Current — see [value-proposition](../../product/value-proposition.md). |
+| [0016](./0016-sdk-free-model-only-workspaces.md) | **SDK-free model-only workspaces** — a second load path with no MSBuild, so a model opens without a .NET SDK. | ✅ Current — see [F-003](../../features/F-003-from-scratch-onboarding.md). |
+| [0017](./0017-desktop-shell-photino.md) | **Photino as the desktop shell** — one .NET process hosting Kestrel and a native window. | 🟡 Accepted, pending the WebKitGTK benchmark — see [F-002](../../features/F-002-desktop-shell.md). |
 
 ## Legend
 

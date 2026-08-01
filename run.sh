@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Stemma — local run script
-# Usage: ./run.sh [--dev | --prod] [--workspace <path>]
+# Usage: ./run.sh [--dev | --prod] [--window] [--workspace <path>]
 #   --dev        Run backend (port 5050) + Vite dev (port 5173) with HMR. Default.
 #   --prod       Build frontend bundle into Stemma.Web/wwwroot, then run backend only.
+#   --window     Open Stemma in its own chrome-less window instead of a browser tab.
 #   --workspace  Optional absolute or relative path to a workspace to auto-open.
 
 set -euo pipefail
@@ -10,11 +11,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 MODE="dev"
+WINDOW=0
 WORKSPACE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dev) MODE="dev"; shift ;;
     --prod) MODE="prod"; shift ;;
+    --window) WINDOW=1; shift ;;
     --workspace) WORKSPACE="$2"; shift 2 ;;
     -h|--help) sed -n '1,10p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
@@ -25,6 +28,23 @@ done
 # Kill any leftover Stemma.Web binary or dotnet host bound to our backend port.
 # Without this, a previous run that exited via Ctrl-C without reaping its
 # grandchild leaves the port held and the new backend fails to bind.
+# --- Windowed mode -----------------------------------------------------------
+# Until the Photino shell lands (ADR-0017), --window borrows the installed browser's app-mode:
+# a chrome-less window with its own icon and dock entry, for no packaging work.
+open_window() {
+  local url="$1"
+  local browser
+  for browser in google-chrome chromium chromium-browser brave-browser microsoft-edge; do
+    if command -v "$browser" >/dev/null 2>&1; then
+      echo "==> Opening Stemma window ($browser --app)"
+      "$browser" --app="$url" --new-window >/dev/null 2>&1 &
+      return 0
+    fi
+  done
+  echo "==> --window needs a Chromium-based browser on PATH; falling back to a normal tab." >&2
+  command -v xdg-open >/dev/null 2>&1 && xdg-open "$url" >/dev/null 2>&1 &
+}
+
 cleanup_stale() {
   local pids
   pids="$(pgrep -f 'Stemma\.Web($|/| )' 2>/dev/null || true)"
@@ -83,6 +103,7 @@ if [ "$MODE" = "prod" ]; then
   echo "==> Building frontend (production)"
   (cd src/Stemma.Web.Client && npm run build)
   echo "==> Running backend on http://localhost:5050"
+  [ "$WINDOW" = "1" ] && (sleep 4; open_window "http://localhost:5050") &
   ASPNETCORE_URLS="http://localhost:5050" exec dotnet run --project src/Stemma.Web -c Release
 fi
 
@@ -139,6 +160,10 @@ if [ -n "$WORKSPACE" ]; then
   fi
 fi
 
-echo "==> Open http://localhost:5173 in your browser"
+if [ "$WINDOW" = "1" ]; then
+  open_window "http://localhost:5173"
+else
+  echo "==> Open http://localhost:5173 in your browser"
+fi
 echo "==> Press Ctrl-C to stop"
 wait "$BACK_PID" "$FRONT_PID"
