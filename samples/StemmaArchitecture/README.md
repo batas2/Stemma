@@ -4,7 +4,7 @@ A Stemma workspace whose subject **is Stemma**. The architecture of the tool des
 [`.doc/architecture/`](../../.doc/architecture/) is expressed here in Stemma's own DSL, so the model
 doubles as a self-referential feature demo and as living documentation of the system.
 
-It mirrors the structure of the canonical [`NetworkAggregation`](../NetworkAggregation/) sample:
+It mirrors the structure of the reference [`AuroraRail`](../AuroraRail/) sample:
 deployable units → C4 Containers, layers → Bounded Contexts, subsystems → Modules, references →
 Dependencies, documented runtime flows → DataFlows, and the inviolable rules → Risks / Questions /
 Assumptions with lifecycle / ownership tags.

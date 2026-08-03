@@ -23,7 +23,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Fidelity hardening across the operation catalog** — every operation in the catalog has minimal/realistic/pathological round-trip fixtures.
 - **Navigation & views clarity** (Epic 13) — faster, more obvious view switching and view management.
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
-- **Sample gallery** — curated demo workspaces (e.g. `samples/NetworkAggregation`) that exercise every feature as living documentation.
+- **Sample gallery** — curated demo workspaces (today `samples/AuroraRail` and `samples/StemmaArchitecture`) that exercise every feature as living documentation.
 
 ## Later — directional
 

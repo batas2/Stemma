@@ -1,0 +1,116 @@
+version: 1
+
+# The public REST surface of the Booking API (cnt_api), as a resource tree.
+# `action_*` properties record the verb and whether it reads or writes, which is what the
+# security review asks for first. Everything under /orders is passenger-scoped; the
+# entitlements branch is the only one the gateline estate is allowed to call.
+concepts:
+  - id: res_root
+    kind: Resource
+    name: AuroraApi
+    layer: api
+    parent: ""
+    action_get: "get:r"
+
+  - id: res_journeys
+    kind: Resource
+    name: Journeys
+    layer: api
+    parent: res_root
+    action_search: "search:r"
+
+  - id: res_quotes
+    kind: Resource
+    name: Quotes
+    layer: api
+    parent: res_journeys
+    action_list: "list:r"
+    action_create: "create:w"
+
+  - id: res_orders
+    kind: Resource
+    name: Orders
+    layer: api
+    parent: res_root
+    action_list: "list:r"
+    action_create: "create:w"
+
+  - id: res_order
+    kind: Resource
+    name: Order
+    layer: api
+    parent: res_orders
+    action_get: "get:r"
+    action_cancel: "cancel:w"
+
+  - id: res_tickets
+    kind: Resource
+    name: Tickets
+    layer: api
+    parent: res_order
+    action_list: "list:r"
+    action_reissue: "reissue:w"
+
+  - id: res_refunds
+    kind: Resource
+    name: Refunds
+    layer: api
+    parent: res_order
+    action_list: "list:r"
+    action_request: "request:w"
+
+  - id: res_claims
+    kind: Resource
+    name: DelayRepayClaims
+    layer: api
+    parent: res_root
+    action_list: "list:r"
+    action_submit: "submit:w"
+
+  - id: res_entitlements
+    kind: Resource
+    name: GatelineEntitlements
+    layer: api
+    parent: res_root
+    action_list: "list:r"
+
+relations:
+  - id: rel_root_journeys
+    kind: nests
+    from: res_root
+    to: res_journeys
+
+  - id: rel_journeys_quotes
+    kind: nests
+    from: res_journeys
+    to: res_quotes
+
+  - id: rel_root_orders
+    kind: nests
+    from: res_root
+    to: res_orders
+
+  - id: rel_orders_order
+    kind: nests
+    from: res_orders
+    to: res_order
+
+  - id: rel_order_tickets
+    kind: nests
+    from: res_order
+    to: res_tickets
+
+  - id: rel_order_refunds
+    kind: nests
+    from: res_order
+    to: res_refunds
+
+  - id: rel_root_claims
+    kind: nests
+    from: res_root
+    to: res_claims
+
+  - id: rel_root_entitlements
+    kind: nests
+    from: res_root
+    to: res_entitlements

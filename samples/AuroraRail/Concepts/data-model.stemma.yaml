@@ -1,0 +1,143 @@
+version: 1
+
+# The data-layer vocabulary behind the C# model in Architecture/Architecture.cs.
+# Aggregates own their entities; value objects are shared across contexts. The `owner`
+# property points at the module in the architecture model that owns each aggregate, so
+# the cross-adapter check catches the day someone deletes that module.
+concepts:
+  - id: agg_journey
+    kind: AggregateRoot
+    name: Journey
+    layer: data
+    domain: journey
+    owner: mod_planner
+
+  - id: ent_journey_leg
+    kind: DomainEntity
+    name: JourneyLeg
+    layer: data
+    parent: agg_journey
+
+  - id: agg_order
+    kind: AggregateRoot
+    name: Order
+    layer: data
+    domain: sales
+    owner: mod_orders
+
+  - id: ent_order_line
+    kind: DomainEntity
+    name: OrderLine
+    layer: data
+    parent: agg_order
+
+  - id: agg_ticket
+    kind: AggregateRoot
+    name: Ticket
+    layer: data
+    domain: fulfilment
+    owner: mod_issuing
+
+  - id: ent_ticket_leg
+    kind: DomainEntity
+    name: TicketLeg
+    layer: data
+    parent: agg_ticket
+
+  - id: agg_claim
+    kind: AggregateRoot
+    name: DelayRepayClaim
+    layer: data
+    domain: care
+    owner: mod_delay_repay
+
+  - id: vo_money
+    kind: ValueObject
+    name: Money
+    layer: data
+
+  - id: vo_fare
+    kind: ValueObject
+    name: Fare
+    layer: data
+
+  - id: vo_railcard
+    kind: ValueObject
+    name: Railcard
+    layer: data
+
+  - id: vo_station
+    kind: ValueObject
+    name: StationRef
+    layer: data
+
+  - id: vo_barcode
+    kind: ValueObject
+    name: SignedBarcode
+    layer: data
+
+  - id: vo_entitlement
+    kind: ValueObject
+    name: GatelineEntitlement
+    layer: data
+
+relations:
+  - id: rel_journey_legs
+    kind: composes
+    from: agg_journey
+    to: ent_journey_leg
+
+  - id: rel_leg_stations
+    kind: references
+    from: ent_journey_leg
+    to: vo_station
+
+  - id: rel_order_lines
+    kind: composes
+    from: agg_order
+    to: ent_order_line
+
+  - id: rel_line_price
+    kind: references
+    from: ent_order_line
+    to: vo_money
+
+  - id: rel_line_fare
+    kind: references
+    from: ent_order_line
+    to: vo_fare
+
+  - id: rel_fare_railcard
+    kind: references
+    from: vo_fare
+    to: vo_railcard
+
+  - id: rel_order_ticket
+    kind: references
+    from: agg_order
+    to: agg_ticket
+
+  - id: rel_ticket_legs
+    kind: composes
+    from: agg_ticket
+    to: ent_ticket_leg
+
+  - id: rel_ticket_barcode
+    kind: references
+    from: agg_ticket
+    to: vo_barcode
+
+  - id: rel_ticket_entitlement
+    kind: references
+    from: agg_ticket
+    to: vo_entitlement
+
+  - id: rel_claim_order
+    kind: references
+    from: agg_claim
+    to: agg_order
+
+  - id: rel_claim_payout
+    kind: references
+    from: agg_claim
+    to: vo_money

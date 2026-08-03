@@ -55,7 +55,7 @@ Stemma is a canvas application, so **renderer performance is the one thing that 
 decision**. `scripts/bench/run-bench.py` measures frame-time percentiles during a scripted
 pan → zoom → drift over a scene mirroring React Flow's DOM shape (transformed viewport, absolutely
 positioned nodes, an SVG edge layer). Two profiles: *realistic* (60 nodes / 70 edges — the largest
-existing sample, `RiskArch`) and *stress* (250 / 400).
+existing sample, `AuroraRail`) and *stress* (250 / 400).
 
 Chromium baseline, recorded 2026-08-01 on this machine (120 Hz display):
 

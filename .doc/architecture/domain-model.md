@@ -84,6 +84,7 @@ build new features on them; use `Risk`/`Question`/`Assumption` for live design c
 
 ## Worked example
 
-See [`../../samples/NetworkAggregation/`](../../samples/NetworkAggregation/) for a full model
-(persons, systems, containers, BCs, modules, capabilities, data flows, dependencies, risks,
-questions, assumptions, tags) exercising every element kind across three views.
+See [`../../samples/AuroraRail/`](../../samples/AuroraRail/) for a full model (persons, systems,
+containers, BCs, modules, capabilities, use cases, data flows, dependencies, risks, questions,
+assumptions, lifecycle/ownership tags) exercising every element kind across four views — and
+`AuroraRailSampleTests` for the id-integrity check the compiler cannot do.

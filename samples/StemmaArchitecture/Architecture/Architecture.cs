@@ -209,25 +209,25 @@ public static class Architecture
         var asmPurity = new Assumption("asm_purity", "Stemma.Engine references only Roslyn + Stemma.Model", "ctx_engine");
 
         // --- Ownership & lifecycle tags ---------------------------------------------
-        var tagWeb = Tag.For(cntWeb, lifecycle: new Lifecycle(Status: "current", Phase: "GA"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
-        var tagClient = Tag.For(cntClient, lifecycle: new Lifecycle(Status: "current", Phase: "GA"), ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
-        var tagEngine = Tag.For(modEngine, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
-        var tagDslWriter = Tag.For(modDslWriter, lifecycle: new Lifecycle(Status: "current", Phase: "fidelity-critical"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
-        var tagArchOps = Tag.For(modArchOps, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
-        var tagConcepts = Tag.For(modConcepts, ownership: new Ownership(Squad: "Core", Domain: "Model"));
-        var tagLlm = Tag.For(modLlm, lifecycle: new Lifecycle(Status: "target", Phase: "AI access — Web-layer only"), ownership: new Ownership(Squad: "Core", Domain: "AI"));
-        var tagCanvas = Tag.For(modCanvas, ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
-        var tagInspector = Tag.For(modInspector, ownership: new Ownership(Squad: "Frontend", Domain: "Inspector"));
-        var tagLayoutCache = Tag.For(modLayoutCache, lifecycle: new Lifecycle(Status: "current", Phase: "prime-once"), ownership: new Ownership(Squad: "Frontend", Domain: "Sidecar"));
-        var tagFidelity = Tag.For(modFidelity, lifecycle: new Lifecycle(Status: "current", Phase: "core gate"), ownership: new Ownership(Squad: "QA", Domain: "Quality"));
-        var tagValidation = Tag.For(modValidation, lifecycle: new Lifecycle(Status: "current", Phase: "rule set growing"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
-        var tagGit = Tag.For(sysGit, lifecycle: new Lifecycle(Status: "current", Phase: "the only store"));
+        Tag.For(cntWeb, lifecycle: new Lifecycle(Status: "current", Phase: "GA"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
+        Tag.For(cntClient, lifecycle: new Lifecycle(Status: "current", Phase: "GA"), ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
+        Tag.For(modEngine, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
+        Tag.For(modDslWriter, lifecycle: new Lifecycle(Status: "current", Phase: "fidelity-critical"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
+        Tag.For(modArchOps, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
+        Tag.For(modConcepts, ownership: new Ownership(Squad: "Core", Domain: "Model"));
+        Tag.For(modLlm, lifecycle: new Lifecycle(Status: "target", Phase: "AI access — Web-layer only"), ownership: new Ownership(Squad: "Core", Domain: "AI"));
+        Tag.For(modCanvas, ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
+        Tag.For(modInspector, ownership: new Ownership(Squad: "Frontend", Domain: "Inspector"));
+        Tag.For(modLayoutCache, lifecycle: new Lifecycle(Status: "current", Phase: "prime-once"), ownership: new Ownership(Squad: "Frontend", Domain: "Sidecar"));
+        Tag.For(modFidelity, lifecycle: new Lifecycle(Status: "current", Phase: "core gate"), ownership: new Ownership(Squad: "QA", Domain: "Quality"));
+        Tag.For(modValidation, lifecycle: new Lifecycle(Status: "current", Phase: "rule set growing"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
+        Tag.For(sysGit, lifecycle: new Lifecycle(Status: "current", Phase: "the only store"));
 
         // The AI / LLM path is planned, not shipped (ADR-0008) — mark it so it does not read as fact.
-        var tagCapAi = Tag.For(capAi, lifecycle: new Lifecycle(Status: "target", Phase: "AI access — Web-layer only"));
-        var tagFlowPrompt = Tag.For(flowPrompt, lifecycle: new Lifecycle(Status: "target"));
-        var tagFlowLlm = Tag.For(flowLlm, lifecycle: new Lifecycle(Status: "target"));
-        var tagFlowAiOp = Tag.For(flowAiOp, lifecycle: new Lifecycle(Status: "target"));
+        Tag.For(capAi, lifecycle: new Lifecycle(Status: "target", Phase: "AI access — Web-layer only"));
+        Tag.For(flowPrompt, lifecycle: new Lifecycle(Status: "target"));
+        Tag.For(flowLlm, lifecycle: new Lifecycle(Status: "target"));
+        Tag.For(flowAiOp, lifecycle: new Lifecycle(Status: "target"));
 
         return Model.Of(
             perArchitect, perAgent, perReviewer,
@@ -261,9 +261,6 @@ public static class Architecture
             depFidelityEngine, depFidelityArchOps, depFidelityDslWriter,
             riskFidelity, riskNormalize, riskParallelStore, riskRefetch, riskDangling, riskDragRebuild, riskPurity,
             qMethodBody, qConflict, qOpCatalog,
-            asmGit, asmModelCode, asmPrimeOnce, asmPurity,
-            tagWeb, tagClient, tagEngine, tagDslWriter, tagArchOps, tagConcepts, tagLlm,
-            tagCanvas, tagInspector, tagLayoutCache, tagFidelity, tagValidation, tagGit,
-            tagCapAi, tagFlowPrompt, tagFlowLlm, tagFlowAiOp);
+            asmGit, asmModelCode, asmPrimeOnce, asmPurity);
     }
 }

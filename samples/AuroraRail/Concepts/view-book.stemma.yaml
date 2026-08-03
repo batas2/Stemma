@@ -1,0 +1,112 @@
+version: 1
+
+# Three decks over one model. Same elements, three audiences: engineers who have to change
+# the code, a board that has to fund the mainframe exit, and controllers who have to run a
+# strike day. Each page names a view and the story to tell while it is on screen.
+books:
+  # =========================================================================
+  - id: book_ticket_sold
+    name: How a Ticket Is Sold
+    audience: engineering
+    pages:
+      - viewId: view_buy
+        title: The path a purchase takes
+        narrative: |
+          Follow the arrows left to right. The app talks to one place — the Booking API — and
+          everything after that is internal. Journey Planner produces an itinerary, Price Quote
+          prices it against the published fare tables and any railcard, Basket holds it, and
+          Checkout turns it into an order. Nothing is issued yet: Checkout only publishes
+          OrderPlaced onto the event bus.
+
+      - viewId: view_buy
+        title: Where the money actually moves
+        narrative: |
+          Payment Orchestration is the only module allowed to talk to the payment gateway, and it
+          does so synchronously (`twoway`) because the passenger is watching a spinner. If
+          authorisation fails, no OrderPlaced event is published and no ticket exists — the failure
+          mode is "nothing happened", which is the one we can explain at 23:50 on a Friday.
+
+      - viewId: view_buy
+        title: Issuing, signing, delivering
+        narrative: |
+          Ticket Issuing consumes OrderPlaced, Barcode Signing produces the signed payload, Wallet
+          Delivery pushes it to the phone and asks the notification provider for the email copy.
+          Three modules, one direction, no callbacks. If you are adding a new ticket type, this is
+          the chain you extend — and `mod_barcode` is the one place with a security review attached.
+
+      - viewId: view_deps
+        title: The dependency shape we are defending
+        narrative: |
+          Sales depends on Fares. Fulfilment depends on Sales. Revenue depends on Sales. Nothing
+          depends on Care — Delay Repay and Refunds read orders, and nobody reads them back. Keep
+          it that way: a dependency from Fares into Sales is the first step towards a monolith, and
+          this lens will show it as a new upward edge on your PR.
+
+      - viewId: moduleMap
+        title: Everything, once, for orientation
+        narrative: |
+          The full model with every context expanded. Useful exactly twice: on your first day, and
+          when you are looking for where something *should* live. Six contexts, twenty-one modules;
+          if what you are building does not fit one of them, that is a design conversation, not a
+          new folder.
+
+  # =========================================================================
+  - id: book_reserva_exit
+    name: Retiring RESERVA
+    audience: leadership
+    pages:
+      - viewId: view_strangler
+        title: What is still on the mainframe
+        narrative: |
+          Two things, and only two: the seat reservation hold taken at checkout, and the nightly
+          gateline entitlement batch. Everything else has already moved. The remaining surface is
+          small enough to name in a sentence, which is why the retirement date is now credible.
+
+      - viewId: view_strangler
+        title: What replaces it
+        narrative: |
+          Revenue Apportionment and Operator Settlement — both `to-be-created`. Today RESERVA
+          apportions revenue between operators as a side effect of holding the reservation. When it
+          goes, that calculation needs a home. This is the funded work; the rest of the exit is
+          deletion.
+
+      - viewId: view_concerns
+        title: The two risks that decide the date
+        narrative: |
+          Fare drift: while both systems price tickets, they can disagree, and a disagreement is a
+          regulatory finding rather than a bug. Batch window: RESERVA accepts our entitlement batch
+          only between 02:00 and 04:00, so any incident in that window costs a full day. Both close
+          the moment the last write path is gone.
+
+      - viewId: view_concerns
+        title: The decision we are asking for
+        narrative: |
+          One open question blocks the plan: who owns apportionment afterwards. Insight has the
+          skills and no capacity; Sell has capacity and no domain knowledge. Until that is
+          answered, `mod_apportion` stays in design and the retirement date stays provisional.
+
+  # =========================================================================
+  - id: book_disruption_day
+    name: Disruption Day
+    audience: operations
+    pages:
+      - viewId: view_buy
+        title: What the passenger sees
+        narrative: |
+          Nothing changes in the buying path during disruption — tickets keep selling. That is
+          deliberate: we would rather sell a ticket and refund it automatically than take the shop
+          offline and lose the day's revenue along with the trust.
+
+      - viewId: view_concerns
+        title: What breaks first
+        narrative: |
+          Refunds. A strike day is twenty times a normal day's volume, and the Refund Engine is the
+          only module in the model with a load risk on it. The disruption feed triggers auto-refunds
+          without a human in the loop, so the queue depth is the number to watch on the wallboard.
+
+      - viewId: moduleMap
+        title: Who to call
+        narrative: |
+          Ownership badges are on every module. Care owns Delay Repay and Refunds, Fulfil owns the
+          gateline bridge, Platform owns the mainframe. During an incident, open this view, click
+          the module that is red, and the squad name is on the card.

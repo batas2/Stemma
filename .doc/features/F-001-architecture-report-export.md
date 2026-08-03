@@ -53,7 +53,7 @@ how everyone else reads, follows, and challenges it.
 - [x] AC2 — The report opens with an audience switcher (per Q4); switching modes changes layer
       visibility and detail density without reloading. *(verified: Builder/Stakeholder/Reviewer)*
 - [x] AC3 — All exported views (per Q6) are navigable from a persistent rail; element search jumps
-      to and highlights the element on its view. *(verified on `samples/NetworkAggregation`)*
+      to and highlights the element on its view. *(verified on `samples/AuroraRail`)*
 - [x] AC4 — Layers (per Q5) can be toggled show/hide per view; the diagram re-renders instantly and
       legibly at any toggle combination.
 - [x] AC5 — Existing comment threads from `comments.stemma.json` display anchored to their targets;
@@ -65,7 +65,7 @@ how everyone else reads, follows, and challenges it.
 - [x] AC7 — Selecting any element opens a read-only detail panel: kind, name, description/notes,
       lifecycle, ownership, custom properties, and its relationships (in/out, typed).
 - [x] AC8 — The file stays within the size budget (per Q8) on the reference sample workspaces
-      *(≈95 KB on NetworkAggregation vs the 5 MB target; the <16 ms pan/zoom frame budget on a
+      *(≈95 KB on a mid-size workspace vs the 5 MB target; the <16 ms pan/zoom frame budget on a
       200-element model has not been formally measured)*.
 - [x] AC9 — Uploading to Google Drive and sharing works per the distribution decision (Q1):
       recipients download and open locally; the flow is stated on the export toast and in J6b.
@@ -138,11 +138,11 @@ how everyone else reads, follows, and challenges it.
 
 - [x] Unit tests: report data assembly (model+sidecar projection), layer predicate logic, comment
       pack merge (dedupe by id, thread append, resolved-flag conflict rules).
-- [ ] Golden-file test: generate report for `samples/NetworkAggregation` and
+- [ ] Golden-file test: generate report for `samples/AuroraRail` and
       `samples/StemmaArchitecture`; assert single-file invariant (no `http(s)://` fetches), size
       budget, and presence of every view/element anchor.
 - [ ] Browser smoke (Playwright) — not automated yet; the same script was executed manually in
-      Chrome on `samples/NetworkAggregation` (modes, layers panel, search→jump, element panel,
+      Chrome on `samples/AuroraRail` (modes, layers panel, search→jump, element panel,
       comment → pack → import).
 - [x] Round-trip test: pack exported from report imports into a workspace and merges into
       `comments.stemma.json` losslessly; re-import is idempotent.

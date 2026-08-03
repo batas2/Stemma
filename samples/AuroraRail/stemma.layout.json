@@ -1,0 +1,1235 @@
+{
+  "version": 1,
+  "views": {
+    "moduleMap": {
+      "nodes": {
+        "asm_fare_daily": {
+          "x": 700,
+          "y": 460
+        },
+        "asm_gate_latency": {
+          "x": 700,
+          "y": 800
+        },
+        "asm_opendata": {
+          "x": 700,
+          "y": 630
+        },
+        "cap_compensate": {
+          "x": -280,
+          "y": 610
+        },
+        "cap_fulfil": {
+          "x": -700,
+          "y": 610
+        },
+        "cap_plan": {
+          "x": -700,
+          "y": -610
+        },
+        "cap_price": {
+          "x": -280,
+          "y": -610
+        },
+        "cap_sell": {
+          "x": 140,
+          "y": -610
+        },
+        "cap_settle": {
+          "x": 140,
+          "y": 610
+        },
+        "cnt_api": {
+          "x": -1200,
+          "y": -390
+        },
+        "cnt_app": {
+          "x": -1200,
+          "y": -560
+        },
+        "cnt_bus": {
+          "x": -1200,
+          "y": 120
+        },
+        "cnt_fare": {
+          "x": -1200,
+          "y": -220
+        },
+        "cnt_gatesync": {
+          "x": -1200,
+          "y": 630
+        },
+        "cnt_issuer": {
+          "x": -1200,
+          "y": -50
+        },
+        "cnt_settle": {
+          "x": -1200,
+          "y": 460
+        },
+        "cnt_store": {
+          "x": -1200,
+          "y": 290
+        },
+        "ctx_care": {
+          "x": -280,
+          "y": 460
+        },
+        "ctx_fares": {
+          "x": -280,
+          "y": -760
+        },
+        "ctx_fulfilment": {
+          "x": -700,
+          "y": 460
+        },
+        "ctx_journey": {
+          "x": -700,
+          "y": -760
+        },
+        "ctx_revenue": {
+          "x": 140,
+          "y": 460
+        },
+        "ctx_sales": {
+          "x": 140,
+          "y": -760
+        },
+        "mod_apportion": {
+          "x": 140,
+          "y": 780
+        },
+        "mod_barcode": {
+          "x": -700,
+          "y": 930
+        },
+        "mod_basket": {
+          "x": 140,
+          "y": -440
+        },
+        "mod_checkout": {
+          "x": 140,
+          "y": -290
+        },
+        "mod_delay_repay": {
+          "x": -280,
+          "y": 930
+        },
+        "mod_disruption": {
+          "x": -280,
+          "y": 780
+        },
+        "mod_fare_import": {
+          "x": -280,
+          "y": -440
+        },
+        "mod_fare_rules": {
+          "x": -280,
+          "y": -290
+        },
+        "mod_gateline": {
+          "x": -700,
+          "y": 1230
+        },
+        "mod_issuing": {
+          "x": -700,
+          "y": 780
+        },
+        "mod_live": {
+          "x": -700,
+          "y": -140
+        },
+        "mod_orders": {
+          "x": 140,
+          "y": 10
+        },
+        "mod_payments": {
+          "x": 140,
+          "y": -140
+        },
+        "mod_planner": {
+          "x": -700,
+          "y": -290
+        },
+        "mod_quote": {
+          "x": -280,
+          "y": 10
+        },
+        "mod_railcards": {
+          "x": -280,
+          "y": -140
+        },
+        "mod_refunds": {
+          "x": -280,
+          "y": 1080
+        },
+        "mod_reporting": {
+          "x": 140,
+          "y": 1080
+        },
+        "mod_settlement": {
+          "x": 140,
+          "y": 930
+        },
+        "mod_timetable": {
+          "x": -700,
+          "y": -440
+        },
+        "mod_wallet": {
+          "x": -700,
+          "y": 1080
+        },
+        "per_analyst": {
+          "x": -1960,
+          "y": 90
+        },
+        "per_controller": {
+          "x": -1960,
+          "y": -80
+        },
+        "per_passenger": {
+          "x": -1960,
+          "y": -420
+        },
+        "per_staff": {
+          "x": -1960,
+          "y": -250
+        },
+        "q_apportion_owner": {
+          "x": 700,
+          "y": 90
+        },
+        "q_railcard_owner": {
+          "x": 700,
+          "y": -80
+        },
+        "q_wallet_offline": {
+          "x": 700,
+          "y": 260
+        },
+        "risk_barcode_replay": {
+          "x": 700,
+          "y": -590
+        },
+        "risk_batch_window": {
+          "x": 700,
+          "y": -250
+        },
+        "risk_fare_drift": {
+          "x": 700,
+          "y": -760
+        },
+        "risk_strike_load": {
+          "x": 700,
+          "y": -420
+        },
+        "sys_aurora": {
+          "x": -1600,
+          "y": -560
+        },
+        "sys_fares": {
+          "x": -1600,
+          "y": -390
+        },
+        "sys_notify": {
+          "x": -1600,
+          "y": -50
+        },
+        "sys_opendata": {
+          "x": -1600,
+          "y": 290
+        },
+        "sys_payments": {
+          "x": -1600,
+          "y": -220
+        },
+        "sys_reserva": {
+          "x": -1600,
+          "y": 120
+        },
+        "sys_warehouse": {
+          "x": -1600,
+          "y": 460
+        },
+        "uc_buy": {
+          "x": -1960,
+          "y": 380
+        },
+        "uc_change": {
+          "x": -1960,
+          "y": 550
+        },
+        "uc_claim": {
+          "x": -1960,
+          "y": 720
+        },
+        "uc_gate": {
+          "x": -1960,
+          "y": 890
+        }
+      }
+    },
+    "dependencyGraph": {
+      "nodes": {
+        "mod_apportion": {
+          "x": -220,
+          "y": -170.0
+        },
+        "mod_barcode": {
+          "x": -560,
+          "y": -425.0
+        },
+        "mod_basket": {
+          "x": -900,
+          "y": -850.0
+        },
+        "mod_checkout": {
+          "x": -900,
+          "y": -680.0
+        },
+        "mod_delay_repay": {
+          "x": -900,
+          "y": -510.0
+        },
+        "mod_disruption": {
+          "x": -900,
+          "y": -340.0
+        },
+        "mod_fare_import": {
+          "x": -900,
+          "y": -170.0
+        },
+        "mod_fare_rules": {
+          "x": -220,
+          "y": 0.0
+        },
+        "mod_gateline": {
+          "x": -900,
+          "y": 0.0
+        },
+        "mod_issuing": {
+          "x": -900,
+          "y": 170.0
+        },
+        "mod_live": {
+          "x": -900,
+          "y": 340.0
+        },
+        "mod_orders": {
+          "x": 120,
+          "y": 0.0
+        },
+        "mod_payments": {
+          "x": -560,
+          "y": -255.0
+        },
+        "mod_planner": {
+          "x": -900,
+          "y": 510.0
+        },
+        "mod_quote": {
+          "x": -560,
+          "y": -85.0
+        },
+        "mod_railcards": {
+          "x": -220,
+          "y": 170.0
+        },
+        "mod_refunds": {
+          "x": -560,
+          "y": 85.0
+        },
+        "mod_reporting": {
+          "x": -900,
+          "y": 680.0
+        },
+        "mod_settlement": {
+          "x": -560,
+          "y": 255.0
+        },
+        "mod_timetable": {
+          "x": -560,
+          "y": 425.0
+        },
+        "mod_wallet": {
+          "x": -900,
+          "y": 850.0
+        }
+      }
+    },
+    "custom:view_buy": {
+      "nodes": {
+        "cap_fulfil": {
+          "x": 620,
+          "y": -80
+        },
+        "cap_price": {
+          "x": -400,
+          "y": -80
+        },
+        "cap_sell": {
+          "x": -60,
+          "y": -80
+        },
+        "cnt_api": {
+          "x": -1080,
+          "y": 0
+        },
+        "cnt_app": {
+          "x": -1400,
+          "y": 0
+        },
+        "cnt_bus": {
+          "x": 280,
+          "y": 90
+        },
+        "ctx_fares": {
+          "x": -400,
+          "y": -220
+        },
+        "ctx_fulfilment": {
+          "x": 620,
+          "y": -220
+        },
+        "ctx_journey": {
+          "x": -740,
+          "y": -220
+        },
+        "ctx_sales": {
+          "x": -60,
+          "y": -220
+        },
+        "mod_barcode": {
+          "x": 620,
+          "y": 260
+        },
+        "mod_basket": {
+          "x": -60,
+          "y": 90
+        },
+        "mod_checkout": {
+          "x": -60,
+          "y": 260
+        },
+        "mod_fare_rules": {
+          "x": -400,
+          "y": 260
+        },
+        "mod_issuing": {
+          "x": 620,
+          "y": 90
+        },
+        "mod_orders": {
+          "x": -60,
+          "y": 600
+        },
+        "mod_payments": {
+          "x": -60,
+          "y": 430
+        },
+        "mod_planner": {
+          "x": -740,
+          "y": 0
+        },
+        "mod_quote": {
+          "x": -400,
+          "y": 90
+        },
+        "mod_railcards": {
+          "x": -400,
+          "y": 430
+        },
+        "mod_wallet": {
+          "x": 620,
+          "y": 430
+        },
+        "per_passenger": {
+          "x": -1720,
+          "y": 0
+        },
+        "sys_notify": {
+          "x": 960,
+          "y": 430
+        },
+        "sys_payments": {
+          "x": 280,
+          "y": 430
+        },
+        "sys_reserva": {
+          "x": 280,
+          "y": 600
+        },
+        "uc_buy": {
+          "x": -1720,
+          "y": 200
+        }
+      }
+    },
+    "custom:view_strangler": {
+      "nodes": {
+        "asm_gate_latency": {
+          "x": 820,
+          "y": 350
+        },
+        "cnt_gatesync": {
+          "x": -1100,
+          "y": 600
+        },
+        "cnt_store": {
+          "x": -1100,
+          "y": -300
+        },
+        "ctx_fares": {
+          "x": -140,
+          "y": 320
+        },
+        "ctx_fulfilment": {
+          "x": -140,
+          "y": 0
+        },
+        "ctx_revenue": {
+          "x": 340,
+          "y": -320
+        },
+        "ctx_sales": {
+          "x": -140,
+          "y": -320
+        },
+        "mod_apportion": {
+          "x": 340,
+          "y": -160
+        },
+        "mod_checkout": {
+          "x": -620,
+          "y": -160
+        },
+        "mod_fare_import": {
+          "x": -620,
+          "y": 480
+        },
+        "mod_fare_rules": {
+          "x": -140,
+          "y": 480
+        },
+        "mod_gateline": {
+          "x": -620,
+          "y": 160
+        },
+        "mod_orders": {
+          "x": -140,
+          "y": -160
+        },
+        "mod_reporting": {
+          "x": 340,
+          "y": 180
+        },
+        "mod_settlement": {
+          "x": 340,
+          "y": 10
+        },
+        "q_apportion_owner": {
+          "x": 820,
+          "y": 180
+        },
+        "risk_batch_window": {
+          "x": 820,
+          "y": -160
+        },
+        "risk_fare_drift": {
+          "x": 820,
+          "y": 10
+        },
+        "sys_fares": {
+          "x": -1100,
+          "y": 300
+        },
+        "sys_reserva": {
+          "x": -1100,
+          "y": 0
+        }
+      }
+    },
+    "custom:view_deps": {
+      "nodes": {
+        "mod_apportion": {
+          "x": -220,
+          "y": -170.0
+        },
+        "mod_barcode": {
+          "x": -560,
+          "y": -425.0
+        },
+        "mod_basket": {
+          "x": -900,
+          "y": -850.0
+        },
+        "mod_checkout": {
+          "x": -900,
+          "y": -680.0
+        },
+        "mod_delay_repay": {
+          "x": -900,
+          "y": -510.0
+        },
+        "mod_disruption": {
+          "x": -900,
+          "y": -340.0
+        },
+        "mod_fare_import": {
+          "x": -900,
+          "y": -170.0
+        },
+        "mod_fare_rules": {
+          "x": -220,
+          "y": 0.0
+        },
+        "mod_gateline": {
+          "x": -900,
+          "y": 0.0
+        },
+        "mod_issuing": {
+          "x": -900,
+          "y": 170.0
+        },
+        "mod_live": {
+          "x": -900,
+          "y": 340.0
+        },
+        "mod_orders": {
+          "x": 120,
+          "y": 0.0
+        },
+        "mod_payments": {
+          "x": -560,
+          "y": -255.0
+        },
+        "mod_planner": {
+          "x": -900,
+          "y": 510.0
+        },
+        "mod_quote": {
+          "x": -560,
+          "y": -85.0
+        },
+        "mod_railcards": {
+          "x": -220,
+          "y": 170.0
+        },
+        "mod_refunds": {
+          "x": -560,
+          "y": 85.0
+        },
+        "mod_reporting": {
+          "x": -900,
+          "y": 680.0
+        },
+        "mod_settlement": {
+          "x": -560,
+          "y": 255.0
+        },
+        "mod_timetable": {
+          "x": -560,
+          "y": 425.0
+        },
+        "mod_wallet": {
+          "x": -900,
+          "y": 850.0
+        }
+      }
+    },
+    "custom:view_concerns": {
+      "nodes": {
+        "asm_fare_daily": {
+          "x": 80,
+          "y": 620
+        },
+        "asm_gate_latency": {
+          "x": 80,
+          "y": 1000
+        },
+        "asm_opendata": {
+          "x": 80,
+          "y": 810
+        },
+        "mod_apportion": {
+          "x": -400,
+          "y": 250
+        },
+        "mod_barcode": {
+          "x": -400,
+          "y": -510
+        },
+        "mod_disruption": {
+          "x": -400,
+          "y": 820
+        },
+        "mod_fare_import": {
+          "x": -400,
+          "y": 630
+        },
+        "mod_fare_rules": {
+          "x": -400,
+          "y": -700
+        },
+        "mod_gateline": {
+          "x": -400,
+          "y": 1010
+        },
+        "mod_railcards": {
+          "x": -400,
+          "y": 60
+        },
+        "mod_refunds": {
+          "x": -400,
+          "y": -320
+        },
+        "mod_wallet": {
+          "x": -400,
+          "y": 440
+        },
+        "q_apportion_owner": {
+          "x": 80,
+          "y": 190
+        },
+        "q_railcard_owner": {
+          "x": 80,
+          "y": 0
+        },
+        "q_wallet_offline": {
+          "x": 80,
+          "y": 380
+        },
+        "risk_barcode_replay": {
+          "x": 80,
+          "y": -570
+        },
+        "risk_batch_window": {
+          "x": 80,
+          "y": -190
+        },
+        "risk_fare_drift": {
+          "x": 80,
+          "y": -760
+        },
+        "risk_strike_load": {
+          "x": 80,
+          "y": -380
+        },
+        "sys_reserva": {
+          "x": -400,
+          "y": -130
+        }
+      }
+    }
+  },
+  "nodeStyles": {
+    "cnt_api": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "cnt_app": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "cnt_bus": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "cnt_fare": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "cnt_gatesync": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "cnt_issuer": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "cnt_settle": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "cnt_store": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0f766e",
+      "borderColor": "#115e59",
+      "textColor": "#ffffff"
+    },
+    "ctx_care": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#ef4444",
+      "borderColor": "#b91c1c",
+      "textColor": "#ffffff"
+    },
+    "ctx_fares": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#8b5cf6",
+      "borderColor": "#5b21b6",
+      "textColor": "#ffffff"
+    },
+    "ctx_fulfilment": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#f59e0b",
+      "borderColor": "#b45309",
+      "textColor": "#ffffff"
+    },
+    "ctx_journey": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0ea5e9",
+      "borderColor": "#0369a1",
+      "textColor": "#ffffff"
+    },
+    "ctx_revenue": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#6366f1",
+      "borderColor": "#4338ca",
+      "textColor": "#ffffff"
+    },
+    "ctx_sales": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#10b981",
+      "borderColor": "#047857",
+      "textColor": "#ffffff"
+    },
+    "mod_apportion": {
+      "borderWidth": 2.5,
+      "borderStyle": "dashed",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#6366f1",
+      "borderColor": "#4338ca",
+      "textColor": "#ffffff"
+    },
+    "mod_barcode": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#f59e0b",
+      "borderColor": "#b45309",
+      "textColor": "#ffffff"
+    },
+    "mod_basket": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#10b981",
+      "borderColor": "#047857",
+      "textColor": "#ffffff"
+    },
+    "mod_checkout": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#10b981",
+      "borderColor": "#047857",
+      "textColor": "#ffffff"
+    },
+    "mod_delay_repay": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#ef4444",
+      "borderColor": "#b91c1c",
+      "textColor": "#ffffff"
+    },
+    "mod_disruption": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#ef4444",
+      "borderColor": "#b91c1c",
+      "textColor": "#ffffff"
+    },
+    "mod_fare_import": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#8b5cf6",
+      "borderColor": "#5b21b6",
+      "textColor": "#ffffff"
+    },
+    "mod_fare_rules": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#8b5cf6",
+      "borderColor": "#5b21b6",
+      "textColor": "#ffffff"
+    },
+    "mod_gateline": {
+      "borderWidth": 2.5,
+      "borderStyle": "dashed",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#f59e0b",
+      "borderColor": "#b45309",
+      "textColor": "#ffffff"
+    },
+    "mod_issuing": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#f59e0b",
+      "borderColor": "#b45309",
+      "textColor": "#ffffff"
+    },
+    "mod_live": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0ea5e9",
+      "borderColor": "#0369a1",
+      "textColor": "#ffffff"
+    },
+    "mod_orders": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#10b981",
+      "borderColor": "#047857",
+      "textColor": "#ffffff"
+    },
+    "mod_payments": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#10b981",
+      "borderColor": "#047857",
+      "textColor": "#ffffff"
+    },
+    "mod_planner": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0ea5e9",
+      "borderColor": "#0369a1",
+      "textColor": "#ffffff"
+    },
+    "mod_quote": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#8b5cf6",
+      "borderColor": "#5b21b6",
+      "textColor": "#ffffff"
+    },
+    "mod_railcards": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#8b5cf6",
+      "borderColor": "#5b21b6",
+      "textColor": "#ffffff"
+    },
+    "mod_refunds": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#ef4444",
+      "borderColor": "#b91c1c",
+      "textColor": "#ffffff"
+    },
+    "mod_reporting": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#6366f1",
+      "borderColor": "#4338ca",
+      "textColor": "#ffffff"
+    },
+    "mod_settlement": {
+      "borderWidth": 2.5,
+      "borderStyle": "dashed",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#6366f1",
+      "borderColor": "#4338ca",
+      "textColor": "#ffffff"
+    },
+    "mod_timetable": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0ea5e9",
+      "borderColor": "#0369a1",
+      "textColor": "#ffffff"
+    },
+    "mod_wallet": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#f59e0b",
+      "borderColor": "#b45309",
+      "textColor": "#ffffff"
+    },
+    "sys_aurora": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#1e293b",
+      "borderColor": "#0f172a",
+      "textColor": "#ffffff"
+    },
+    "sys_fares": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#475569",
+      "borderColor": "#334155",
+      "textColor": "#ffffff"
+    },
+    "sys_notify": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#475569",
+      "borderColor": "#334155",
+      "textColor": "#ffffff"
+    },
+    "sys_opendata": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#475569",
+      "borderColor": "#334155",
+      "textColor": "#ffffff"
+    },
+    "sys_payments": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#475569",
+      "borderColor": "#334155",
+      "textColor": "#ffffff"
+    },
+    "sys_reserva": {
+      "borderWidth": 2.5,
+      "borderStyle": "dashed",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#64748b",
+      "borderColor": "#334155",
+      "textColor": "#ffffff"
+    },
+    "sys_warehouse": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#475569",
+      "borderColor": "#334155",
+      "textColor": "#ffffff"
+    }
+  },
+  "edgeStyles": {
+    "flow_authorise": {
+      "thickness": 2.6,
+      "lineStyle": "solid",
+      "color": "#10b981",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_auto_refund": {
+      "thickness": 2.0,
+      "lineStyle": "solid",
+      "color": "#ef4444",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_fare_basis": {
+      "thickness": 2.0,
+      "lineStyle": "solid",
+      "color": "#8b5cf6",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_fare_publish": {
+      "thickness": 2.0,
+      "lineStyle": "solid",
+      "color": "#8b5cf6",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_gate_batch": {
+      "thickness": 2.0,
+      "lineStyle": "dashed",
+      "color": "#b45309",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_issue_consume": {
+      "thickness": 2.6,
+      "lineStyle": "solid",
+      "color": "#f59e0b",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_order_placed": {
+      "thickness": 2.6,
+      "lineStyle": "solid",
+      "color": "#10b981",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_refund_out": {
+      "thickness": 2.0,
+      "lineStyle": "solid",
+      "color": "#ef4444",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_reserva_hold": {
+      "thickness": 2.0,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_ticket_events": {
+      "thickness": 2.0,
+      "lineStyle": "solid",
+      "color": "#6366f1",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    }
+  },
+  "notes": {
+    "cnt_api": "**Booking API**\n\nThe only front door. Everything the app can do is a call to this service; nothing else in the platform is reachable from the internet.\n\n#squad: Sell",
+    "mod_apportion": "**Revenue Apportionment**\n\nDoes not exist yet. Today RESERVA apportions revenue between operators as a side effect of holding the reservation, so this has to be built before the mainframe can be switched off.",
+    "mod_barcode": "**Barcode Signing**\n\nSecurity-critical. Produces the signed payload a gateline scans offline. Key rotation is manual today and that is the single largest piece of operational risk in Fulfilment.\n\n#squad: Fulfil",
+    "mod_gateline": "**Gateline Entitlements**\n\nBridge code, written to be deleted. Reads orders, writes an entitlement batch into RESERVA overnight, and reconciles the acknowledgement in the morning. Goes away in phase 3.",
+    "mod_quote": "**Price Quote**\n\nTurns an itinerary into a price using the published fare tables plus any railcard the passenger holds. Pure function of its inputs - no state, no side effects, which is why it is the easiest module to test.",
+    "mod_refunds": "**Refund Engine**\n\nAutomatic on declared disruption, manual otherwise. Sized for a normal day; a strike day is roughly twenty times the volume and the queue is the first thing to watch.\n\n#squad: Care",
+    "mod_wallet": "**Wallet Delivery**\n\nPushes the signed ticket to the phone and emails a copy. The open question is whether it must validate fully offline; the answer changes the barcode format.",
+    "sys_reserva": "**RESERVA**\n\n1994 reservation mainframe. Two write paths remain: the seat hold at checkout and the nightly gateline batch. Retirement is scheduled for June 2027 and blocked on apportionment finding an owner.\n\n#squad: Platform"
+  },
+  "customProps": {
+    "cnt_api": {
+      "runtime": "ASP.NET Core",
+      "sla": "99.95%",
+      "squad": "Sell"
+    },
+    "cnt_bus": {
+      "runtime": "Kafka",
+      "retention": "7 days",
+      "squad": "Platform"
+    },
+    "cnt_gatesync": {
+      "schedule": "02:15 nightly",
+      "window": "02:00-04:00",
+      "squad": "Fulfil"
+    },
+    "cnt_store": {
+      "engine": "PostgreSQL 16",
+      "pii": "yes",
+      "squad": "Sell"
+    },
+    "sys_reserva": {
+      "vendor": "in-house",
+      "since": "1994",
+      "exit": "2027-06"
+    }
+  },
+  "annotations": {}
+}

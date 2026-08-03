@@ -14,7 +14,8 @@
 | Storage | Git working tree — `.cs` model + `stemma.layout.json` sidecar |
 
 Sample workspaces target `net8.0` and reference `src/Stemma.Model` (they only need the DSL
-vocabulary), e.g. [`../../samples/NetworkAggregation/NetworkAggregation.csproj`](../../samples/NetworkAggregation/NetworkAggregation.csproj).
+vocabulary), e.g. [`../../samples/AuroraRail/AuroraRail.csproj`](../../samples/AuroraRail/AuroraRail.csproj).
+A workspace with no project file at all loads through the SDK-free path (ADR-0016).
 
 ## Build & test commands
 

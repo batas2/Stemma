@@ -68,8 +68,8 @@ deselecting collapses the inspector to the rail.
 
 ## J7 — Onboard via samples (any persona)
 
-1. Open a sample workspace (e.g. `samples/NetworkAggregation`) to see every feature exercised across
-   three perspective views (system flow, code & ownership, dependency graph).
+1. Open a sample workspace (e.g. `samples/AuroraRail`) to see every feature exercised across four
+   perspective views (sell path, strangler migration, dependency graph, open concerns).
 
 ## Authoring rule
 
