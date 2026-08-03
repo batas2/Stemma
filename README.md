@@ -2,10 +2,15 @@
 
 [![CI](https://github.com/batas2/Stemma/actions/workflows/ci.yml/badge.svg)](https://github.com/batas2/Stemma/actions/workflows/ci.yml)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](./LICENSE)
+[![Project page](https://img.shields.io/badge/project%20page-bfrackowiak.pl%2Fstemma-0f766e)](https://bfrackowiak.pl/stemma/)
+[![Essays](https://img.shields.io/badge/essays-bfrackowiak.pl-6366f1)](https://bfrackowiak.pl/)
 
 > **Your architecture, written in your source.** Humans and AI agents edit the same model, and every
 > change arrives as a reviewable diff. UI edits become Roslyn rewrites of real `.cs` files — the
 > diagram can't drift from the code, because the diagram *is* the code.
+
+**→ [bfrackowiak.pl/stemma](https://bfrackowiak.pl/stemma/)** — the illustrated tour: a rename shown
+as a diff, the full vocabulary, the views, story books, and the roadmap.
 
 Stemma is a web-based architecture modeling tool for **solution and data architects**. You build one
 long-living model — bounded contexts, capabilities, containers, data flows, dependencies, decisions,
@@ -25,6 +30,9 @@ architecture, its lineage, and every version of it, from one canonical source.
 draw.io / Lucidchart / Enterprise Architect drift the moment they're saved. Reverse-engineering tools
 read code but can't edit it. Stemma closes the loop — and guarantees **round-trip fidelity** so the
 loop is trustworthy. See [`.doc/product/value-proposition.md`](./.doc/product/value-proposition.md).
+
+The argument in full, and why a diagram that *can* drift always does:
+**[The Diagram That Cannot Lie](https://bfrackowiak.pl/blog/the-diagram-that-cannot-lie/)**.
 
 ## What ships today
 
@@ -92,6 +100,20 @@ npx vite build                              # build
 npx vitest run                              # tests
 ```
 
+## The thinking behind it
+
+Stemma came out of a weekly essay series on software architecture and the organisations that produce
+it — [**bfrackowiak.pl**](https://bfrackowiak.pl/) ([RSS](https://bfrackowiak.pl/feed.xml)). The
+pieces that explain what this tool is arguing with:
+
+| Essay | Why it matters here |
+|---|---|
+| [The Diagram That Cannot Lie](https://bfrackowiak.pl/blog/the-diagram-that-cannot-lie/) | The premise: a model that physically cannot drift from the code. |
+| [The Bottleneck Moved](https://bfrackowiak.pl/blog/the-bottleneck-moved/) | Why every edit here lands as a reviewable diff, not a canvas state. |
+| [A Feature Is Not a Service](https://bfrackowiak.pl/blog/a-feature-is-not-a-service/) | The bounded-context vocabulary the DSL is built on. |
+| [Prompt-Driven Architecture](https://bfrackowiak.pl/blog/prompt-driven-architecture/) | Why humans and agents edit the same model through the same operations. |
+| [Multi-Agent Is an Org Chart](https://bfrackowiak.pl/blog/multi-agent-is-an-org-chart/) | Where ownership and RAPID tags in the model came from. |
+
 ## License
 
 Stemma is **source-available, not open source**, under the
@@ -105,3 +127,10 @@ Stemma is **source-available, not open source**, under the
 
 You may read, modify and share the source within those limits. Contributions are welcome on the same
 terms; see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+---
+
+Built by **[Bartosz Frąckowiak](https://bfrackowiak.pl/about/)** — solution architect, writing
+weekly at [bfrackowiak.pl](https://bfrackowiak.pl/) about architecture, the people around it, and the
+corporate machine they form together. Project page: [bfrackowiak.pl/stemma](https://bfrackowiak.pl/stemma/).
+Commercial licence enquiries: <kontakt@bfrackowiak.pl>.

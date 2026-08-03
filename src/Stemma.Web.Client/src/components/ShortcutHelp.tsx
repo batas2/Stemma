@@ -60,6 +60,17 @@ export function ShortcutHelp({ open, onClose }: Props) {
             </section>
           ))}
         </div>
+        <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-500">
+          Guides, the vocabulary reference and the roadmap:{' '}
+          <a
+            href="https://bfrackowiak.pl/stemma/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-teal-600 dark:text-teal-400 hover:underline"
+          >
+            bfrackowiak.pl/stemma
+          </a>
+        </div>
       </div>
     </div>
   );
