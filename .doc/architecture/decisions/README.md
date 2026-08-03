@@ -4,8 +4,7 @@ Architecture Decision Records capture *why* the system is the way it is. New ADR
 [`../../templates/adr-template.md`](../../templates/adr-template.md), numbered sequentially, and
 start at `Proposed` until a maintainer accepts them.
 
-The 13 historical ADRs live, in full, under
-[`../../../.doc.legacy/docs/decisions/`](../../../.doc.legacy/docs/decisions/). The table below is the
+The 13 historical ADRs are not published with this repository; the table below is the
 **curated index** — what each decided and whether it still holds, given the engine was deliberately
 slimmed (single Roslyn adapter + presentation sidecar; YAML/Markdown/Discovery/projection layers
 removed).

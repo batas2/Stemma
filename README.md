@@ -50,14 +50,11 @@ UI** — plus engineering standards and actionable templates.
 | Build a feature / file a bug | [`.doc/templates/`](./.doc/templates/) |
 | Contribute | [`.doc/engineering/contributing.md`](./.doc/engineering/contributing.md) |
 
-Pre-refactor docs are archived (not authoritative) under [`.doc.legacy/`](./.doc.legacy/).
-
 ## Repository layout
 
 ```
 stemma/
 ├── .doc/                 — Single Source of Truth (product · architecture · ux · ui · templates)
-├── .doc.legacy/          — archived pre-refactor docs (reference only)
 ├── README.md  CONTRIBUTING.md
 ├── src/
 │   ├── Stemma.Model/      — the DSL vocabulary (records) user workspaces reference

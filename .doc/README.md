@@ -1,8 +1,8 @@
 # Stemma Documentation — Single Source of Truth (SSOT)
 
 This directory is the authoritative, structured home for everything about Stemma: why it exists,
-how it is built, how it should look and feel, and how it is extended. It supersedes the historical
-notes now archived under [`../.doc.legacy/`](../.doc.legacy/).
+how it is built, how it should look and feel, and how it is extended. It supersedes the
+pre-refactor notes, which are kept outside this repository.
 
 > **Rule of thumb:** if a decision, contract, or convention matters beyond a single pull request,
 > it belongs here. If it is a disposable working note, it does not.

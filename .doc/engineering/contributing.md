@@ -1,7 +1,7 @@
 # Contributing
 
-How work flows into Stemma. (The historical guide is archived at
-[`../../.doc.legacy/CONTRIBUTING.md`](../../.doc.legacy/CONTRIBUTING.md).)
+How work flows into Stemma. The short version lives in the repository root
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md).
 
 ## Before you start
 

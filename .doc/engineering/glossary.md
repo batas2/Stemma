@@ -53,5 +53,3 @@ The shared vocabulary. When a term here appears in code or docs, it means exactl
 
 - **Pillar** — one of Product / Architecture / UX / UI; every change is reviewed against all four.
 - **SSOT** — Single Source of Truth: this `.doc/` directory.
-- **Legacy docs** — the archived pre-refactor docs under `../../.doc.legacy/`, kept for reference,
-  not authoritative.

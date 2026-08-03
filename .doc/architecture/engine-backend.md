@@ -57,9 +57,8 @@ and are the first thing the Software Architect checks.
 
 ## Adding or changing an operation (the procedure)
 
-1. Confirm the operation is in the operations catalog (archived at
-   `../.doc.legacy/specs/operations-catalog.md`; the live catalog moves into this section as it is
-   curated). If it is not listed, write the spec first.
+1. Confirm the operation is in the operations catalog (curated into this section as operations are
+   reviewed; the pre-refactor catalog is not published). If it is not listed, write the spec first.
 2. Ensure at least **three** round-trip fixtures exist — minimal, realistic, pathological. If not,
    add them first.
 3. Implement in the engine with `DocumentEditor`.
