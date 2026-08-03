@@ -17,8 +17,8 @@ namespace StemmaArchitecture;
 /// The four layers map onto the model like the canonical samples: the deployable units (the ASP.NET
 /// host and the React SPA bundle) become C4 Containers; the layers become Bounded Contexts; the
 /// subsystems inside each layer become Modules; project / call references become Dependencies; the
-/// documented write / read / sidecar / AI flows become DataFlows. The inviolable rules from CLAUDE.md
-/// (round-trip fidelity, no NormalizeWhitespace, no parallel store, prime-the-sidecar-once, engine
+/// documented write / read / sidecar / AI flows become DataFlows. The inviolable rules from the
+/// conventions (round-trip fidelity, no NormalizeWhitespace, no parallel store, prime-the-sidecar-once, engine
 /// purity) are captured as Risks / Questions / Assumptions plus lifecycle / ownership tags, so the
 /// model doubles as a self-referential feature demo for Stemma.
 ///

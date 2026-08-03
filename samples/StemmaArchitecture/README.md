@@ -29,7 +29,8 @@ Assumptions with lifecycle / ownership tags.
 | `sys_git`, `sys_roslyn`, `sys_llm` | the Git working tree, Roslyn `MSBuildWorkspace`, the LLM provider |
 
 The Risks / Questions / Assumptions encode the inviolable rules from
-[`CLAUDE.md`](../../CLAUDE.md) and [`engine-backend.md`](../../.doc/architecture/engine-backend.md):
+[`conventions.md`](../../.doc/engineering/conventions.md) and
+[`engine-backend.md`](../../.doc/architecture/engine-backend.md):
 round-trip fidelity, never `NormalizeWhitespace()`, never a third data store, prime the sidecar once,
 and engine purity (ADR-0008).
 
