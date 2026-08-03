@@ -1,0 +1,1506 @@
+{
+  "version": 1,
+  "views": {
+    "custom:view_sync": {
+      "nodes": {
+        "per_architect": {
+          "x": -300,
+          "y": -640
+        },
+        "per_agent": {
+          "x": -320,
+          "y": -160
+        },
+        "per_reviewer": {
+          "x": 3.9635891301446584,
+          "y": 928.7213430682662
+        },
+        "sys_git": {
+          "x": -420,
+          "y": 440
+        },
+        "sys_browser": {
+          "x": -320,
+          "y": 0
+        },
+        "sys_roslyn": {
+          "x": 240,
+          "y": 660
+        },
+        "sys_llm": {
+          "x": -331.2025804053236,
+          "y": -413.254409718875
+        },
+        "sys_vite": {
+          "x": -200,
+          "y": -900
+        },
+        "cnt_client": {
+          "x": 220,
+          "y": -880
+        },
+        "cnt_web": {
+          "x": 560,
+          "y": -440
+        },
+        "mod_stemmaengine": {
+          "x": 560,
+          "y": 260
+        }
+      }
+    },
+    "custom:view_code": {
+      "nodes": {
+        "ctx_client": {
+          "x": -2100,
+          "y": -820
+        },
+        "cap_render": {
+          "x": -2100,
+          "y": -620
+        },
+        "cap_edit": {
+          "x": -1850,
+          "y": -620
+        },
+        "mod_store": {
+          "x": -2100,
+          "y": -360
+        },
+        "mod_layoutcache": {
+          "x": -1850,
+          "y": -360
+        },
+        "mod_canvas": {
+          "x": -2100,
+          "y": -210
+        },
+        "mod_inspector": {
+          "x": -1850,
+          "y": -210
+        },
+        "mod_autolayout": {
+          "x": -2100,
+          "y": -60
+        },
+        "mod_richtext": {
+          "x": -1850,
+          "y": -60
+        },
+        "mod_signalrclient": {
+          "x": -2100,
+          "y": 90
+        },
+        "mod_apiclient": {
+          "x": -1850,
+          "y": 90
+        },
+        "ctx_web": {
+          "x": -1380,
+          "y": -820
+        },
+        "cap_sync": {
+          "x": -1380,
+          "y": -620
+        },
+        "cap_layout": {
+          "x": -1130,
+          "y": -620
+        },
+        "cap_ai": {
+          "x": -880,
+          "y": -620
+        },
+        "mod_rest": {
+          "x": -1380,
+          "y": -360
+        },
+        "mod_hub": {
+          "x": -1130,
+          "y": -360
+        },
+        "mod_llmservice": {
+          "x": -1380,
+          "y": -210
+        },
+        "ctx_engine": {
+          "x": -660,
+          "y": -820
+        },
+        "cap_load": {
+          "x": -660,
+          "y": -620
+        },
+        "cap_apply": {
+          "x": -410,
+          "y": -620
+        },
+        "mod_stemmaengine": {
+          "x": -660,
+          "y": -360
+        },
+        "mod_dslreader": {
+          "x": -410,
+          "y": -360
+        },
+        "mod_dslwriter": {
+          "x": -660,
+          "y": -210
+        },
+        "mod_archops": {
+          "x": -410,
+          "y": -210
+        },
+        "mod_viewsadapter": {
+          "x": -660,
+          "y": -60
+        },
+        "mod_operations": {
+          "x": -410,
+          "y": -60
+        },
+        "mod_undo": {
+          "x": -660,
+          "y": 90
+        },
+        "mod_sidecar": {
+          "x": -410,
+          "y": 90
+        },
+        "mod_validation": {
+          "x": -660,
+          "y": 240
+        },
+        "ctx_model": {
+          "x": 60,
+          "y": -820
+        },
+        "mod_concepts": {
+          "x": 60,
+          "y": -360
+        },
+        "mod_modelof": {
+          "x": 310,
+          "y": -360
+        },
+        "ctx_quality": {
+          "x": 780,
+          "y": -820
+        },
+        "cap_fidelity": {
+          "x": 780,
+          "y": -620
+        },
+        "mod_fidelity": {
+          "x": 780,
+          "y": -360
+        },
+        "risk_fidelity": {
+          "x": -2100,
+          "y": 760
+        },
+        "risk_normalize": {
+          "x": -1780,
+          "y": 760
+        },
+        "risk_parallelstore": {
+          "x": -1460,
+          "y": 760
+        },
+        "risk_refetch": {
+          "x": -1140,
+          "y": 760
+        },
+        "risk_dangling": {
+          "x": -820,
+          "y": 760
+        },
+        "risk_dragrebuild": {
+          "x": -500,
+          "y": 760
+        },
+        "risk_purity": {
+          "x": -180,
+          "y": 760
+        },
+        "q_methodbody": {
+          "x": -2100,
+          "y": 960
+        },
+        "q_conflict": {
+          "x": -1780,
+          "y": 960
+        },
+        "q_opcatalog": {
+          "x": -1460,
+          "y": 960
+        },
+        "asm_git": {
+          "x": -1140,
+          "y": 960
+        },
+        "asm_modelcode": {
+          "x": -820,
+          "y": 960
+        },
+        "asm_primeonce": {
+          "x": -500,
+          "y": 960
+        },
+        "asm_purity": {
+          "x": -180,
+          "y": 960
+        },
+        "uc_edit": {
+          "x": -2100,
+          "y": -1040
+        },
+        "uc_review": {
+          "x": -1760,
+          "y": -1040
+        }
+      }
+    },
+    "custom:view_deps": {
+      "nodes": {
+        "mod_concepts": {
+          "x": -1400,
+          "y": -100
+        },
+        "mod_modelof": {
+          "x": -1400,
+          "y": 100
+        },
+        "mod_dslreader": {
+          "x": -700,
+          "y": -600
+        },
+        "mod_dslwriter": {
+          "x": -700,
+          "y": -400
+        },
+        "mod_viewsadapter": {
+          "x": -700,
+          "y": -200
+        },
+        "mod_operations": {
+          "x": -700,
+          "y": 0
+        },
+        "mod_undo": {
+          "x": -700,
+          "y": 200
+        },
+        "mod_sidecar": {
+          "x": -700,
+          "y": 400
+        },
+        "mod_validation": {
+          "x": -700,
+          "y": 600
+        },
+        "mod_stemmaengine": {
+          "x": 0,
+          "y": -100
+        },
+        "mod_archops": {
+          "x": 0,
+          "y": 100
+        },
+        "mod_rest": {
+          "x": 700,
+          "y": -300
+        },
+        "mod_hub": {
+          "x": 700,
+          "y": -100
+        },
+        "mod_llmservice": {
+          "x": 700,
+          "y": 100
+        },
+        "mod_fidelity": {
+          "x": 700,
+          "y": 300
+        },
+        "mod_store": {
+          "x": 1400,
+          "y": -700
+        },
+        "mod_layoutcache": {
+          "x": 1400,
+          "y": -500
+        },
+        "mod_canvas": {
+          "x": 1400,
+          "y": -300
+        },
+        "mod_inspector": {
+          "x": 1400,
+          "y": -100
+        },
+        "mod_autolayout": {
+          "x": 1400,
+          "y": 100
+        },
+        "mod_richtext": {
+          "x": 1400,
+          "y": 300
+        },
+        "mod_signalrclient": {
+          "x": 1400,
+          "y": 500
+        },
+        "mod_apiclient": {
+          "x": 1400,
+          "y": 700
+        }
+      }
+    },
+    "moduleMap": {
+      "nodes": {
+        "per_architect": {
+          "x": -1634,
+          "y": 0
+        },
+        "per_agent": {
+          "x": -1414,
+          "y": 0
+        },
+        "per_reviewer": {
+          "x": -1194,
+          "y": 0
+        },
+        "sys_stemma": {
+          "x": -974,
+          "y": 0
+        },
+        "sys_git": {
+          "x": -754,
+          "y": 0
+        },
+        "sys_browser": {
+          "x": -454,
+          "y": 0
+        },
+        "sys_roslyn": {
+          "x": -234,
+          "y": 0
+        },
+        "sys_llm": {
+          "x": 20,
+          "y": 0
+        },
+        "sys_vite": {
+          "x": 254,
+          "y": 0
+        },
+        "cnt_client": {
+          "x": 474,
+          "y": 0
+        },
+        "cnt_web": {
+          "x": 774,
+          "y": 0
+        },
+        "ctx_client": {
+          "x": -3460,
+          "y": 200
+        },
+        "ctx_web": {
+          "x": 2268,
+          "y": 200
+        },
+        "ctx_engine": {
+          "x": -968,
+          "y": 200
+        },
+        "ctx_model": {
+          "x": 1284,
+          "y": 200
+        },
+        "ctx_quality": {
+          "x": 1856,
+          "y": 200
+        },
+        "mod_concepts": {
+          "x": 1427,
+          "y": 485
+        },
+        "mod_modelof": {
+          "x": 1430,
+          "y": 692
+        },
+        "mod_stemmaengine": {
+          "x": -22,
+          "y": 5356
+        },
+        "mod_dslreader": {
+          "x": 18,
+          "y": 3763
+        },
+        "mod_dslwriter": {
+          "x": -22,
+          "y": 3970
+        },
+        "mod_archops": {
+          "x": 18,
+          "y": 3556
+        },
+        "mod_viewsadapter": {
+          "x": 18,
+          "y": 5707
+        },
+        "mod_operations": {
+          "x": 9,
+          "y": 4735
+        },
+        "mod_undo": {
+          "x": 18,
+          "y": 4942
+        },
+        "mod_sidecar": {
+          "x": 18,
+          "y": 4321
+        },
+        "mod_validation": {
+          "x": 18,
+          "y": 5149
+        },
+        "mod_rest": {
+          "x": 2774,
+          "y": 1370
+        },
+        "mod_hub": {
+          "x": 2774,
+          "y": 1577
+        },
+        "mod_llmservice": {
+          "x": 2734,
+          "y": 617
+        },
+        "mod_store": {
+          "x": -2354,
+          "y": 2636
+        },
+        "mod_layoutcache": {
+          "x": -2394,
+          "y": 2078
+        },
+        "mod_canvas": {
+          "x": -2373.5,
+          "y": 629
+        },
+        "mod_inspector": {
+          "x": -2354,
+          "y": 836
+        },
+        "mod_autolayout": {
+          "x": -2354,
+          "y": 1043
+        },
+        "mod_richtext": {
+          "x": -2392,
+          "y": 1871
+        },
+        "mod_signalrclient": {
+          "x": -2354,
+          "y": 2429
+        },
+        "mod_apiclient": {
+          "x": -2354,
+          "y": 1664
+        },
+        "mod_fidelity": {
+          "x": 1882,
+          "y": 824
+        },
+        "cap_load": {
+          "x": -18.5,
+          "y": 4528
+        },
+        "cap_apply": {
+          "x": -22,
+          "y": 3349
+        },
+        "cap_fidelity": {
+          "x": 1908.5,
+          "y": 617
+        },
+        "cap_render": {
+          "x": -2354,
+          "y": 1457
+        },
+        "cap_edit": {
+          "x": -2394,
+          "y": 1250
+        },
+        "cap_sync": {
+          "x": 2734,
+          "y": 1784
+        },
+        "cap_layout": {
+          "x": 2737,
+          "y": 956
+        },
+        "cap_ai": {
+          "x": 2742,
+          "y": 1163
+        },
+        "uc_edit": {
+          "x": 1074,
+          "y": 0
+        },
+        "uc_review": {
+          "x": 1374,
+          "y": 0
+        },
+        "risk_fidelity": {
+          "x": -1680,
+          "y": 60
+        },
+        "risk_normalize": {
+          "x": -960,
+          "y": 60
+        },
+        "risk_parallelstore": {
+          "x": -1920,
+          "y": 60
+        },
+        "risk_refetch": {
+          "x": 240,
+          "y": 60
+        },
+        "risk_dangling": {
+          "x": 1680,
+          "y": 60
+        },
+        "risk_dragrebuild": {
+          "x": 480,
+          "y": 60
+        },
+        "risk_purity": {
+          "x": -1200,
+          "y": 60
+        },
+        "q_methodbody": {
+          "x": 1920,
+          "y": 60
+        },
+        "q_conflict": {
+          "x": -480,
+          "y": 60
+        },
+        "q_opcatalog": {
+          "x": -240,
+          "y": 60
+        },
+        "asm_git": {
+          "x": 0,
+          "y": 60
+        },
+        "asm_modelcode": {
+          "x": 960,
+          "y": 60
+        },
+        "asm_primeonce": {
+          "x": 1200,
+          "y": 60
+        },
+        "asm_purity": {
+          "x": 1440,
+          "y": 60
+        }
+      }
+    }
+  },
+  "nodeStyles": {
+    "cnt_client": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#4f46e5",
+      "borderColor": "#3730a3",
+      "textColor": "#ffffff"
+    },
+    "cnt_web": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#0891b2",
+      "borderColor": "#155e75",
+      "textColor": "#ffffff",
+      "width": 280,
+      "height": 276
+    },
+    "mod_stemmaengine": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "soft",
+      "fillColor": "#7c3aed",
+      "borderColor": "#5b21b6",
+      "textColor": "#ffffff",
+      "width": 300,
+      "height": 291
+    },
+    "mod_concepts": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#ecfdf5",
+      "borderColor": "#a7f3d0",
+      "accentSide": "top",
+      "accentColor": "#059669"
+    },
+    "mod_modelof": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#ecfdf5",
+      "borderColor": "#a7f3d0",
+      "accentSide": "top",
+      "accentColor": "#059669"
+    },
+    "mod_dslreader": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_dslwriter": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_archops": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_viewsadapter": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_operations": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_undo": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_sidecar": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_validation": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f5f3ff",
+      "borderColor": "#ddd6fe",
+      "accentSide": "top",
+      "accentColor": "#7c3aed"
+    },
+    "mod_rest": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#ecfeff",
+      "borderColor": "#a5f3fc",
+      "accentSide": "top",
+      "accentColor": "#0891b2"
+    },
+    "mod_hub": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#ecfeff",
+      "borderColor": "#a5f3fc",
+      "accentSide": "top",
+      "accentColor": "#0891b2"
+    },
+    "mod_llmservice": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#ecfeff",
+      "borderColor": "#a5f3fc",
+      "accentSide": "top",
+      "accentColor": "#0891b2"
+    },
+    "mod_store": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_layoutcache": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_canvas": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_inspector": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_autolayout": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_richtext": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_signalrclient": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_apiclient": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#eef2ff",
+      "borderColor": "#c7d2fe",
+      "accentSide": "top",
+      "accentColor": "#4f46e5"
+    },
+    "mod_fidelity": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#fffbeb",
+      "borderColor": "#fde68a",
+      "accentSide": "top",
+      "accentColor": "#d97706"
+    },
+    "sys_git": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f8fafc",
+      "borderColor": "#e2e8f0",
+      "accentSide": "left",
+      "accentColor": "#334155"
+    },
+    "sys_roslyn": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f8fafc",
+      "borderColor": "#e2e8f0",
+      "accentSide": "left",
+      "accentColor": "#7c3aed"
+    },
+    "sys_llm": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#fdf4ff",
+      "borderColor": "#f5d0fe",
+      "accentSide": "left",
+      "accentColor": "#d946ef"
+    },
+    "sys_browser": {
+      "borderWidth": 1.5,
+      "borderStyle": "solid",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f8fafc",
+      "borderColor": "#e2e8f0",
+      "accentSide": "left",
+      "accentColor": "#0ea5e9"
+    },
+    "sys_vite": {
+      "borderWidth": 1.5,
+      "borderStyle": "dashed",
+      "radius": 8,
+      "shadow": "none",
+      "fillColor": "#f8fafc",
+      "borderColor": "#e2e8f0",
+      "accentSide": "left",
+      "accentColor": "#a855f7"
+    }
+  },
+  "edgeStyles": {
+    "flow_gesture": {
+      "thickness": 2.4,
+      "lineStyle": "solid",
+      "color": "#4f46e5",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_op": {
+      "thickness": 2.4,
+      "lineStyle": "solid",
+      "color": "#4f46e5",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_invoke": {
+      "thickness": 2.4,
+      "lineStyle": "solid",
+      "color": "#4f46e5",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_rewrite": {
+      "thickness": 2.4,
+      "lineStyle": "solid",
+      "color": "#4f46e5",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_recompute": {
+      "thickness": 2.4,
+      "lineStyle": "solid",
+      "color": "#4f46e5",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_delta": {
+      "thickness": 2.4,
+      "lineStyle": "solid",
+      "color": "#4f46e5",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "normal"
+    },
+    "flow_open": {
+      "thickness": 1.8,
+      "lineStyle": "solid",
+      "color": "#0891b2",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier"
+    },
+    "flow_load": {
+      "thickness": 1.8,
+      "lineStyle": "solid",
+      "color": "#0891b2",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier"
+    },
+    "flow_roslyn": {
+      "thickness": 1.8,
+      "lineStyle": "solid",
+      "color": "#0891b2",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier"
+    },
+    "flow_read": {
+      "thickness": 1.8,
+      "lineStyle": "solid",
+      "color": "#0891b2",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier"
+    },
+    "flow_snapshot": {
+      "thickness": 1.8,
+      "lineStyle": "solid",
+      "color": "#0891b2",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "bezier"
+    },
+    "flow_present": {
+      "thickness": 1.8,
+      "lineStyle": "dotted",
+      "color": "#94a3b8",
+      "animated": false,
+      "arrowEnd": "open",
+      "routing": "bezier"
+    },
+    "flow_sidecar": {
+      "thickness": 1.8,
+      "lineStyle": "dotted",
+      "color": "#94a3b8",
+      "animated": false,
+      "arrowEnd": "open",
+      "routing": "bezier"
+    },
+    "flow_prime": {
+      "thickness": 1.8,
+      "lineStyle": "dotted",
+      "color": "#94a3b8",
+      "animated": false,
+      "arrowEnd": "open",
+      "routing": "bezier"
+    },
+    "flow_prompt": {
+      "thickness": 1.8,
+      "lineStyle": "dashed",
+      "color": "#d946ef",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "slow"
+    },
+    "flow_llm": {
+      "thickness": 1.8,
+      "lineStyle": "dashed",
+      "color": "#d946ef",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "slow"
+    },
+    "flow_aiop": {
+      "thickness": 1.8,
+      "lineStyle": "dashed",
+      "color": "#d946ef",
+      "animated": true,
+      "arrowEnd": "closed",
+      "routing": "bezier",
+      "animSpeed": "slow"
+    },
+    "flow_serve": {
+      "thickness": 1.8,
+      "lineStyle": "dotted",
+      "color": "#94a3b8",
+      "animated": false,
+      "arrowEnd": "open",
+      "routing": "bezier"
+    },
+    "flow_build": {
+      "thickness": 1.8,
+      "lineStyle": "dotted",
+      "color": "#94a3b8",
+      "animated": false,
+      "arrowEnd": "open",
+      "routing": "bezier"
+    },
+    "flow_review": {
+      "thickness": 1.8,
+      "lineStyle": "dotted",
+      "color": "#94a3b8",
+      "animated": false,
+      "arrowEnd": "open",
+      "routing": "bezier"
+    },
+    "dep_001": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_002": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_003": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_004": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_005": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_006": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_007": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_008": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_009": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_010": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_011": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_012": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_013": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_014": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_015": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_016": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_017": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_018": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_019": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_020": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_021": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_022": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_023": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_024": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_025": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_026": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_027": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_028": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_029": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_030": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_031": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_032": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_033": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_034": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_035": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_036": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_037": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_038": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_039": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_040": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_041": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_042": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_043": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_044": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_045": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_046": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_047": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    },
+    "dep_048": {
+      "thickness": 1.5,
+      "lineStyle": "dashed",
+      "color": "#64748b",
+      "animated": false,
+      "arrowEnd": "closed",
+      "routing": "smoothstep"
+    }
+  },
+  "notes": {
+    "cnt_web": "**Web Host \u2014 ASP.NET Core 10**\n\nTranslates wire **operations** (polymorphic JSON) into engine calls, owns the **SignalR** hub (op stream \u002B delta broadcast) and the REST endpoints (load \u00B7 snapshot \u00B7 layout \u00B7 views). The **only** place LLM access lives.\n\n#squad: Core",
+    "cnt_client": "**Web Client \u2014 React 19 \u002B Vite**\n\nRenders the active view on an \u0060@xyflow/react\u0060 canvas, captures gestures as operations, and patches its local graph from deltas. **Holds no authoritative model state** \u2014 a refresh re-fetches the snapshot.\n\n#squad: Frontend",
+    "mod_stemmaengine": "**StemmaEngine \u2014 workspace facade**\n\nLoads the folder as a Roslyn \u0060MSBuildWorkspace\u0060, holds the canonical model in memory, applies operations as targeted \u0060DocumentEditor\u0060 rewrites, and emits deltas.\n\n\u003E Pure: depends only on Roslyn \u002B \u0060Stemma.Model\u0060. No web / LLM references (ADR-0008).",
+    "mod_dslwriter": "**DslWriter \u2014 DocumentEditor**\n\nEvery model edit is a *targeted node replacement* that preserves trivia byte-for-byte.\n\n\u26A0\uFE0F Never \u0060NormalizeWhitespace()\u0060. Never rebuild a file by string concatenation. The git diff must contain **only** the intended change.",
+    "mod_layoutcache": "**Sidecar Cache \u2014 lib/layout.ts**\n\nOne shared in-memory cache for all presentation state (positions, styles, notes, custom props, shapes).\n\n\u003E Primed **once** per workspace, then authoritative; debounce-flushed to \u0060stemma.layout.json\u0060. Re-fetching mid-session clobbers unflushed edits.",
+    "sys_git": "**Git Working Tree \u2014 the database**\n\nThere is no SQLite, no Postgres, no embedded store. The model **is** \u0060Architecture/Architecture.cs\u0060 \u002B \u0060Views/*.cs\u0060; presentation is \u0060stemma.layout.json\u0060. History, branching, and review are Git\u0027s job.",
+    "mod_llmservice": "**LLM Service**\n\nThe single home of LLM access. Proposes model edits the agent applies through the engine as ordinary operations. Kept out of the engine to preserve purity.\n\n#squad: Core #domain: AI",
+    "mod_fidelity": "**Round-trip Fidelity Suite**\n\nThe core gate: for every operation on a file \u0060F\u0060, \u0060F\u0027\u0060 differs **only** in the targeted region. xUnit \u002B FluentAssertions; minimal / realistic / pathological fixtures per operation.\n\n#squad: QA"
+  },
+  "customProps": {
+    "cnt_web": {
+      "framework": "ASP.NET Core 10",
+      "transport": "REST \u002B SignalR",
+      "squad": "Core"
+    },
+    "cnt_client": {
+      "framework": "React 19 \u002B Vite",
+      "canvas": "@xyflow/react"
+    },
+    "mod_stemmaengine": {
+      "purity": "Roslyn \u002B Model only"
+    },
+    "mod_dslwriter": {
+      "rule": "DocumentEditor only"
+    },
+    "mod_layoutcache": {
+      "rule": "prime once, never re-fetch"
+    }
+  },
+  "annotations": {}
+}
