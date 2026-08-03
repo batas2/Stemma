@@ -66,7 +66,7 @@ public static class WorkspaceScaffold
             $"""
              # {name}
 
-             An architecture model maintained with [Stemma](https://github.com/stemmahq/stemma).
+             An architecture model maintained with [Stemma](https://github.com/batas2/Stemma).
 
              - `Architecture/Architecture.cs` — the model itself. This is the source of truth.
              - `Views/` — saved views, once you create them.

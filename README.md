@@ -1,5 +1,8 @@
 # Stemma
 
+[![CI](https://github.com/batas2/Stemma/actions/workflows/ci.yml/badge.svg)](https://github.com/batas2/Stemma/actions/workflows/ci.yml)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](./LICENSE)
+
 > **Your architecture, written in your source.** Humans and AI agents edit the same model, and every
 > change arrives as a reviewable diff. UI edits become Roslyn rewrites of real `.cs` files — the
 > diagram can't drift from the code, because the diagram *is* the code.
@@ -61,8 +64,20 @@ stemma/
 │   ├── Stemma.Engine/     — Roslyn workspace, operations, DSL reader/writer, layout sidecar
 │   ├── Stemma.Web/        — ASP.NET Core 10 host + SignalR + (LLM access)
 │   └── Stemma.Web.Client/ — React 19 + Vite + @xyflow/react + zustand + Tailwind
-└── samples/              — demo workspaces (NetworkAggregation, SupplierNetwork, EnterpriseApi, …)
+└── samples/              — demo workspaces (AuroraRail, StemmaArchitecture, DemoSolution)
 ```
+
+## Quick start
+
+```bash
+git clone https://github.com/batas2/Stemma.git
+cd Stemma
+./run.sh --dev --workspace samples/AuroraRail
+```
+
+[`samples/AuroraRail`](./samples/AuroraRail/) is the reference workspace: a fictional rail-ticketing
+platform with 66 elements, four saved views and three narrative books, exercising every part of the
+DSL. [`samples/StemmaArchitecture`](./samples/StemmaArchitecture/) is Stemma modelling itself.
 
 ## Build & test
 
@@ -75,5 +90,16 @@ npx vite build                              # build
 npx vitest run                              # tests
 ```
 
-A good first workspace to open is [`samples/NetworkAggregation`](./samples/NetworkAggregation/) — a
-full model exercising every feature across three perspective views.
+## License
+
+Stemma is **source-available, not open source**, under the
+[PolyForm Noncommercial License 1.0.0](./LICENSE).
+
+- **Free** for any noncommercial purpose — personal use, study, hobby projects, and use by
+  charities, educational institutions, public research bodies and government.
+- **Not free** for commercial use of any kind: using it inside a business, building paid services
+  on it, or selling it or a derivative. That needs a commercial licence —
+  <kontakt@bfrackowiak.pl>.
+
+You may read, modify and share the source within those limits. Contributions are welcome on the same
+terms; see [CONTRIBUTING.md](./CONTRIBUTING.md).

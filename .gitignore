@@ -33,6 +33,16 @@ Thumbs.db
 *.stemma.local.json
 .stemma/
 
+# Regenerable discovery/metrics caches (ADR-0007) — never source of truth
+discovered.stemma.json
+metrics.stemma.json
+
+# Private material that must never reach the public repo: real client diagrams and
+# any workspace reconstructed from them. Keep those in ~/code/stemma-private-examples.
+ExampleArchs/
+samples/private/
+*.drawio
+
 # Frontend bundle output (rebuilt from src/Stemma.Web.Client)
 src/Stemma.Web/wwwroot/assets/
 src/Stemma.Web/wwwroot/index.html

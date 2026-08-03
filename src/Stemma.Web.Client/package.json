@@ -3,6 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/batas2/Stemma.git",
+    "directory": "src/Stemma.Web.Client"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

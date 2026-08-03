@@ -9,5 +9,10 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <Authors>Bartosz Frąckowiak</Authors>
+    <Copyright>Copyright 2026 Bartosz Frąckowiak</Copyright>
+    <RepositoryUrl>https://github.com/batas2/Stemma</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/batas2/Stemma</PackageProjectUrl>
   </PropertyGroup>
 </Project>
