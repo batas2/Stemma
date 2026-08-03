@@ -66,11 +66,16 @@ stemma/
 
 ## Quick start
 
+Needs the **.NET 10 SDK** and **Node 24+**. Nothing else — no database, no container.
+
 ```bash
 git clone https://github.com/batas2/Stemma.git
 cd Stemma
 ./run.sh --dev --workspace samples/AuroraRail
 ```
+
+`--dev` runs the backend on `:5050` and Vite on `:5173`; `--prod` bundles the client and serves
+everything from `:5050`. A model-only workspace (no `.csproj`) opens without the SDK entirely.
 
 [`samples/AuroraRail`](./samples/AuroraRail/) is the reference workspace: a fictional rail-ticketing
 platform with 66 elements, four saved views and three narrative books, exercising every part of the
