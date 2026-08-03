@@ -3,6 +3,14 @@
 The full contribution guide lives in
 [`.doc/engineering/contributing.md`](./.doc/engineering/contributing.md). This is the short version.
 
+## Licensing of contributions
+
+Stemma is source-available under the [PolyForm Noncommercial License 1.0.0](./LICENSE), and
+commercial licences are sold separately by the copyright holder. By opening a pull request you agree
+that your contribution is licensed to the project under those same terms, and that the copyright
+holder may include it in commercially licensed builds. If that does not work for you, open an issue
+instead — a described problem is a contribution too.
+
 ## Working principles (non-negotiable)
 
 - **Round-trip fidelity is sacred.** Any change that risks it needs a test before merge. A failing

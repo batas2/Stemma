@@ -69,12 +69,15 @@ D bundles into A/B. E enabled passively. F only if a client shows up by themselv
    Remaining: buy `stemma.dev` (~€15/yr), reserve the NuGet id and GitHub org, and run an
    EUIPO/USPTO class 9/42 search to confirm no live word mark survives the acquisition.
    Full rationale, alternatives and consequences: [ADR-0015](../architecture/decisions/0015-project-name-and-market-positioning.md).
-2. **License.** Recommended default: **FSL (Functional Source License)** or BSL for the whole
-   repo — source-available, free for non-commercial/internal use, converts to Apache-2.0 after
-   2 years; sell commercial licenses on top. Alternative: MIT core + closed `Publish` service.
-   > 🔍 **Needs deeper thinking:** FSL vs BSL vs MIT-core split — affects community goodwill,
-   > contribution policy, and whether competitors can host your sharing layer. One evening of
-   > reading + a written ADR-style decision in this folder.
+2. **License. — Decided: PolyForm Noncommercial 1.0.0.** The repository is public and readable,
+   and every noncommercial use — personal, study, hobby, charities, education, public research,
+   government — is free. Commercial use of any kind requires a separate licence bought from the
+   copyright holder. Chosen over FSL/BSL because those permit internal commercial use and only
+   forbid competing products: that gives away exactly the buyer this plan sells to (§2). Chosen
+   over MIT-core because MIT lets anyone fork and sell the tool the plan charges for.
+   Consequences to accept: it is **not** OSI open source, GitHub will label it "Other", and some
+   contributors will not send PRs to a noncommercially-licensed repo. The dual-licence model in
+   §3A works on top of it unchanged — the paid product is the commercial grant.
 3. **Legal/tax rails (Poland).** Side income needs an invoice path: JDG (działalność) or selling
    exclusively through a **Merchant of Record (Lemon Squeezy / Paddle)** which handles EU VAT,
    OSS/MOSS, and invoices — strongly recommended; MoR fee (~5% + payment costs) is the price of
@@ -172,7 +175,7 @@ page live.
 
 - [x] Naming — **Stemma** chosen; domain/NuGet/org still to be reserved — §4 Phase 0.1
 - [ ] Trademark search (EUIPO/USPTO class 9/42) on "Stemma" — §4 Phase 0.1
-- [ ] License model: FSL vs BSL vs MIT-core (blocks public repo) — §4 Phase 0.2
+- [x] License model — **PolyForm Noncommercial 1.0.0** committed; public repo unblocked — §4 Phase 0.2
 - [ ] PL tax/accounting path for MoR income (blocks first sale) — §4 Phase 0.3
 - [ ] Free vs paid feature line, written once (blocks pricing page) — §3
 - [ ] Wedge validation: 5–10 consultant interviews (blocks Publish build) — §2
@@ -183,8 +186,9 @@ page live.
 
 ## 8. Immediate next actions (when we "plan it correctly")
 
-1. Buy `stemma.dev`; reserve the `Stemma` NuGet id and the `stemmahq` GitHub org.
-2. License session → commit LICENSE + pricing-line decision.
+1. Buy `stemma.dev`; reserve the `Stemma` NuGet id and the `stemmahq` GitHub org. The repository
+   itself is published from a personal account first: <https://github.com/batas2/Stemma>.
+2. Pricing-line decision (the licence itself is settled — PolyForm Noncommercial 1.0.0).
 3. Accountant call (MoR + JDG question).
 4. Add report footer link + opt-in telemetry (two small PRs).
 5. Landing page + demo GIF → soft-launch to 10 architects you know personally.
