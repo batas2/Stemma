@@ -901,18 +901,38 @@ function CanvasInner() {
       const vp = getViewportForBounds(bounds, rfEl.clientWidth, rfEl.clientHeight, 0.05, 2.5, padding);
       setViewport(vp);
 
-      // Publish where the content now sits, in screen pixels, derived from the same numbers that
-      // produced the transform. The capture crops to this instead of re-measuring the DOM: element
-      // rects include bezier overshoot that varies by a few tens of pixels between runs, which is
-      // how the same view came out at three different heights.
-      const box = {
-        x: bounds.x * vp.zoom + vp.x,
-        y: bounds.y * vp.zoom + vp.y,
-        width: bounds.width * vp.zoom,
-        height: bounds.height * vp.zoom,
+      // Publish where the content sits, in screen pixels. The node hull comes from the same numbers
+      // that produced the transform — measuring it from the DOM instead was not reproducible,
+      // because element rects include bezier overshoot that moved by tens of pixels between runs.
+      //
+      // Edge labels are the exception and have to be measured: they are positioned by the edge
+      // renderer, not by the node bounds, so a label on a leftmost edge sits outside the hull and
+      // gets sliced off by the crop. The transform is fixed and unanimated by this point, so
+      // measuring is stable here in a way it was not before.
+      const hull = {
+        left: bounds.x * vp.zoom + vp.x,
+        top: bounds.y * vp.zoom + vp.y,
+        right: (bounds.x + bounds.width) * vp.zoom + vp.x,
+        bottom: (bounds.y + bounds.height) * vp.zoom + vp.y,
       };
-      document.documentElement.dataset.stemmaRenderBox = JSON.stringify(box);
-      window.dispatchEvent(new CustomEvent('stemma:render-fitted'));
+
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const labels = document.querySelectorAll(
+          '.react-flow__edge-text, .react-flow__edge-textwrapper, .react-flow__edgelabel-renderer > *'
+        );
+        for (const el of labels) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) continue;
+          hull.left = Math.min(hull.left, r.left);
+          hull.top = Math.min(hull.top, r.top);
+          hull.right = Math.max(hull.right, r.right);
+          hull.bottom = Math.max(hull.bottom, r.bottom);
+        }
+        document.documentElement.dataset.stemmaRenderBox = JSON.stringify({
+          x: hull.left, y: hull.top, width: hull.right - hull.left, height: hull.bottom - hull.top,
+        });
+        window.dispatchEvent(new CustomEvent('stemma:render-fitted'));
+      }));
     }
     window.addEventListener('stemma:render-fit', onRenderFit);
     return () => window.removeEventListener('stemma:render-fit', onRenderFit);

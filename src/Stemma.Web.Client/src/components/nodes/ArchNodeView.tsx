@@ -338,8 +338,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         ) : (
           <>
             {(showField('kind') || (showField('status') && status)) && (
-              <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0">
-                <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
+              <div className="stemma-node-header px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0">
+                <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
                 {showField('kind') && (
                   <span className="stemma-node-kind text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
                     {labelForKind[e.kind]}

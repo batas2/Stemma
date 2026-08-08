@@ -105,7 +105,9 @@ export function RenderShell({ params }: { params: RenderParams }) {
 
       if (!fitRequested && nodes.length > 0 && stillFor >= VIEWPORT_STABLE_POLLS) {
         fitRequested = true;
-        window.dispatchEvent(new CustomEvent('stemma:render-fit', { detail: { padding: 0.06 } }));
+        // Enough slack that an edge label hanging off the leftmost node still has viewport to sit in;
+        // the crop trims the rest back to the content anyway.
+        window.dispatchEvent(new CustomEvent('stemma:render-fit', { detail: { padding: 0.12 } }));
       }
 
       // A safety valve, not a success path: if something never settles the page stays in `loading`

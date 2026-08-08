@@ -285,6 +285,9 @@
 /* The type chip, the kind icon, the fan-in/out badges and the "in <context>" line are all
    orientation aids for someone working in the tool. In a seven-box argument diagram they are noise
    competing with the sentence the box is there to carry. */
+/* With the kind chip and the icon gone the header is an empty strip with a rule under it, which
+   reads as a rendering fault rather than as restraint. */
+[data-stemma-profile='publication'] .stemma-node-header,
 [data-stemma-profile='publication'] .stemma-node-kind,
 [data-stemma-profile='publication'] .stemma-node-icon,
 [data-stemma-profile='publication'] .stemma-node-meta,
