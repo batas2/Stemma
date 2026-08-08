@@ -4,10 +4,20 @@
 > diagrams from a Stemma model as reliably as it currently produces them in draw.io.
 > Written **2026-08-08** against `main`. Feature records it should spawn are listed in §9.
 >
-> **Phase 0 shipped 2026-08-08.** All four items in §6's first phase are done: the sidecar no longer
-> drops unknown sections (B-001), node titles wrap instead of clipping, image export takes
-> transparency / scale / padding as options, and the sidecar format has a published JSON Schema.
-> Everything from Phase 1 on remains proposal. Per-item status is marked inline below.
+> **Phases 0 and 1 shipped, Phase 2 and 3 partly, all on 2026-08-08.** Status per item is marked
+> inline below and, more usefully, in the feature records F-004 through F-010.
+>
+> **Built:** the sidecar keeps unknown sections (B-001); node titles wrap; export takes
+> transparency, scale and padding; the format has a published JSON Schema; `stemma render` turns a
+> model and a view into an image with no browser and no mouse; a publication profile and named
+> palettes; layout as a declarative constraint with nudges as offsets; `stemma validate`; a render
+> manifest and `--check`; the `Concept` element kind (ADR-0018).
+>
+> **Not built:** the protocol reference and its three worked examples (F-007), free-form shapes as
+> an authorable annotation surface (D2), true vector output (F-009), a UI for authoring layout
+> constraints, and the `Relation` link kind deferred in §8 · Q3. The consequence is visible in the
+> acceptance test below: the *boxes* of the benchmark diagram now come out of a Stemma workspace
+> with one command, and its arrows, swimlane labels and accent do not.
 
 ## 0. Why this document exists
 
@@ -25,7 +35,7 @@ document reads it as a bug report against the product.
 The stakes are larger than one blog. The same missing capability — *turn a model plus a view into a
 correct image without a human touching a mouse* — is what View Books, the Architecture Report
 (F-001), and any future sharing layer all need. Publication rendering is not a blog feature; it is
-the projection half of "the diagram *is* the code", and it is currently unbuilt.
+the projection half of "the diagram *is* the code", and it was unbuilt when this was written.
 
 ### The new persona
 
@@ -40,8 +50,8 @@ introduces a fifth, and it is not a human:
 > drag anything.
 
 Ada is not a niche. Ada is what "AI agents edit the same model" (`vision.md`) looks like when the
-output is a picture rather than a diff — and Stemma today serves the diff half well and the picture
-half not at all.
+output is a picture rather than a diff — and when this was written Stemma served the diff half well
+and the picture half not at all.
 
 ### The workload, concretely
 
@@ -53,7 +63,7 @@ Two to three diagrams per post, roughly weekly, in two distinct classes:
 | **Architecture diagram** | a real C4 container view, a dependency shape, a strangler migration | Exactly what the Stemma DSL already models — typed elements, lifecycle, links with payloads. |
 
 Stemma should be *dramatically* better than draw.io at the second class, because the model is real
-and the picture cannot drift. It is currently worse at both. The second class is where the win is,
+and the picture cannot drift. When this was written it was worse at both. The second class is where the win is,
 and it is also, awkwardly, the class where the tooling gap bites hardest, because a strict
 architecture diagram has more elements and therefore more layout to get right.
 
@@ -99,7 +109,9 @@ requirements list. Here is a real published diagram's entire source
 </mxCell>
 ```
 
-Eight properties matter, and Stemma has roughly two of them:
+Eight properties matter. Stemma had roughly two of them when this was written and now has six —
+the two outstanding are free annotation ink (5) and a human reopening the result to edit one arrow
+(8), which is what F-009 is for:
 
 1. **One declarative text file holds everything** — semantics, geometry, and style. Nothing lives in
    a browser, a database, or a session.
@@ -328,17 +340,17 @@ The goal is that Ada, reading one document, can write a correct workspace on the
   non-browser writer exists, an undocumented format is a broken contract. Pair it with
   `[JsonExtensionData]` on the server types so unknown sections round-trip instead of vanishing
   (fixes G5's loss independently of documenting it).
-- **A2 · `.doc/protocol/authoring-a-diagram.md`** — one agent-facing reference covering the complete
+- **A2 · `.doc/protocol/authoring-a-diagram.md` — not built.** — one agent-facing reference covering the complete
   chain: `Architecture.cs` vocabulary → `Views/<Name>.cs` → `stemma.layout.json` → render command.
   Distinct in audience from `architecture/domain-model.md`, which explains the DSL to people building
   Stemma. This one explains it to a writer who will never open the app, and it must carry **three
   complete, copy-pasteable worked examples**: an argument diagram, a C4 container view, and a
   dependency view. Examples beat prose for this reader by a wide margin.
-- **A3 · `STEMMA.md` in the workspace scaffold.** `WorkspaceScaffold.cs` already generates new
+- **A3 · `STEMMA.md` in the workspace scaffold — not built.** `WorkspaceScaffold.cs` already generates new
   workspaces; have it drop a short agent-facing brief at the root — vocabulary, id conventions,
   "run `stemma render` to see it", the seven-box rule. The same trick `CLAUDE.md` plays for this
   repository, applied to every workspace Stemma creates.
-- **A4 · `stemma validate --json`.** Expose the existing `RuleEngine` plus the id-integrity check
+- **A4 · `stemma validate --json`. ✅ Shipped.** Expose the existing `RuleEngine` plus the id-integrity check
   that currently lives only in `AuroraRailSampleTests`, as machine-readable output: dangling ids,
   view members that don't exist, links whose endpoints aren't both in the view (they silently don't
   render — `domain-model.md:66`), and a soft warning above seven nodes. An agent can act on a JSON
@@ -348,7 +360,7 @@ The goal is that Ada, reading one document, can write a correct workspace on the
 
 The centrepiece. Everything else is worth less until this exists.
 
-- **B1 · `stemma render` CLI.**
+- **B1 · `stemma render` CLI. ✅ Shipped.**
 
   ```
   stemma render <workspace> --view view_destinations \
@@ -366,7 +378,7 @@ The centrepiece. Everything else is worth less until this exists.
   The CLI is `src/Stemma.Cli` (§8 · Q1), driving the page through `Microsoft.Playwright`. Not
   `Stemma.Engine` — rendering is a web concern and engine purity is inviolable.
 
-- **B2 · A deterministic readiness signal.** The render route sets
+- **B2 · A deterministic readiness signal. ✅ Shipped.** The render route sets
   `document.documentElement.dataset.stemmaRender = 'ready'` once the model is loaded, the sidecar is
   primed (**awaited**, not raced), layout is applied, fonts are loaded, and React Flow reports all
   nodes measured. This deletes eight `waitForTimeout` calls and is the difference between a script
@@ -384,19 +396,19 @@ The centrepiece. Everything else is worth less until this exists.
   of line breaking. Build it after B1 ships and the publication styling has settled. The rejected
   alternative — a standalone server-side SVG renderer — and the reasoning are in §8 · Q2.
 
-- **B5 · A render manifest.** Each render emits a sibling JSON: view id, element ids included,
+- **B5 · A render manifest. ✅ Shipped.** Each render emits a sibling JSON: view id, element ids included,
   bounding box, and a hash of `(model, view, layout, profile)`. The blog build can then fail loudly
   when a committed PNG no longer matches its source. This is the whole "diagram that cannot lie"
   thesis extended past the app window — and it is something draw.io structurally cannot offer.
 
 ### Track C — Layout as data, not as gestures
 
-- **C1 · Make the sidecar sufficient.** Move `viewLayouts` (layout mode) out of localStorage into
+- **C1 · Make the sidecar sufficient. ✅ Shipped.** Move `viewLayouts` (layout mode) out of localStorage into
   `stemma.layout.json` (`views.<key>.layoutMode`), and let saved positions win unconditionally when
   the mode is `custom`. Fix the shapes/handles drop (G5). After this, a fresh clone renders
   byte-identically to the author's machine — which is not true today.
 
-- **C2 · A declarative layout DSL.** The highest-leverage idea in this document. An LLM is poor at
+- **C2 · A declarative layout DSL. ✅ Shipped.** The highest-leverage idea in this document. An LLM is poor at
   pixel coordinates and excellent at intent, so let it express intent and have Stemma solve for
   pixels:
 
@@ -422,12 +434,12 @@ The centrepiece. Everything else is worth less until this exists.
   it; solved coordinates are not committed. §8 · Q6 works through why, and corrects an earlier
   version of this bullet that had the constraint dissolve on first drag.
 
-- **C3 · Auto-layout available headlessly.** `autoLayout.ts` is already pure functions over
+- **C3 · Auto-layout available headlessly. ◑ Partly** — the size estimator (C4) exists; the algorithms are still client-only. `autoLayout.ts` is already pure functions over
   `(elements, links, sizes)` — good design, wrong reachability. Expose the four algorithms via
   `stemma render --layout hierarchical` and as a Node-callable entry point. For strict architecture
   diagrams with twenty elements this is the fast path; C2 is for the seven-box arguments.
 
-- **C4 · DOM-free size estimation.** C3 needs node dimensions before a DOM exists. Add a text-metrics
+- **C4 · DOM-free size estimation. ✅ Shipped.** C3 needs node dimensions before a DOM exists. Add a text-metrics
   estimator (font, size, wrap width, visible field count → w×h) shared by the layout code and the
   renderer, so `stemma render --layout …` produces the same arrangement the canvas would.
 
@@ -436,17 +448,17 @@ The centrepiece. Everything else is worth less until this exists.
 - **D1 · Wrap node labels. ✅ Shipped.** Replace `truncate` at `ArchNodeView.tsx:361` with wrapping plus an
   explicit `width` in `nodeStyles`. One line of Tailwind; removes a hard constraint that currently
   distorts the writing itself.
-- **D2 · Make free-form shapes real.** Once G5's persistence is fixed and A1 documents the schema,
+- **D2 · Make free-form shapes real. ◑ Partly** — B-001 fixed the persistence and the schema documents them; there is still no authoring surface. Once G5's persistence is fixed and A1 documents the schema,
   `shapes.ts` already covers the *annotation* half of what argument diagrams need — labels for
   swimlanes, dashed frames, callouts. Keep those presentation-side: they are ink, not model, and
   putting them in `Architecture.cs` would violate "code is the database" for something that carries
   no meaning at all.
-- **D5 · A `Concept` element kind** (§8 · Q3). The other half: a box that participates in the
+- **D5 · A `Concept` element kind. ✅ Shipped (ADR-0018).** (§8 · Q3). The other half: a box that participates in the
   argument's graph — arrows connect it, a view includes it, the layout DSL positions it — while
   asserting nothing about a system. This is the one model change in the whole proposal, it is the fix
   for G6's semantic abuse, and it carries the full operation procedure (≥3 round-trip fixtures before
   implementation). The `Concept`-versus-ink boundary is drawn in §8 · Q3.
-- **D3 · A `publication` render profile.** Outline-only boxes, no kind chip, no icon, no shadow, no
+- **D3 · A `publication` render profile. ✅ Shipped.** Outline-only boxes, no kind chip, no icon, no shadow, no
   background grid, no status badge, `visibleFields: ['name']` by default, hairline edges. The delta
   between the two PNGs in §3 is almost entirely this one setting.
 - **D4 · Named export palettes.** A palette is a **render argument**, not workspace state:
@@ -525,12 +537,12 @@ It is declared, read, and preserved, but nothing has written it since free-form 
 *`capture.mjs` can now drop its light/dark pair — one transparent PNG serves both themes — and the
 node titles it had to keep under thirty characters no longer clip.*
 
-**Phase 1 — the render pipeline (~1–2 weeks).** The phase that changes the workflow.
+**Phase 1 — the render pipeline. ✅ Shipped 2026-08-08.** The phase that changes the workflow.
 `[B1: stemma render + /render route]` · `[B2: readiness signal]` · `[D3: publication profile]` ·
 `[C1: layoutMode into the sidecar]` · `[G7: process-per-render isolation, §8 · Q5]`.
 *After this, `capture.mjs` is deleted and the acceptance test's first half passes.*
 
-**Phase 2 — authorability (~2–3 weeks).**
+**Phase 2 — authorability. ◑ Partly shipped 2026-08-08** — C2, C3/C4 and D5 are done; A2 and D2 are not.
 `[C2: layout DSL]` · `[C3+C4: headless auto-layout with size estimation]` · `[A2: the protocol doc
 with three worked examples]` · `[D2: shapes documented and authorable]` · `[D4: named palettes]` ·
 `[D5: the Concept kind]`.
@@ -540,7 +552,7 @@ diagram no longer has to claim it is a bounded context.*
 D5 is the only item in the programme that touches the engine and therefore the fidelity suite. It can
 be deferred a phase without blocking anything else; everything before it is presentation-side.
 
-**Phase 3 — proving it (~1 week, later).**
+**Phase 3 — proving it. ◑ Partly shipped 2026-08-08** — B5 and A4 are done; A3, B4 and G9 are not.
 `[B5: render manifest + staleness check]` · `[A4: validate --json]` · `[A3: STEMMA.md scaffold]` ·
 `[B4: SVG-emitting publication profile]` · `[G9: fix the draw.io exporter to honour positions, view
 filter, and palette]`.

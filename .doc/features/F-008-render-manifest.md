@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-008 |
-| **Status** | `Ready` |
+| **Status** | `Shipped` (v1) |
 | **Owner** | Bartosz |
 | **Persona served** | The Essayist's Agent ("Ada"); anyone publishing a model-backed picture |
 | **Roadmap horizon** | `Later` |
@@ -23,13 +23,13 @@
 > As **Ada**, I want each rendered file to carry what it was made from so that a build can fail when
 > the picture no longer matches the model.
 
-- [ ] AC1 — Each render writes a sibling `<name>.manifest.json`: view id, element ids drawn, profile,
+- [x] AC1 — Each render writes a sibling `<name>.manifest.json`: view id, element ids drawn, profile,
       palette, scale, per-file dimensions and node counts.
-- [ ] AC2 — The manifest carries a fingerprint of the inputs — model, view membership, layout,
+- [x] AC2 — The manifest carries a fingerprint of the inputs — model, view membership, layout,
       profile — stable across machines.
-- [ ] AC3 — `stemma render --check` re-computes the fingerprint and exits non-zero when it differs,
+- [x] AC3 — `stemma render --check` re-computes the fingerprint and exits non-zero when it differs,
       without writing anything.
-- [ ] AC4 — `--no-manifest` opts out.
+- [x] AC4 — `--no-manifest` opts out.
 
 ## 3. Architecture impact
 
@@ -55,9 +55,9 @@
 
 ## 7. Test plan
 
-- [ ] Fingerprint stability: same inputs, same value, independent of path and machine.
-- [ ] Fingerprint sensitivity: a changed element name, view membership or constraint changes it.
-- [ ] `--check` exits non-zero on drift and writes nothing.
+- [x] Fingerprint stability: same inputs, same value, independent of path and machine.
+- [x] Fingerprint sensitivity: a changed element name, view membership or constraint changes it.
+- [x] `--check` exits non-zero on drift and writes nothing.
 
 ## 8. Definition of Done
 
@@ -65,8 +65,9 @@
 
 ## 9. Notes / open questions
 
-Not built. A first cut existed during F-004 and was removed to keep that change to one idea.
+Shipped 2026-08-08. A first cut existed during F-004 and was removed to keep that change to one
+idea; it landed with `stemma validate`.
 
-Open: whether the fingerprint should cover node *sizes*. They depend on the font, so including them
+Still open: whether the fingerprint should cover node *sizes*. They depend on the font, so including them
 makes the check machine-sensitive; excluding them means a font change can alter the picture without
 the manifest noticing.

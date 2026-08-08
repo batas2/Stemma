@@ -22,10 +22,10 @@ Living feature records — one Markdown file per feature, created from
 | [F-004](./F-004-headless-diagram-render.md) | Headless diagram render (`stemma render`) | Shipped (v1) | Next | Bartosz |
 | [F-005](./F-005-publication-profile-and-palettes.md) | Publication render profile & named export palettes | Shipped (v1) | Next | Bartosz |
 | [F-006](./F-006-declarative-layout-dsl.md) | Declarative layout DSL in the presentation sidecar | Shipped (v1) | Next | Bartosz |
-| [F-007](./F-007-sidecar-schema-and-protocol.md) | Sidecar schema, protocol reference, workspace `STEMMA.md` | In progress | Next | Bartosz |
-| [F-008](./F-008-render-manifest.md) | Render manifest & staleness detection | Ready | Later | Bartosz |
+| [F-007](./F-007-sidecar-schema-and-protocol.md) | Sidecar schema, protocol reference, workspace `STEMMA.md` | In progress (schema shipped) | Next | Bartosz |
+| [F-008](./F-008-render-manifest.md) | Render manifest & staleness detection | Shipped (v1) | Later | Bartosz |
 | [F-009](./F-009-vector-output.md) | True vector output from the publication profile | Draft | Later | Bartosz |
-| [F-010](./F-010-concept-element-kind.md) | The `Concept` element kind — the one engine change; needs an ADR | Ready | Next | Bartosz |
+| [F-010](./F-010-concept-element-kind.md) | The `Concept` element kind ([ADR-0018](../architecture/decisions/0018-concept-element-kind.md)) | Shipped (v1) | Next | Bartosz |
 | [F-011](./F-011-diagnostics-and-logging.md) | Diagnostics & logging — a leveled, structured record of what the engine did | Draft | Next | Bartosz |
 
 F-011 **blocks F-002** — the desktop shell's "backend failed to start" state needs a log file to

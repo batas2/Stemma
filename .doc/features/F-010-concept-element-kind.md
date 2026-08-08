@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-010 |
-| **Status** | `Ready` |
+| **Status** | `Shipped` (v1) |
 | **Owner** | Bartosz |
 | **Persona served** | The Essayist's Agent ("Ada") |
 | **Roadmap horizon** | `Next` |
@@ -25,25 +25,25 @@
 > As **Ada**, I want a box that asserts nothing about a system so that an essay's argument does not
 > have to claim it is a bounded context.
 
-- [ ] AC1 — `Concept(Id, Name)` exists in `Stemma.Model` with no context, system, lifecycle or
+- [x] AC1 — `Concept(Id, Name)` exists in `Stemma.Model` with no context, system, lifecycle or
       ownership semantics.
-- [ ] AC2 — It belongs to no built-in lens; it appears only in views that name it.
-- [ ] AC3 — It renders as a plain box, automatically under the publication profile.
-- [ ] AC4 — `AddElement` / `RenameElement` / `RemoveElement` handle it with full round-trip fidelity.
-- [ ] AC5 — `validate` warns when a view mixes `Concept` with structural kinds, and notes when a model
+- [x] AC2 — It belongs to no built-in lens; it appears only in views that name it.
+- [x] AC3 — It renders as a plain box, automatically under the publication profile.
+- [x] AC4 — `AddElement` / `RenameElement` / `RemoveElement` handle it with full round-trip fidelity.
+- [x] AC5 — `validate` warns when a view mixes `Concept` with structural kinds, and notes when a model
       is majority-`Concept` — "this is a figure, not an architecture". Both informational.
 
 ## 3. Architecture impact
 
-- [ ] **Model or presentation?** Model. **This is the only engine change in the whole programme.**
-- [ ] **New/changed operations:** `AddElementOp`, `RenameElementOp`, `RemoveElementOp` for the new
+- [x] **Model or presentation?** Model. **This is the only engine change in the whole programme.**
+- [x] **New/changed operations:** `AddElementOp`, `RenameElementOp`, `RemoveElementOp` for the new
       kind — each needs **≥3 round-trip fixtures (minimal / realistic / pathological) written before
       the implementation**, per `CLAUDE.md`.
-- [ ] **Fidelity:** directly in scope. `DslWriter` must emit `new Concept(...)` without disturbing
+- [x] **Fidelity:** directly in scope. `DslWriter` must emit `new Concept(...)` without disturbing
       trivia; no `NormalizeWhitespace`, no string rebuilds.
 - [ ] **Engine purity:** unaffected.
 - [ ] **Sidecar:** unaffected.
-- [ ] **ADR needed?** **Yes.** A vocabulary addition is exactly the kind of decision the ADR template
+- [x] **ADR needed?** **Yes** — written as [ADR-0018](../architecture/decisions/0018-concept-element-kind.md). A vocabulary addition is exactly the kind of decision the ADR template
       exists for, and the reasoning — that you cannot prevent an escape hatch, only choose whether it
       is labelled — should outlive this record.
 - **Affected files/areas:** `Stemma.Model/Concepts.cs`, `ArchModel.cs` (`ArchElementKind`),
@@ -72,14 +72,17 @@
 
 ## 7. Test plan
 
-- [ ] Round-trip fixtures for each new operation: minimal, realistic, pathological.
-- [ ] `DslReader` reads a `Concept` declaration; `DslWriter` emits one that reads back identically.
+- [x] Round-trip fixtures: twelve, across minimal / realistic / pathological.
+- [x] `DslReader` reads a `Concept` declaration; `DslWriter` emits one that reads back identically.
 - [ ] A sample workspace exercising it, so the kind is covered by something that ships.
-- [ ] `validate` emits the two informational checks.
+- [x] `validate` emits the two checks.
 
 ## 8. Definition of Done
 
-- [ ] ACs met · [ ] fidelity suite green · [ ] ADR written and referenced · [ ] docs updated
+- [x] ACs met · [x] fidelity suite green · [x] ADR written and referenced · [x] docs updated
+- [ ] A figure-shaped sample workspace. Aurora Rail is an architecture and deliberately has no
+      `Concept`; its coverage assertion excludes the kind for that reason, which means nothing that
+      ships exercises it yet.
 
 ## 9. Notes / open questions
 
