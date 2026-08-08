@@ -358,7 +358,13 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                 data.editing
                   ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
                   : <div
-                      className={clsx('font-medium text-zinc-900 dark:text-zinc-100 truncate cursor-text shrink-0', titleSize)}
+                      // The title wraps rather than clipping: for an argument diagram the box label
+                      // *is* a sentence, and `truncate` silently ate it at roughly thirty
+                      // characters, which pushed authors into shortening their prose to fit the
+                      // node. `break-words` covers the one case wrapping cannot — a single
+                      // unbroken token longer than the box. Width is still bounded by
+                      // `max-w-[260px]`, or by `nodeStyle.width` when one is set.
+                      className={clsx('font-medium text-zinc-900 dark:text-zinc-100 break-words cursor-text shrink-0', titleSize)}
                       style={titleStyle}
                       title="Double-click to rename · double-click the box to write text"
                       onDoubleClick={(ev) => { ev.stopPropagation(); data.onStartRename?.(id); }}
