@@ -2,8 +2,12 @@
 
 > Capability gap analysis: what Stemma needs before an LLM agent can produce publication-grade
 > diagrams from a Stemma model as reliably as it currently produces them in draw.io.
-> Written **2026-08-08** against `main`. Status: **research / proposal** — nothing here is
-> committed work. Feature records it should spawn are listed in §9.
+> Written **2026-08-08** against `main`. Feature records it should spawn are listed in §9.
+>
+> **Phase 0 shipped 2026-08-08.** All four items in §6's first phase are done: the sidecar no longer
+> drops unknown sections (B-001), node titles wrap instead of clipping, image export takes
+> transparency / scale / padding as options, and the sidecar format has a published JSON Schema.
+> Everything from Phase 1 on remains proposal. Per-item status is marked inline below.
 
 ## 0. Why this document exists
 
@@ -66,9 +70,12 @@ Stemma:
 - **Never encode meaning in colour alone** — position, label, or line style must carry it too.
 - Seven boxes maximum, one question per diagram.
 
-Every one of those bullets is currently violated by Stemma's PNG export. That is not a criticism of
-the canvas — the canvas is styled for an application, correctly — it is the observation that
-**"render for the screen" and "render for print" are different jobs and Stemma only has the first.**
+Every one of those bullets was violated by Stemma's PNG export when this was written. Phase 0 closed
+the two mechanical ones — the export can now be transparent and can be scaled. The rest are about
+*what the canvas draws*, not how it is captured, and they stand: the ink, the chrome, the shadows and
+the colour-coded status badges are all still app UI. That is not a criticism of the canvas — the
+canvas is styled for an application, correctly — it is the observation that **"render for the screen"
+and "render for print" are different jobs and Stemma still only has the first.**
 
 ---
 
@@ -128,7 +135,7 @@ than they look.
 | Model validation | ✗ | ✓ `RuleEngine`, violations surfaced on canvas |
 | Views as code, re-projectable | ✗ | ✓ `Views/<Name>.cs`, three base lenses |
 | Node/edge appearance vocabulary | ✓ | ✓ and arguably richer (`nodeStyles.ts`, `edgeStyles.ts`: fills, borders, radius, shadow, accent bar, animation, per-edge routing and both-end markers) |
-| Free-form annotation shapes | ✓ | ~ built (`shapes.ts`: rect/ellipse/triangle/label/arrow/image) but does not survive a reload — see G5 |
+| Free-form annotation shapes | ✓ | ✓ built (`shapes.ts`: rect/ellipse/triangle/label/arrow/image); the reload loss in G5 was fixed in Phase 0 |
 | Auto-layout | ~ (basic) | ✓ four tunable algorithms (`autoLayout.ts`: hierarchical, force, focused, byType) |
 | **Author the whole diagram as text** | ✓ | ✗ |
 | **Headless render to image** | ✓ | ✗ |
@@ -201,7 +208,7 @@ const opts = { backgroundColor: getComputedStyle(document.body).backgroundColor 
                pixelRatio: 2, filter };
 ```
 
-- **The background is always opaque** — the body colour, by construction. Transparency, which the
+- **The background is always opaque** — the body colour, by construction. **[Fixed in Phase 0.]** Transparency, which the
   blog contract requires, is not expressible. This is why the post ships *light/dark PNG pairs* and
   a `<picture>` element: two files, two renders, twice the surface for drift, purely to work around
   one hard-coded value.
@@ -262,7 +269,7 @@ To draw an essay's argument, the experiment declared *"Contracts at the seams"* 
 compiles, validates, and means nothing. Worse, the semantic types then *drive the rendering* — hence
 the `BOUNDED CONTEXT` chips and the repeated context line in the picture.
 
-And a hard constraint the author had to design around, recorded in the workspace source: *"Kept
+And a hard constraint the author had to design around, recorded in the workspace source **[fixed in Phase 0 — titles now wrap]**: *"Kept
 short: the node clips its title around thirty characters."* `ArchNodeView.tsx:361` applies Tailwind's
 `truncate` — `overflow: hidden; text-overflow: ellipsis; white-space: nowrap`. Single line, no wrap.
 draw.io's equivalent is `whiteSpace=wrap`, one property.
@@ -314,7 +321,7 @@ export*, *easy layouting* — plus one you did not, which the evidence says is e
 
 The goal is that Ada, reading one document, can write a correct workspace on the first attempt.
 
-- **A1 · Publish the sidecar schema.** Generate `schema/stemma.layout.schema.json` from the
+- **A1 · Publish the sidecar schema. ✅ Shipped.** Generate `schema/stemma.layout.schema.json` from the
   TypeScript types (`nodeStyles.ts`, `edgeStyles.ts`, `shapes.ts`, `layout.ts`) and check it in,
   versioned alongside `LayoutSidecar.Version`. Add `$schema` to written sidecars so editors validate
   live. This reverses the "client owns the schema" position — deliberately, because the moment a
@@ -365,7 +372,7 @@ The centrepiece. Everything else is worth less until this exists.
   nodes measured. This deletes eight `waitForTimeout` calls and is the difference between a script
   that works and a script that works *today*.
 
-- **B3 · Publication export options in the shared path.** Promote the constants at
+- **B3 · Publication export options in the shared path. ✅ Shipped.** Promote the constants at
   `ArchCanvas.tsx:811-819` to parameters: `backgroundColor: 'transparent' | <token>`, `pixelRatio`,
   `padding`, `maxZoom`, and an exact node-bounds crop. Surface the same options in the UI export
   dialog so what the CLI does is what the button does.
@@ -426,7 +433,7 @@ The centrepiece. Everything else is worth less until this exists.
 
 ### Track D — A publication profile
 
-- **D1 · Wrap node labels.** Replace `truncate` at `ArchNodeView.tsx:361` with wrapping plus an
+- **D1 · Wrap node labels. ✅ Shipped.** Replace `truncate` at `ArchNodeView.tsx:361` with wrapping plus an
   explicit `width` in `nodeStyles`. One line of Tailwind; removes a hard constraint that currently
   distorts the writing itself.
 - **D2 · Make free-form shapes real.** Once G5's persistence is fixed and A1 documents the schema,
@@ -458,14 +465,14 @@ The centrepiece. Everything else is worth less until this exists.
 |---|---|---|---|
 | Author the whole diagram as text | ✓ | ✗ | ✓ (DSL + sidecar + schema) |
 | Absolute geometry authorable | ✓ | ✗ (drag only) | ✓ + declarative constraints (better) |
-| Prose-length labels | ✓ | ✗ (truncated) | ✓ |
+| Prose-length labels | ✓ | ✓ *(shipped Phase 0)* | ✓ |
 | Free annotation ink | ✓ | ~ (not persisted) | ✓ |
 | A box that claims nothing | ✓ | ✗ (must be a `Module`) | ✓ (`Concept`, D5) |
 | Headless render | ✓ | ✗ | ✓ |
-| Transparent / scaled / cropped export | ✓ | ✗ | ✓ |
+| Transparent / scaled / cropped export | ✓ | ~ transparent + scale shipped; crop still viewport-based | ✓ |
 | True vector output | ✓ | ✗ (foreignObject) | ✓ (B4) |
 | Parallel / isolated renders | ✓ | ✗ (singleton) | ✓ (G7) |
-| Documented file format | ✓ | ✗ | ✓ |
+| Documented file format | ✓ | ✓ *(schema shipped Phase 0)* | ✓ |
 | **Typed architecture semantics** | ✗ | ✓ | ✓ |
 | **Validation of the picture** | ✗ | ✓ | ✓ + render manifest |
 | **Re-projection into another view** | ✗ | ✓ | ✓ |
@@ -494,11 +501,29 @@ path, rendered with `--layout hierarchical`, correct without a single manual pos
 
 Cost estimates are rough and assume the maintainer working alone.
 
-**Phase 0 — stop the bleeding (~1 weekend).** No new architecture; fixes and one-liners that make the
-existing route survivable.
+**Phase 0 — stop the bleeding. ✅ Shipped 2026-08-08.** No new architecture; fixes and one-liners
+that make the existing route survivable.
 `[G5 fix: JsonExtensionData + shapes/handles round-trip]` · `[D1: wrap labels]` · `[B3: transparent +
 scale + pad as export options]` · `[A1: publish the sidecar schema]`.
-*After this, `capture.mjs` shrinks by roughly a third and stops needing light/dark pairs.*
+
+Two deliberate deviations from the plan as written, both erring towards not surprising existing
+users:
+
+- **B3 did not flip the default.** Export stays opaque unless asked otherwise, because changing what
+  the toolbar button produces would silently alter every existing user's output. Transparency and
+  scale are a remembered preference in the export menu instead, and the publication profile (D3)
+  will opt in explicitly. The resolution rules live in `lib/exportImage.ts` so the headless renderer
+  reaches the same code path the button does — a second path would be a second truth.
+- **A1's schema is hand-maintained, not generated.** A generator would be a build step nobody runs.
+  Two tests guard the drift that matters instead: every section the engine models must appear in the
+  schema, and the version and `$id` must match the engine's constants.
+
+It also turned up one thing the analysis had missed: **the top-level `annotations` section is dead.**
+It is declared, read, and preserved, but nothing has written it since free-form shapes moved to
+`views.<key>.shapes`. The schema records it as deprecated rather than pretending it is live.
+
+*`capture.mjs` can now drop its light/dark pair — one transparent PNG serves both themes — and the
+node titles it had to keep under thirty characters no longer clip.*
 
 **Phase 1 — the render pipeline (~1–2 weeks).** The phase that changes the workflow.
 `[B1: stemma render + /render route]` · `[B2: readiness signal]` · `[D3: publication profile]` ·
