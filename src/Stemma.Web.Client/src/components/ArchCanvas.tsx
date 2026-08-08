@@ -28,6 +28,7 @@ import { LAYOUT_ACTION_EVENT, type LayoutAction } from './LayoutPanel';
 import { ShapeLayer } from './ShapeLayer';
 import { StencilDrawer } from './StencilDrawer';
 import { loadShapes, primeShapeCache, type Shape } from '@/lib/shapes';
+import { resolveExportOptions, exportFileName, type ExportRequest } from '@/lib/exportImage';
 
 /** Bounding box of a shape (for the "fit everything" image export). */
 function shapeBoundsRect(s: Shape): { x: number; y: number; width: number; height: number } | null {
@@ -792,7 +793,8 @@ function CanvasInner() {
   // then restoring the viewport. Chrome (controls / minimap) is filtered out.
   useEffect(() => {
     async function onExport(ev: Event) {
-      const format = (ev as CustomEvent).detail?.format as 'png' | 'svg';
+      const req = (ev as CustomEvent).detail as ExportRequest;
+      const format = req?.format ?? 'png';
       const rfEl = document.querySelector('.react-flow') as HTMLElement | null;
       if (!rfEl) { setToast({ kind: 'error', text: 'Canvas not ready' }); return; }
       const rects: { x: number; y: number; width: number; height: number }[] = [];
@@ -808,7 +810,8 @@ function CanvasInner() {
       const bounds = { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
       const saved = getViewport();
       try {
-        const vp = getViewportForBounds(bounds, rfEl.clientWidth, rfEl.clientHeight, 0.05, 2.5, 0.12);
+        const ex = resolveExportOptions(req ?? { format }, getComputedStyle(document.body).backgroundColor);
+        const vp = getViewportForBounds(bounds, rfEl.clientWidth, rfEl.clientHeight, 0.05, 2.5, ex.padding);
         setViewport(vp);
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         const { toPng, toSvg } = await import('html-to-image');
@@ -816,15 +819,20 @@ function CanvasInner() {
           const cl = (node as Element).classList;
           return !(cl && (cl.contains('react-flow__controls') || cl.contains('react-flow__minimap') || cl.contains('react-flow__attribution') || cl.contains('react-flow__panel')));
         };
-        const opts = { backgroundColor: getComputedStyle(document.body).backgroundColor || '#ffffff', pixelRatio: 2, filter };
-        const dataUrl = format === 'svg' ? await toSvg(rfEl, opts) : await toPng(rfEl, opts);
+        // `backgroundColor: undefined` is how html-to-image is told to leave the backdrop alone —
+        // passing a colour of any kind, including 'transparent', paints one.
+        const opts = { backgroundColor: ex.backgroundColor, pixelRatio: ex.pixelRatio, filter };
+        const dataUrl = ex.format === 'svg' ? await toSvg(rfEl, opts) : await toPng(rfEl, opts);
         const blob = await (await fetch(dataUrl)).blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `stemma.${format}`;
+        a.download = exportFileName(ex);
         a.click();
         URL.revokeObjectURL(a.href);
-        setToast({ kind: 'success', text: `Exported ${format.toUpperCase()}` });
+        setToast({
+          kind: 'success',
+          text: `Exported ${ex.format.toUpperCase()} at ${ex.pixelRatio}×${ex.backgroundColor ? '' : ', transparent'}`,
+        });
       } catch (e) {
         setToast({ kind: 'error', text: `Export failed: ${(e as Error).message}` });
       } finally {
