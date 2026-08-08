@@ -11,6 +11,7 @@ const DEFAULT_NAMES: Record<ArchElementKind, string> = {
   question: 'Question',
   assumption: 'Assumption',
   risk: 'Risk',
+  concept: 'Concept',
 };
 
 // Auto-generate a fresh, sensible name for a new element of the given kind.

@@ -165,6 +165,45 @@ public sealed class WorkspaceCheckTests : IDisposable
     }
 
     [Fact]
+    public void A_model_that_is_mostly_concepts_is_noted_as_a_figure_not_flagged_as_wrong()
+    {
+        // `Concept` exists so an argument does not have to pretend to be an architecture. Warning
+        // about its presence would put the pretence straight back.
+        Model("""
+                    var a = new Concept("con_a", "A colleague's diff");
+                    var b = new Concept("con_b", "An agent's diff");
+                    return Model.Of(a, b);
+        """);
+        var findings = Run();
+        findings.Should().Contain(f => f.Rule == "model/is-a-figure" && f.Severity == CheckSeverity.Info);
+        findings.Where(f => f.Severity == CheckSeverity.Error).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_view_mixing_concepts_with_structural_kinds_is_a_warning()
+    {
+        Model("""
+                    var m = new Module("mod_a", "Checkout");
+                    var c = new Concept("con_a", "The thing nobody owns");
+                    return Model.Of(m, c);
+        """);
+        View("Mixed", """new(Id: "view_mixed", Name: "Mixed", BaseView: "all", ElementIds: new[] { "mod_a", "con_a" })""");
+        Run().Should().Contain(f => f.Rule == "view/mixed-register" && f.Severity == CheckSeverity.Warning);
+    }
+
+    [Fact]
+    public void A_view_of_concepts_alone_is_not_a_mixed_register()
+    {
+        Model("""
+                    var a = new Concept("con_a", "One");
+                    var b = new Concept("con_b", "Two");
+                    return Model.Of(a, b);
+        """);
+        View("Pure", """new(Id: "view_pure", Name: "Pure", BaseView: "all", ElementIds: new[] { "con_a", "con_b" })""");
+        Run().Should().NotContain(f => f.Rule == "view/mixed-register");
+    }
+
+    [Fact]
     public void Every_finding_names_its_rule_and_says_something_actionable()
     {
         // These are read by something that cannot look at the canvas, so "invalid model" is useless.

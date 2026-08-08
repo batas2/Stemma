@@ -24,6 +24,16 @@ public sealed record UseCase(string Id, string Name) : ModelElement(Id, Name);
 /// <summary>A business capability.</summary>
 public sealed record Capability(string Id, string Name, string? ContextId = null) : ModelElement(Id, Name);
 
+/// <summary>
+/// A named thing in an argument, asserting nothing about a system.
+///
+/// Deliberately the poorest element in the vocabulary: no context, no system, no lifecycle, no
+/// ownership, and no place in the built-in lenses. That poverty is the point — it exists so that an
+/// essay's argument does not have to declare itself a Bounded Context to get a box on a canvas.
+/// You cannot prevent an escape hatch; you can only choose whether it is labelled. See ADR-0018.
+/// </summary>
+public sealed record Concept(string Id, string Name) : ModelElement(Id, Name);
+
 /// <summary>A design Question raised on the canvas. `AboutId` optionally links it to the
 /// model element it concerns.</summary>
 public sealed record Question(string Id, string Name, string? AboutId = null) : ModelElement(Id, Name);

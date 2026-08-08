@@ -48,7 +48,9 @@ export type OperationKind =
 export type ArchElementKind =
   | 'module' | 'boundedContext' | 'softwareSystem'
   | 'container' | 'person' | 'useCase' | 'capability'
-  | 'question' | 'assumption' | 'risk';
+  | 'question' | 'assumption' | 'risk'
+  // A named thing in an argument, asserting nothing about a system. See ADR-0018.
+  | 'concept';
 export type ArchLinkKind = 'dataFlow' | 'dependency';
 
 export interface ArchElement {

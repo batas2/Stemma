@@ -56,9 +56,15 @@ public sealed class AuroraRailSampleTests
     {
         var arch = LoadArch();
 
+        // `Concept` is excluded on purpose. Aurora Rail is a rail-ticketing platform: it has an
+        // architecture, not an argument, and every one of its elements claims something about a
+        // system. Dropping a Concept in to satisfy a coverage assertion would be precisely the
+        // register-mixing ADR-0018 exists to stop — and this workspace is what people copy from.
+        // The right home for it is a figure-shaped sample, which does not exist yet (F-010).
+        var structural = Enum.GetValues<ArchElementKind>().Except([ArchElementKind.Concept]);
         arch.Elements.Select(e => e.Kind).Distinct().Should().BeEquivalentTo(
-            Enum.GetValues<ArchElementKind>(),
-            "the reference workspace is what people copy from - it should demonstrate the whole vocabulary");
+            structural,
+            "the reference workspace is what people copy from - it should demonstrate the whole structural vocabulary");
         arch.Links.Select(l => l.Kind).Distinct().Should().BeEquivalentTo(Enum.GetValues<ArchLinkKind>());
         arch.Elements.Should().HaveCountGreaterThan(50);
     }

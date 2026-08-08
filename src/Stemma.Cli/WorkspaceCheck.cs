@@ -50,9 +50,26 @@ public static class WorkspaceCheck
         findings.AddRange(DuplicateIds(model));
         findings.AddRange(DanglingLinkEndpoints(model, ids));
         findings.AddRange(DanglingAttributeReferences(model, ids));
+        findings.AddRange(RegisterFindings(model));
         findings.AddRange(ViewFindings(workspaceRoot, model, ids));
 
         return findings;
+    }
+
+    /// <summary>
+    /// Notes about what *kind* of document this is, per ADR-0018.
+    ///
+    /// Both are informational on purpose. `Concept` exists so an argument does not have to pretend
+    /// to be an architecture; turning its presence into a warning would put the pretence back.
+    /// </summary>
+    private static IEnumerable<CheckFinding> RegisterFindings(ArchModel model)
+    {
+        var concepts = model.Elements.Count(e => e.Kind == ArchElementKind.Concept);
+        if (concepts == 0) yield break;
+
+        if (concepts > model.Elements.Count / 2)
+            yield return new(CheckSeverity.Info, "model/is-a-figure",
+                $"{concepts} of {model.Elements.Count} elements are Concepts — this is a figure rather than an architecture, which is a fine thing to be");
     }
 
     private static IEnumerable<CheckFinding> DuplicateIds(ArchModel model)
@@ -112,6 +129,15 @@ public static class WorkspaceCheck
             else if (members.Count > BusyViewThreshold)
                 yield return new(CheckSeverity.Warning, "view/busy",
                     $"view '{view.Id}' has {members.Count} elements; past {BusyViewThreshold} a diagram has usually stopped answering one question");
+
+            // A view holding both Concepts and structural kinds is mixing rhetorical registers: half
+            // the boxes claim something about a system and half claim nothing, and the picture reads
+            // as neither an argument nor an architecture.
+            var kinds = members.Select(id => model.Elements.First(e => e.Id == id).Kind).ToList();
+            var conceptCount = kinds.Count(k => k == ArchElementKind.Concept);
+            if (conceptCount > 0 && conceptCount < kinds.Count)
+                yield return new(CheckSeverity.Warning, "view/mixed-register",
+                    $"view '{view.Id}' mixes {conceptCount} Concept(s) with {kinds.Count - conceptCount} structural element(s); a diagram usually wants to be one or the other");
 
             // Links render only when *both* endpoints are in the view. A relationship that is in the
             // model and silently absent from the picture is the failure this catches: the diagram

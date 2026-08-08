@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
-import { Box, Cuboid, Layers, Package, User, Server, Target, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, AlertTriangle } from 'lucide-react';
+import { Box, Circle, Cuboid, Layers, Package, User, Server, Target, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import type { ArchElement, ArchElementKind, ArchTagInfo } from '@/lib/types';
 import { DEFAULT_VISIBLE_FIELDS, type NodeFieldKey } from '@/lib/nodeStyles';
@@ -89,6 +89,7 @@ const iconForKind: Record<ArchElementKind, typeof Box> = {
   question: HelpCircle,
   assumption: Lightbulb,
   risk: AlertTriangle,
+  concept: Circle,
 };
 
 const labelForKind: Record<ArchElementKind, string> = {
@@ -102,6 +103,7 @@ const labelForKind: Record<ArchElementKind, string> = {
   question: 'Question',
   assumption: 'Assumption',
   risk: 'Risk',
+  concept: 'Concept',
 };
 
 const accentForKind: Record<ArchElementKind, string> = {
@@ -115,6 +117,8 @@ const accentForKind: Record<ArchElementKind, string> = {
   question: 'text-sky-500',
   assumption: 'text-amber-500',
   risk: 'text-rose-500',
+  // Neutral by design: a Concept claims nothing, so it is given no colour that suggests it does.
+  concept: 'text-zinc-400',
 };
 
 function statusStyle(status: string | null | undefined): { className: string; outline?: string } {

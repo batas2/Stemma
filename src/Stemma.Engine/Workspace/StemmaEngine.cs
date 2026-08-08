@@ -1096,6 +1096,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             ArchElementKind.Question => "q",
             ArchElementKind.Assumption => "asm",
             ArchElementKind.Risk => "risk",
+            ArchElementKind.Concept => "con",
             _ => "elem"
         };
         var existing = current.Elements.Select(e => e.Id).ToHashSet();

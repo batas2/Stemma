@@ -31,6 +31,9 @@ const palette: { kind: ArchElementKind; label: string; icon: typeof Box; accent:
   { kind: 'question', label: 'Question', icon: HelpCircle, accent: 'text-sky-500' },
   { kind: 'assumption', label: 'Assumption', icon: Lightbulb, accent: 'text-amber-500' },
   { kind: 'risk', label: 'Risk', icon: AlertTriangle, accent: 'text-rose-500' },
+  // Last in the palette, and neutral: it is the vocabulary's deliberate poor relation, not a
+  // shortcut to reach for before the kind that actually describes the thing. See ADR-0018.
+  { kind: 'concept', label: 'Concept', icon: Circle, accent: 'text-zinc-400' },
 ];
 
 const elementIcon: Record<ArchElementKind, typeof Box> = {
@@ -44,6 +47,7 @@ const elementIcon: Record<ArchElementKind, typeof Box> = {
   question: HelpCircle,
   assumption: Lightbulb,
   risk: AlertTriangle,
+  concept: Circle,
 };
 
 const elementLabel: Record<ArchElementKind, string> = {
@@ -57,6 +61,7 @@ const elementLabel: Record<ArchElementKind, string> = {
   question: 'Questions',
   assumption: 'Assumptions',
   risk: 'Risks',
+  concept: 'Concepts',
 };
 
 const CATEGORY_ORDER: ArchElementKind[] = [

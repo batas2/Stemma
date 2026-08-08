@@ -89,6 +89,8 @@ public static class DrawioExporter
         ArchElementKind.Module => "rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656",
         ArchElementKind.UseCase => "ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450",
         ArchElementKind.Capability => "rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf",
+        // Outline only: a Concept asserts nothing, so it gets no colour that implies it does.
+        ArchElementKind.Concept => "rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#767884",
         _ => "rounded=1;whiteSpace=wrap;html=1"
     };
 
@@ -101,6 +103,7 @@ public static class DrawioExporter
         ArchElementKind.Module => "Module",
         ArchElementKind.UseCase => "UseCase",
         ArchElementKind.Capability => "Capability",
+        ArchElementKind.Concept => "Concept",
         _ => kind.ToString()
     };
 }

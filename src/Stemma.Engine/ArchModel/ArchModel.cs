@@ -10,7 +10,7 @@ public sealed record ArchModel(
     IReadOnlyList<ArchLink> Links,
     IReadOnlyList<ArchTag> Tags);
 
-public enum ArchElementKind { Module, BoundedContext, SoftwareSystem, Container, Person, UseCase, Capability, Question, Assumption, Risk }
+public enum ArchElementKind { Module, BoundedContext, SoftwareSystem, Container, Person, UseCase, Capability, Question, Assumption, Risk, Concept }
 public enum ArchLinkKind { DataFlow, Dependency }
 
 public sealed record ArchElement(

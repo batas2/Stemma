@@ -16,7 +16,7 @@ public static class DslReader
     private static readonly HashSet<string> ElementTypeNames = new(StringComparer.Ordinal)
     {
         "Module", "BoundedContext", "SoftwareSystem", "Container", "Person", "UseCase", "Capability",
-        "Question", "Assumption", "Risk"
+        "Question", "Assumption", "Risk", "Concept"
     };
 
     private static readonly HashSet<string> LinkTypeNames = new(StringComparer.Ordinal)
@@ -205,6 +205,9 @@ public static class DslReader
             ArchElementKind.Question => new[] { "id", "name", "aboutId" },
             ArchElementKind.Assumption => new[] { "id", "name", "aboutId" },
             ArchElementKind.Risk => new[] { "id", "name", "aboutId" },
+            // Id and name, and nothing else. A Concept that acquired a contextId would be a Module
+            // with extra steps, which is the thing this kind exists to avoid.
+            ArchElementKind.Concept => new[] { "id", "name" },
             _ => new[] { "id", "name" }
         };
         string? id = null;
