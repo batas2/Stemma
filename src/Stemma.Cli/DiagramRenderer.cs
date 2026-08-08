@@ -167,20 +167,99 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
         """;
 
     /// <summary>
-    /// Serialise the live edge layer as standalone SVG.
+    /// Serialise the drawing as a standalone SVG.
     ///
-    /// Honest about what this is: React Flow draws edges as real SVG, so those come out as true
-    /// vector, while nodes are HTML and are not represented here. It is useful for reworking edge
-    /// routing in a vector editor; it is not yet a substitute for the PNG. Emitting nodes as SVG
-    /// primitives from the same component tree is the remaining half.
+    /// Both halves come out of the live DOM: React Flow draws edges as SVG already, and under the
+    /// publication profile each node body is SVG too, so this composes what is on screen rather than
+    /// re-deriving it. That is the whole design — a standalone renderer would have to measure and
+    /// break text itself, and a break landing one word differently changes a box height and shifts
+    /// everything below it in a grid.
+    ///
+    /// Two things have to be resolved on the way out, because a file opened elsewhere has neither:
+    /// the CSS custom properties carrying the palette, and the viewport transform.
     /// </summary>
     private const string SerializeSvgScript = """
         () => {
-          const svg = document.querySelector('.react-flow__edges');
-          if (!svg) return null;
-          const clone = svg.cloneNode(true);
-          clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-          return new XMLSerializer().serializeToString(clone);
+          const flow = document.querySelector('.react-flow');
+          const viewport = document.querySelector('.react-flow__viewport');
+          if (!flow || !viewport) return null;
+
+          const raw = document.documentElement.dataset.stemmaRenderBox;
+          const box = raw ? JSON.parse(raw) : { x: 0, y: 0, width: flow.clientWidth, height: flow.clientHeight };
+
+          // translate(Xpx, Ypx) scale(Z) — the pan and zoom the canvas settled on.
+          const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)(?:\s*scale\(([\d.]+)\))?/.exec(viewport.style.transform || '');
+          const vx = m ? parseFloat(m[1]) : 0, vy = m ? parseFloat(m[2]) : 0, z = m && m[3] ? parseFloat(m[3]) : 1;
+
+          const NS = 'http://www.w3.org/2000/svg';
+          const out = document.createElementNS(NS, 'svg');
+          out.setAttribute('xmlns', NS);
+          out.setAttribute('width', String(Math.round(box.width)));
+          out.setAttribute('height', String(Math.round(box.height)));
+          out.setAttribute('viewBox', `0 0 ${Math.round(box.width)} ${Math.round(box.height)}`);
+
+          // Markers (arrowheads) live outside the edge layer and are referenced by url(#id).
+          for (const defs of document.querySelectorAll('svg defs')) out.appendChild(defs.cloneNode(true));
+
+          // Edges are drawn in flow coordinates inside the viewport, so one group carries the
+          // whole pan and zoom for all of them.
+          const edgeLayer = document.querySelector('.react-flow__edges');
+          if (edgeLayer) {
+            const g = document.createElementNS(NS, 'g');
+            g.setAttribute('transform', `translate(${vx - box.x}, ${vy - box.y}) scale(${z})`);
+            for (const child of edgeLayer.children) g.appendChild(child.cloneNode(true));
+
+            // Edge paths take their stroke from a stylesheet class, which a standalone file does not
+            // have — without this the arrowheads survive and the lines they belong to vanish. Read
+            // the computed value off each original and write it onto its clone.
+            const originals = edgeLayer.querySelectorAll('path');
+            const clones = g.querySelectorAll('path');
+            for (let i = 0; i < clones.length && i < originals.length; i++) {
+              const cs = getComputedStyle(originals[i]);
+              for (const prop of ['stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'fill']) {
+                const value = cs.getPropertyValue(prop);
+                if (value && value !== 'none' || prop === 'fill') clones[i].setAttribute(prop, value || 'none');
+              }
+            }
+            out.appendChild(g);
+          }
+
+          // Each node body is authored unscaled, so it is placed by its own screen rect and then
+          // scaled — which keeps the text metrics identical to what was measured.
+          for (const node of document.querySelectorAll('.react-flow__node')) {
+            const svg = node.querySelector('svg.stemma-pub-node');
+            if (!svg) continue;
+            const r = node.getBoundingClientRect();
+            const g = document.createElementNS(NS, 'g');
+            g.setAttribute('transform', `translate(${r.left - box.x}, ${r.top - box.y}) scale(${z})`);
+            for (const child of svg.children) g.appendChild(child.cloneNode(true));
+            out.appendChild(g);
+          }
+
+          // Edge labels are HTML, positioned by the label renderer. Re-emit them as SVG text so the
+          // file needs no foreignObject — which is what made the old SVG browser-only.
+          for (const label of document.querySelectorAll('.stemma-edge-label')) {
+            const text = (label.textContent || '').trim();
+            if (!text) continue;
+            const r = label.getBoundingClientRect();
+            const el = document.createElementNS(NS, 'text');
+            el.setAttribute('x', String(r.left - box.x));
+            el.setAttribute('y', String(r.top - box.y + r.height * 0.75));
+            el.setAttribute('font-family', 'Inter, ui-sans-serif, system-ui, sans-serif');
+            el.setAttribute('font-size', String(10 * z));
+            el.setAttribute('fill', getComputedStyle(label).color);
+            el.textContent = text;
+            out.appendChild(el);
+          }
+
+          // A standalone file has no custom properties, so bake the palette into the markup.
+          const root = getComputedStyle(document.documentElement);
+          let markup = new XMLSerializer().serializeToString(out);
+          for (const name of ['--pub-stroke', '--pub-text', '--pub-accent', '--pub-fill']) {
+            const value = root.getPropertyValue(name).trim();
+            if (value) markup = markup.split(`var(${name})`).join(value);
+          }
+          return markup;
         }
         """;
 

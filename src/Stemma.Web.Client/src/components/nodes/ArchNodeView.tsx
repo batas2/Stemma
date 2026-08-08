@@ -6,6 +6,7 @@ import type { ArchElement, ArchElementKind, ArchTagInfo } from '@/lib/types';
 import { DEFAULT_VISIBLE_FIELDS, type NodeFieldKey } from '@/lib/nodeStyles';
 import { RichTextEditor } from '../RichTextEditor';
 import { renderNotes } from '@/lib/notesMarkdown';
+import { PublicationNode } from './PublicationNode';
 
 export type TagsByTarget = Record<string, ArchTagInfo>;
 
@@ -165,6 +166,11 @@ const BUILTIN_KEYS = new Set<string>([
 ]);
 
 export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
+  // Read from the document rather than threaded through props: the profile is a render-wide mode
+  // set on the root, and every node in a render is in the same one.
+  const publicationProfile = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-stemma-profile') === 'publication';
+
   const e = data.element;
   const tag = data.tag;
   const nodeStyle = data.nodeStyle;
@@ -256,6 +262,29 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         onCommit={data.onCommitName}
         onCancel={data.onCancelEdit}
       />
+    );
+  }
+
+  // Publication profile: the node body is SVG primitives rather than a styled div, so `--format svg`
+  // can serialise a real vector drawing instead of HTML wrapped in a foreignObject. Same component,
+  // same measured text — a second renderer would be a second truth about what the diagram looks like.
+  if (publicationProfile) {
+    return (
+      <>
+        <PublicationNode
+          name={e.name}
+          width={nodeStyle?.width}
+          height={nodeStyle?.height}
+          dashed={status === 'to-be-created' || status === 'proposed' || nodeStyle?.borderStyle === 'dashed'}
+          accent={nodeStyle?.accentColor !== undefined || nodeStyle?.borderColor !== undefined}
+        />
+        {DOCK_HANDLES.map((h) => (
+          <Fragment key={h.id}>
+            <Handle type="source" id={h.id} position={h.position} style={h.style} />
+            <Handle type="target" id={h.id} position={h.position} style={h.style} />
+          </Fragment>
+        ))}
+      </>
     );
   }
 

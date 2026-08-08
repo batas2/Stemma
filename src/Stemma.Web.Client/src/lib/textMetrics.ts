@@ -15,12 +15,19 @@
 export const NODE_MIN_WIDTH = 180;
 export const NODE_MAX_WIDTH = 260;
 
-/** Card chrome around the text: horizontal padding, and the header + body padding vertically. */
-const PADDING_X = 24;
-const HEADER_HEIGHT = 30;
-const BODY_PADDING_Y = 16;
+/**
+ * Card chrome around the text.
+ *
+ * Exported because the publication node draws with the same numbers. They were duplicated at first
+ * and immediately drifted — the estimator padded a box by 16 and the renderer by 24 — which is the
+ * one disagreement that matters here: the solver places boxes at the estimated size and the picture
+ * draws them at the rendered one.
+ */
+export const PADDING_X = 24;
+export const HEADER_HEIGHT = 30;
+export const BODY_PADDING_Y = 16;
 
-const TITLE_LINE_HEIGHT = 20;
+export const TITLE_LINE_HEIGHT = 20;
 const META_LINE_HEIGHT = 14;
 
 /**
@@ -91,12 +98,10 @@ export function estimateNodeSize(input: EstimateInput): { w: number; h: number }
  * jumps once the measurements land.
  */
 export function sizesFor(
-  nodes: EstimateInput[] & { id?: string }[] | Array<EstimateInput & { id: string }>,
+  nodes: ReadonlyArray<EstimateInput & { id: string }>,
   measured: Record<string, { w: number; h: number }> = {}
 ): Record<string, { w: number; h: number }> {
   const out: Record<string, { w: number; h: number }> = {};
-  for (const n of nodes as Array<EstimateInput & { id: string }>) {
-    out[n.id] = measured[n.id] ?? estimateNodeSize(n);
-  }
+  for (const n of nodes) out[n.id] = measured[n.id] ?? estimateNodeSize(n);
   return out;
 }
