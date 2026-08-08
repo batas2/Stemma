@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/batas2/Stemma/main/schema/stemma.layout.schema.json",
   "version": 1,
   "views": {
     "moduleMap": {

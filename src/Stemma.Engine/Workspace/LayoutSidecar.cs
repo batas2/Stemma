@@ -24,6 +24,19 @@ namespace Stemma.Engine.Workspace;
 /// </summary>
 public sealed class LayoutSidecar
 {
+    /// <summary>
+    /// Canonical location of the JSON Schema describing this file, published at
+    /// `schema/stemma.layout.schema.json` in the repository. Stamped into every sidecar that does
+    /// not already carry one so editors validate it live and anyone authoring the format by hand —
+    /// including an agent that never opens the app — has something to author against.
+    /// </summary>
+    public const string SchemaUrl =
+        "https://raw.githubusercontent.com/batas2/Stemma/main/schema/stemma.layout.schema.json";
+
+    /// <summary>Declared first so it serialises at the top of the file, where a reader looks for it.
+    /// An existing value is left alone: a workspace may deliberately pin a different copy.</summary>
+    [JsonPropertyName("$schema")] public string? Schema { get; set; }
+
     [JsonPropertyName("version")] public int Version { get; set; } = 1;
     [JsonPropertyName("views")] public Dictionary<string, ViewLayout> Views { get; set; } = new();
 
@@ -98,6 +111,7 @@ public sealed class LayoutSidecar
     public void Write(string workspaceRoot)
     {
         var path = PathFor(workspaceRoot);
+        if (string.IsNullOrWhiteSpace(Schema)) Schema = SchemaUrl;
         var json = JsonSerializer.Serialize(this, JsonOpts);
         File.WriteAllText(path, json);
     }
