@@ -1,7 +1,7 @@
 # Roadmap
 
 > Horizon framing, not date commitments. "Now" = built and in the product. "Next" = committed and
-> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-06-08**.
+> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-08-08**.
 
 ## Now — shipped and load-bearing
 
@@ -24,6 +24,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Navigation & views clarity** (Epic 13) — faster, more obvious view switching and view management.
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
 - **Sample gallery** — curated demo workspaces (today `samples/AuroraRail` and `samples/StemmaArchitecture`) that exercise every feature as living documentation.
+- **Publication rendering** — turning a model plus a view into a correct image without a human touching a mouse: a `stemma render` CLI, a publication profile and palettes, layout expressed as a constraint rather than as dragged coordinates, and a documented sidecar format. Serves the new **Essayist's Agent** persona, and is the projection half of "the diagram *is* the code" — today Stemma serves the diff half well and the picture half not at all. Ids F-004…F-010 are reserved; the gap analysis, the six decisions behind it, and the phasing are in [`agent-authored-diagrams.md`](./agent-authored-diagrams.md).
 
 ## Later — directional
 
