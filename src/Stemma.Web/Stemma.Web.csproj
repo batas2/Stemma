@@ -7,5 +7,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Stemma.Engine\Stemma.Engine.csproj" />
     <PackageReference Include="QuestPDF" Version="2024.12.0" />
+    <!-- Logging providers live here and only here. The engine sees the abstraction only (ADR-0020),
+         and there is deliberately no network sink: a Stemma record carries the user's architecture. -->
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
   </ItemGroup>
 </Project>

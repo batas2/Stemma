@@ -50,3 +50,18 @@ Green tests are required per change — see [`../engineering/testing.md`](../eng
 The model's history *is* Git history. Branches are work-in-progress; tags mark model snapshots; PRs
 are how architecture changes are reviewed (the diff shows in both code and canvas). There is no
 separate migration system because there is no separate store.
+
+## Diagnostics
+
+`Microsoft.Extensions.Logging` as the API everywhere; **Serilog** as the provider in `Stemma.Web`
+only, with the console and rolling-file sinks. `Microsoft.Extensions.Logging` ships no file provider
+and its three console formatters are the whole of the box, so a provider was needed; Serilog was
+chosen over NLog (heavier to configure for one sink) and the OpenTelemetry file exporter (drags in
+the OTel SDK to solve a problem deliberately scoped out).
+
+It is wired as a provider behind `ILogger`, so **no call site names Serilog** and the choice stays
+reversible in one file. The engine never sees it: it depends on
+`Microsoft.Extensions.Logging.Abstractions` alone ([ADR-0020](./decisions/0020-diagnostics-contract.md)).
+
+**There is no network sink and none can be configured.** Logs go to the console and to
+`~/.stemma/logs/`, capped at 20 MB per file, 10 files, 14 days.

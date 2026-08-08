@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { reportFailure, ClientEvent } from '@/lib/log';
 import { Sparkles, FolderOpen, Clock, FileCode, Lightbulb, Layers } from 'lucide-react';
 import { StemmaMark } from './Logo';
 import { useApp } from '@/lib/store';
@@ -16,7 +17,7 @@ export function EmptyState() {
   const setToast = useApp((s) => s.setToast);
   const [recents, setRecents] = useState<RecentEntry[]>([]);
 
-  useEffect(() => { listRecents().then(setRecents).catch(() => {}); }, []);
+  useEffect(() => { listRecents().then(setRecents).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading recent workspaces')); }, []);
 
   async function createModel() {
     const name = await promptText({

@@ -1,4 +1,5 @@
 import * as signalR from '@microsoft/signalr';
+import { correlationId } from './log';
 import type { OperationEnvelope, OperationResult } from './types';
 
 let connection: signalR.HubConnection | null = null;
@@ -31,9 +32,13 @@ export function onExternalChange(cb: () => void) {
   return () => externalListeners.delete(cb);
 }
 
+/**
+ * The hub carries the correlation id as an argument rather than a header — SignalR has no header on
+ * an invocation, and the id has to survive the hop for AC5 to hold end to end.
+ */
 export async function applyOperation(op: OperationEnvelope): Promise<OperationResult> {
   const conn = await ensureConnection();
-  return conn.invoke<OperationResult>('ApplyOperation', op);
+  return conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
 }
 
 export async function undoOperation(): Promise<OperationResult | null> {

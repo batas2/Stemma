@@ -5,6 +5,11 @@
 #   --prod       Build frontend bundle into Stemma.Web/wwwroot, then run backend only.
 #   --window     Open Stemma in its own chrome-less window instead of a browser tab.
 #   --workspace  Optional absolute or relative path to a workspace to auto-open.
+#   --log-level  trace | debug | information | warning | error | critical | none  (default: information)
+#   --log-format simple | json   (default: simple on a terminal, json when stdout is a pipe)
+#
+# Logs are written to ~/.stemma/logs/ as JSON lines and are capped without you doing anything.
+# Nothing is sent anywhere: a Stemma record carries your architecture (ADR-0020).
 
 set -euo pipefail
 
@@ -13,16 +18,26 @@ cd "$(dirname "$0")"
 MODE="dev"
 WINDOW=0
 WORKSPACE=""
+LOG_LEVEL=""
+LOG_FORMAT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dev) MODE="dev"; shift ;;
     --prod) MODE="prod"; shift ;;
     --window) WINDOW=1; shift ;;
     --workspace) WORKSPACE="$2"; shift 2 ;;
-    -h|--help) sed -n '1,10p' "$0"; exit 0 ;;
+    --log-level) LOG_LEVEL="$2"; shift 2 ;;
+    --log-format) LOG_FORMAT="$2"; shift 2 ;;
+    -h|--help) sed -n '1,16p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
+
+# --- Diagnostics -----------------------------------------------------------
+# Passed as environment rather than as arguments so both launch paths below get them without each
+# having to thread flags through `dotnet run --`.
+[[ -n "$LOG_LEVEL" ]] && export STEMMA_LOG_LEVEL="$LOG_LEVEL"
+[[ -n "$LOG_FORMAT" ]] && export STEMMA_LOG_FORMAT="$LOG_FORMAT"
 
 # --- Stale-process cleanup -------------------------------------------------
 # Kill any leftover Stemma.Web binary or dotnet host bound to our backend port.

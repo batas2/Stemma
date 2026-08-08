@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import { reportFailure, ClientEvent } from '@/lib/log';
 import clsx from 'clsx';
 import {
   ReactFlow,
@@ -1183,7 +1184,9 @@ function CanvasInner() {
         {
           id: 'copy-id', label: 'Copy id', icon: ContextIcons.Copy, hint: elem.id,
           onClick: () => {
-            navigator.clipboard?.writeText(elem.id).catch(() => {});
+            // Clipboard access is denied on an insecure origin and by user policy. The user sees
+            // nothing copied, which is its own feedback, but the reason belongs in the log.
+            navigator.clipboard?.writeText(elem.id).catch(reportFailure('Canvas', ClientEvent.Unhandled, 'Copying the element id'));
             setToast({ kind: 'success', text: `Copied ${elem.id}` });
           },
         },
@@ -1271,7 +1274,7 @@ function CanvasInner() {
         {
           id: 'copy-id', label: 'Copy id', icon: ContextIcons.Copy, hint: edge.id,
           onClick: () => {
-            navigator.clipboard?.writeText(edge.id).catch(() => {});
+            navigator.clipboard?.writeText(edge.id).catch(reportFailure('Canvas', ClientEvent.Unhandled, 'Copying the relationship id'));
             setToast({ kind: 'success', text: `Copied ${edge.id}` });
           },
         },
@@ -1790,7 +1793,7 @@ function CanvasInner() {
       const known = Object.keys(fresh.shapes);
       const candidates = new Set<string>([layoutKey, ...known]);
       candidates.forEach((key) => setShapesFor(key, loadShapes(workspace.rootPath, key)));
-    }).catch(() => {});
+    }).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the shape cache'));
   }, [workspace?.rootPath, setShapesFor, layoutKey]);
 
   // On view switch, refresh the active view's shapes from the (already-primed) cache

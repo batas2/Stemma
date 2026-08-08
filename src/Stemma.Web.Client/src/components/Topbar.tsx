@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { reportFailure, ClientEvent } from '@/lib/log';
 import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock, LogOut, ArrowLeftRight } from 'lucide-react';
 import { StemmaLockup } from './Logo';
 import { useApp } from '@/lib/store';
@@ -24,7 +25,7 @@ export function Topbar() {
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [undoState, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null });
 
-  useEffect(() => { listRecents().then(setRecents).catch(() => {}); }, [ws?.rootPath]);
+  useEffect(() => { listRecents().then(setRecents).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading recent workspaces')); }, [ws?.rootPath]);
 
   useEffect(() => {
     if (!ws) return;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { reportFailure, ClientEvent } from '@/lib/log';
 import { Check, MessageSquare, Send, Trash2, Upload, X } from 'lucide-react';
 import {
   type CommentEntry, type CommentsSidecar,
@@ -27,7 +28,7 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { fetchAuthor().then(setAuthor); }, []);
-  useEffect(() => { fetchComments().then(setSidecar).catch(() => {}); }, [targetKind, targetId]);
+  useEffect(() => { fetchComments().then(setSidecar).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading comments')); }, [targetKind, targetId]);
 
   const items = useMemo(() => commentsForTarget(sidecar, targetKind, targetId), [sidecar, targetKind, targetId]);
 

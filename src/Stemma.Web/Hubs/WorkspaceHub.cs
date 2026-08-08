@@ -1,15 +1,28 @@
 using Microsoft.AspNetCore.SignalR;
 using Stemma.Engine.Operations;
+using Stemma.Web.Diagnostics;
 using Stemma.Web.Services;
 
 namespace Stemma.Web.Hubs;
 
-public sealed class WorkspaceHub(EngineHost host) : Hub
+public sealed class WorkspaceHub(EngineHost host, ILogger<WorkspaceHub> log) : Hub
 {
     private readonly EngineHost _host = host;
 
-    public async Task<OperationResult> ApplyOperation(OperationBase op)
+    /// <summary>
+    /// The correlation id arrives as an argument because a SignalR invocation has no headers. Opening
+    /// a scope with it here is what makes AC5 hold across the hop: every engine record produced while
+    /// this runs carries the same id as the HTTP calls around it.
+    /// </summary>
+    public async Task<OperationResult> ApplyOperation(OperationBase op, string? correlationId = null)
     {
+        using var scope = log.BeginScope(new Dictionary<string, object>
+        {
+            ["correlationId"] = correlationId ?? "(none)",
+            ["opId"] = op.OpId,
+        });
+        WebLog.HubOperationReceived(log, op.GetType().Name, op.OpId);
+
         var result = await _host.ApplyAsync(op, Context.ConnectionAborted);
         if (result is OperationApplied applied)
         {

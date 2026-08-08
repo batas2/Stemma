@@ -26,7 +26,7 @@ Living feature records — one Markdown file per feature, created from
 | [F-008](./F-008-render-manifest.md) | Render manifest & staleness detection | Shipped (v1) | Later | Bartosz |
 | [F-009](./F-009-vector-output.md) | True vector output from the publication profile | Shipped (v1) | Later | Bartosz |
 | [F-010](./F-010-concept-element-kind.md) | The `Concept` element kind ([ADR-0018](../architecture/decisions/0018-concept-element-kind.md)) | Shipped (v1) | Next | Bartosz |
-| [F-011](./F-011-diagnostics-and-logging.md) | Diagnostics & logging — a leveled, structured record of what the engine did | Draft | Next | Bartosz |
+| [F-011](./F-011-diagnostics-and-logging.md) | Diagnostics & logging — a leveled, structured record of what the engine did | Shipped (v1, no UI panel) | Next | Bartosz |
 
 F-011 **blocks F-002** — the desktop shell's "backend failed to start" state needs a log file to
 point at.

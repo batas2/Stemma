@@ -1,5 +1,9 @@
 using System.Collections.Concurrent;
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Stemma.Engine.Diagnostics;
+
 namespace Stemma.Engine.Workspace;
 
 /// <summary>
@@ -17,15 +21,18 @@ public sealed class ExternalWatcher : IAsyncDisposable
     private readonly Timer _poller;
     private readonly ConcurrentDictionary<string, DateTime> _mtimes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Func<string, bool> _shouldWatch;
+    /// <summary>Diagnostics only; absent by default (ADR-0020).</summary>
+    private readonly ILogger _log;
     private readonly object _lock = new();
     private CancellationTokenSource? _debounceCts;
 
     public event Action<string>? Changed;
 
-    public ExternalWatcher(string rootPath, Func<string, bool>? shouldWatch = null)
+    public ExternalWatcher(string rootPath, Func<string, bool>? shouldWatch = null, ILogger? log = null)
     {
         _root = rootPath;
         _shouldWatch = shouldWatch ?? (_ => true);
+        _log = log ?? NullLogger.Instance;
 
         _watcher = new FileSystemWatcher(rootPath)
         {
@@ -38,7 +45,11 @@ public sealed class ExternalWatcher : IAsyncDisposable
         _watcher.Created += OnFsEvent;
         _watcher.Deleted += OnFsEvent;
         _watcher.Renamed += (_, e) => OnFsEvent(_, e);
-        _watcher.Error += (_, _) => { /* swallow; poller compensates */ };
+        // The OS handle can be exhausted or the directory removed, at which point the watcher stops
+        // and external edits quietly stop appearing. The poller compensates, but the degradation is
+        // real and was previously invisible.
+        _watcher.Error += (_, e) => EngineLog.WatcherStopped(_log,
+            "the file system watcher reported an error; the poller is compensating", e.GetException());
 
         SeedMtimes();
         _watcher.EnableRaisingEvents = true;
@@ -55,7 +66,12 @@ public sealed class ExternalWatcher : IAsyncDisposable
                 _mtimes[path] = File.GetLastWriteTimeUtc(path);
             }
         }
-        catch { /* ignore — the poller will rebuild later */ }
+        catch (Exception e)
+        {
+            // The poller rebuilds the snapshot on its next tick, so the user recovers; but "my
+            // colleague's edit didn't show up" was unanswerable while this was silent.
+            EngineLog.ExternalChangeFailed(_log, e);
+        }
     }
 
     private IEnumerable<string> EnumerateWatched()
@@ -102,7 +118,10 @@ public sealed class ExternalWatcher : IAsyncDisposable
                 }
             }
         }
-        catch { /* ignore */ }
+        catch (Exception e)
+        {
+            EngineLog.ExternalChangeFailed(_log, e);
+        }
     }
 
     private void ScheduleEmit(string path)
@@ -115,7 +134,12 @@ public sealed class ExternalWatcher : IAsyncDisposable
             _ = Task.Delay(500, token).ContinueWith(t =>
             {
                 if (t.IsCanceled) return;
-                try { Changed?.Invoke(path); } catch { /* handler errors swallowed */ }
+                // A subscriber throwing must not take the watcher down with it — the next
+                // external edit still has to be noticed — but the failure is the user's stale
+                // canvas, so it is a warning rather than nothing.
+                EngineLog.ExternalChangeDetected(_log, path);
+                try { Changed?.Invoke(path); }
+                catch (Exception e) { EngineLog.ExternalChangeFailed(_log, e); }
             }, TaskScheduler.Default);
         }
     }

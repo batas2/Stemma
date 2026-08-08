@@ -1,4 +1,5 @@
 import type { ViewKind } from './types';
+import { reportFailure, ClientEvent } from './log';
 import { fetchLayout, saveLayoutSidecar } from './api';
 import { isLayoutConstraint, type LayoutConstraint, type LayoutOffsets } from './layoutDsl';
 
@@ -27,7 +28,8 @@ function ensureSidecar(rootPath: string): SidecarShape {
 function scheduleSidecarWrite(rootPath: string): void {
   if (pendingWrite?.rootPath === rootPath) clearTimeout(pendingWrite.timer);
   const timer = setTimeout(() => {
-    saveLayoutSidecar(sidecarCache!.sidecar).catch(() => { /* best-effort */ });
+    saveLayoutSidecar(sidecarCache!.sidecar)
+      .catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
     pendingWrite = null;
   }, 400);
   pendingWrite = { rootPath, sidecar: ensureSidecar(rootPath), timer };
@@ -211,7 +213,8 @@ export function saveLayout(workspaceRoot: string, view: ViewKind | string, posit
   // Debounced PUT to stemma.layout.json.
   if (pendingWrite?.rootPath === workspaceRoot) clearTimeout(pendingWrite.timer);
   const timer = setTimeout(() => {
-    saveLayoutSidecar(sidecarCache!.sidecar).catch(() => { /* best-effort */ });
+    saveLayoutSidecar(sidecarCache!.sidecar)
+      .catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
     pendingWrite = null;
   }, 400);
   pendingWrite = { rootPath: workspaceRoot, sidecar: sidecarCache.sidecar, timer };
@@ -265,7 +268,8 @@ export function saveEdgeWaypoints(
 
   if (pendingWrite?.rootPath === workspaceRoot) clearTimeout(pendingWrite.timer);
   const timer = setTimeout(() => {
-    saveLayoutSidecar(sidecarCache!.sidecar).catch(() => {});
+    saveLayoutSidecar(sidecarCache!.sidecar)
+      .catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
     pendingWrite = null;
   }, 400);
   pendingWrite = { rootPath: workspaceRoot, sidecar: sidecarCache.sidecar, timer };

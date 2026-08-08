@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -5,6 +6,9 @@ using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Rename;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Stemma.Engine.Diagnostics;
 using Stemma.Engine.Operations;
 using Stemma.Engine.Validation;
 using TypeKind = Stemma.Engine.Models.TypeKind;
@@ -28,16 +32,24 @@ public sealed class StemmaEngine : IAsyncDisposable
     public Microsoft.CodeAnalysis.Solution Solution => _workspace.CurrentSolution;
     public event Action<string>? ExternalChange;
 
-    private StemmaEngine(Microsoft.CodeAnalysis.Workspace workspace, WorkspaceModel model)
+    /// <summary>
+    /// Diagnostics only. Defaults to <see cref="NullLogger{T}.Instance"/> so the engine stays
+    /// constructible, testable and embeddable with no logging stack present at all (ADR-0020).
+    /// </summary>
+    private readonly ILogger<StemmaEngine> _log;
+    private string _currentOpType = "(none)";
+
+    private StemmaEngine(Microsoft.CodeAnalysis.Workspace workspace, WorkspaceModel model, ILogger<StemmaEngine>? log = null)
     {
         _workspace = workspace;
         _model = model;
+        _log = log ?? NullLogger<StemmaEngine>.Instance;
     }
 
     public void StartWatching()
     {
         _watcher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        _watcher = new ExternalWatcher(_model.RootPath, ShouldWatch);
+        _watcher = new ExternalWatcher(_model.RootPath, ShouldWatch, _log);
         _watcher.Changed += OnExternalChange;
     }
 
@@ -80,21 +92,46 @@ public sealed class StemmaEngine : IAsyncDisposable
         finally { _gate.Release(); }
     }
 
-    public static async Task<StemmaEngine> OpenAsync(string rootPath, CancellationToken ct = default)
+    public static async Task<StemmaEngine> OpenAsync(string rootPath, CancellationToken ct = default, ILogger<StemmaEngine>? log = null)
     {
+        var logger = log ?? NullLogger<StemmaEngine>.Instance;
+        var started = Stopwatch.GetTimestamp();
+
         // A repository is loaded through MSBuild; a model that is only model needs no project system
         // and no installed SDK to read (ADR-0016).
-        switch (ModelWorkspaceLoader.DetectKind(rootPath))
+        try
+        {
+            return await OpenCoreAsync(rootPath, ct, log, logger, started);
+        }
+        catch (Exception e)
+        {
+            // Opening is where a user most often meets a failure, and it is exactly the moment the
+            // desktop shell has no console to print to. Rethrown: the caller still decides.
+            EngineLog.WorkspaceOpenFailed(logger, e);
+            throw;
+        }
+    }
+
+    private static async Task<StemmaEngine> OpenCoreAsync(
+        string rootPath, CancellationToken ct, ILogger<StemmaEngine>? log, ILogger<StemmaEngine> logger, long started)
+    {
+        var kind = ModelWorkspaceLoader.DetectKind(rootPath);
+        EngineLog.LoaderSelected(logger, kind.ToString());
+        switch (kind)
         {
             case WorkspaceKind.MsBuild:
             {
-                var (ws, model) = await new WorkspaceLoader().LoadAsync(rootPath, ct);
-                return new StemmaEngine(ws, model);
+                var (ws, model) = await new WorkspaceLoader(logger).LoadAsync(rootPath, ct);
+                var engine = new StemmaEngine(ws, model, log);
+                engine.LogOpened(started);
+                return engine;
             }
             case WorkspaceKind.ModelOnly:
             {
                 var (ws, model) = ModelWorkspaceLoader.Load(rootPath);
-                return new StemmaEngine(ws, model);
+                var engine = new StemmaEngine(ws, model, log);
+                engine.LogOpened(started);
+                return engine;
             }
             default:
                 throw new InvalidOperationException(
@@ -118,11 +155,24 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> ApplyInternalAsync(OperationBase op, bool recordUndo, CancellationToken ct)
     {
+        var startedAt = Stopwatch.GetTimestamp();
+        // Named on the write records below. Safe as a field because `_gate` serialises operations.
+        _currentOpType = op.GetType().Name;
         // Capture the arch model state BEFORE the op so we can build inverse ops.
         if (recordUndo)
         {
-            try { _archBeforeOp = await ReadArchModelAsync(ct); }
-            catch { _archBeforeOp = null; }
+            try
+            {
+                _archBeforeOp = await ReadArchModelAsync(ct);
+            }
+            catch (Exception e)
+            {
+                // Undo for this operation is now impossible. Continuing is right — the edit itself is
+                // still valid — but it must not be silent: "undo stopped working" was unanswerable
+                // while this was a bare `catch { }`.
+                _archBeforeOp = null;
+                EngineLog.UndoSnapshotUnavailable(_log, op.GetType().Name, e);
+            }
         }
 
         var result = op switch
@@ -188,7 +238,23 @@ public sealed class StemmaEngine : IAsyncDisposable
                 }
             }
         }
+        // AC1 — exactly one record per operation, whatever happened. The elapsed time is here rather
+        // than on each branch so no path can complete without one.
+        var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+        if (result is OperationApplied applied)
+            EngineLog.OperationApplied(_log, op.GetType().Name, elapsedMs, applied.Deltas.Count);
+        else if (result is OperationFailed failed)
+            EngineLog.OperationFailed(_log, op.GetType().Name, elapsedMs, $"{failed.Reason}: {failed.Message}", null);
+
         return result;
+    }
+
+    private void LogOpened(long startedAt)
+    {
+        var docs = _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents).Count();
+        var arch = ReadArchModelAsync(CancellationToken.None).GetAwaiter().GetResult();
+        EngineLog.WorkspaceOpened(_log, arch?.Elements.Count ?? 0, arch?.Links.Count ?? 0, docs,
+            (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
     }
 
     private static string DescribeOp(OperationBase op) => op switch
@@ -215,6 +281,7 @@ public sealed class StemmaEngine : IAsyncDisposable
     {
         if (_watcher is not null) await _watcher.DisposeAsync();
         _workspace.Dispose();
+        EngineLog.WorkspaceClosed(_log);
         await Task.CompletedTask;
     }
 
@@ -312,8 +379,73 @@ public sealed class StemmaEngine : IAsyncDisposable
             return new OperationFailed(opId, "WouldBreakBuild", "This change introduced compile errors and was rolled back.", introduced);
         }
 
+        await VerifyWritesAsync(newSolution, backups, ct);
+
         await ReloadAsync(ct);
         return buildSuccessResult();
+    }
+
+    /// <summary>
+    /// Record what each write did, and check that what landed on disk is what was intended.
+    ///
+    /// This is what makes round-trip fidelity observable between test runs. At `Debug` a pair of
+    /// content hashes proves after the fact which operation touched which file and whether it changed
+    /// at all, for the cost of one hash. At `Trace` the same write emits a diff, which is the one
+    /// place an `IsEnabled` guard earns its keep — it is the only genuinely expensive record here.
+    ///
+    /// A mismatch is `Critical` and is emitted *before* the result is handed back, because at that
+    /// point the file on disk may be damaged and the user is about to keep editing it. Per the
+    /// standing rule the fix for such a failure is in the implementation, never in the test; this
+    /// record exists so the failure is noticed in the field, where there is no test.
+    /// </summary>
+    private async Task VerifyWritesAsync(Solution newSolution, IReadOnlyDictionary<string, string?> backups, CancellationToken ct)
+    {
+        if (backups.Count == 0) return;
+
+        var byPath = newSolution.Projects
+            .SelectMany(p => p.Documents)
+            .Where(d => d.FilePath is not null)
+            .GroupBy(d => d.FilePath!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (path, before) in backups)
+        {
+            string? onDisk = null;
+            try
+            {
+                onDisk = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
+            }
+            catch (IOException e)
+            {
+                // Reading back is diagnostics, not the operation. Failing to read must not fail an
+                // edit that has already succeeded, but it must not be silent either.
+                EngineLog.ExternalChangeFailed(_log, e);
+                continue;
+            }
+
+            var beforeHash = ContentHash.Of(before);
+            var afterHash = ContentHash.Of(onDisk);
+
+            if (beforeHash == afterHash)
+            {
+                EngineLog.DocumentUnchanged(_log, _currentOpType, path);
+                continue;
+            }
+
+            EngineLog.DocumentRewritten(_log, path, beforeHash, afterHash, before?.Length ?? 0, onDisk?.Length ?? 0);
+
+            if (_log.IsEnabled(LogLevel.Trace))
+                EngineLog.RewriteDiff(_log, path, ContentHash.UnifiedDiff(before, onDisk));
+
+            // What Roslyn intended to write, against what is actually there.
+            if (byPath.TryGetValue(path, out var doc))
+            {
+                var intended = (await doc.GetTextAsync(ct)).ToString();
+                var intendedHash = ContentHash.Of(intended);
+                if (intendedHash != afterHash)
+                    EngineLog.FidelityVerificationFailed(_log, path, _currentOpType, intendedHash, afterHash);
+            }
+        }
     }
 
     private async Task<OperationResult> AddTypeAsync(AddTypeOp op, CancellationToken ct)

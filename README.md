@@ -89,6 +89,32 @@ everything from `:5050`. A model-only workspace (no `.csproj`) opens without the
 platform with 66 elements, four saved views and three narrative books, exercising every part of the
 DSL. [`samples/StemmaArchitecture`](./samples/StemmaArchitecture/) is Stemma modelling itself.
 
+## Diagnostics
+
+Stemma writes a leveled, structured record of what the engine did to `~/.stemma/logs/`, as JSON
+lines, capped at 20 MB per file and 14 days without you doing anything.
+
+```bash
+./run.sh --dev --log-level debug      # trace | debug | information | warning | error | critical | none
+./run.sh --dev --log-format json      # simple (default on a terminal) | json (default when piped)
+```
+
+| Environment variable | Effect |
+|---|---|
+| `STEMMA_LOG_LEVEL` | Minimum level |
+| `STEMMA_LOG_FORMAT` | `simple` or `json` |
+| `STEMMA_LOG_FILE` | `on` (default) or `off` |
+| `STEMMA_LOG_DIR` | Where the files go |
+
+The level can also be changed while running, without a restart. `GET /api/diagnostics` reports the
+current level and the log path; `GET /api/diagnostics/bundle` produces a shareable bundle that is
+**redacted by default** — model content erased and absolute paths reduced — with
+`?includeModelContent=true` as an explicit opt-in.
+
+**Nothing is sent anywhere.** A Stemma log record contains element and context names, ownership
+annotations and sometimes your source: that is your architecture, so there is no network sink and
+none can be configured ([ADR-0020](./.doc/architecture/decisions/0020-diagnostics-contract.md)).
+
 ## Build & test
 
 ```bash

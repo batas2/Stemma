@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { reportFailure, ClientEvent } from '@/lib/log';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
 import { ArchCanvas } from './components/ArchCanvas';
@@ -58,8 +59,8 @@ export default function App() {
   const setBooks = useApp((s) => s.setBooks);
 
   useEffect(() => {
-    ensureConnection().catch(() => {});
-    snapshot().then((s) => { if (s) setWs(s); }).catch(() => {});
+    ensureConnection().catch(reportFailure('Signalr', ClientEvent.ConnectionLost, 'Opening the live connection'));
+    snapshot().then((s) => { if (s) setWs(s); }).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Reading the workspace snapshot'));
     // A transient archModel() failure must NOT clobber a previously good arch — use a sentinel
     // so refresh() can preserve the prior in-memory model on a 404 / network blip.
     const PRESERVE = Symbol('preserve');
@@ -72,7 +73,7 @@ export default function App() {
       ]);
       if (s) {
         setWs(s);
-        primeLayoutSidecar(s.rootPath).catch(() => {});
+        primeLayoutSidecar(s.rootPath).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
       }
       if ((a as unknown) !== PRESERVE) setArch(a);
       setViolations(v);
@@ -90,10 +91,10 @@ export default function App() {
   const wsRoot = ws?.rootPath ?? null;
   useEffect(() => {
     if (!wsRoot) { setArch(null); return; }
-    primeLayoutSidecar(wsRoot).catch(() => {});
+    primeLayoutSidecar(wsRoot).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
-    fetchBooks().then((b) => { if (b) setBooks(b); }).catch(() => {});
-    listViolations().then((v) => setViolations(v)).catch(() => {});
+    fetchBooks().then((b) => { if (b) setBooks(b); }).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading books'));
+    listViolations().then((v) => setViolations(v)).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading violations'));
   }, [wsRoot, setArch, setBooks, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
@@ -149,15 +150,15 @@ export default function App() {
     return bindShortcuts([
       {
         key: 'z', primary: true, description: 'Undo',
-        handler: () => { if (!tryLayoutUndo()) undoOperation().catch(() => {}); },
+        handler: () => { if (!tryLayoutUndo()) undoOperation().catch(reportFailure('Operations', ClientEvent.OperationFailed, 'Undo')); },
       },
       {
         key: 'z', primary: true, shift: true, description: 'Redo',
-        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(() => {}); },
+        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(reportFailure('Operations', ClientEvent.OperationFailed, 'Redo')); },
       },
       {
         key: 'y', primary: true, description: 'Redo',
-        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(() => {}); },
+        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(reportFailure('Operations', ClientEvent.OperationFailed, 'Redo')); },
       },
       { key: 'k', primary: true, description: 'Command palette', handler: () => setPaletteOpen(true) },
       { key: '/', description: 'Focus search', handler: () => focusSidebarSearch() },

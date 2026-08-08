@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { reportFailure, ClientEvent } from './log';
 import type { ArchModel, Book, BookPage, CustomView, ViewKind, Violation, WorkspaceModel } from './types';
 import { loadViews, saveViews, loadActiveView, saveActiveView, loadOpenViews, saveOpenViews } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
@@ -263,7 +264,7 @@ export const useApp = create<AppState>((set, get) => ({
       ];
       set({ customViews: merged });
       saveViews(ws.rootPath, merged);
-    }).catch(() => {});
+    }).catch(reportFailure('Views', ClientEvent.RequestFailed, 'Merging server views'));
   },
   // Re-read styles/custom-props from the committed sidecar once it finishes loading
   // (the localStorage values loaded synchronously on open are then superseded by the repo copy).
@@ -300,7 +301,8 @@ export const useApp = create<AppState>((set, get) => ({
     const ws = get().workspace;
     if (ws) saveViews(ws.rootPath, next);
     // Mirror to source as Views/<Name>.cs (best-effort; localStorage stays the in-flight cache).
-    saveServerView({ id: v.id, name: v.name, baseView: v.baseView, elementIds: v.elementIds }).catch(() => {});
+    saveServerView({ id: v.id, name: v.name, baseView: v.baseView, elementIds: v.elementIds })
+      .catch(reportFailure('Views', ClientEvent.RequestFailed, 'Saving the view'));
   },
   removeCustomView: (id) => {
     const next = get().customViews.filter((v) => v.id !== id);
@@ -313,7 +315,7 @@ export const useApp = create<AppState>((set, get) => ({
       saveOpenViews(ws.rootPath, nextOpen);
       if (wasActive) saveActiveView(ws.rootPath, null);
     }
-    deleteServerView(id).catch(() => {});
+    deleteServerView(id).catch(reportFailure('Views', ClientEvent.RequestFailed, 'Deleting the view'));
   },
   setActiveCustomView: (id) => {
     // Activating a saved view also opens it as a bottom tab (closing later only hides the tab).
@@ -348,7 +350,8 @@ export const useApp = create<AppState>((set, get) => ({
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
     const updated = next.find((v) => v.id === activeCustomViewId);
-    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds }).catch(() => {});
+    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds })
+      .catch(reportFailure('Views', ClientEvent.RequestFailed, 'Saving the view'));
   },
   removeElementFromActiveView: (elementId) => {
     const { activeCustomViewId, customViews, workspace } = get();
@@ -361,7 +364,8 @@ export const useApp = create<AppState>((set, get) => ({
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
     const updated = next.find((v) => v.id === activeCustomViewId);
-    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds }).catch(() => {});
+    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds })
+      .catch(reportFailure('Views', ClientEvent.RequestFailed, 'Saving the view'));
   },
   setSidebarOpen: (b) => set({ sidebarOpen: b }),
   // Remember the user's explicit panel choice per domain so selection changes restore it.

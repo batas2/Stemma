@@ -2,8 +2,24 @@ import type { ArchModel, Book, RecentEntry, Violation, WorkspaceModel } from './
 
 const BASE = '';
 
+import { correlationHeaders } from './log';
+
+/**
+ * Every request goes through here so the correlation header cannot be forgotten on a new endpoint.
+ *
+ * The server echoes the id back, which is what lets a client-side error record name the exchange
+ * that produced it — one grep then returns the click, the call, the operation and the write.
+ */
+async function request(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    headers: { ...(init.headers as Record<string, string> | undefined), ...correlationHeaders() },
+  });
+}
+
+
 export async function openWorkspace(rootPath: string): Promise<WorkspaceModel> {
-  const r = await fetch(`${BASE}/api/workspace/open`, {
+  const r = await request(`${BASE}/api/workspace/open`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ rootPath }),
@@ -13,7 +29,7 @@ export async function openWorkspace(rootPath: string): Promise<WorkspaceModel> {
 }
 
 export async function initWorkspace(rootPath?: string, name?: string): Promise<WorkspaceModel> {
-  const r = await fetch(`${BASE}/api/workspace/init`, {
+  const r = await request(`${BASE}/api/workspace/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ rootPath, name }),
@@ -23,39 +39,39 @@ export async function initWorkspace(rootPath?: string, name?: string): Promise<W
 }
 
 export async function snapshot(): Promise<WorkspaceModel | null> {
-  const r = await fetch(`${BASE}/api/workspace/snapshot`);
+  const r = await request(`${BASE}/api/workspace/snapshot`);
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`Snapshot failed: ${r.status}`);
   return r.json();
 }
 
 export async function closeWorkspace(): Promise<void> {
-  const r = await fetch(`${BASE}/api/workspace/close`, { method: 'POST' });
+  const r = await request(`${BASE}/api/workspace/close`, { method: 'POST' });
   if (!r.ok && r.status !== 204) throw new Error(`Close failed: ${r.status} ${await r.text()}`);
 }
 
 export async function archModel(): Promise<ArchModel | null> {
-  const r = await fetch(`${BASE}/api/workspace/arch`);
+  const r = await request(`${BASE}/api/workspace/arch`);
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`Arch fetch failed: ${r.status}`);
   return r.json();
 }
 
 export async function books(): Promise<Book[] | null> {
-  const r = await fetch(`${BASE}/api/workspace/books`);
+  const r = await request(`${BASE}/api/workspace/books`);
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`Books fetch failed: ${r.status}`);
   return r.json();
 }
 
 export async function exportMermaid(view: 'moduleMap' | 'dependencyGraph'): Promise<string> {
-  const r = await fetch(`${BASE}/api/workspace/export/mermaid?view=${view}`);
+  const r = await request(`${BASE}/api/workspace/export/mermaid?view=${view}`);
   if (!r.ok) throw new Error(`Mermaid export failed: ${r.status}`);
   return r.text();
 }
 
 export async function listViolations(): Promise<Violation[]> {
-  const r = await fetch(`${BASE}/api/workspace/violations`);
+  const r = await request(`${BASE}/api/workspace/violations`);
   if (r.status === 404) return [];
   if (!r.ok) return [];
   return r.json();
@@ -64,14 +80,14 @@ export async function listViolations(): Promise<Violation[]> {
 export interface ServerView { id: string; name: string; baseView: string; elementIds: string[]; }
 
 export async function listServerViews(): Promise<ServerView[]> {
-  const r = await fetch(`${BASE}/api/workspace/views`);
+  const r = await request(`${BASE}/api/workspace/views`);
   if (r.status === 404) return [];
   if (!r.ok) return [];
   return r.json();
 }
 
 export async function saveServerView(view: ServerView): Promise<void> {
-  const r = await fetch(`${BASE}/api/workspace/views`, {
+  const r = await request(`${BASE}/api/workspace/views`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(view),
@@ -80,12 +96,12 @@ export async function saveServerView(view: ServerView): Promise<void> {
 }
 
 export async function deleteServerView(viewId: string): Promise<void> {
-  const r = await fetch(`${BASE}/api/workspace/views/${encodeURIComponent(viewId)}`, { method: 'DELETE' });
+  const r = await request(`${BASE}/api/workspace/views/${encodeURIComponent(viewId)}`, { method: 'DELETE' });
   if (!r.ok && r.status !== 404) throw new Error(`view delete failed: ${r.status}`);
 }
 
 export async function exportDrawio(): Promise<string> {
-  const r = await fetch(`${BASE}/api/workspace/export/drawio`);
+  const r = await request(`${BASE}/api/workspace/export/drawio`);
   if (!r.ok) throw new Error(`drawio export failed: ${r.status}`);
   return r.text();
 }
@@ -94,7 +110,7 @@ export interface BookPdfPagePayload { viewId: string; title: string; narrative: 
 export interface BookPdfPayload { name: string; audience: string | null; pages: BookPdfPagePayload[]; }
 
 export async function exportBookPdf(book: BookPdfPayload): Promise<Blob> {
-  const r = await fetch(`${BASE}/api/workspace/export/book-pdf`, {
+  const r = await request(`${BASE}/api/workspace/export/book-pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(book),
@@ -104,20 +120,20 @@ export async function exportBookPdf(book: BookPdfPayload): Promise<Blob> {
 }
 
 export async function listRecents(): Promise<RecentEntry[]> {
-  const r = await fetch(`${BASE}/api/workspace/recents`);
+  const r = await request(`${BASE}/api/workspace/recents`);
   if (!r.ok) return [];
   return r.json();
 }
 
 export async function fetchLayout(): Promise<unknown> {
-  const r = await fetch(`${BASE}/api/workspace/layout`);
+  const r = await request(`${BASE}/api/workspace/layout`);
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`Layout fetch failed: ${r.status}`);
   return r.json();
 }
 
 export async function saveLayoutSidecar(sidecar: unknown): Promise<void> {
-  const r = await fetch(`${BASE}/api/workspace/layout`, {
+  const r = await request(`${BASE}/api/workspace/layout`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(sidecar),

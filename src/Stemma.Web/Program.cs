@@ -3,10 +3,24 @@ using System.Text.Json.Serialization;
 using Stemma.Engine.Adapters.Yaml;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Workspace;
+using Serilog;
+using Stemma.Web.Diagnostics;
 using Stemma.Web.Hubs;
 using Stemma.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Diagnostics first, so anything that fails during startup is already observable. One factory per
+// process, owned by the host and disposed on shutdown: disposing early makes later records vanish
+// silently, and never disposing drops buffered ones (ADR-0020).
+var logOptions = StemmaLogging.Resolve(builder.Configuration, args);
+// The level switch is what makes a runtime level change work without a restart — every sink follows it.
+var levelSwitch = new Serilog.Core.LoggingLevelSwitch();
+var serilog = StemmaLogging.Build(logOptions, levelSwitch);
+builder.Logging.ClearProviders();
+builder.Logging.AddSerilog(serilog, dispose: true);
+builder.Services.AddSingleton(levelSwitch);
+builder.Services.AddSingleton(logOptions);
 
 builder.Services.AddSingleton<EngineHost>();
 builder.Services.AddSignalR().AddJsonProtocol(o =>
@@ -26,13 +40,33 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 var app = builder.Build();
 
 app.UseCors();
+// Before anything that logs, so every downstream record inherits the correlation scope.
+app.UseMiddleware<CorrelationMiddleware>();
+
+// An unhandled failure reaches the client as a bare 500 and leaves nothing behind. The record is
+// what makes the report the user files actionable.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception e)
+    {
+        WebLog.RequestFailed(
+            context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Stemma.Web.Api"),
+            context.Request.Method, context.Request.Path.Value ?? "", e);
+        throw;
+    }
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 var workspaceApi = app.MapGroup("/api/workspace");
 
-workspaceApi.MapPost("/open", async (OpenWorkspaceRequest req, EngineHost host, CancellationToken ct) =>
+workspaceApi.MapPost("/open", async (OpenWorkspaceRequest req, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
 {
+    WebLog.WorkspaceOpenRequested(logs.CreateLogger("Stemma.Web.Api"), WorkspaceIdentity.For(req.RootPath));
     if (string.IsNullOrWhiteSpace(req.RootPath))
         return Results.BadRequest(new { error = "rootPath is required" });
 
@@ -143,7 +177,7 @@ workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, Canc
 // The escape hatch to a mature editor. It used to emit the whole model on a fixed grid regardless
 // of what was on screen, which meant the result had to be rebuilt by hand — the opposite of an
 // escape hatch. It now honours the active view and the committed layout.
-workspaceApi.MapGet("/export/drawio", async (string? view, string? palette, bool? labelKinds, EngineHost host, CancellationToken ct) =>
+workspaceApi.MapGet("/export/drawio", async (string? view, string? palette, bool? labelKinds, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
 {
     var arch = await host.ReadArchAsync(ct);
     if (arch is null) return Results.NotFound();
@@ -176,6 +210,7 @@ workspaceApi.MapGet("/export/drawio", async (string? view, string? palette, bool
         LabelKinds = labelKinds ?? false,
         DiagramName = view ?? "Stemma",
     });
+    WebLog.ExportProduced(logs.CreateLogger("Stemma.Web.Export"), "drawio", xml.Length);
     return Results.Text(xml, "application/xml");
 });
 
@@ -278,6 +313,48 @@ workspaceApi.MapDelete("/views/{viewId}", async (string viewId, EngineHost host,
 
 workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
 
+// ---------------- Diagnostics ----------------
+// Deliberately outside /api/workspace: the log matters most when opening one has failed.
+var diagnosticsApi = app.MapGroup("/api/diagnostics");
+
+diagnosticsApi.MapGet("/", (StemmaLogging.Options options, Serilog.Core.LoggingLevelSwitch levelSwitch) => Results.Ok(new
+{
+    level = levelSwitch.MinimumLevel.ToString(),
+    format = options.Format,
+    fileSink = options.FileSink,
+    // The desktop shell names this in its launch-failure surface, which is why it is served even
+    // when nothing else works.
+    logDirectory = options.Directory,
+    logFilePattern = StemmaLogging.LogFilePattern,
+}));
+
+// AC2 — a level change takes effect without a restart. Every sink follows the switch.
+diagnosticsApi.MapPut("/level", (SetLevelRequest req, Serilog.Core.LoggingLevelSwitch levelSwitch, ILoggerFactory factory) =>
+{
+    levelSwitch.MinimumLevel = StemmaLogging.ParseLevel(req.Level);
+    WebLog.LevelChanged(factory.CreateLogger("Stemma.Web.Api"), levelSwitch.MinimumLevel.ToString());
+    return Results.Ok(new { level = levelSwitch.MinimumLevel.ToString() });
+});
+
+// AC9 — redacted by default. `includeModelContent` is an explicit opt-in and is never the default,
+// because the consequence is disclosing the user's architecture.
+diagnosticsApi.MapGet("/bundle", (bool? includeModelContent, StemmaLogging.Options options, EngineHost host) =>
+{
+    var environment = new Dictionary<string, string>
+    {
+        ["os"] = Environment.OSVersion.ToString(),
+        ["dotnet"] = Environment.Version.ToString(),
+        ["processors"] = Environment.ProcessorCount.ToString(),
+        ["workspaceId"] = WorkspaceIdentity.For(host.Engine?.RootPath),
+        ["workspaceOpen"] = (host.Engine is not null).ToString(),
+    };
+    var json = DiagnosticsBundle.Build(options.Directory,
+        new DiagnosticsBundle.Options(includeModelContent ?? false), environment);
+    return Results.Text(json, "application/json");
+});
+
+
+
 workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
 {
     var engine = host.Engine;
@@ -294,11 +371,21 @@ workspaceApi.MapGet("/layout", (EngineHost host) =>
     return Results.Ok(sidecar);
 });
 
-workspaceApi.MapPut("/layout", async (LayoutSidecar sidecar, EngineHost host) =>
+workspaceApi.MapPut("/layout", async (LayoutSidecar sidecar, EngineHost host, ILoggerFactory logs) =>
 {
     var engine = host.Engine;
     if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
-    sidecar.Write(engine.RootPath);
+    try
+    {
+        sidecar.Write(engine.RootPath);
+    }
+    catch (IOException e)
+    {
+        // Every position and annotation from this session is now lost on the next reload, and the
+        // canvas has no way to know. Reported rather than surfaced, because the edit itself stands.
+        WebLog.SidecarWriteFailed(logs.CreateLogger("Stemma.Web.Api"), e);
+        return Results.Problem("The layout could not be saved.");
+    }
     await Task.CompletedTask;
     return Results.NoContent();
 });
@@ -363,3 +450,6 @@ public sealed record YamlBookPageDto(string ViewId, string Title, string Narrati
 public sealed record YamlBookDto(string Id, string Name, string? Audience, IReadOnlyList<YamlBookPageDto> Pages);
 
 public partial class Program;
+
+/// <summary>Body of the runtime level change (AC2).</summary>
+record SetLevelRequest(string Level);

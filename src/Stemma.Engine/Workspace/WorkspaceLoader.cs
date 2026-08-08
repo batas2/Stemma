@@ -6,6 +6,10 @@ using Microsoft.CodeAnalysis.MSBuild;
 using Stemma.Engine.Models;
 using TypeKind = Stemma.Engine.Models.TypeKind;
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Stemma.Engine.Diagnostics;
+
 namespace Stemma.Engine.Workspace;
 
 public static class MsBuildBootstrap
@@ -27,8 +31,11 @@ public static class MsBuildBootstrap
     }
 }
 
-public sealed class WorkspaceLoader
+public sealed class WorkspaceLoader(ILogger? log = null)
 {
+    /// <summary>Diagnostics only; absent by default so the loader stays usable without a stack.</summary>
+    private readonly ILogger _log = log ?? NullLogger.Instance;
+
     public async Task<(MSBuildWorkspace Workspace, WorkspaceModel Model)> LoadAsync(string rootPath, CancellationToken ct = default)
     {
         MsBuildBootstrap.EnsureRegistered();
@@ -37,7 +44,9 @@ public sealed class WorkspaceLoader
         {
             if (e.Diagnostic.Kind == WorkspaceDiagnosticKind.Failure)
             {
-                Console.Error.WriteLine($"[workspace] {e.Diagnostic.Message}");
+                // The whole of the backend's diagnostics used to be this line, on stderr, where a
+                // desktop shell with no console cannot see it.
+                EngineLog.WorkspaceLoadDiagnostic(_log, e.Diagnostic.Message);
             }
         };
 

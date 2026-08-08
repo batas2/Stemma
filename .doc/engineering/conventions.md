@@ -54,3 +54,25 @@ Docs Librarian enforces this.
 - [ ] No new data store; model/presentation boundary respected.
 - [ ] Tokens used (no hard-coded colours/z-index); matches surrounding idiom.
 - [ ] Docs updated where behavior changed.
+
+## Diagnostics
+
+The contract is [ADR-0020](../architecture/decisions/0020-diagnostics-contract.md); these are the
+rules you need while writing code.
+
+- **No interpolation in a log call.** `$"opened {path}"` is an unsearchable blob and cannot be
+  redacted — by the time the logger sees it there are no properties left. Declare a partial method
+  with `[LoggerMessage]` instead. `CA1848` enforces this; do not add it to `WarningsNotAsErrors`.
+- **Exceptions are a parameter, never part of the template.**
+- **Pick the level by what the user observes.** `Information` is one record per outcome they caused
+  and would recognise. `Warning` means it completed but differently — and must name the difference.
+  `Error` means their intent did not happen. `Critical` means their source may be damaged.
+- **`Trace` is not verbose `Debug`.** `Debug` reconstructs what the engine decided; `Trace`
+  reconstructs what Roslyn did.
+- **Every `catch` either logs or carries a comment saying why silence is correct.** Both are
+  acceptable; a bare `catch { }` is not.
+- **The engine takes `ILogger<T>` by constructor injection and defaults to `NullLogger<T>.Instance`,**
+  so it stays constructible with no logging stack present. It may reference
+  `Microsoft.Extensions.Logging.Abstractions` and nothing else from the stack.
+- **No network sink, ever.** A record carries the user's architecture. Adding one is a code change
+  that comes back through an ADR.
