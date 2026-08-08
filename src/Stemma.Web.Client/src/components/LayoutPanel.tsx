@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
+import { LayoutConstraintPanel } from './LayoutConstraintPanel';
 import type { LayoutAlgorithm } from '@/lib/autoLayout';
 
 /** Layout actions the panel asks the canvas to perform. The canvas (ArchCanvas) owns the node
@@ -85,6 +86,9 @@ export function LayoutPanel() {
 
   return (
     <div className="p-3 space-y-4 text-sm">
+      <Group title="Constraint">
+        <LayoutConstraintPanel layoutKey={layoutKey} />
+      </Group>
       <Group title="Align & distribute">
         <div className={clsx('text-[11px] mb-2 px-2 py-1.5 rounded-md flex items-center gap-1.5',
           selectedCount >= 2 ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300' : 'bg-zinc-100 dark:bg-zinc-800/50 text-faint')}>

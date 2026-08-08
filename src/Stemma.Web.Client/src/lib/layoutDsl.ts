@@ -227,6 +227,34 @@ export function bakeConstraint(
   return resolveLayout({ constraint, offsets, stored, sizes, origin });
 }
 
+/**
+ * Build a constraint from a canvas selection.
+ *
+ * Selection order is the authoring order — the boxes go where the user picked them, not where they
+ * happen to sit — because the point of a constraint is to state the arrangement rather than to
+ * record the one that already exists.
+ */
+export function constraintFromSelection(
+  kind: LayoutConstraintKind,
+  ids: string[],
+  rows = 2
+): LayoutConstraint {
+  switch (kind) {
+    case 'grid': return { kind: 'grid', columns: chunk(ids, Math.max(1, Math.floor(rows))), align: 'center' };
+    case 'row': return { kind: 'row', ids, align: 'center' };
+    case 'column': return { kind: 'column', ids, align: 'center' };
+    case 'stack': return { kind: 'stack', ids };
+  }
+}
+
+/** Split into runs of at most `size`. A grid's columns are column-major, filled top to bottom. */
+export function chunk<T>(items: T[], size: number): T[][] {
+  if (size < 1) return items.length ? [items] : [];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 /** Ids the constraint places that are not in the model — a typo an agent cannot see otherwise. */
 export function danglingIds(constraint: LayoutConstraint, knownIds: Iterable<string>): string[] {
   const known = new Set(knownIds);

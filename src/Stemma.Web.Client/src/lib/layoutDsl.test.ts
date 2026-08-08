@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   solveConstraint, resolveLayout, offsetForDrag, bakeConstraint,
   constraintIds, danglingIds, isLayoutConstraint,
+  constraintFromSelection, chunk, CONSTRAINT_KINDS,
   FALLBACK_SIZE, type LayoutConstraint, type NodeSize,
 } from './layoutDsl';
 import { estimateNodeSize, wrappedLineCount, sizesFor, NODE_MIN_WIDTH, NODE_MAX_WIDTH } from './textMetrics';
@@ -155,6 +156,53 @@ describe('constraint inspection', () => {
     expect(isLayoutConstraint({ kind: 'spiral' })).toBe(false);
     expect(isLayoutConstraint(null)).toBe(false);
     expect(isLayoutConstraint('grid')).toBe(false);
+  });
+});
+
+describe('constraintFromSelection', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e'];
+
+  it('keeps selection order, because the point is to state the arrangement not record it', () => {
+    expect(constraintFromSelection('row', ['c', 'a', 'b'])).toEqual({ kind: 'row', ids: ['c', 'a', 'b'], align: 'center' });
+  });
+
+  it('fills a grid column-major, top to bottom', () => {
+    const c = constraintFromSelection('grid', ids, 2) as { kind: 'grid'; columns: string[][] };
+    expect(c.columns).toEqual([['a', 'b'], ['c', 'd'], ['e']]);
+  });
+
+  it('tolerates a ragged last column rather than padding it', () => {
+    const c = constraintFromSelection('grid', ['a', 'b', 'c'], 2) as { kind: 'grid'; columns: string[][] };
+    expect(c.columns.at(-1)).toEqual(['c']);
+  });
+
+  it('treats a nonsense row count as one row rather than dividing by zero', () => {
+    const c = constraintFromSelection('grid', ids, 0) as { kind: 'grid'; columns: string[][] };
+    expect(c.columns.flat()).toEqual(ids);
+    expect(c.columns.every((col) => col.length >= 1)).toBe(true);
+  });
+
+  it('produces something the solver and the type guard both accept, for every shape', () => {
+    for (const kind of CONSTRAINT_KINDS) {
+      const c = constraintFromSelection(kind, ids, 2);
+      expect(isLayoutConstraint(c)).toBe(true);
+      expect(Object.keys(solveConstraint(c, {})).sort()).toEqual([...ids].sort());
+      expect(constraintIds(c).sort()).toEqual([...ids].sort());
+    }
+  });
+});
+
+describe('chunk', () => {
+  it('splits into runs of at most size', () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it('never loses or duplicates an item', () => {
+    for (const size of [1, 2, 3, 7]) expect(chunk([1, 2, 3, 4, 5], size).flat()).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('is empty for an empty input', () => {
+    expect(chunk([], 3)).toEqual([]);
   });
 });
 

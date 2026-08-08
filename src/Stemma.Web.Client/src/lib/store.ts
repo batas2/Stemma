@@ -101,6 +101,9 @@ interface AppState {
   /** How many canvas nodes are currently multi-selected (published by ArchCanvas for the Layout
    *  panel, which lives outside the canvas tree and can't see React Flow's selection). */
   canvasSelection: number;
+  /** Ids of the multi-selected canvas nodes, in selection order. The Layout panel builds a
+   *  constraint out of these; the count alone was enough only for align/distribute. */
+  canvasSelectedIds: string[];
   theme: Theme;
   loading: boolean;
   selectedElementId: string | null;
@@ -152,7 +155,7 @@ interface AppState {
   setByTypeParams: (p: Partial<ByTypeParams>) => void;
   resetByTypeParams: () => void;
   setViewLayout: (viewKey: string, mode: LayoutMode) => void;
-  setCanvasSelection: (n: number) => void;
+  setCanvasSelection: (n: number, ids?: string[]) => void;
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
   setLoading: (b: boolean) => void;
@@ -206,6 +209,7 @@ export const useApp = create<AppState>((set, get) => ({
   byTypeParams: { ...DEFAULT_BYTYPE_PARAMS },
   viewLayouts: {},
   canvasSelection: 0,
+  canvasSelectedIds: [],
   theme: initialTheme(),
   loading: false,
   selectedElementId: null,
@@ -378,7 +382,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (s.workspace) saveViewLayouts(s.workspace.rootPath, next, viewKey);
     return { viewLayouts: next };
   }),
-  setCanvasSelection: (n) => set({ canvasSelection: n }),
+  setCanvasSelection: (n, ids = []) => set({ canvasSelection: n, canvasSelectedIds: ids }),
   setTheme: (t) => {
     if (typeof window !== 'undefined') localStorage.setItem(THEME_KEY, t);
     set({ theme: t });

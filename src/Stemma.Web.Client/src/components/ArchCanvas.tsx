@@ -935,9 +935,22 @@ function CanvasInner() {
         window.dispatchEvent(new CustomEvent('stemma:render-fitted'));
       }));
     }
+    function onBake(ev: Event) {
+      // Freeze what is drawn right now into absolute positions. Dropping a constraint is a change
+      // of authoring model, not a change of picture, so nothing may move.
+      const key = String((ev as CustomEvent).detail?.layoutKey ?? layoutKey);
+      if (!workspace) return;
+      const positions: Record<string, SavedPosition> = {};
+      for (const n of getNodes()) positions[n.id] = { x: n.position.x, y: n.position.y };
+      saveLayout(workspace.rootPath, key as ViewKind, positions);
+    }
+    window.addEventListener('stemma:bake-constraint', onBake);
     window.addEventListener('stemma:render-fit', onRenderFit);
-    return () => window.removeEventListener('stemma:render-fit', onRenderFit);
-  }, [getNodes, setViewport, layoutKey]);
+    return () => {
+      window.removeEventListener('stemma:bake-constraint', onBake);
+      window.removeEventListener('stemma:render-fit', onRenderFit);
+    };
+  }, [getNodes, setViewport, layoutKey, workspace]);
 
   // Re-read layout when an external event (layout undo/redo) signals it changed.
   useEffect(() => {
@@ -1720,14 +1733,15 @@ function CanvasInner() {
     return [...containers, ...rest];
   }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed]);
 
-  const selectedCount = nodes.filter((n) => n.selected).length;
+  const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected).map((n) => n.id), [nodes]);
+  const selectedCount = selectedNodeIds.length;
   // Publish the multi-selection count so the right-hand Layout panel can gate align/distribute.
   // Selecting 2+ elements jumps the inspector to the Layout panel (Align & distribute sits on top),
   // but the user's own tab choice is restored once the multi-selection is gone.
   const tabBeforeLayoutJump = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const st = useApp.getState();
-    st.setCanvasSelection(selectedCount);
+    st.setCanvasSelection(selectedCount, selectedNodeIds);
     if (selectedCount >= 2) {
       if (st.inspectorTab !== 'layout' && tabBeforeLayoutJump.current === undefined) tabBeforeLayoutJump.current = st.inspectorTab;
       st.setInspectorTab('layout');
