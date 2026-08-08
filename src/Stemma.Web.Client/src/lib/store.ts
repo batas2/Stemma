@@ -8,6 +8,7 @@ import {
   renameCustomProp as renameCP, type CustomProps,
 } from './customProps';
 import { saveServerView, deleteServerView, listServerViews } from './api';
+import { loadViewLayoutModes, saveViewLayoutMode } from './layout';
 import type { Shape, ShapeKind } from './shapes';
 
 /** What the canvas pointer is doing right now. `select` is the default (drag/select model nodes). */
@@ -40,13 +41,31 @@ export const DEFAULT_BYTYPE_PARAMS: ByTypeParams = { gap: 40, groupGap: 100, row
 export type LayoutMode = 'custom' | 'force' | 'hierarchical' | 'byType';
 
 function viewLayoutsKey(root: string): string { return `stemma.viewLayouts:${root}`; }
+/**
+ * Layout modes for a workspace. The committed sidecar is the source of truth; the localStorage
+ * entry is only a migration source for workspaces last opened before the mode was committed, and
+ * anything found there is written into the sidecar on read so it starts travelling in Git.
+ */
 function loadViewLayouts(root: string): Record<string, LayoutMode> {
   if (typeof window === 'undefined') return {};
-  try { const raw = localStorage.getItem(viewLayoutsKey(root)); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  const committed = loadViewLayoutModes(root) as Record<string, LayoutMode>;
+
+  let legacy: Record<string, LayoutMode> = {};
+  try { const raw = localStorage.getItem(viewLayoutsKey(root)); legacy = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
+
+  // Committed wins; anything only in localStorage is migrated up, once.
+  const merged: Record<string, LayoutMode> = { ...legacy, ...committed };
+  for (const [key, mode] of Object.entries(merged)) {
+    if (committed[key] !== mode) saveViewLayoutMode(root, key, mode);
+  }
+  return merged;
 }
-function saveViewLayouts(root: string, m: Record<string, LayoutMode>): void {
+function saveViewLayouts(root: string, m: Record<string, LayoutMode>, changedKey?: string): void {
   if (typeof window === 'undefined') return;
+  // localStorage stays as a fast local cache; the sidecar is what ships.
   try { localStorage.setItem(viewLayoutsKey(root), JSON.stringify(m)); } catch { /* ignore */ }
+  if (changedKey) saveViewLayoutMode(root, changedKey, m[changedKey]);
+  else for (const [k, v] of Object.entries(m)) saveViewLayoutMode(root, k, v);
 }
 
 const THEME_KEY = 'stemma.theme';
@@ -355,7 +374,7 @@ export const useApp = create<AppState>((set, get) => ({
   setViewLayout: (viewKey, mode) => set((s) => {
     if (s.viewLayouts[viewKey] === mode) return {} as Partial<AppState>;
     const next = { ...s.viewLayouts, [viewKey]: mode };
-    if (s.workspace) saveViewLayouts(s.workspace.rootPath, next);
+    if (s.workspace) saveViewLayouts(s.workspace.rootPath, next, viewKey);
     return { viewLayouts: next };
   }),
   setCanvasSelection: (n) => set({ canvasSelection: n }),

@@ -64,6 +64,17 @@ public sealed class LayoutSidecar
         [JsonPropertyName("nodes")] public Dictionary<string, Position> Nodes { get; set; } = new();
         [JsonPropertyName("edges")] public Dictionary<string, EdgeWaypoints>? Edges { get; set; }
 
+        /// <summary>
+        /// How this view is arranged: `custom` (the stored positions are authoritative) or one of
+        /// the auto algorithms, which re-run on open. Absent means `custom`.
+        ///
+        /// This lived in `localStorage` until it became clear that a workspace cloned from Git did
+        /// not carry the one field that decides whether the committed positions are honoured or
+        /// immediately overwritten — so the same repository drew differently on two machines. It is
+        /// presentation, it must travel with the model, so it belongs here.
+        /// </summary>
+        [JsonPropertyName("layoutMode")] public string? LayoutMode { get; set; }
+
         /// <summary>Everything else the client keeps per view — today `shapes`; tomorrow whatever
         /// the canvas invents next. Preserved verbatim; never interpreted here.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Topbar } from './components/Topbar';
 import { Sidebar } from './components/Sidebar';
 import { ArchCanvas } from './components/ArchCanvas';
@@ -19,6 +19,8 @@ import { archModel, books as fetchBooks, listViolations, snapshot } from './lib/
 import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
+import { RenderShell } from './components/RenderShell';
+import { currentRenderParams } from './lib/renderMode';
 import { ViolationsPanel } from './components/ViolationsPanel';
 import { BookFooter } from './components/BookFooter';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -45,6 +47,8 @@ function ArchOrShapeInspector() {
 }
 
 export default function App() {
+  // Parsed once: the query string does not change without a reload.
+  const renderParams = useMemo(() => currentRenderParams(), []);
   const ws = useApp((s) => s.workspace);
   const view = useApp((s) => s.view);
   const setWs = useApp((s) => s.setWorkspace);
@@ -277,6 +281,10 @@ export default function App() {
     initialisedFor.current = ws.rootPath;
     setView('moduleMap');
   }, [ws]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Headless render mode strips every affordance meant for a person and reports when the canvas
+  // has settled. Declared after all hooks so hook order is identical in both modes.
+  if (renderParams) return <RenderShell params={renderParams} />;
 
   return (
     <div className="h-screen flex flex-col">

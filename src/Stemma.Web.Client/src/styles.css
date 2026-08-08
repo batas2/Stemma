@@ -228,3 +228,115 @@
 .stemma-shape-pulse { transform-box: fill-box; transform-origin: center; animation: stemma-pulse 1.6s ease-in-out infinite; }
 .stemma-shape-breathe { animation: stemma-breathe 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { [class*="stemma-shape-"] { animation: none !important; } }
+
+/* ---------------------------------------------------------------------------------------------
+   Publication profile (`?render=1&profile=publication`).
+
+   The canvas is styled for an application, correctly: type chips, kind icons, drop shadows, a dot
+   grid, coloured status badges. All of that is app UI, and none of it is diagram ink. Published in
+   an essay it reads as a screenshot of a tool rather than as a drawing, and it breaks the two rules
+   a published diagram actually has to keep — no shadows, and never encode meaning in colour alone.
+
+   This profile strips the chrome and repaints what is left from the active palette. It is applied
+   to the same component tree the app renders, so what ships is what the canvas draws; there is no
+   second renderer to drift from.
+   --------------------------------------------------------------------------------------------- */
+
+[data-stemma-profile='publication'] {
+  --pub-stroke: #767884;
+  --pub-text: #767884;
+  --pub-accent: #6366e8;
+  --pub-fill: none;
+}
+
+/* The page itself carries no colour: the export decides the backdrop, not the stylesheet. */
+[data-stemma-profile='publication'] body,
+[data-stemma-profile='publication'] .react-flow,
+[data-stemma-profile='publication'] .react-flow__pane,
+[data-stemma-profile='publication'] .react-flow__renderer {
+  background: transparent !important;
+}
+
+/* Canvas furniture: grid, minimap, controls, attribution, panels, toasts. */
+[data-stemma-profile='publication'] .react-flow__background,
+[data-stemma-profile='publication'] .react-flow__minimap,
+[data-stemma-profile='publication'] .react-flow__controls,
+[data-stemma-profile='publication'] .react-flow__attribution,
+[data-stemma-profile='publication'] .react-flow__panel,
+[data-stemma-profile='publication'] .react-flow__handle,
+[data-stemma-profile='publication'] .react-flow__resize-control {
+  display: none !important;
+}
+
+/* Outline-only boxes. Fills and shadows are the two things that cannot survive being placed on a
+   background the author does not control. */
+[data-stemma-profile='publication'] .react-flow__node > div {
+  background: var(--pub-fill) !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-color: var(--pub-stroke) !important;
+  color: var(--pub-text) !important;
+}
+
+[data-stemma-profile='publication'] .react-flow__node * {
+  text-shadow: none !important;
+}
+
+/* The type chip, the kind icon, the fan-in/out badges and the "in <context>" line are all
+   orientation aids for someone working in the tool. In a seven-box argument diagram they are noise
+   competing with the sentence the box is there to carry. */
+[data-stemma-profile='publication'] .stemma-node-kind,
+[data-stemma-profile='publication'] .stemma-node-icon,
+[data-stemma-profile='publication'] .stemma-node-meta,
+[data-stemma-profile='publication'] .stemma-node-fan {
+  display: none !important;
+}
+
+/* Status is kept, but it stops being a coloured pill: a published diagram must not encode meaning
+   in hue alone, so it reads as plain text and leans on the label. */
+[data-stemma-profile='publication'] .stemma-status-badge {
+  background: none !important;
+  border-color: var(--pub-stroke) !important;
+  color: var(--pub-text) !important;
+}
+
+/* Edges and their labels take the palette, and the label loses its opaque plate. */
+[data-stemma-profile='publication'] .react-flow__edge-path {
+  stroke: var(--pub-stroke) !important;
+}
+[data-stemma-profile='publication'] .react-flow__edge-textbg {
+  display: none !important;
+}
+[data-stemma-profile='publication'] .react-flow__edge-text {
+  fill: var(--pub-text) !important;
+}
+
+/* Selection rings and hover affordances are interaction feedback; there is no interaction here. */
+[data-stemma-profile='publication'] .react-flow__node.selected > div,
+[data-stemma-profile='publication'] .react-flow__node > div:hover {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Motion cannot be captured, and a half-finished animation frame in a still image just looks like
+   a rendering bug. */
+[data-stemma-profile='publication'] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Bounded-context containers: the violet plate and its child count are orientation aids inside the
+   tool. In a published diagram the grouping is carried by the frame alone. */
+[data-stemma-profile='publication'] .stemma-bc-header,
+[data-stemma-profile='publication'] .stemma-bc-frame {
+  background: none !important;
+  box-shadow: none !important;
+  border-color: var(--pub-stroke) !important;
+  color: var(--pub-text) !important;
+}
+[data-stemma-profile='publication'] .stemma-bc-count { display: none !important; }
+[data-stemma-profile='publication'] .stemma-bc-header *,
+[data-stemma-profile='publication'] .stemma-bc-frame > div:first-child {
+  background: none !important;
+  color: var(--pub-text) !important;
+}

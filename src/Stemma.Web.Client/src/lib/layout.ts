@@ -5,7 +5,7 @@ export interface SavedPosition { x: number; y: number; }
 
 interface SidecarShape {
   version?: number;
-  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown>; shapes?: unknown[] }>;
+  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown>; shapes?: unknown[]; layoutMode?: string }>;
   nodeStyles?: Record<string, unknown>;
   edgeStyles?: Record<string, unknown>;
   notes?: Record<string, string>;
@@ -60,6 +60,31 @@ export function saveViewShapes(rootPath: string, viewKey: string, shapes: unknow
   const s = ensureSidecar(rootPath);
   s.views = s.views ?? {};
   s.views[viewKey] = { ...s.views[viewKey], shapes };
+  scheduleSidecarWrite(rootPath);
+}
+
+/**
+ * Per-view layout mode, committed rather than kept in the browser.
+ *
+ * This decides whether the positions stored beside it are authoritative or are about to be
+ * overwritten by an auto-layout on open — so a workspace that did not carry it drew differently on
+ * a fresh clone than on the machine it was authored on. It is presentation and it must travel with
+ * the model, which means the sidecar, not `localStorage`.
+ */
+export function loadViewLayoutModes(rootPath: string): Record<string, string> {
+  if (sidecarCache?.rootPath !== rootPath) return {};
+  const out: Record<string, string> = {};
+  for (const [key, view] of Object.entries(sidecarCache.sidecar.views ?? {})) {
+    if (view?.layoutMode) out[key] = view.layoutMode;
+  }
+  return out;
+}
+
+export function saveViewLayoutMode(rootPath: string, viewKey: string, mode: string): void {
+  if (typeof window === 'undefined') return;
+  const s = ensureSidecar(rootPath);
+  s.views = s.views ?? {};
+  s.views[viewKey] = { ...s.views[viewKey], layoutMode: mode };
   scheduleSidecarWrite(rootPath);
 }
 

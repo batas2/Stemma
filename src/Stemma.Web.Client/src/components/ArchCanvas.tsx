@@ -843,6 +843,46 @@ function CanvasInner() {
     return () => window.removeEventListener('stemma:export-image', onExport);
   }, [getNodes, getViewport, setViewport, setToast, layoutKey]);
 
+  // Headless render: place the content once, instantly, and say so.
+  //
+  // The ordinary fit is animated, which is right on screen and wrong for a capture — waiting for
+  // the pan to stop is a race against whichever fit fires last, and the same view rendered twice
+  // came out at slightly different sizes. This sets the viewport in one step with no animation, so
+  // the crop is a function of the model and the layout rather than of timing.
+  useEffect(() => {
+    function onRenderFit(ev: Event) {
+      const padding = (ev as CustomEvent).detail?.padding ?? 0.06;
+      const rfEl = document.querySelector('.react-flow') as HTMLElement | null;
+      const ns = getNodes();
+      if (!rfEl || ns.length === 0) return;
+      const rects = [getNodesBounds(ns)];
+      for (const s of (useApp.getState().shapes[layoutKey] ?? [])) {
+        const b = shapeBoundsRect(s);
+        if (b) rects.push(b);
+      }
+      const minX = Math.min(...rects.map((r) => r.x)), minY = Math.min(...rects.map((r) => r.y));
+      const maxX = Math.max(...rects.map((r) => r.x + r.width)), maxY = Math.max(...rects.map((r) => r.y + r.height));
+      const bounds = { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+      const vp = getViewportForBounds(bounds, rfEl.clientWidth, rfEl.clientHeight, 0.05, 2.5, padding);
+      setViewport(vp);
+
+      // Publish where the content now sits, in screen pixels, derived from the same numbers that
+      // produced the transform. The capture crops to this instead of re-measuring the DOM: element
+      // rects include bezier overshoot that varies by a few tens of pixels between runs, which is
+      // how the same view came out at three different heights.
+      const box = {
+        x: bounds.x * vp.zoom + vp.x,
+        y: bounds.y * vp.zoom + vp.y,
+        width: bounds.width * vp.zoom,
+        height: bounds.height * vp.zoom,
+      };
+      document.documentElement.dataset.stemmaRenderBox = JSON.stringify(box);
+      window.dispatchEvent(new CustomEvent('stemma:render-fitted'));
+    }
+    window.addEventListener('stemma:render-fit', onRenderFit);
+    return () => window.removeEventListener('stemma:render-fit', onRenderFit);
+  }, [getNodes, setViewport, layoutKey]);
+
   // Re-read layout when an external event (layout undo/redo) signals it changed.
   useEffect(() => {
     function refreshFromLayout() {

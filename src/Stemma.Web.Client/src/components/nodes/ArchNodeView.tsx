@@ -294,7 +294,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         {/* Fan-in / fan-out badges — shown only on the dependency view, where the architect
             wants to see "how many things depend on this" + "how many things this pulls from" at a glance. */}
         {data.isDependencyView && (data.fanIn !== undefined || data.fanOut !== undefined) && (
-          <div className="absolute -top-2 left-2 flex items-center gap-1 text-[10px] font-mono pointer-events-none">
+          <div className="stemma-node-fan absolute -top-2 left-2 flex items-center gap-1 text-[10px] font-mono pointer-events-none">
             {data.fanIn !== undefined && data.fanIn > 0 && (
               <span title={`${data.fanIn} module${data.fanIn === 1 ? '' : 's'} depend on this`}
                 className="px-1 py-0 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
@@ -322,7 +322,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         )}
         {isPerson ? (
           <div className="flex items-center gap-2 h-full">
-            <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
+            <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
             {showField('name') && (
               data.editing
                 ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
@@ -341,7 +341,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
               <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0">
                 <Icon className={clsx('w-3.5 h-3.5 shrink-0', accent)} />
                 {showField('kind') && (
-                  <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
+                  <span className="stemma-node-kind text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
                     {labelForKind[e.kind]}
                   </span>
                 )}
@@ -383,7 +383,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                 />
               ) : (
                 <>
-                  <div className="space-y-0.5 shrink-0">
+                  <div className="stemma-node-meta space-y-0.5 shrink-0">
                     {showField('id') && (
                       <div className="text-[10px] text-zinc-500 font-mono truncate">{e.id}</div>
                     )}
@@ -464,7 +464,7 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
       <div
         style={{ pointerEvents: 'auto', ...(fill ? { background: fill } : {}), ...(border ? { borderColor: border } : {}) }}
         className={clsx(
-          'rounded-xl border-2 border-dashed px-3 py-2 inline-flex items-center gap-2 shadow-sm',
+          'stemma-bc-header rounded-xl border-2 border-dashed px-3 py-2 inline-flex items-center gap-2 shadow-sm',
           !fill && 'bg-violet-500/10 dark:bg-violet-500/15',
           !border && 'border-violet-400/60 dark:border-violet-500/50',
           selected && 'ring-2 ring-violet-500/40',
@@ -478,7 +478,7 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
           ? <NameEditor id={id} initial={name} onCommit={onCommit} onCancel={onCancel} />
           : <span className="text-sm font-medium text-violet-800 dark:text-violet-200">{name}</span>}
         {childCount !== undefined && childCount > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-700 dark:text-violet-300">{childCount}</span>
+          <span className="stemma-bc-count text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-700 dark:text-violet-300">{childCount}</span>
         )}
       </div>
     );
@@ -494,7 +494,7 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
     <div
       style={bodyStyle}
       className={clsx(
-        'rounded-2xl border-2 transition-colors',
+        'stemma-bc-frame rounded-2xl border-2 transition-colors',
         !nodeStyle?.borderStyle && 'border-dashed',
         !border && (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40'),
         !fill && (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]'),
@@ -578,7 +578,7 @@ function StatusBadge({ status }: { status: string }) {
   const cls = colors[status] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/30';
   const glyph = STATUS_GLYPH[status];
   return (
-    <span className={clsx('ml-auto px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border font-medium flex items-center gap-1', cls)}>
+    <span className={clsx('stemma-status-badge ml-auto px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border font-medium flex items-center gap-1', cls)}>
       {glyph && <span aria-hidden="true">{glyph}</span>}
       {status}
     </span>

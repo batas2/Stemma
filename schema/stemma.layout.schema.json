@@ -79,6 +79,10 @@
           "description": "Free-form annotation drawn on this view. Pure presentation: never part of the model, always safe to delete.",
           "maxItems": 256,
           "items": { "$ref": "#/$defs/shape" }
+        },
+        "layoutMode": {
+          "enum": ["custom", "force", "hierarchical", "byType"],
+          "description": "How the view is arranged. 'custom' means the stored `nodes` positions are authoritative; the others re-run on open and overwrite them. Absent means 'custom'."
         }
       }
     },
