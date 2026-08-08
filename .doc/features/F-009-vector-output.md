@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-009 |
-| **Status** | `Draft` |
+| **Status** | `Shipped` (v1) |
 | **Owner** | Bartosz |
 | **Persona served** | The Essayist's Agent ("Ada"); anyone putting a diagram on a slide |
 | **Roadmap horizon** | `Later` |
@@ -24,13 +24,13 @@
 > As **Ada**, I want `--format svg` to produce a real vector drawing so that it survives being
 > resized and opened in an editor.
 
-- [ ] AC1 — The publication profile renders node bodies as SVG primitives — `<rect>` plus `<text>`
+- [x] AC1 — The publication profile renders node bodies as SVG primitives — `<rect>` plus `<text>`
       with pre-computed `<tspan>` lines — instead of styled `<div>`s.
-- [ ] AC2 — Line breaking still happens in the browser, measured once and emitted as `<tspan>`s, so
+- [x] AC2 — Line breaking still happens in the browser, measured once and emitted as `<tspan>`s, so
       the product contains exactly one line-breaking implementation and it is the one on screen.
-- [ ] AC3 — Export serialises the live SVG subtree rather than rasterising it.
-- [ ] AC4 — PNG is produced from the same SVG, so the two cannot disagree.
-- [ ] AC5 — Text is either accompanied by an embedded subset font or converted to paths, chosen per
+- [x] AC3 — Export serialises the live SVG subtree rather than rasterising it.
+- [x] AC4 — PNG is produced from the same SVG, so the two cannot disagree.
+- [ ] AC5 — *not done: the file names a font family rather than embedding or outlining it, so it re-wraps on a machine without Inter.* — Text is either accompanied by an embedded subset font or converted to paths, chosen per
       invocation, because an SVG naming a font it cannot guarantee re-wraps on the reader's machine.
 
 ## 3. Architecture impact
@@ -56,13 +56,13 @@
 
 ## 7. Test plan
 
-- [ ] The serialised SVG parses standalone and contains one `<rect>` and one `<text>` per node.
-- [ ] Wrapped titles emit the same line breaks as the DOM path for the same width.
+- [x] The serialised SVG parses standalone: no `foreignObject`, no unresolved `var()`, and it was rendered on its own in a browser from `file://`.
+- [x] Wrapped titles emit the same line breaks, the same width and the same height as the estimator — asserted directly, after the two drifted.
 - [ ] A visual-regression gate between the SVG-derived PNG and the DOM screenshot.
 
 ## 8. Definition of Done
 
-- [ ] ACs met · [ ] suites green · [ ] docs updated
+- [x] ACs met except AC5 · [x] suites green · [x] docs updated
 
 ## 9. Notes / open questions
 

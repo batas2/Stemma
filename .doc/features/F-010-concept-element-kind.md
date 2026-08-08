@@ -86,7 +86,7 @@
 
 ## 9. Notes / open questions
 
-**Deferred, not rejected: a neutral link kind.** If `Module` was a lie for a box, `Dependency` is the
+**No longer deferred: `Relation` shipped on 2026-08-08 — see [ADR-0019](../architecture/decisions/0019-relation-link-kind.md).** The reasoning as it stood when deferred: If `Module` was a lie for a box, `Dependency` is the
 same lie for an arrow between two ideas. Three things are true: the rendered label is what shows, so
 the picture is already correct and the dishonesty is confined to the source; `Question`/`Assumption`/
 `Risk` express relation through `AboutId`, whose edges are synthesised client-side and therefore have

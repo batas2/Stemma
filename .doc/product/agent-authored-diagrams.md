@@ -4,20 +4,21 @@
 > diagrams from a Stemma model as reliably as it currently produces them in draw.io.
 > Written **2026-08-08** against `main`. Feature records it should spawn are listed in §9.
 >
-> **Phases 0 and 1 shipped, Phase 2 and 3 partly, all on 2026-08-08.** Status per item is marked
-> inline below and, more usefully, in the feature records F-004 through F-010.
+> **All four phases shipped, 2026-08-08.** Status per item is marked inline below and, more
+> usefully, in the feature records F-004 through F-010.
 >
 > **Built:** the sidecar keeps unknown sections (B-001); node titles wrap; export takes
-> transparency, scale and padding; the format has a published JSON Schema; `stemma render` turns a
-> model and a view into an image with no browser and no mouse; a publication profile and named
-> palettes; layout as a declarative constraint with nudges as offsets; `stemma validate`; a render
-> manifest and `--check`; the `Concept` element kind (ADR-0018).
+> transparency, scale and padding; a published JSON Schema and a protocol reference with three
+> worked examples; `stemma render` and `stemma validate`; a publication profile and named palettes;
+> layout as a declarative constraint, authorable from the canvas or as text, with nudges as offsets;
+> a render manifest and `--check`; the `Concept` element kind (ADR-0018) and the `Relation` link
+> kind (ADR-0019); free-form shapes persisted, documented and validated; a draw.io export that
+> honours the view and the layout; and true vector SVG out of the publication profile.
 >
-> **Not built:** the protocol reference and its three worked examples (F-007), free-form shapes as
-> an authorable annotation surface (D2), true vector output (F-009), a UI for authoring layout
-> constraints, and the `Relation` link kind deferred in §8 · Q3. The consequence is visible in the
-> acceptance test below: the *boxes* of the benchmark diagram now come out of a Stemma workspace
-> with one command, and its arrows, swimlane labels and accent do not.
+> **Still open, and small:** `STEMMA.md` in the workspace scaffold (F-007 AC6); an embedded or
+> outlined font in the SVG, without which it re-wraps on a machine that lacks Inter (F-009 AC5); a
+> keyboard path to the constraint panel; and a figure-shaped sample, since Aurora Rail is an
+> architecture and deliberately exercises neither new kind.
 
 ## 0. Why this document exists
 

@@ -54,12 +54,12 @@
 - [x] **Journey(s) touched:** arranging a view; opening a workspace someone else authored.
 - [x] **States defined:** governed / ungoverned nodes; nudged / clean.
 - [x] **Interactions:** dragging a governed node nudges it rather than escaping the constraint.
-- [ ] **Accessibility:** no keyboard path to author or clear a constraint yet — see §9.
+- [ ] **Accessibility:** the panel is pointer-driven; no keyboard path to author or clear a constraint.
 
 ## 5. UI impact
 
-- [ ] **Components touched/added:** no inspector surface yet. The constraint is authored in the
-      sidecar; the canvas honours it. This is the main gap in the record.
+- [x] **Components touched/added:** `LayoutConstraintPanel`, in the Layout rail — build a
+      constraint from the selection, reset nudges, or remove it (baking positions first).
 - [x] **Tokens:** none.
 - [x] **Both themes:** unaffected.
 
@@ -87,5 +87,5 @@ a grid nobody authored: the node-build effect never re-ran after the sidecar fin
 node that already existed kept its position across every rebuild. Both are fixed here; both were
 independent of this feature and had been silently degrading ordinary use.
 
-**Not built:** any UI for authoring or clearing a constraint, and a "reset nudges" affordance. Until
-those exist the feature serves Ada fully and Aria only through a text editor.
+The authoring UI shipped on 2026-08-08, so the feature now serves both personas. What is still
+missing is a keyboard path to it.

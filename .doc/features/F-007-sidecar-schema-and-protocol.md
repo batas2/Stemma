@@ -32,7 +32,8 @@
       or `$id` drift from the engine's constants.
 - [x] AC5 — `.doc/protocol/authoring-a-diagram.md` covers `Architecture.cs` → `Views/<Name>.cs` →
       `stemma.layout.json` → render, with three complete worked examples (argument, C4, dependency).
-- [ ] AC6 — `WorkspaceScaffold` drops a `STEMMA.md` brief at the root of every new workspace.
+- [ ] AC6 — `WorkspaceScaffold` drops a `STEMMA.md` brief at the root of every new workspace. **Not
+      done — the only outstanding part of this record.**
 
 ## 3. Architecture impact
 
