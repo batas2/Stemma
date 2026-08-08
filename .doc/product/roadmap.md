@@ -10,10 +10,10 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Roslyn engine + round-trip fidelity** — operations rewrite `Architecture.cs` via `DocumentEditor`; the fidelity test suite gates every change.
 - **Canonical model** — elements (person, software system, container, bounded context, module, capability, use case, risk, question, assumption), `DataFlow`/`Dependency` links, `Lifecycle`/`Ownership` tags, code-defined `View`s.
 - **React Flow canvas** — module map, dependency graph, and custom views; bounded-context grouping; pan/zoom/minimap; PNG/SVG export of the whole graph including shapes.
-- **Committed presentation sidecar** (`stemma.layout.json`) — positions, node/edge styles, notes, custom props, free-form shapes, per-view layout choices; travels in Git.
+- **Committed presentation sidecar** (`stemma.layout.json`) — positions, node/edge styles, notes, custom props, free-form shapes, per-view layout choices; travels in Git. **One remaining exception, a defect rather than design:** the per-view *layout mode* is persisted to `localStorage`, not the sidecar, so it does not travel in Git — a fresh clone therefore does not reliably reproduce the author's canvas. (Free-form shapes and edge dock handles were dropped before reaching disk for the same class of reason; fixed 2026-08-08, [B-001](../bugs/B-001-layout-sidecar-drops-shapes-and-edge-handles.md).)
 - **Inline + full rich-text editing** — markdown-backed; a simple inline editor and a turbo full-screen editor (headings, lists, tables, color, highlight, code blocks).
 - **Appearance system** — node and edge styling (fills, borders, shadows, presets, animations); edge routing (curved / elbow / step / straight); both-end markers.
-- **draw.io-style edge docking** — relationships anchor to connection dots; reconnect endpoints to another box.
+- **draw.io-style edge docking** — relationships anchor to connection dots; reconnect endpoints to another box. (Anchors were lost on reload until [B-001](../bugs/B-001-layout-sidecar-drops-shapes-and-edge-handles.md) was fixed on 2026-08-08.)
 - **Per-view auto-layout** — organic (force-directed), hierarchical, by-type, and custom (manual), each tunable; manual move/add flips a view to custom.
 - **Inspector as an icon rail** — one panel at a time (Properties, Appearance, Text & attributes, Lifecycle, Ownership, Custom properties, Comments, Layout).
 - **Multi-select / align / distribute**, undo/redo for layout, violations surfacing, live sync via SignalR.

@@ -13,6 +13,14 @@ namespace Stemma.Engine.Workspace;
 /// The rich sections are stored as pass-through JSON (<see cref="JsonElement"/>): the web client
 /// owns their schema, the engine only persists them verbatim. This keeps presentation features
 /// evolving in the client without lock-step backend changes.
+///
+/// That pass-through promise applies at *every* level, which is why this type and both of its
+/// nested container types carry <see cref="JsonExtensionDataAttribute"/>. Without it, a member the
+/// client writes but the server has never heard of is dropped during model binding — before
+/// <see cref="Write"/> is ever reached — so the write is not lossy, the *bind* is. That is B-001:
+/// `views.&lt;key&gt;.shapes` and `views.&lt;key&gt;.edges.&lt;id&gt;.handles` never reached disk in
+/// either direction, and the round-trip test stayed green because it only asserted members the type
+/// declares. **When adding a nested type here, give it extension data too.**
 /// </summary>
 public sealed class LayoutSidecar
 {
@@ -34,10 +42,18 @@ public sealed class LayoutSidecar
     /// <summary>Free-form canvas annotations (text / frames / shapes), keyed by view key.</summary>
     [JsonPropertyName("annotations")] public Dictionary<string, JsonElement> Annotations { get; set; } = new();
 
+    /// <summary>Any top-level section the client writes that this type does not model, preserved
+    /// verbatim across a read/write cycle.</summary>
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
     public sealed class ViewLayout
     {
         [JsonPropertyName("nodes")] public Dictionary<string, Position> Nodes { get; set; } = new();
         [JsonPropertyName("edges")] public Dictionary<string, EdgeWaypoints>? Edges { get; set; }
+
+        /// <summary>Everything else the client keeps per view — today `shapes`; tomorrow whatever
+        /// the canvas invents next. Preserved verbatim; never interpreted here.</summary>
+        [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
     }
 
     public sealed class Position
@@ -50,6 +66,10 @@ public sealed class LayoutSidecar
     {
         [JsonPropertyName("waypoints")] public List<Position>? Waypoints { get; set; }
         [JsonPropertyName("labelOffset")] public Position? LabelOffset { get; set; }
+
+        /// <summary>Everything else the client keeps per edge — today `handles` (draw.io-style dock
+        /// anchors). Preserved verbatim; never interpreted here.</summary>
+        [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()

@@ -15,7 +15,7 @@ Living bug records — one Markdown file per bug, created from
 
 | ID | Bug | Severity | Area | Status |
 |---|---|---|---|---|
-| _—_ | _No open bug records. File the first with the template._ | | | |
+| [B-001](./B-001-layout-sidecar-drops-shapes-and-edge-handles.md) | `stemma.layout.json` silently discards free-form shapes and edge dock handles | S2 major | sidecar | Fixed (pending in-app verification) |
 
 ## Known failure modes to check first (Stemma-specific)
 
@@ -28,5 +28,9 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
 - **Stale store selector** returning a fresh object each snapshot → render loop.
 - **Model/presentation boundary crossed** → data in the wrong place; fidelity or sync breaks.
 - **A fidelity rule violated** (`NormalizeWhitespace`, string-rebuild) → noisy, untrusted diffs.
+- **A closed C# type inside a pass-through format** → members the client writes are silently dropped
+  on bind, before anything is written. The round-trip test still passes, because it only asserts what
+  the type declares. Any nested type in `LayoutSidecar` needs `[JsonExtensionData]` — see
+  [B-001](./B-001-layout-sidecar-drops-shapes-and-edge-handles.md).
 
 The QA / Test Engineer owns this board.

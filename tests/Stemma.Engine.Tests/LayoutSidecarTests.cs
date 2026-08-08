@@ -58,6 +58,72 @@ public class LayoutSidecarTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>
+    /// B-001. The sidecar is a pass-through format: the web client owns the schema of everything
+    /// rich in it. A member this C# type has never heard of must therefore survive a round trip.
+    ///
+    /// Named for the invariant rather than for the two members that broke it, and asserted with an
+    /// invented section (`sparkles`) alongside the real ones, so it guards the *class* of bug — a
+    /// closed nested type silently dropping unmapped members on bind — rather than two instances of
+    /// it. `Round_trip_preserves_positions_styles_notes_props_and_annotations` above stayed green
+    /// throughout the original defect precisely because it only asserts what the type declares.
+    /// </summary>
+    [Fact]
+    public void Unknown_members_inside_a_view_survive_a_round_trip()
+    {
+        var dir = TempDir();
+        try
+        {
+            // Exactly what the client PUTs after drawing a shape and docking one edge endpoint —
+            // plus sections that do not exist yet, standing in for whatever the canvas invents next.
+            var authored = """
+            {
+              "version": 1,
+              "palettes": { "blog": { "stroke": "#767884" } },
+              "views": {
+                "custom:view_x": {
+                  "nodes": { "mod_1": { "x": 10, "y": 20 } },
+                  "edges": {
+                    "flow_1": {
+                      "waypoints": [{ "x": 5, "y": 5 }],
+                      "handles": { "source": "right", "target": "left" }
+                    }
+                  },
+                  "shapes": [{ "id": "sh_1", "kind": "label", "text": "human", "z": -1 }],
+                  "sparkles": { "anything": true }
+                }
+              }
+            }
+            """;
+            File.WriteAllText(LayoutSidecar.PathFor(dir), authored);
+
+            // Read → Write is the full server cycle: GET deserialises through these types, and the
+            // PUT that follows re-serialises whatever came back.
+            LayoutSidecar.Read(dir).Write(dir);
+            var onDisk = File.ReadAllText(LayoutSidecar.PathFor(dir));
+
+            using var doc = JsonDocument.Parse(onDisk);
+            var view = doc.RootElement.GetProperty("views").GetProperty("custom:view_x");
+
+            view.GetProperty("shapes")[0].GetProperty("text").GetString().Should().Be("human",
+                "free-form shapes are the client's to define and the engine's only to persist");
+            view.GetProperty("edges").GetProperty("flow_1").GetProperty("handles")
+                .GetProperty("source").GetString().Should().Be("right",
+                "edge dock anchors live beside waypoints on the same entry");
+            view.GetProperty("sparkles").GetProperty("anything").GetBoolean().Should().BeTrue(
+                "a section invented after this test was written must survive too");
+            doc.RootElement.GetProperty("palettes").GetProperty("blog")
+                .GetProperty("stroke").GetString().Should().Be("#767884",
+                "the same guarantee applies to unmapped sections at the top level");
+
+            // The modelled members still bind, because a validator walks them by type.
+            var typed = LayoutSidecar.Read(dir);
+            typed.Views["custom:view_x"].Nodes["mod_1"].Y.Should().Be(20);
+            typed.Views["custom:view_x"].Edges!["flow_1"].Waypoints![0].X.Should().Be(5);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     [Fact]
     public void Read_tolerates_garbage()
     {
