@@ -19,37 +19,23 @@ Living feature records — one Markdown file per feature, created from
 | [F-001](./F-001-architecture-report-export.md) | Architecture Report — single-file interactive HTML export | Shipped (v1) | Now | Bartosz |
 | [F-002](./F-002-desktop-shell.md) | Desktop shell — run Stemma in its own window | Ready (shell pending) | Next | Bartosz |
 | [F-003](./F-003-from-scratch-onboarding.md) | Designing from scratch — the first ten minutes | In progress | Now | Bartosz |
+| [F-004](./F-004-headless-diagram-render.md) | Headless diagram render (`stemma render`) | Shipped (v1) | Next | Bartosz |
+| [F-005](./F-005-publication-profile-and-palettes.md) | Publication render profile & named export palettes | Shipped (v1) | Next | Bartosz |
+| [F-006](./F-006-declarative-layout-dsl.md) | Declarative layout DSL in the presentation sidecar | Shipped (v1) | Next | Bartosz |
+| [F-007](./F-007-sidecar-schema-and-protocol.md) | Sidecar schema, protocol reference, workspace `STEMMA.md` | In progress | Next | Bartosz |
+| [F-008](./F-008-render-manifest.md) | Render manifest & staleness detection | Ready | Later | Bartosz |
+| [F-009](./F-009-vector-output.md) | True vector output from the publication profile | Draft | Later | Bartosz |
+| [F-010](./F-010-concept-element-kind.md) | The `Concept` element kind — the one engine change; needs an ADR | Ready | Next | Bartosz |
 | [F-011](./F-011-diagnostics-and-logging.md) | Diagnostics & logging — a leveled, structured record of what the engine did | Draft | Next | Bartosz |
 
-F-011 takes the next id after the block reserved below, and **blocks F-002** — the desktop shell's
-"backend failed to start" state needs a log file to point at.
+F-011 **blocks F-002** — the desktop shell's "backend failed to start" state needs a log file to
+point at.
 
-## Proposed — reserved, records not yet written
-
-Ids reserved by [`../product/agent-authored-diagrams.md`](../product/agent-authored-diagrams.md), the
-capability analysis for the **Essayist's Agent ("Ada")** persona. These are *not* records yet and
-nothing here is buildable until each has one — the rule stands: **no record, no build.** The analysis
-carries the problem statement, the decisions (§8) and the sequencing (§6) each record should inherit.
-
-| ID | Feature | Horizon | Phase |
-|---|---|---|---|
-| F-004 | Headless diagram render (`stemma render`, `src/Stemma.Cli`) | Next | 1 |
-| F-005 | Publication render profile & named export palettes | Next | 1–2 |
-| F-006 | Declarative layout DSL in the presentation sidecar | Next | 2 |
-| F-007 | Sidecar JSON Schema, protocol reference, workspace `STEMMA.md` | Next | 0–2 |
-| F-008 | Render manifest & staleness detection | Later | 3 |
-| F-009 | True vector output from the publication profile | Later | 3 |
-| F-010 | The `Concept` element kind — **the one engine change; needs an ADR** | Next | 2 |
-
-F-010 is the only one that touches `Stemma.Engine` and therefore the fidelity suite; it carries the
-full operation procedure (spec → ≥3 round-trip fixtures → `DocumentEditor` → fidelity suite). The
-rest are presentation-side.
-
-**Phase 0 of that programme shipped on 2026-08-08** and correctly needed no record — it was
-[B-001](../bugs/B-001-layout-sidecar-drops-shapes-and-edge-handles.md) plus three small fixes:
-wrapping node titles, transparency and scale as image-export options, and a published JSON Schema for
-the sidecar (`schema/stemma.layout.schema.json`). Parts of F-005 and F-007 are therefore already in
-place; each record should open by saying what is left rather than restating the whole item.
+F-004 through F-010 come from [`../product/agent-authored-diagrams.md`](../product/agent-authored-diagrams.md),
+the capability analysis for the **Essayist's Agent ("Ada")** persona; that document carries the
+problem statement, the six decisions (§8) and the sequencing (§6) each record inherits. F-010 is the
+only one that touches `Stemma.Engine` and therefore the fidelity suite, and it is the only one that
+needs an ADR.
 
 > Keep this table in sync as records are added (the Product Manager
 > and Docs Librarian own it). Already-shipped capabilities are
