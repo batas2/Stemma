@@ -29,6 +29,8 @@ import { ShapeLayer } from './ShapeLayer';
 import { StencilDrawer } from './StencilDrawer';
 import { loadShapes, primeShapeCache, type Shape } from '@/lib/shapes';
 import { resolveExportOptions, exportFileName, type ExportRequest } from '@/lib/exportImage';
+import { resolveLayout, offsetForDrag, constraintIds } from '@/lib/layoutDsl';
+import { sizesFor } from '@/lib/textMetrics';
 
 /** Bounding box of a shape (for the "fit everything" image export). */
 function shapeBoundsRect(s: Shape): { x: number; y: number; width: number; height: number } | null {
@@ -57,7 +59,7 @@ import { revealNewElement, revealToast } from '@/lib/canvasReveal';
 import { useApp } from '@/lib/store';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
-import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
+import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
 import { loadNote, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
@@ -704,6 +706,20 @@ function CanvasInner() {
   // node-build effect — because that effect reads it to avoid rebuilding nodes mid-drag.
   const dragStartPositions = useRef<Record<string, SavedPosition> | null>(null);
 
+  // Bumped when the committed sidecar finishes loading. The node-build effect below depends on it,
+  // because that effect can otherwise run first — against default positions — and never re-run, so
+  // the committed layout (and any constraint) would silently lose to a grid nobody authored.
+  const [sidecarTick, setSidecarTick] = useState(0);
+  useEffect(() => {
+    function onPrimed() { setSidecarTick((n) => n + 1); }
+    window.addEventListener('stemma:sidecar-primed', onPrimed);
+    return () => window.removeEventListener('stemma:sidecar-primed', onPrimed);
+  }, []);
+
+  // Sizes React Flow has actually measured, refreshed on every node build. The solver prefers these
+  // and estimates only for nodes that have never been drawn.
+  const measuredSizesRef = useRef<Record<string, { w: number; h: number }>>({});
+
   useEffect(() => {
     if (!workspace || !arch) {
       setNodes([]);
@@ -711,7 +727,22 @@ function CanvasInner() {
     }
     const saved = loadLayout(workspace.rootPath, layoutKey as ViewKind);
     const defaults = defaultPositions(filtered.elements);
-    const merged = { ...defaults, ...saved };
+    // A declarative constraint, when the view has one, governs the nodes it names; everything else
+    // keeps its stored position. Sizes come from what React Flow has measured, falling back to an
+    // estimate for nodes it has not drawn yet, so the arrangement does not jump on first paint.
+    const constraint = loadViewConstraint(workspace.rootPath, String(layoutKey));
+    const merged = constraint
+      ? resolveLayout({
+          constraint,
+          offsets: loadViewOffsets(workspace.rootPath, String(layoutKey)),
+          stored: { ...defaults, ...saved },
+          sizes: sizesFor(
+            filtered.elements.map((e) => ({ id: e.id, name: e.name })),
+            measuredSizesRef.current,
+          ),
+        })
+      : { ...defaults, ...saved };
+    const governedIds = new Set(constraint ? constraintIds(constraint) : []);
 
     setNodes((prev) => {
       // Never rebuild node objects while a drag is in flight: swapping the dragged node's identity
@@ -734,7 +765,11 @@ function CanvasInner() {
       const ctxById = new Map(arch?.elements.filter((x) => x.kind === 'boundedContext').map((x) => [x.id, x.name]) ?? []);
       return filtered.elements.map((e) => {
         const existing = prevById.get(e.id);
-        const pos = existing?.position ?? merged[e.id] ?? { x: 0, y: 0 };
+        // An existing node keeps its position across rebuilds — otherwise the ~1.5s violations
+        // poll would fight a drag. A node the constraint governs is the exception: its position is
+        // *derived*, so a re-solve (a nudge, an added box, or simply the sidecar arriving after the
+        // first paint) has to win, or the constraint could never take effect at all.
+        const pos = (governedIds.has(e.id) ? merged[e.id] : existing?.position ?? merged[e.id]) ?? { x: 0, y: 0 };
         const ns = nodeStyles[e.id];
         const editing = editingNodeId === e.id;
         const notesEditing = notesEditingId === e.id;
@@ -779,7 +814,7 @@ function CanvasInner() {
         } satisfies Node;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick]);
 
   useEffect(() => {
     if (nodes.length > 0) {
@@ -946,6 +981,27 @@ function CanvasInner() {
 
   const persistPositions = useCallback((next: Node[]) => {
     if (!workspace) return;
+    const key = String(layoutKey);
+    const constraint = loadViewConstraint(workspace.rootPath, key);
+
+    if (constraint) {
+      // Record the delta from the solved slot rather than the absolute position. That is what keeps
+      // the constraint alive: nudging one label to line up with an arrow must not dissolve the grid
+      // aligning the other six, and a nudge has to travel with its slot when the grid is re-solved.
+      const governed = new Set(constraintIds(constraint));
+      const sizes = sizesFor(next.map((n) => ({ id: n.id, name: String((n.data as { element?: { name?: string } })?.element?.name ?? n.id) })), measuredSizesRef.current);
+      const positions: Record<string, SavedPosition> = {};
+      for (const n of next) {
+        if (governed.has(n.id)) {
+          saveViewOffset(workspace.rootPath, key, n.id, offsetForDrag(n.id, n.position, constraint, sizes));
+        } else {
+          positions[n.id] = { x: n.position.x, y: n.position.y };
+        }
+      }
+      if (Object.keys(positions).length > 0) saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+      return;
+    }
+
     const positions: Record<string, SavedPosition> = {};
     for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
     saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);

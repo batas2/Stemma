@@ -1,11 +1,12 @@
 import type { ViewKind } from './types';
 import { fetchLayout, saveLayoutSidecar } from './api';
+import { isLayoutConstraint, type LayoutConstraint, type LayoutOffsets } from './layoutDsl';
 
 export interface SavedPosition { x: number; y: number; }
 
 interface SidecarShape {
   version?: number;
-  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown>; shapes?: unknown[]; layoutMode?: string }>;
+  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown>; shapes?: unknown[]; layoutMode?: string; layout?: unknown; offsets?: Record<string, SavedPosition> }>;
   nodeStyles?: Record<string, unknown>;
   edgeStyles?: Record<string, unknown>;
   notes?: Record<string, string>;
@@ -85,6 +86,57 @@ export function saveViewLayoutMode(rootPath: string, viewKey: string, mode: stri
   const s = ensureSidecar(rootPath);
   s.views = s.views ?? {};
   s.views[viewKey] = { ...s.views[viewKey], layoutMode: mode };
+  scheduleSidecarWrite(rootPath);
+}
+
+/**
+ * The layout constraint governing a view, if it has one.
+ *
+ * Stored beside the positions rather than instead of them: a constraint may govern part of a
+ * diagram, and the nodes it does not mention keep their absolute positions.
+ */
+export function loadViewConstraint(rootPath: string, viewKey: string): LayoutConstraint | null {
+  if (sidecarCache?.rootPath !== rootPath) return null;
+  const raw = sidecarCache.sidecar.views?.[viewKey]?.layout;
+  return isLayoutConstraint(raw) ? raw : null;
+}
+
+export function saveViewConstraint(rootPath: string, viewKey: string, constraint: LayoutConstraint | null): void {
+  if (typeof window === 'undefined') return;
+  const s = ensureSidecar(rootPath);
+  s.views = s.views ?? {};
+  const view = { ...s.views[viewKey] };
+  if (constraint) view.layout = constraint; else delete view.layout;
+  s.views[viewKey] = view;
+  scheduleSidecarWrite(rootPath);
+}
+
+/** Per-node nudges against the solved constraint. Empty when the view has no constraint. */
+export function loadViewOffsets(rootPath: string, viewKey: string): LayoutOffsets {
+  if (sidecarCache?.rootPath !== rootPath) return {};
+  return sidecarCache.sidecar.views?.[viewKey]?.offsets ?? {};
+}
+
+export function saveViewOffset(rootPath: string, viewKey: string, nodeId: string, offset: SavedPosition | null): void {
+  if (typeof window === 'undefined') return;
+  const s = ensureSidecar(rootPath);
+  s.views = s.views ?? {};
+  const view = { ...s.views[viewKey] };
+  const offsets = { ...(view.offsets ?? {}) };
+  // A nudge of zero is the absence of a nudge; keeping it would grow the file for nothing.
+  if (!offset || (offset.x === 0 && offset.y === 0)) delete offsets[nodeId];
+  else offsets[nodeId] = offset;
+  view.offsets = offsets;
+  s.views[viewKey] = view;
+  scheduleSidecarWrite(rootPath);
+}
+
+/** Drop every nudge on a view, returning it to the pure solved arrangement. */
+export function clearViewOffsets(rootPath: string, viewKey: string): void {
+  if (typeof window === 'undefined') return;
+  const s = ensureSidecar(rootPath);
+  s.views = s.views ?? {};
+  s.views[viewKey] = { ...s.views[viewKey], offsets: {} };
   scheduleSidecarWrite(rootPath);
 }
 

@@ -19,27 +19,38 @@
     "views": {
       "type": "object",
       "description": "Per-view presentation, keyed by view key: a built-in lens ('moduleMap', 'dependencyGraph') or a custom view as 'custom:<viewId>'.",
-      "additionalProperties": { "$ref": "#/$defs/viewLayout" }
+      "additionalProperties": {
+        "$ref": "#/$defs/viewLayout"
+      }
     },
     "nodeStyles": {
       "type": "object",
       "description": "Per-element node appearance, keyed by element id. Workspace-wide, not per view.",
-      "additionalProperties": { "$ref": "#/$defs/nodeStyle" }
+      "additionalProperties": {
+        "$ref": "#/$defs/nodeStyle"
+      }
     },
     "edgeStyles": {
       "type": "object",
       "description": "Per-relationship edge appearance, keyed by link id. Workspace-wide, not per view.",
-      "additionalProperties": { "$ref": "#/$defs/edgeStyle" }
+      "additionalProperties": {
+        "$ref": "#/$defs/edgeStyle"
+      }
     },
     "notes": {
       "type": "object",
       "description": "Per-element Markdown notes, keyed by element id.",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "customProps": {
       "type": "object",
       "description": "Per-element user-defined properties, keyed by element id. Values are free-form.",
-      "additionalProperties": { "type": "object", "additionalProperties": true }
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
     },
     "annotations": {
       "type": "object",
@@ -52,13 +63,19 @@
     "position": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["x", "y"],
+      "required": [
+        "x",
+        "y"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
       }
     },
-
     "viewLayout": {
       "type": "object",
       "description": "How one view is drawn. Unknown members here must survive a round trip — this is the object B-001 silently truncated.",
@@ -67,26 +84,47 @@
         "nodes": {
           "type": "object",
           "description": "Node positions in flow coordinates, keyed by element id.",
-          "additionalProperties": { "$ref": "#/$defs/position" }
+          "additionalProperties": {
+            "$ref": "#/$defs/position"
+          }
         },
         "edges": {
           "type": "object",
           "description": "Per-edge routing overrides for this view, keyed by link id.",
-          "additionalProperties": { "$ref": "#/$defs/edgeEntry" }
+          "additionalProperties": {
+            "$ref": "#/$defs/edgeEntry"
+          }
         },
         "shapes": {
           "type": "array",
           "description": "Free-form annotation drawn on this view. Pure presentation: never part of the model, always safe to delete.",
           "maxItems": 256,
-          "items": { "$ref": "#/$defs/shape" }
+          "items": {
+            "$ref": "#/$defs/shape"
+          }
         },
         "layoutMode": {
-          "enum": ["custom", "force", "hierarchical", "byType"],
+          "enum": [
+            "custom",
+            "force",
+            "hierarchical",
+            "byType"
+          ],
           "description": "How the view is arranged. 'custom' means the stored `nodes` positions are authoritative; the others re-run on open and overwrite them. Absent means 'custom'."
+        },
+        "layout": {
+          "$ref": "#/$defs/layoutConstraint",
+          "description": "A declarative arrangement, solved to coordinates on open. Governs only the ids it names; everything else keeps its `nodes` position. Unlike `layoutMode`, this stays live: a drag records an entry in `offsets` rather than replacing the constraint."
+        },
+        "offsets": {
+          "type": "object",
+          "description": "Per-node nudges applied on top of the solved constraint, keyed by element id. Stored as deltas so a nudge travels with its slot when the arrangement is re-solved.",
+          "additionalProperties": {
+            "$ref": "#/$defs/position"
+          }
         }
       }
     },
-
     "edgeEntry": {
       "type": "object",
       "additionalProperties": true,
@@ -94,7 +132,9 @@
         "waypoints": {
           "type": "array",
           "description": "Manual bend points, in flow coordinates.",
-          "items": { "$ref": "#/$defs/position" }
+          "items": {
+            "$ref": "#/$defs/position"
+          }
         },
         "labelOffset": {
           "$ref": "#/$defs/position",
@@ -105,178 +145,631 @@
           "description": "draw.io-style dock anchors: which connection dot each end attaches to.",
           "additionalProperties": true,
           "properties": {
-            "source": { "type": "string" },
-            "target": { "type": "string" }
+            "source": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
           }
         }
       }
     },
-
     "nodeStyle": {
       "type": "object",
       "description": "Mirrors NodeStyle in lib/nodeStyles.ts. Every member is optional; an absent member means the theme default.",
       "additionalProperties": true,
       "properties": {
-        "fillColor": { "type": "string" },
-        "borderColor": { "type": "string" },
-        "borderWidth": { "type": "number", "minimum": 1, "maximum": 5 },
-        "borderStyle": { "enum": ["solid", "dashed", "dotted"] },
-        "width": { "type": "number", "exclusiveMinimum": 0 },
-        "height": { "type": "number", "exclusiveMinimum": 0 },
-        "radius": { "type": "number", "minimum": 0 },
-        "animated": { "type": "boolean", "deprecated": true, "description": "Legacy marching-ants flag, migrated to animation: 'marching'." },
-        "animation": { "enum": ["none", "marching", "pulse", "glow", "breathe", "bounce", "shake"] },
-        "animationSpeed": { "enum": ["slow", "normal", "fast"] },
-        "fillStyle": { "enum": ["solid", "gradient", "glass", "hatch"] },
-        "shadow": { "enum": ["none", "soft", "raised", "glow"] },
-        "opacity": { "type": "number", "minimum": 0.2, "maximum": 1 },
-        "accentSide": { "enum": ["none", "left", "top"] },
-        "accentColor": { "type": "string" },
-        "textColor": { "type": "string" },
-        "textSize": { "enum": ["sm", "base", "lg"] },
-        "textAlign": { "enum": ["left", "center"] },
+        "fillColor": {
+          "type": "string"
+        },
+        "borderColor": {
+          "type": "string"
+        },
+        "borderWidth": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "borderStyle": {
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted"
+          ]
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0
+        },
+        "animated": {
+          "type": "boolean",
+          "deprecated": true,
+          "description": "Legacy marching-ants flag, migrated to animation: 'marching'."
+        },
+        "animation": {
+          "enum": [
+            "none",
+            "marching",
+            "pulse",
+            "glow",
+            "breathe",
+            "bounce",
+            "shake"
+          ]
+        },
+        "animationSpeed": {
+          "enum": [
+            "slow",
+            "normal",
+            "fast"
+          ]
+        },
+        "fillStyle": {
+          "enum": [
+            "solid",
+            "gradient",
+            "glass",
+            "hatch"
+          ]
+        },
+        "shadow": {
+          "enum": [
+            "none",
+            "soft",
+            "raised",
+            "glow"
+          ]
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 1
+        },
+        "accentSide": {
+          "enum": [
+            "none",
+            "left",
+            "top"
+          ]
+        },
+        "accentColor": {
+          "type": "string"
+        },
+        "textColor": {
+          "type": "string"
+        },
+        "textSize": {
+          "enum": [
+            "sm",
+            "base",
+            "lg"
+          ]
+        },
+        "textAlign": {
+          "enum": [
+            "left",
+            "center"
+          ]
+        },
         "visibleFields": {
           "type": "array",
           "description": "Which rows the node body renders. Built-in field keys (kind, name, id, contextId, systemId, containerKind, squad, domain, status, phase, narrativePreview) plus any custom property name. Default: kind, name, contextId, squad, status.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
-
     "edgeStyle": {
       "type": "object",
       "description": "Mirrors EdgeStyle in lib/edgeStyles.ts.",
       "additionalProperties": true,
       "properties": {
-        "thickness": { "type": "number", "minimum": 1, "maximum": 5 },
-        "lineStyle": { "enum": ["solid", "dashed", "dotted"] },
-        "routing": { "enum": ["bezier", "smoothstep", "step", "straight"] },
-        "color": { "type": "string" },
-        "animated": { "type": "boolean" },
-        "animSpeed": { "enum": ["slow", "normal", "fast"] },
-        "arrow": { "$ref": "#/$defs/edgeArrow", "deprecated": true, "description": "Legacy alias for arrowEnd." },
-        "arrowStart": { "$ref": "#/$defs/edgeArrow" },
-        "arrowEnd": { "$ref": "#/$defs/edgeArrow" }
+        "thickness": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "lineStyle": {
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted"
+          ]
+        },
+        "routing": {
+          "enum": [
+            "bezier",
+            "smoothstep",
+            "step",
+            "straight"
+          ]
+        },
+        "color": {
+          "type": "string"
+        },
+        "animated": {
+          "type": "boolean"
+        },
+        "animSpeed": {
+          "enum": [
+            "slow",
+            "normal",
+            "fast"
+          ]
+        },
+        "arrow": {
+          "$ref": "#/$defs/edgeArrow",
+          "deprecated": true,
+          "description": "Legacy alias for arrowEnd."
+        },
+        "arrowStart": {
+          "$ref": "#/$defs/edgeArrow"
+        },
+        "arrowEnd": {
+          "$ref": "#/$defs/edgeArrow"
+        }
       }
     },
-
-    "edgeArrow": { "enum": ["none", "closed", "open", "circle", "diamond", "pipe"] },
-
+    "edgeArrow": {
+      "enum": [
+        "none",
+        "closed",
+        "open",
+        "circle",
+        "diamond",
+        "pipe"
+      ]
+    },
     "shapeBase": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["id", "kind"],
+      "required": [
+        "id",
+        "kind"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "kind": { "enum": ["rect", "ellipse", "triangle", "label", "arrow", "image"] },
-        "z": { "type": "number", "description": "Stacking order within the shape layer. Default -1, i.e. behind the nodes." }
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "rect",
+            "ellipse",
+            "triangle",
+            "label",
+            "arrow",
+            "image"
+          ]
+        },
+        "z": {
+          "type": "number",
+          "description": "Stacking order within the shape layer. Default -1, i.e. behind the nodes."
+        }
       }
     },
-
     "shapeBoxText": {
       "type": "object",
       "description": "Text and finish shared by the box-like shapes (rect / ellipse / triangle).",
       "properties": {
-        "label": { "type": "string" },
-        "text": { "type": "string" },
-        "textColor": { "type": "string" },
-        "fontSize": { "type": "number", "exclusiveMinimum": 0 },
-        "radius": { "type": "number", "minimum": 0 },
-        "fillStyle": { "enum": ["solid", "gradient"] },
-        "shadow": { "enum": ["none", "soft", "raised", "glow"] },
-        "animation": { "enum": ["none", "marching", "pulse", "breathe"] }
+        "label": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "textColor": {
+          "type": "string"
+        },
+        "fontSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0
+        },
+        "fillStyle": {
+          "enum": [
+            "solid",
+            "gradient"
+          ]
+        },
+        "shadow": {
+          "enum": [
+            "none",
+            "soft",
+            "raised",
+            "glow"
+          ]
+        },
+        "animation": {
+          "enum": [
+            "none",
+            "marching",
+            "pulse",
+            "breathe"
+          ]
+        }
       }
     },
-
     "shapeBox": {
       "type": "object",
-      "required": ["x", "y", "w", "h"],
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "w": { "type": "number" },
-        "h": { "type": "number" },
-        "fill": { "type": "string" },
-        "stroke": { "type": "string" },
-        "strokeWidth": { "type": "number" },
-        "strokeStyle": { "enum": ["solid", "dashed", "dotted"] },
-        "rounded": { "type": "boolean", "description": "rect only." }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        },
+        "h": {
+          "type": "number"
+        },
+        "fill": {
+          "type": "string"
+        },
+        "stroke": {
+          "type": "string"
+        },
+        "strokeWidth": {
+          "type": "number"
+        },
+        "strokeStyle": {
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted"
+          ]
+        },
+        "rounded": {
+          "type": "boolean",
+          "description": "rect only."
+        }
       }
     },
-
     "arrowAnchor": {
       "description": "Where an arrow endpoint lives. An anchored endpoint follows its target; a free one does not.",
       "oneOf": [
         {
           "type": "object",
-          "required": ["kind", "x", "y"],
+          "required": [
+            "kind",
+            "x",
+            "y"
+          ],
           "additionalProperties": true,
-          "properties": { "kind": { "const": "free" }, "x": { "type": "number" }, "y": { "type": "number" } }
+          "properties": {
+            "kind": {
+              "const": "free"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          }
         },
         {
           "type": "object",
-          "required": ["kind", "id"],
+          "required": [
+            "kind",
+            "id"
+          ],
           "additionalProperties": true,
-          "properties": { "kind": { "enum": ["element", "shape"] }, "id": { "type": "string" } }
+          "properties": {
+            "kind": {
+              "enum": [
+                "element",
+                "shape"
+              ]
+            },
+            "id": {
+              "type": "string"
+            }
+          }
         }
       ]
     },
-
     "shape": {
       "description": "One free-form annotation. Discriminated by `kind`.",
-      "allOf": [{ "$ref": "#/$defs/shapeBase" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/shapeBase"
+        }
+      ],
       "oneOf": [
         {
           "title": "rect / ellipse / triangle",
-          "allOf": [{ "$ref": "#/$defs/shapeBox" }, { "$ref": "#/$defs/shapeBoxText" }],
-          "properties": { "kind": { "enum": ["rect", "ellipse", "triangle"] } }
+          "allOf": [
+            {
+              "$ref": "#/$defs/shapeBox"
+            },
+            {
+              "$ref": "#/$defs/shapeBoxText"
+            }
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "rect",
+                "ellipse",
+                "triangle"
+              ]
+            }
+          }
         },
         {
           "title": "label",
-          "required": ["x", "y", "text"],
+          "required": [
+            "x",
+            "y",
+            "text"
+          ],
           "properties": {
-            "kind": { "const": "label" },
-            "x": { "type": "number" },
-            "y": { "type": "number" },
-            "text": { "type": "string" },
-            "fontSize": { "type": "number", "exclusiveMinimum": 0 },
-            "color": { "type": "string" }
+            "kind": {
+              "const": "label"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "text": {
+              "type": "string"
+            },
+            "fontSize": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "color": {
+              "type": "string"
+            }
           }
         },
         {
           "title": "arrow",
-          "required": ["fromX", "fromY", "toX", "toY"],
+          "required": [
+            "fromX",
+            "fromY",
+            "toX",
+            "toY"
+          ],
           "properties": {
-            "kind": { "const": "arrow" },
-            "fromX": { "type": "number" },
-            "fromY": { "type": "number" },
-            "toX": { "type": "number" },
-            "toY": { "type": "number" },
-            "fromAnchor": { "$ref": "#/$defs/arrowAnchor" },
-            "toAnchor": { "$ref": "#/$defs/arrowAnchor" },
-            "stroke": { "type": "string" },
-            "strokeWidth": { "type": "number" },
-            "strokeStyle": { "enum": ["solid", "dashed", "dotted"] },
-            "label": { "type": "string" },
+            "kind": {
+              "const": "arrow"
+            },
+            "fromX": {
+              "type": "number"
+            },
+            "fromY": {
+              "type": "number"
+            },
+            "toX": {
+              "type": "number"
+            },
+            "toY": {
+              "type": "number"
+            },
+            "fromAnchor": {
+              "$ref": "#/$defs/arrowAnchor"
+            },
+            "toAnchor": {
+              "$ref": "#/$defs/arrowAnchor"
+            },
+            "stroke": {
+              "type": "string"
+            },
+            "strokeWidth": {
+              "type": "number"
+            },
+            "strokeStyle": {
+              "enum": [
+                "solid",
+                "dashed",
+                "dotted"
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
             "linkKind": {
-              "enum": ["dataFlow", "dependency"],
+              "enum": [
+                "dataFlow",
+                "dependency"
+              ],
               "description": "Mirrors ArchLink.kind so annotation arrows read like model links. Defaults to dataFlow."
             },
-            "linkSubKind": { "type": "string", "description": "dependency only: the verb (uses / calls / publishes / …). Free text." },
-            "payload": { "type": "string", "description": "dataFlow only: what flows." }
+            "linkSubKind": {
+              "type": "string",
+              "description": "dependency only: the verb (uses / calls / publishes / …). Free text."
+            },
+            "payload": {
+              "type": "string",
+              "description": "dataFlow only: what flows."
+            }
           }
         },
         {
           "title": "image",
-          "required": ["x", "y", "w", "h", "src"],
+          "required": [
+            "x",
+            "y",
+            "w",
+            "h",
+            "src"
+          ],
           "properties": {
-            "kind": { "const": "image" },
-            "x": { "type": "number" },
-            "y": { "type": "number" },
-            "w": { "type": "number" },
-            "h": { "type": "number" },
-            "src": { "type": "string", "description": "A built-in stencil id ('stencil:database') or a data: URL." },
-            "label": { "type": "string" }
+            "kind": {
+              "const": "image"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "w": {
+              "type": "number"
+            },
+            "h": {
+              "type": "number"
+            },
+            "src": {
+              "type": "string",
+              "description": "A built-in stencil id ('stencil:database') or a data: URL."
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "layoutConstraint": {
+      "description": "Layout as intent rather than pixels. Only deterministic arrangements belong here: re-solving must give the same picture, which is why the iterative auto-layouts (force, hierarchical, byType) are `layoutMode` generators that bake coordinates instead.",
+      "oneOf": [
+        {
+          "title": "grid",
+          "type": "object",
+          "required": [
+            "kind",
+            "columns"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "const": "grid"
+            },
+            "columns": {
+              "type": "array",
+              "description": "Column-major: columns[i] is the ids in column i, top to bottom.",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "gap": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "align": {
+              "enum": [
+                "start",
+                "center"
+              ]
+            }
+          }
+        },
+        {
+          "title": "row",
+          "type": "object",
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "const": "row"
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "gap": {
+              "type": "number"
+            },
+            "align": {
+              "enum": [
+                "start",
+                "center"
+              ]
+            }
+          }
+        },
+        {
+          "title": "column",
+          "type": "object",
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "const": "column"
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "gap": {
+              "type": "number"
+            },
+            "align": {
+              "enum": [
+                "start",
+                "center"
+              ]
+            }
+          }
+        },
+        {
+          "title": "stack",
+          "type": "object",
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "const": "stack"
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "step": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
           }
         }
       ]
