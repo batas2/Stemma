@@ -262,7 +262,7 @@ export function WaypointEdge({
               border: `1px solid ${selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
               color: selected ? SELECT_COLOR : undefined, fontWeight: selected ? 600 : undefined,
             }}
-            className="dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700"
+            className="stemma-edge-label dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700"
             title={data?.onEditStart ? 'Double-click to edit' : undefined}
             onDoubleClick={data?.onEditStart ? (ev) => { ev.stopPropagation(); data.onEditStart?.(id); } : undefined}
           >

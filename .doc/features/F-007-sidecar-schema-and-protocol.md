@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-007 |
-| **Status** | `In progress` — schema shipped; protocol reference and scaffold outstanding |
+| **Status** | `In progress` — schema and protocol reference shipped; scaffold outstanding |
 | **Owner** | Bartosz |
 | **Persona served** | The Essayist's Agent ("Ada") |
 | **Roadmap horizon** | `Next` |
@@ -30,7 +30,7 @@
       and a schema that forbade unknown members would bless B-001.
 - [x] AC4 — Tests fail if a section the engine models is missing from the schema, or if the version
       or `$id` drift from the engine's constants.
-- [ ] AC5 — `.doc/protocol/authoring-a-diagram.md` covers `Architecture.cs` → `Views/<Name>.cs` →
+- [x] AC5 — `.doc/protocol/authoring-a-diagram.md` covers `Architecture.cs` → `Views/<Name>.cs` →
       `stemma.layout.json` → render, with three complete worked examples (argument, C4, dependency).
 - [ ] AC6 — `WorkspaceScaffold` drops a `STEMMA.md` brief at the root of every new workspace.
 
@@ -67,7 +67,7 @@
 
 ## 8. Definition of Done
 
-- [x] Schema shipped and guarded · [ ] protocol reference written · [ ] scaffold updated
+- [x] Schema shipped and guarded · [x] protocol reference written · [ ] scaffold updated
 
 ## 9. Notes / open questions
 

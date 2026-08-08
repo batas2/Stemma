@@ -263,9 +263,15 @@
 [data-stemma-profile='publication'] .react-flow__controls,
 [data-stemma-profile='publication'] .react-flow__attribution,
 [data-stemma-profile='publication'] .react-flow__panel,
-[data-stemma-profile='publication'] .react-flow__handle,
 [data-stemma-profile='publication'] .react-flow__resize-control {
   display: none !important;
+}
+
+/* Connection dots are hidden with `visibility`, never `display`. React Flow derives edge geometry
+   from the handles' laid-out boxes, so removing them from layout collapses every path to a point —
+   which silently drew publication renders with no arrows at all. */
+[data-stemma-profile='publication'] .react-flow__handle {
+  visibility: hidden !important;
 }
 
 /* Outline-only boxes. Fills and shadows are the two things that cannot survive being placed on a
@@ -342,4 +348,15 @@
 [data-stemma-profile='publication'] .stemma-bc-frame > div:first-child {
   background: none !important;
   color: var(--pub-text) !important;
+}
+
+/* Edge labels: the plate is a readability aid over a canvas whose background is known. On a
+   transparent export it is a white slab on someone else's page, so the label carries the ink alone
+   — which is what the draw.io originals do. */
+[data-stemma-profile='publication'] .stemma-edge-label {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--pub-text) !important;
+  padding: 0 3px !important;
 }
