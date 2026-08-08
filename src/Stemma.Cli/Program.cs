@@ -17,6 +17,7 @@ try
     return command switch
     {
         "render" => await RenderCommand.RunAsync(rest),
+        "validate" => await ValidateCommand.RunAsync(rest),
         _ => Cli.Fail($"unknown command '{command}'"),
     };
 }
@@ -34,6 +35,7 @@ namespace Stemma.Cli
             stemma — headless tools for a Stemma workspace.
 
               stemma render    Turn a model and a view into an image.
+              stemma validate  Check a workspace for the things the compiler cannot see.
 
             Run a command with --help for its options.
             """;

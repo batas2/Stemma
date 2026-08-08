@@ -22,6 +22,10 @@ public sealed record RenderOptions
     public int Scale { get; init; } = 2;
     public int Pad { get; init; } = 24;
     public int TimeoutSeconds { get; init; } = 60;
+    /// <summary>Emit a sibling `.manifest.json` describing what was drawn and what it was drawn from.</summary>
+    public bool Manifest { get; init; } = true;
+    /// <summary>Re-check the manifest against the workspace and exit non-zero on drift, writing nothing.</summary>
+    public bool CheckOnly { get; init; }
 
     public const int ScaleMin = 1;
     public const int ScaleMax = 4;
@@ -49,6 +53,8 @@ public sealed record RenderOptions
           --scale <1-4>        Device pixel multiplier. Default 2.
           --pad <px>           Padding around the content bounds. Default 24.
           --timeout <seconds>  How long to wait for the canvas to settle. Default 60.
+          --no-manifest        Skip the sibling .manifest.json.
+          --check              Do not render; report whether the committed image is still current.
         """;
 
     /// <summary>Parsed options, or an error explaining what the command line got wrong.</summary>
@@ -66,7 +72,7 @@ public sealed record RenderOptions
         string? workspace = null, view = null, output = null, palette = null;
         var profile = "publication";
         List<string> themes = ["light"], formats = ["png"];
-        var transparent = true;
+        bool transparent = true, manifest = true, checkOnly = false;
         int scale = 2, pad = 24, timeout = 60;
 
         string? Need(int i, string flag) => i + 1 < args.Count ? args[i + 1] : null;
@@ -84,6 +90,8 @@ public sealed record RenderOptions
                 case "--theme": themes = SplitList(Need(i, a) ?? ""); i++; break;
                 case "--format": formats = SplitList(Need(i, a) ?? ""); i++; break;
                 case "--opaque": transparent = false; break;
+                case "--no-manifest": manifest = false; break;
+                case "--check": checkOnly = true; break;
                 case "--scale":
                     if (!int.TryParse(Need(i, a), out scale)) return new(null, "--scale needs a whole number");
                     i++; break;
@@ -128,6 +136,8 @@ public sealed record RenderOptions
             Scale = scale,
             Pad = pad,
             TimeoutSeconds = timeout,
+            Manifest = manifest,
+            CheckOnly = checkOnly,
         }, null);
     }
 
