@@ -4,7 +4,7 @@ import { useApp } from '@/lib/store';
 import {
   loadViewConstraint, saveViewConstraint, loadViewOffsets, clearViewOffsets,
 } from '@/lib/layout';
-import { constraintIds, constraintFromSelection, type LayoutConstraint, type LayoutConstraintKind } from '@/lib/layoutDsl';
+import { constraintIds, constraintFromSelection, danglingIds, type LayoutConstraint, type LayoutConstraintKind } from '@/lib/layoutDsl';
 
 /**
  * Authoring a layout constraint from the canvas.
@@ -27,6 +27,7 @@ const SHAPES: { kind: LayoutConstraintKind; label: string; icon: typeof Grid3x3;
 
 export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
   const workspace = useApp((s) => s.workspace);
+  const arch = useApp((s) => s.arch);
   const selectedIds = useApp((s) => s.canvasSelectedIds);
   const setToast = useApp((s) => s.setToast);
 
@@ -87,6 +88,9 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
   }
 
   const governed = constraint ? constraintIds(constraint).length : 0;
+  // A constraint naming an element that has since been removed places nothing and says nothing —
+  // the box is simply absent from an arrangement that still claims to include it.
+  const dangling = constraint && arch ? danglingIds(constraint, arch.elements.map((e) => e.id)) : [];
 
   return (
     <section className="space-y-2">
@@ -116,6 +120,13 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
         </div>
       ) : (
         <p className="text-[11px] text-zinc-500">No constraint — positions on this view are absolute.</p>
+      )}
+
+      {dangling.length > 0 && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          {dangling.length === 1 ? 'One element is' : `${dangling.length} elements are`} named by this
+          constraint but no longer in the model: {dangling.join(', ')}.
+        </p>
       )}
 
       <div className="space-y-1 pt-1">

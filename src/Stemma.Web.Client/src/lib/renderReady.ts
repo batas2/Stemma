@@ -90,12 +90,6 @@ export function publishRenderState(state: RenderState, error?: string): void {
   else root.removeAttribute(RENDER_ERROR_ATTR);
 }
 
-/** Current published state, or null if nothing has published one yet. */
-export function readRenderState(): RenderState | null {
-  if (typeof document === 'undefined') return null;
-  return (document.documentElement.getAttribute(RENDER_STATE_ATTR) as RenderState | null) ?? null;
-}
-
 /** Resolves once webfonts have settled; resolves immediately where the API is absent. */
 export function fontsReady(): Promise<void> {
   if (typeof document === 'undefined' || !('fonts' in document)) return Promise.resolve();

@@ -75,9 +75,17 @@ export function publicationWidth(name: string, explicit?: number): number {
   return Math.min(NODE_MAX_WIDTH, Math.max(NODE_MIN_WIDTH, Math.ceil(natural)));
 }
 
+/** Height for a given number of drawn lines. The box is padding plus the text block, nothing else. */
+export function heightForLines(lineCount: number, explicit?: number): number {
+  return explicit ?? Math.ceil(PUB_PADDING_Y * 2 + lineCount * PUB_LINE_HEIGHT);
+}
+
+/**
+ * Height the box settles at. Goes through the same `heightForLines` the component draws with, so
+ * there is one calculation rather than two that a test has to keep in agreement.
+ */
 export function publicationHeight(name: string, width: number, explicit?: number): number {
-  if (explicit) return explicit;
-  return Math.ceil(PUB_PADDING_Y * 2 + wrappedLineCount(name, width, PUB_FONT_SIZE) * PUB_LINE_HEIGHT);
+  return heightForLines(wrappedLineCount(name, width, PUB_FONT_SIZE), explicit);
 }
 
 /**
@@ -89,7 +97,7 @@ export function publicationHeight(name: string, width: number, explicit?: number
 export function PublicationNode({ name, width, height, dashed, accent }: PublicationNodeProps) {
   const w = publicationWidth(name, width);
   const lines = useMemo(() => wrapIntoLines(name, w), [name, w]);
-  const h = height ?? Math.ceil(PUB_PADDING_Y * 2 + lines.length * PUB_LINE_HEIGHT);
+  const h = heightForLines(lines.length, height);
 
   const ink = accent ? 'var(--pub-accent)' : 'var(--pub-stroke)';
   const text = accent ? 'var(--pub-accent)' : 'var(--pub-text)';

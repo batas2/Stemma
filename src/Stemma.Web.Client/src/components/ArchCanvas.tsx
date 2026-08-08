@@ -717,9 +717,26 @@ function CanvasInner() {
     return () => window.removeEventListener('stemma:sidecar-primed', onPrimed);
   }, []);
 
-  // Sizes React Flow has actually measured, refreshed on every node build. The solver prefers these
-  // and estimates only for nodes that have never been drawn.
+  // Sizes React Flow has actually measured. The layout solver prefers these and estimates only for
+  // nodes that have never been drawn — an estimate is close but not exact, and a track sized from
+  // one is visibly wrong for a node carrying an explicit width.
+  //
+  // Read off React Flow's own `measured` rather than the DOM: no query, no timer, and it is already
+  // the number the canvas laid out with.
   const measuredSizesRef = useRef<Record<string, { w: number; h: number }>>({});
+  useEffect(() => {
+    let changed = false;
+    const next = { ...measuredSizesRef.current };
+    for (const n of nodes) {
+      const w = n.measured?.width, h = n.measured?.height;
+      if (!w || !h) continue;
+      const prev = next[n.id];
+      if (prev?.w === w && prev?.h === h) continue;
+      next[n.id] = { w, h };
+      changed = true;
+    }
+    if (changed) measuredSizesRef.current = next;
+  }, [nodes]);
 
   useEffect(() => {
     if (!workspace || !arch) {

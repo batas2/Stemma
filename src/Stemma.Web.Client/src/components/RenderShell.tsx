@@ -108,6 +108,10 @@ export function RenderShell({ params }: { params: RenderParams }) {
         // Enough slack that an edge label hanging off the leftmost node still has viewport to sit in;
         // the crop trims the rest back to the content anyway.
         window.dispatchEvent(new CustomEvent('stemma:render-fit', { detail: { padding: 0.12 } }));
+        // Nothing after this point is decided here — readiness now waits on `render-fitted`. Left
+        // running, it would keep measuring every node and rebuilding a signature string throughout
+        // the capture itself, for a question already answered.
+        clearInterval(timer);
       }
 
       // A safety valve, not a success path: if something never settles the page stays in `loading`

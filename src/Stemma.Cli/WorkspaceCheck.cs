@@ -204,6 +204,12 @@ public static class WorkspaceCheck
         var docs = Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.AllDirectories)
             .Select(f => (FilePath: f, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()));
 
+        // One pass over the model, not one per view member. A linear scan inside the loop makes this
+        // quadratic in a workspace of any size, and this runs on every save in a build.
+        var kindById = model.Elements
+            .GroupBy(e => e.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.Ordinal);
+
         foreach (var view in ViewsAdapter.ReadAllFrom(docs))
         {
             var members = view.ElementIds.Where(ids.Contains).ToList();
@@ -222,7 +228,7 @@ public static class WorkspaceCheck
             // A view holding both Concepts and structural kinds is mixing rhetorical registers: half
             // the boxes claim something about a system and half claim nothing, and the picture reads
             // as neither an argument nor an architecture.
-            var kinds = members.Select(id => model.Elements.First(e => e.Id == id).Kind).ToList();
+            var kinds = members.Select(id => kindById[id]).ToList();
             var conceptCount = kinds.Count(k => k == ArchElementKind.Concept);
             if (conceptCount > 0 && conceptCount < kinds.Count)
                 yield return new(CheckSeverity.Warning, "view/mixed-register",

@@ -213,21 +213,6 @@ export function offsetForDrag(
 }
 
 /**
- * Bake a constraint down to plain positions, for when it is removed.
- *
- * Dropping a constraint must not move anything: what was on screen becomes the stored layout.
- */
-export function bakeConstraint(
-  constraint: LayoutConstraint,
-  offsets: LayoutOffsets,
-  sizes: Record<string, NodeSize>,
-  stored: Record<string, SavedPosition> = {},
-  origin: SavedPosition = { x: 0, y: 0 }
-): Record<string, SavedPosition> {
-  return resolveLayout({ constraint, offsets, stored, sizes, origin });
-}
-
-/**
  * Build a constraint from a canvas selection.
  *
  * Selection order is the authoring order — the boxes go where the user picked them, not where they

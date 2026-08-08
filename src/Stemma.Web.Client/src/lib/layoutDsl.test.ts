@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  solveConstraint, resolveLayout, offsetForDrag, bakeConstraint,
+  solveConstraint, resolveLayout, offsetForDrag,
   constraintIds, danglingIds, isLayoutConstraint,
   constraintFromSelection, chunk, CONSTRAINT_KINDS,
   FALLBACK_SIZE, type LayoutConstraint, type NodeSize,
@@ -130,15 +130,6 @@ describe('offsetForDrag', () => {
 
   it('returns null for a node the constraint does not place', () => {
     expect(offsetForDrag('zz', { x: 0, y: 0 }, grid, sizes)).toBeNull();
-  });
-});
-
-describe('bakeConstraint', () => {
-  it('freezes what is on screen, so removing a constraint moves nothing', () => {
-    const grid: LayoutConstraint = { kind: 'grid', columns: [['a'], ['b']], gap: [10, 5] };
-    const offsets = { b: { x: 3, y: 4 } };
-    const baked = bakeConstraint(grid, offsets, sizes, { z: { x: 1, y: 2 } });
-    expect(baked).toEqual(resolveLayout({ constraint: grid, offsets, sizes, stored: { z: { x: 1, y: 2 } } }));
   });
 });
 

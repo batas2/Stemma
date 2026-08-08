@@ -65,10 +65,6 @@ export function resolvePalette(name: string | null | undefined): Palette {
   return PALETTES[name ?? ''] ?? PALETTES[DEFAULT_PALETTE];
 }
 
-export function paletteNames(): string[] {
-  return Object.keys(PALETTES);
-}
-
 /** CSS custom properties the publication stylesheet reads. */
 export function paletteCssVars(p: Palette): Record<string, string> {
   return {

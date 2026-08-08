@@ -85,7 +85,9 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
 
         if (format == "svg")
         {
-            var svg = await page.EvaluateAsync<string?>(SerializeSvgScript)
+            // `--opaque` is a real option for SVG too: without a backdrop rect the file inherits
+            // whatever it is placed on, which is the opposite of what "opaque" was asked for.
+            var svg = await page.EvaluateAsync<string?>(SerializeSvgScript, new { transparent = o.Transparent })
                 ?? throw new InvalidOperationException("the canvas produced no SVG layer to serialise");
             await File.WriteAllTextAsync(target, svg, ct);
         }
@@ -179,7 +181,7 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
     /// the CSS custom properties carrying the palette, and the viewport transform.
     /// </summary>
     private const string SerializeSvgScript = """
-        () => {
+        (opts) => {
           const flow = document.querySelector('.react-flow');
           const viewport = document.querySelector('.react-flow__viewport');
           if (!flow || !viewport) return null;
@@ -197,6 +199,14 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
           out.setAttribute('width', String(Math.round(box.width)));
           out.setAttribute('height', String(Math.round(box.height)));
           out.setAttribute('viewBox', `0 0 ${Math.round(box.width)} ${Math.round(box.height)}`);
+
+          if (!opts.transparent) {
+            const bg = document.createElementNS(NS, 'rect');
+            bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+            bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%');
+            bg.setAttribute('fill', getComputedStyle(document.body).backgroundColor || '#ffffff');
+            out.appendChild(bg);
+          }
 
           // Markers (arrowheads) live outside the edge layer and are referenced by url(#id).
           for (const defs of document.querySelectorAll('svg defs')) out.appendChild(defs.cloneNode(true));
