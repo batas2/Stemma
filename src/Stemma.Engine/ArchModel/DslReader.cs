@@ -21,7 +21,7 @@ public static class DslReader
 
     private static readonly HashSet<string> LinkTypeNames = new(StringComparer.Ordinal)
     {
-        "DataFlow", "Dependency"
+        "DataFlow", "Dependency", "Relation"
     };
 
     public static ArchModel? TryRead(string filePath, SyntaxNode root)
@@ -56,7 +56,12 @@ public static class DslReader
                 }
                 else if (LinkTypeNames.Contains(typeName))
                 {
-                    var kind = typeName == "DataFlow" ? ArchLinkKind.DataFlow : ArchLinkKind.Dependency;
+                    var kind = typeName switch
+                    {
+                        "DataFlow" => ArchLinkKind.DataFlow,
+                        "Relation" => ArchLinkKind.Relation,
+                        _ => ArchLinkKind.Dependency,
+                    };
                     var (id, fromId, toId, attrs) = ParseLinkArgs(kind, args);
                     if (id is not null && fromId is not null && toId is not null)
                     {
@@ -231,6 +236,7 @@ public static class DslReader
         {
             ArchLinkKind.DataFlow => new[] { "id", "fromId", "toId", "payload", "direction" },
             ArchLinkKind.Dependency => new[] { "id", "fromId", "toId", "kind" },
+            ArchLinkKind.Relation => new[] { "id", "fromId", "toId", "label" },
             _ => new[] { "id", "fromId", "toId" }
         };
         string? id = null;

@@ -383,6 +383,9 @@ public static class DslWriter
             case ArchLinkKind.Dependency:
                 if (l.Attributes.TryGetValue("kind", out var k) && k is not null) args.Add(Lit(k));
                 break;
+            case ArchLinkKind.Relation:
+                if (l.Attributes.TryGetValue("label", out var lbl) && lbl is not null) args.Add(Lit(lbl));
+                break;
         }
         return ParseLocal(VarNameFor(l.Id), typeName, args);
     }

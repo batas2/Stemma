@@ -107,7 +107,8 @@ interface AppState {
   selectedLinkId: string | null;
   /** In-progress edit of a relationship's payload/kind, shared keystroke-by-keystroke between the
    *  canvas inline editor and the inspector so both surfaces stay in sync while typing. */
-  linkDraft: { linkId: string; field: 'payload' | 'kind'; value: string } | null;
+  /** `field` is whichever attribute carries this kind's label — see lib/linkLabel. */
+  linkDraft: { linkId: string; field: 'payload' | 'kind' | 'label'; value: string } | null;
   edgeStyles: Record<string, EdgeStyle>;
   nodeStyles: Record<string, NodeStyle>;
   customProps: Record<string, CustomProps>;

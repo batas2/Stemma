@@ -56,16 +56,18 @@ public sealed class AuroraRailSampleTests
     {
         var arch = LoadArch();
 
-        // `Concept` is excluded on purpose. Aurora Rail is a rail-ticketing platform: it has an
-        // architecture, not an argument, and every one of its elements claims something about a
-        // system. Dropping a Concept in to satisfy a coverage assertion would be precisely the
-        // register-mixing ADR-0018 exists to stop — and this workspace is what people copy from.
-        // The right home for it is a figure-shaped sample, which does not exist yet (F-010).
-        var structural = Enum.GetValues<ArchElementKind>().Except([ArchElementKind.Concept]);
+        // `Concept` and `Relation` are excluded on purpose. Aurora Rail is a rail-ticketing
+        // platform: it has an architecture, not an argument, and every one of its elements and
+        // arrows claims something about a system. Dropping either in to satisfy a coverage
+        // assertion would be precisely the register-mixing ADR-0018 and ADR-0019 exist to stop —
+        // in the workspace people copy from. The right home for both is a figure-shaped sample,
+        // which does not exist yet (F-010).
+        var structuralElements = Enum.GetValues<ArchElementKind>().Except([ArchElementKind.Concept]);
+        var structuralLinks = Enum.GetValues<ArchLinkKind>().Except([ArchLinkKind.Relation]);
         arch.Elements.Select(e => e.Kind).Distinct().Should().BeEquivalentTo(
-            structural,
+            structuralElements,
             "the reference workspace is what people copy from - it should demonstrate the whole structural vocabulary");
-        arch.Links.Select(l => l.Kind).Distinct().Should().BeEquivalentTo(Enum.GetValues<ArchLinkKind>());
+        arch.Links.Select(l => l.Kind).Distinct().Should().BeEquivalentTo(structuralLinks);
         arch.Elements.Should().HaveCountGreaterThan(50);
     }
 

@@ -54,6 +54,16 @@ public sealed record DataFlow(string Id, string FromId, string ToId, string Payl
 public sealed record Dependency(string Id, string FromId, string ToId, string Kind = "uses") : ModelLink(Id, FromId, ToId);
 
 /// <summary>
+/// A labelled arrow between two elements that claims nothing beyond its label.
+///
+/// The counterpart to <see cref="Concept"/>: if `Module` was the wrong word for a box in an
+/// argument, `Dependency` was the wrong word for the arrow between two ideas. `Relation` carries a
+/// free-text label and no semantics, so a diagram can say "becomes" or "answered by" without
+/// asserting a dependency that does not exist. See ADR-0019.
+/// </summary>
+public sealed record Relation(string Id, string FromId, string ToId, string Label = "") : ModelLink(Id, FromId, ToId);
+
+/// <summary>
 /// Lifecycle metadata attachable to any element or relationship. Status is open-enum:
 /// `current`, `target`, `to-adapt`, `to-be-created`, `deprecated`, `proposed`, or any
 /// user-defined string.

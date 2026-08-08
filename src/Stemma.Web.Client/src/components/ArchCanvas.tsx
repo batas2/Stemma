@@ -30,6 +30,7 @@ import { StencilDrawer } from './StencilDrawer';
 import { loadShapes, primeShapeCache, type Shape } from '@/lib/shapes';
 import { resolveExportOptions, exportFileName, type ExportRequest } from '@/lib/exportImage';
 import { resolveLayout, offsetForDrag, constraintIds } from '@/lib/layoutDsl';
+import { linkLabel, linkLabelField, linkIsDashedByDefault, LINK_FIELD_LABEL } from '@/lib/linkLabel';
 import { sizesFor } from '@/lib/textMetrics';
 
 /** Bounding box of a shape (for the "fit everything" image export). */
@@ -381,8 +382,8 @@ function CanvasInner() {
     const link = useApp.getState().arch?.links.find((l) => l.id === edgeId);
     if (!link) return;
     selectLink(edgeId);
-    const field = link.kind === 'dataFlow' ? 'payload' as const : 'kind' as const;
-    const value = field === 'payload' ? (link.attributes.payload ?? '') : (link.attributes.kind ?? 'uses');
+    const field = linkLabelField(link.kind);
+    const value = linkLabel(link);
     useApp.getState().setLinkDraft({ linkId: edgeId, field, value });
     setEditingEdgeId(edgeId);
   }, [selectLink]);
@@ -405,7 +406,7 @@ function CanvasInner() {
     const link = useApp.getState().arch?.links.find((l) => l.id === edgeId);
     if (!link) return;
     const field = link.kind === 'dataFlow' ? 'payload' : 'kind';
-    const current = field === 'payload' ? (link.attributes.payload ?? '') : (link.attributes.kind ?? 'uses');
+    const current = linkLabel(link);
     const next = value.trim();
     if (!next || next === current) return;
     const r = await applyOperation({
@@ -413,7 +414,7 @@ function CanvasInner() {
       linkId: edgeId, attributeName: field, value: next,
     });
     if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
-    else setToast({ kind: 'success', text: field === 'payload' ? 'Payload updated' : 'Kind updated' });
+    else setToast({ kind: 'success', text: `${LINK_FIELD_LABEL[field]} updated` });
   }, [cancelEdgeEdit, setToast]);
 
   // ---- Selection toolbar on the edge: each end's arrowhead is an independent toggle
@@ -458,8 +459,8 @@ function CanvasInner() {
     const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
     // While a draft edit is in flight (inline editor or inspector), the label shows it live.
     const draftValue = linkDraft && linkDraft.linkId === l.id ? linkDraft.value : null;
-    const label = draftValue ?? (isDataFlow ? l.attributes.payload ?? '' : l.attributes.kind ?? 'uses');
-    const dash = dashArrayFor(userStyle.lineStyle) ?? (isDataFlow ? undefined : '4 4');
+    const label = draftValue ?? linkLabel(l);
+    const dash = dashArrayFor(userStyle.lineStyle) ?? (linkIsDashedByDefault(l.kind) ? '4 4' : undefined);
     const waypoints = edgeWaypoints[l.id];
     // Dim edges that connect dimmed nodes in focus mode. Both endpoints have to be in
     // the focus set for the edge to stay lit — otherwise it's irrelevant to the selection.

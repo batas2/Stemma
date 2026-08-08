@@ -140,13 +140,66 @@ workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, Canc
     return Results.Text(text, "text/plain");
 });
 
-workspaceApi.MapGet("/export/drawio", async (EngineHost host, CancellationToken ct) =>
+// The escape hatch to a mature editor. It used to emit the whole model on a fixed grid regardless
+// of what was on screen, which meant the result had to be rebuilt by hand — the opposite of an
+// escape hatch. It now honours the active view and the committed layout.
+workspaceApi.MapGet("/export/drawio", async (string? view, string? palette, bool? labelKinds, EngineHost host, CancellationToken ct) =>
 {
     var arch = await host.ReadArchAsync(ct);
     if (arch is null) return Results.NotFound();
-    var xml = DrawioExporter.Export(arch);
+    var engine = host.Engine;
+
+    IReadOnlyCollection<string>? elementIds = null;
+    var layoutKey = "moduleMap";
+    if (!string.IsNullOrWhiteSpace(view) && engine is not null)
+    {
+        var views = await ReadViewsAsync(engine.RootPath, ct);
+        var match = views.FirstOrDefault(v => v.Id == view || v.Name == view);
+        if (match is not null)
+        {
+            elementIds = match.ElementIds.ToHashSet(StringComparer.Ordinal);
+            layoutKey = $"custom:{match.Id}";
+        }
+        else
+        {
+            layoutKey = view;
+        }
+    }
+
+    var positions = engine is null ? null : ReadPositions(engine.RootPath, layoutKey);
+
+    var xml = DrawioExporter.Export(arch, new DrawioExporter.Options
+    {
+        Positions = positions,
+        ElementIds = elementIds,
+        Palette = DrawioPalette.Resolve(palette),
+        LabelKinds = labelKinds ?? false,
+        DiagramName = view ?? "Stemma",
+    });
     return Results.Text(xml, "application/xml");
 });
+
+static async Task<IReadOnlyList<ArchView>> ReadViewsAsync(string root, CancellationToken ct)
+{
+    var viewsDir = Path.Combine(root, "Views");
+    if (!Directory.Exists(viewsDir)) return [];
+    var docs = new List<(string, Microsoft.CodeAnalysis.SyntaxNode)>();
+    foreach (var path in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
+    {
+        var content = await File.ReadAllTextAsync(path, ct);
+        docs.Add((path, Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content).GetRoot()));
+    }
+    return ViewsAdapter.ReadAllFrom(docs);
+}
+
+// Positions live in the committed sidecar under the view's key. Read straight off it rather than
+// through the typed model, so a view laid out by a constraint exports where it actually sits.
+static Dictionary<string, (double X, double Y)>? ReadPositions(string root, string viewKey)
+{
+    var sidecar = LayoutSidecar.Read(root);
+    if (!sidecar.Views.TryGetValue(viewKey, out var layout)) return null;
+    return layout.Nodes.ToDictionary(kv => kv.Key, kv => (kv.Value.X, kv.Value.Y), StringComparer.Ordinal);
+}
 
 workspaceApi.MapPost("/export/book-pdf", (BookPdfRequest req) =>
 {

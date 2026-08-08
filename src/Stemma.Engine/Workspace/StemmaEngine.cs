@@ -1109,7 +1109,12 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private static string GenerateLinkId(ArchLinkKind kind, ArchModel.ArchModel current)
     {
-        var prefix = kind == ArchLinkKind.DataFlow ? "flow" : "dep";
+        var prefix = kind switch
+        {
+            ArchLinkKind.DataFlow => "flow",
+            ArchLinkKind.Relation => "rel",
+            _ => "dep",
+        };
         var existing = current.Links.Select(l => l.Id).ToHashSet();
         for (var n = 1; ; n++)
         {

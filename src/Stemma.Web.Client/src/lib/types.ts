@@ -51,7 +51,9 @@ export type ArchElementKind =
   | 'question' | 'assumption' | 'risk'
   // A named thing in an argument, asserting nothing about a system. See ADR-0018.
   | 'concept';
-export type ArchLinkKind = 'dataFlow' | 'dependency';
+// `relation` is a labelled arrow that claims nothing beyond its label — the counterpart to the
+// `concept` element kind. See ADR-0019.
+export type ArchLinkKind = 'dataFlow' | 'dependency' | 'relation';
 
 export interface ArchElement {
   id: string;

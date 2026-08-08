@@ -183,6 +183,108 @@ public class ConceptElementTests
         source.Should().NotContain("con_drop");
     }
 
+    // ---- Relation (ADR-0019) ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Reads_a_relation_with_its_label()
+    {
+        await using var ws = await CreateAsync("""
+            var a = new Concept("con_a", "an agent's diff");
+            var b = new Concept("con_b", "nobody to ask");
+            var r = new Relation("rel_001", "con_a", "con_b", "becomes");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        var arch = await engine.ReadArchModelAsync();
+
+        var link = arch!.Links.Should().ContainSingle().Subject;
+        link.Kind.Should().Be(ArchLinkKind.Relation);
+        link.Attributes["label"].Should().Be("becomes");
+    }
+
+    [Fact]
+    public async Task A_relation_without_a_label_is_a_legitimate_arrow()
+    {
+        // Unlike a Dependency, which falls back to "uses", an unlabelled Relation draws a bare
+        // arrow — which is a thing arguments genuinely want.
+        await using var ws = await CreateAsync("""
+            var a = new Concept("con_a", "One");
+            var b = new Concept("con_b", "Two");
+            var r = new Relation("rel_001", "con_a", "con_b");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        var arch = await engine.ReadArchModelAsync();
+
+        arch!.Links.Should().ContainSingle(l => l.Kind == ArchLinkKind.Relation);
+    }
+
+    [Fact]
+    public async Task Relations_coexist_with_flows_and_dependencies()
+    {
+        await using var ws = await CreateAsync("""
+            var m1 = new Module("mod_a", "A");
+            var m2 = new Module("mod_b", "B");
+            var f = new DataFlow("flow_1", "mod_a", "mod_b", "OrderPlaced");
+            var d = new Dependency("dep_1", "mod_b", "mod_a", "reads");
+            var r = new Relation("rel_1", "mod_a", "mod_b", "answered by");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        var arch = await engine.ReadArchModelAsync();
+
+        arch!.Links.Should().HaveCount(3);
+        arch.Links.Select(l => l.Kind).Distinct().Should().HaveCount(3);
+        arch.Links.Single(l => l.Kind == ArchLinkKind.DataFlow).Attributes["payload"].Should().Be("OrderPlaced");
+        arch.Links.Single(l => l.Kind == ArchLinkKind.Dependency).Attributes["kind"].Should().Be("reads");
+        arch.Links.Single(l => l.Kind == ArchLinkKind.Relation).Attributes["label"].Should().Be("answered by");
+    }
+
+    [Fact]
+    public async Task Adding_a_relation_writes_source_that_reads_back_and_leaves_trivia_alone()
+    {
+        await using var ws = await CreateAsync("""
+            // Two ideas.
+            var a = new Concept("con_a", "One");
+            var b = new Concept("con_b", "Two");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+
+        await engine.ApplyAsync(new AddLinkOp("op1", ArchLinkKind.Relation, "con_a", "con_b"));
+
+        var source = await ws.ReadArchAsync();
+        source.Should().Contain("// Two ideas.");
+        source.Should().Contain("new Relation(");
+
+        var arch = await engine.ReadArchModelAsync();
+        arch!.Links.Should().ContainSingle(l => l.Kind == ArchLinkKind.Relation && l.FromId == "con_a");
+    }
+
+    [Fact]
+    public async Task Generated_relation_ids_use_their_own_prefix()
+    {
+        await using var ws = await CreateAsync("""
+            var a = new Concept("con_a", "One");
+            var b = new Concept("con_b", "Two");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        await engine.ApplyAsync(new AddLinkOp("op1", ArchLinkKind.Relation, "con_a", "con_b"));
+
+        var arch = await engine.ReadArchModelAsync();
+        arch!.Links.Single().Id.Should().StartWith("rel_");
+    }
+
+    [Fact]
+    public async Task A_relation_label_with_punctuation_round_trips()
+    {
+        await using var ws = await CreateAsync("""
+            var a = new Concept("con_a", "One");
+            var b = new Concept("con_b", "Two");
+            var r = new Relation("rel_1", "con_a", "con_b", "\"answers\", eventually");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        var arch = await engine.ReadArchModelAsync();
+
+        arch!.Links.Single().Attributes["label"].Should().Be("\"answers\", eventually");
+    }
+
     // ---- pathological -------------------------------------------------------------------------
 
     [Fact]
