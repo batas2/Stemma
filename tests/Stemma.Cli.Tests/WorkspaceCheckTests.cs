@@ -203,6 +203,87 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().NotContain(f => f.Rule == "view/mixed-register");
     }
 
+    // ---- free-form shapes ---------------------------------------------------------------------
+
+    private void Sidecar(string viewBody) =>
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"),
+            $$"""{ "version": 1, "views": { "custom:view_v": {{viewBody}} } }""");
+
+    [Fact]
+    public void An_arrow_anchored_to_a_missing_element_is_an_error()
+    {
+        // It does not crash and it does not disappear: it detaches to its last known coordinates,
+        // so the diagram looks like someone drew it carelessly rather than like a broken reference.
+        Model(TwoModules);
+        Sidecar("""{ "shapes": [ { "id": "sh_1", "kind": "arrow", "fromX": 0, "fromY": 0, "toX": 10, "toY": 10, "toAnchor": { "kind": "element", "id": "mod_ghost" } } ] }""");
+        Run().Should().Contain(f => f.Rule == "shape/dangling-anchor" && f.Message.Contains("mod_ghost"));
+    }
+
+    [Fact]
+    public void An_arrow_anchored_to_a_real_element_is_fine()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "shapes": [ { "id": "sh_1", "kind": "arrow", "fromX": 0, "fromY": 0, "toX": 10, "toY": 10, "toAnchor": { "kind": "element", "id": "mod_a" } } ] }""");
+        Run().Should().NotContain(f => f.Rule == "shape/dangling-anchor");
+    }
+
+    [Fact]
+    public void A_free_anchor_is_not_a_reference_and_is_not_checked()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "shapes": [ { "id": "sh_1", "kind": "arrow", "fromX": 0, "fromY": 0, "toX": 10, "toY": 10, "toAnchor": { "kind": "free", "x": 5, "y": 5 } } ] }""");
+        Run().Should().NotContain(f => f.Rule == "shape/dangling-anchor");
+    }
+
+    [Fact]
+    public void An_arrow_anchored_to_another_shape_resolves_against_the_shapes_in_that_view()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "shapes": [ { "id": "sh_box", "kind": "rect", "x": 0, "y": 0, "w": 10, "h": 10 }, { "id": "sh_1", "kind": "arrow", "fromX": 0, "fromY": 0, "toX": 10, "toY": 10, "toAnchor": { "kind": "shape", "id": "sh_box" } } ] }""");
+        Run().Should().NotContain(f => f.Rule == "shape/dangling-anchor");
+    }
+
+    [Fact]
+    public void A_shape_kind_the_canvas_cannot_draw_is_an_error()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "shapes": [ { "id": "sh_1", "kind": "hexagon" } ] }""");
+        Run().Should().Contain(f => f.Rule == "shape/unknown-kind" && f.Message.Contains("hexagon"));
+    }
+
+    [Fact]
+    public void A_shape_without_an_id_is_an_error_because_nothing_can_address_it()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "shapes": [ { "kind": "label", "text": "human" } ] }""");
+        Run().Should().Contain(f => f.Rule == "shape/no-id");
+    }
+
+    [Fact]
+    public void An_empty_label_is_a_warning_because_it_draws_nothing()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "shapes": [ { "id": "sh_1", "kind": "label", "text": "  " } ] }""");
+        Run().Should().Contain(f => f.Rule == "shape/empty-label" && f.Severity == CheckSeverity.Warning);
+    }
+
+    [Fact]
+    public void A_sidecar_that_does_not_parse_is_reported_rather_than_thrown()
+    {
+        // The canvas silently ignores an unparseable sidecar, which means every position and
+        // annotation in it is gone and nothing says so.
+        Model(TwoModules);
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), "{ not json");
+        Run().Should().Contain(f => f.Rule == "sidecar/unreadable");
+    }
+
+    [Fact]
+    public void A_workspace_with_no_sidecar_is_not_a_finding()
+    {
+        Model(TwoModules);
+        Run().Should().NotContain(f => f.Rule.StartsWith("shape/") || f.Rule.StartsWith("sidecar/"));
+    }
+
     [Fact]
     public void Every_finding_names_its_rule_and_says_something_actionable()
     {

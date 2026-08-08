@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.CodeAnalysis.CSharp;
 using Stemma.Engine.ArchModel;
+using Stemma.Engine.Workspace;
 
 namespace Stemma.Cli;
 
@@ -52,8 +54,95 @@ public static class WorkspaceCheck
         findings.AddRange(DanglingAttributeReferences(model, ids));
         findings.AddRange(RegisterFindings(model));
         findings.AddRange(ViewFindings(workspaceRoot, model, ids));
+        findings.AddRange(ShapeFindings(workspaceRoot, ids));
 
         return findings;
+    }
+
+    /// <summary>Matches `MAX_SHAPES_PER_VIEW` in the canvas, which stops drawing past it.</summary>
+    public const int MaxShapesPerView = 256;
+
+    private static readonly HashSet<string> ShapeKinds =
+        new(StringComparer.Ordinal) { "rect", "ellipse", "triangle", "label", "arrow", "image" };
+
+    /// <summary>
+    /// Free-form annotation, checked because it is now authored by hand.
+    ///
+    /// Shapes are pure presentation and the engine deliberately does not model them, so nothing else
+    /// looks at them at all: an arrow anchored to an element that was renamed simply detaches and
+    /// falls back to its snapshot coordinates, which looks like a diagram someone drew carelessly
+    /// rather than like a broken reference.
+    /// </summary>
+    private static IEnumerable<CheckFinding> ShapeFindings(string workspaceRoot, HashSet<string> elementIds)
+    {
+        var path = LayoutSidecar.PathFor(workspaceRoot);
+        if (!File.Exists(path)) yield break;
+
+        JsonDocument? doc = null;
+        try { doc = JsonDocument.Parse(File.ReadAllText(path)); }
+        catch (JsonException) { /* reported below — a yield cannot live in a catch */ }
+
+        if (doc is null)
+        {
+            yield return new(CheckSeverity.Warning, "sidecar/unreadable",
+                "stemma.layout.json does not parse; the canvas ignores it, so every position and annotation in it is lost");
+            yield break;
+        }
+
+        using (doc)
+        {
+            if (!doc.RootElement.TryGetProperty("views", out var views)) yield break;
+
+            foreach (var view in views.EnumerateObject())
+            {
+                if (!view.Value.TryGetProperty("shapes", out var shapes) || shapes.ValueKind != JsonValueKind.Array) continue;
+
+                var all = shapes.EnumerateArray().ToList();
+                var shapeIds = all
+                    .Select(s => s.TryGetProperty("id", out var id) ? id.GetString() : null)
+                    .Where(id => id is not null).Select(id => id!)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                if (all.Count > MaxShapesPerView)
+                    yield return new(CheckSeverity.Warning, "shape/too-many",
+                        $"view '{view.Name}' has {all.Count} shapes; the canvas stops drawing past {MaxShapesPerView}");
+
+                foreach (var shape in all)
+                {
+                    var id = shape.TryGetProperty("id", out var i) ? i.GetString() : null;
+                    var kind = shape.TryGetProperty("kind", out var k) ? k.GetString() : null;
+
+                    if (id is null)
+                    {
+                        yield return new(CheckSeverity.Error, "shape/no-id",
+                            $"view '{view.Name}' has a shape with no id; it cannot be selected, styled or removed");
+                        continue;
+                    }
+                    if (kind is null || !ShapeKinds.Contains(kind))
+                    {
+                        yield return new(CheckSeverity.Error, "shape/unknown-kind",
+                            $"shape '{id}' has kind '{kind ?? "(none)"}', which the canvas does not draw (known: {string.Join(", ", ShapeKinds.Order())})", id);
+                        continue;
+                    }
+                    if (kind == "label" && string.IsNullOrWhiteSpace(shape.TryGetProperty("text", out var txt) ? txt.GetString() : null))
+                        yield return new(CheckSeverity.Warning, "shape/empty-label",
+                            $"label '{id}' has no text, so it draws nothing", id);
+
+                    foreach (var end in new[] { "fromAnchor", "toAnchor" })
+                    {
+                        if (!shape.TryGetProperty(end, out var anchor) || anchor.ValueKind != JsonValueKind.Object) continue;
+                        var anchorKind = anchor.TryGetProperty("kind", out var ak) ? ak.GetString() : null;
+                        var target = anchor.TryGetProperty("id", out var tid) ? tid.GetString() : null;
+                        if (anchorKind is null or "free" || target is null) continue;
+
+                        var known = anchorKind == "element" ? elementIds.Contains(target) : shapeIds.Contains(target);
+                        if (!known)
+                            yield return new(CheckSeverity.Error, "shape/dangling-anchor",
+                                $"arrow '{id}' anchors its {end[..^6]} end to {anchorKind} '{target}', which does not exist — the arrow silently detaches to its last known coordinates", id);
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
