@@ -349,8 +349,8 @@ The goal is that Ada, reading one document, can write a correct workspace on the
   dependency view. Examples beat prose for this reader by a wide margin.
 - **A3 · `STEMMA.md` in the workspace scaffold — not built.** `WorkspaceScaffold.cs` already generates new
   workspaces; have it drop a short agent-facing brief at the root — vocabulary, id conventions,
-  "run `stemma render` to see it", the seven-box rule. The same trick `CLAUDE.md` plays for this
-  repository, applied to every workspace Stemma creates.
+  "run `stemma render` to see it", the seven-box rule. The same trick this repository's own
+  contributor guide plays, applied to every workspace Stemma creates.
 - **A4 · `stemma validate --json`. ✅ Shipped.** Expose the existing `RuleEngine` plus the id-integrity check
   that currently lives only in `AuroraRailSampleTests`, as machine-readable output: dangling ids,
   view members that don't exist, links whose endpoints aren't both in the view (they silently don't
@@ -565,8 +565,8 @@ currently shaping the maintainer's prose.
 
 ## 7. What this does not change
 
-Checked against `CLAUDE.md`'s inviolable rules, because a proposal that violates them is dead on
-arrival:
+Checked against the inviolable rules in [`../engineering/conventions.md`](../engineering/conventions.md),
+because a proposal that violates them is dead on arrival:
 
 - **No new data store.** Everything proposed lands in `Architecture.cs` (model) or
   `stemma.layout.json` (presentation). The layout DSL, palettes, layout mode, and shapes are all
@@ -748,7 +748,7 @@ machinery Stemma is building anyway, and most of it hangs off elements having id
 
 Option C is the intellectually cleanest and is what ArchiMate does. It is also IDE-creep: an open
 vocabulary means the reader, writer, validator, renderer, and inspector all stop being able to reason
-about kinds. `CLAUDE.md`'s default — *narrow scope, push back on IDE-creep* — applies, and the
+about kinds. The house default — *narrow scope, push back on IDE-creep* — applies, and the
 concrete need is one kind, not a system for kinds.
 
 Option D reuses the new investment well (layout DSL, palettes, profile and CLI are all
@@ -781,7 +781,8 @@ also already true, just hidden.
   which is information, not an error.
 - **Adding a kind is engine work, and the process applies.** `ArchElementKind` is referenced across
   six engine files (`DslReader`, `DslWriter`, `StemmaEngine`, `SeedRules`, and both exporters) and
-  roughly ten client files. Per `CLAUDE.md`, `AddElementOp` for the new kind needs **≥3 round-trip
+  roughly ten client files. Per [`../engineering/conventions.md`](../engineering/conventions.md),
+  `AddElementOp` for the new kind needs **≥3 round-trip
   fixtures — minimal, realistic, pathological — written before the implementation.** This is not a
   one-line change and should not be estimated as one.
 

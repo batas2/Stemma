@@ -44,6 +44,62 @@ The argument in full, and why a diagram that *can* drift always does:
 - **Rich presentation** (committed sidecar) — per-view auto-layout (organic/hierarchical/by-type/
   custom, tunable), node & edge styling, draw.io-style edge docking, free-form shapes, and
   markdown-backed notes with a full rich-text editor.
+- **Diagrams without a mouse** — `stemma render` turns a model and a view into a publication-ready
+  image from one command; `stemma validate` catches the broken references the compiler cannot see.
+  See below.
+- **Diagnostics** — a leveled, structured record of every operation, with content hashes on each
+  document write so the fidelity guarantee is observable rather than merely asserted.
+
+## Drawing without a mouse
+
+A diagram you have to drag into place is a diagram only its author can produce. Stemma's whole model
+lives in text, so the picture should too — and the person arranging it is increasingly not a person.
+
+A workspace is three files, all of them authorable in an editor:
+
+```
+Architecture/Architecture.cs   what exists
+Views/<Name>.cs                what this picture is about
+stemma.layout.json             how it is arranged
+```
+
+The arrangement is stated rather than dragged:
+
+```jsonc
+"custom:view_purchase": {
+  "layout": { "kind": "row", "ids": ["per_passenger", "cnt_app", "cnt_api"], "gap": 70, "align": "center" }
+}
+```
+
+Then one command, no browser open and no mouse:
+
+```bash
+stemma render --workspace . --view view_purchase --out purchase-path.png
+stemma validate --workspace .
+```
+
+Four things make that more than a scripted screenshot:
+
+- **A constraint stays live.** Nudge one box and the delta is recorded against the arrangement, not
+  in place of it — add an element next week and it re-solves, keeping your correction.
+- **The renderer is the canvas.** `?render=1` is a mode of the same React component the app draws
+  with, so a diagram cannot look one way in a post and another way in the tool.
+- **Two kinds that claim nothing.** `Concept` and `Relation` exist so an essay's argument does not
+  have to declare itself a Bounded Context to get a box on a canvas
+  ([ADR-0018](./.doc/architecture/decisions/0018-concept-element-kind.md),
+  [ADR-0019](./.doc/architecture/decisions/0019-relation-link-kind.md)).
+- **The picture can prove it is current.** Each render writes a manifest fingerprinting the model,
+  the view and the layout; `--check` fails a build when a committed image no longer matches its
+  source. That is the "cannot drift" claim extended past the app window — and the thing a drawing
+  tool structurally cannot offer.
+
+The full contract is [`.doc/protocol/authoring-a-diagram.md`](./.doc/protocol/authoring-a-diagram.md),
+written for someone who will never see the canvas, with three worked examples that were run rather
+than sketched.
+
+## What's changed
+
+[`CHANGELOG.md`](./CHANGELOG.md) — grouped by what a user would notice, not by commit.
 
 ## Documentation — start in [`.doc/`](./.doc/)
 

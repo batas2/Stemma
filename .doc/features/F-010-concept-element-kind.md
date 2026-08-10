@@ -38,7 +38,7 @@
 - [x] **Model or presentation?** Model. **This is the only engine change in the whole programme.**
 - [x] **New/changed operations:** `AddElementOp`, `RenameElementOp`, `RemoveElementOp` for the new
       kind — each needs **≥3 round-trip fixtures (minimal / realistic / pathological) written before
-      the implementation**, per `CLAUDE.md`.
+      the implementation**, per [`../engineering/conventions.md`](../engineering/conventions.md).
 - [x] **Fidelity:** directly in scope. `DslWriter` must emit `new Concept(...)` without disturbing
       trivia; no `NormalizeWhitespace`, no string rebuilds.
 - [ ] **Engine purity:** unaffected.
