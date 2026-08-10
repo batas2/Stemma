@@ -59,6 +59,12 @@ public static class RenderCommand
             }
         }
 
+        if (RenderTransparency.Mismatch(o.Transparent, written) is { } mismatch)
+        {
+            Console.Error.WriteLine($"stemma render: {mismatch}");
+            return 1;
+        }
+
         if (o.Manifest) await WriteManifestAsync(o, palette, written);
 
         Console.WriteLine($"stemma render: wrote {written.Count} file{(written.Count == 1 ? "" : "s")}");
@@ -83,10 +89,12 @@ public static class RenderCommand
             view = o.View,
             profile = o.Profile,
             palette,
-            transparent = o.Transparent,
+            // Read back from the files, not copied from the request: the two disagreed once, and the
+            // manifest was the one that was wrong (B-003). Null when nothing PNG was written.
+            transparent = RenderTransparency.Of(files),
             scale = o.Scale,
             source = new { hash = fp.Hash, elements = fp.Elements, links = fp.Links, viewMembers = fp.ViewMembers },
-            files = files.Select(f => new { path = Path.GetFileName(f.Path), theme = f.Theme, format = f.Format, nodes = f.NodeCount, width = f.Width, height = f.Height }),
+            files = files.Select(f => new { path = Path.GetFileName(f.Path), theme = f.Theme, format = f.Format, nodes = f.NodeCount, width = f.Width, height = f.Height, hasAlpha = f.HasAlpha }),
         };
         Directory.CreateDirectory(Path.GetDirectoryName(o.Output)!);
         await File.WriteAllTextAsync(ManifestPath(o), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));

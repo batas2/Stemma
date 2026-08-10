@@ -784,11 +784,24 @@ function CanvasInner() {
       const ctxById = new Map(arch?.elements.filter((x) => x.kind === 'boundedContext').map((x) => [x.id, x.name]) ?? []);
       return filtered.elements.map((e) => {
         const existing = prevById.get(e.id);
-        // An existing node keeps its position across rebuilds — otherwise the ~1.5s violations
-        // poll would fight a drag. A node the constraint governs is the exception: its position is
-        // *derived*, so a re-solve (a nudge, an added box, or simply the sidecar arriving after the
-        // first paint) has to win, or the constraint could never take effect at all.
-        const pos = (governedIds.has(e.id) ? merged[e.id] : existing?.position ?? merged[e.id]) ?? { x: 0, y: 0 };
+        // Precedence, and the order matters more than it looks (B-002).
+        //
+        // A node the constraint governs takes the solved position: it is *derived*, so a re-solve
+        // has to win or the constraint could never take effect.
+        //
+        // Otherwise an **authored** position wins next. `saved` is what the sidecar says, and a
+        // sidecar entry is data somebody wrote — unlike `existing`, which on a never-opened view is
+        // a default this component invented a moment earlier. Ranking `existing` above it meant a
+        // headless render of a hand-written workspace painted defaults first, then discarded the
+        // authored layout when the sidecar arrived. Safe against a drag: `persistPositions` updates
+        // the sidecar cache synchronously, so after a drop `saved` already holds the dropped
+        // position, and a rebuild mid-drag is refused above.
+        //
+        // `existing` is the fallback for a node with no authored position, so the violations poll
+        // still cannot shuffle an unplaced node around under the cursor.
+        const authored = saved[e.id];
+        const pos = (governedIds.has(e.id) ? merged[e.id] : authored ?? existing?.position ?? merged[e.id])
+          ?? { x: 0, y: 0 };
         const ns = nodeStyles[e.id];
         const editing = editingNodeId === e.id;
         const notesEditing = notesEditingId === e.id;
@@ -947,9 +960,22 @@ function CanvasInner() {
           hull.right = Math.max(hull.right, r.right);
           hull.bottom = Math.max(hull.bottom, r.bottom);
         }
-        document.documentElement.dataset.stemmaRenderBox = JSON.stringify({
+        const box = {
           x: hull.left, y: hull.top, width: hull.right - hull.left, height: hull.bottom - hull.top,
-        });
+        };
+
+        // Never publish a box that is not four real numbers. `JSON.stringify` writes NaN as `null`,
+        // and the renderer read it back with `GetDouble()` and died on a JSON type error naming
+        // neither the view nor the cause. A coordinate that is not finite means something upstream
+        // produced nonsense, so say that here, where the reason is still in reach.
+        if (!Object.values(box).every(Number.isFinite)) {
+          window.dispatchEvent(new CustomEvent('stemma:render-failed', {
+            detail: { reason: "the layout solved to coordinates that are not numbers — check this view's `layout` constraint in stemma.layout.json" },
+          }));
+          return;
+        }
+
+        document.documentElement.dataset.stemmaRenderBox = JSON.stringify(box);
         window.dispatchEvent(new CustomEvent('stemma:render-fitted'));
       }));
     }
@@ -1807,7 +1833,10 @@ function CanvasInner() {
 
   return (
     <div
-      className={clsx('h-full w-full relative', animatingLayout && 'stemma-anim-layout')}
+      // The surface the canvas paints on. Named so the publication profile can clear it: this is an
+      // inline style, and the profile's `!important` rule needs a selector that reaches the element
+      // (B-003 — the export was transparent everywhere except here, so every PNG shipped opaque).
+      className={clsx('stemma-canvas-surface h-full w-full relative', animatingLayout && 'stemma-anim-layout')}
       style={{ background: bgColor }}
       ref={wrapperRef}
       onDragOver={onDragOver}

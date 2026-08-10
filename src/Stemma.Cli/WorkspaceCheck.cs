@@ -55,8 +55,117 @@ public static class WorkspaceCheck
         findings.AddRange(RegisterFindings(model));
         findings.AddRange(ViewFindings(workspaceRoot, model, ids));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
+        findings.AddRange(ConstraintFindings(workspaceRoot, ids));
 
         return findings;
+    }
+
+    private static readonly HashSet<string> ConstraintKinds =
+        new(StringComparer.Ordinal) { "grid", "row", "column", "stack" };
+
+    /// <summary>
+    /// The `layout` constraint, which is the part of the sidecar most often written by hand.
+    ///
+    /// A constraint is not validated by anything else: the canvas solves whatever it is given, and a
+    /// wrong *type* is the mistake that actually happens — `gap: [56, 30]` is right for a grid and
+    /// wrong for a row, and the two sit three lines apart in the same document. The solver now
+    /// falls back to its default instead of producing coordinates that are not numbers, which turns
+    /// a failed render into a silently different picture. This is what says so out loud.
+    /// </summary>
+    private static IEnumerable<CheckFinding> ConstraintFindings(string workspaceRoot, HashSet<string> elementIds)
+    {
+        var path = LayoutSidecar.PathFor(workspaceRoot);
+        if (!File.Exists(path)) yield break;
+
+        JsonDocument? doc = null;
+        try { doc = JsonDocument.Parse(File.ReadAllText(path)); }
+        catch (JsonException) { yield break; }   // already reported by ShapeFindings
+
+        using (doc)
+        {
+            if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind != JsonValueKind.Object)
+                yield break;
+
+            foreach (var view in views.EnumerateObject())
+            {
+                if (view.Value.ValueKind != JsonValueKind.Object) continue;
+                if (!view.Value.TryGetProperty("layout", out var layout)) continue;
+                if (layout.ValueKind == JsonValueKind.Null) continue;
+
+                if (layout.ValueKind != JsonValueKind.Object)
+                {
+                    yield return new(CheckSeverity.Error, "constraint/not-an-object",
+                        $"view '{view.Name}' has a `layout` that is not an object, so no arrangement is applied");
+                    continue;
+                }
+
+                var kind = layout.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String
+                    ? k.GetString() : null;
+
+                if (kind is null || !ConstraintKinds.Contains(kind))
+                {
+                    yield return new(CheckSeverity.Error, "constraint/unknown-kind",
+                        $"view '{view.Name}' has a layout of kind '{kind ?? "(none)"}', which the canvas does not solve, " +
+                        $"so the view falls back to stored positions (known: {string.Join(", ", ConstraintKinds.Order())})");
+                    continue;
+                }
+
+                foreach (var finding in GapFindings(view.Name, kind, layout)) yield return finding;
+                foreach (var finding in MemberFindings(view.Name, kind, layout, elementIds)) yield return finding;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The spacing field, checked against the shape the kind's solver reads.
+    ///
+    /// A single number is accepted everywhere — it is unambiguous and reads naturally — so the only
+    /// thing reported is a value the solver cannot use at all, including the pair that belongs to a
+    /// grid appearing on a row.
+    /// </summary>
+    private static IEnumerable<CheckFinding> GapFindings(string view, string kind, JsonElement layout)
+    {
+        var name = kind == "stack" ? "step" : "gap";
+        if (!layout.TryGetProperty(name, out var gap) || gap.ValueKind == JsonValueKind.Null) yield break;
+        if (gap.ValueKind == JsonValueKind.Number) yield break;
+
+        var takesPair = kind is "grid" or "stack";
+        var isPair = gap.ValueKind == JsonValueKind.Array
+            && gap.GetArrayLength() == 2
+            && gap.EnumerateArray().All(v => v.ValueKind == JsonValueKind.Number);
+        if (takesPair && isPair) yield break;
+
+        yield return new(CheckSeverity.Error, "constraint/bad-gap",
+            $"view '{view}' has a {kind} `{name}` the canvas cannot use, so it falls back to its default " +
+            $"spacing and the picture is not the one the file describes " +
+            (takesPair ? $"(a {kind} takes [x, y] or one number)" : $"(a {kind} takes one number)"));
+    }
+
+    /// <summary>Ids a constraint places that the model does not have — a typo nothing else reports.</summary>
+    private static IEnumerable<CheckFinding> MemberFindings(string view, string kind, JsonElement layout, HashSet<string> elementIds)
+    {
+        var member = kind == "grid" ? "columns" : "ids";
+        if (!layout.TryGetProperty(member, out var value) || value.ValueKind != JsonValueKind.Array)
+        {
+            yield return new(CheckSeverity.Error, "constraint/no-members",
+                $"view '{view}' has a {kind} layout with no `{member}` array, so it places nothing");
+            yield break;
+        }
+
+        var placed = (kind == "grid"
+                ? value.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.Array).SelectMany(c => c.EnumerateArray())
+                : value.EnumerateArray())
+            .Where(v => v.ValueKind == JsonValueKind.String)
+            .Select(v => v.GetString()!)
+            .ToList();
+
+        if (placed.Count == 0)
+            yield return new(CheckSeverity.Warning, "constraint/no-members",
+                $"view '{view}' has a {kind} layout that places no elements");
+
+        foreach (var id in placed.Distinct(StringComparer.Ordinal).Where(id => !elementIds.Contains(id)))
+            yield return new(CheckSeverity.Error, "constraint/dangling-id",
+                $"view '{view}' arranges '{id}', which is not an element in the model; it is placed by the constraint and drawn by nothing", id);
     }
 
     /// <summary>Matches `MAX_SHAPES_PER_VIEW` in the canvas, which stops drawing past it.</summary>

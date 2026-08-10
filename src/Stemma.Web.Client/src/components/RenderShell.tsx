@@ -123,8 +123,17 @@ export function RenderShell({ params }: { params: RenderParams }) {
 
   useEffect(() => {
     function onFitted() { setViewportStable(true); }
+    // The canvas can discover during the fit that there is nothing sane to capture. Readiness is
+    // owned here, so it reports the reason rather than publishing a state of its own.
+    function onFailed(ev: Event) {
+      setFailure(String((ev as CustomEvent).detail?.reason ?? 'the canvas could not place the content'));
+    }
     window.addEventListener('stemma:render-fitted', onFitted);
-    return () => window.removeEventListener('stemma:render-fitted', onFitted);
+    window.addEventListener('stemma:render-failed', onFailed);
+    return () => {
+      window.removeEventListener('stemma:render-fitted', onFitted);
+      window.removeEventListener('stemma:render-failed', onFailed);
+    };
   }, []);
 
   const state: RenderState = failure

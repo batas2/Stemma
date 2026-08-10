@@ -251,9 +251,12 @@
 
 /* The page itself carries no colour: the export decides the backdrop, not the stylesheet. */
 [data-stemma-profile='publication'] body,
+[data-stemma-profile='publication'] [data-stemma-render-shell],
+[data-stemma-profile='publication'] .stemma-canvas-surface,
 [data-stemma-profile='publication'] .react-flow,
 [data-stemma-profile='publication'] .react-flow__pane,
-[data-stemma-profile='publication'] .react-flow__renderer {
+[data-stemma-profile='publication'] .react-flow__renderer,
+[data-stemma-profile='publication'] .react-flow__viewport {
   background: transparent !important;
 }
 

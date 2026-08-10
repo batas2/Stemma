@@ -248,3 +248,45 @@ describe('sizesFor', () => {
     expect(out.b.w).toBe(NODE_MIN_WIDTH);
   });
 });
+
+describe('a constraint whose numbers are the wrong shape', () => {
+  // A sidecar is written by hand and by agents, so a field can hold whatever the editor accepted.
+  // Every case here rendered a picture nobody asked for, or killed the render outright: `gap` as a
+  // pair is correct on a grid and wrong on a row, and the two live three lines apart in the same
+  // document. Every coordinate out of the solver must be a real number regardless of the input.
+  const allFinite = (out: Record<string, { x: number; y: number }>) =>
+    Object.values(out).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+
+  const wrong: Array<[string, LayoutConstraint]> = [
+    ['row gap as a grid pair', { kind: 'row', ids: ['a', 'b'], gap: [60, 40] } as unknown as LayoutConstraint],
+    ['row gap as a string', { kind: 'row', ids: ['a', 'b'], gap: '60' } as unknown as LayoutConstraint],
+    ['row gap null', { kind: 'row', ids: ['a', 'b'], gap: null } as unknown as LayoutConstraint],
+    ['column gap as an object', { kind: 'column', ids: ['a', 'b'], gap: {} } as unknown as LayoutConstraint],
+    ['grid gap as a string', { kind: 'grid', columns: [['a'], ['b']], gap: 'wide' } as unknown as LayoutConstraint],
+    ['grid gap half-missing', { kind: 'grid', columns: [['a'], ['b']], gap: [60] } as unknown as LayoutConstraint],
+    ['stack step as a string', { kind: 'stack', ids: ['a', 'b'], step: 'x' } as unknown as LayoutConstraint],
+    ['NaN gap', { kind: 'row', ids: ['a', 'b'], gap: NaN } as unknown as LayoutConstraint],
+    ['Infinite gap', { kind: 'column', ids: ['a', 'b'], gap: Infinity } as unknown as LayoutConstraint],
+  ];
+
+  it.each(wrong)('solves %s to real coordinates', (_label, constraint) => {
+    expect(allFinite(solveConstraint(constraint, sizes))).toBe(true);
+  });
+
+  it('falls back to the default spacing rather than to zero', () => {
+    // Collapsing to 0 would stack every node on top of the last and look like a different bug.
+    const bad = solveConstraint({ kind: 'row', ids: ['a', 'b'], gap: [60, 40] } as unknown as LayoutConstraint, sizes);
+    const good = solveConstraint({ kind: 'row', ids: ['a', 'b'] }, sizes);
+    expect(bad).toEqual(good);
+  });
+
+  it('accepts a single number for a grid gap, which reads naturally and is unambiguous', () => {
+    const out = solveConstraint({ kind: 'grid', columns: [['a'], ['b']], gap: 20 } as unknown as LayoutConstraint, sizes);
+    expect(out.b.x).toBe(sizes.a.w + 20);
+  });
+
+  it('keeps a correct gap exactly as written', () => {
+    const out = solveConstraint({ kind: 'row', ids: ['a', 'b'], gap: 12 }, sizes);
+    expect(out.b.x).toBe(sizes.a.w + 12);
+  });
+});

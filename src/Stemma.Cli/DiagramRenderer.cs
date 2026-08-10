@@ -4,7 +4,12 @@ using Microsoft.Playwright;
 namespace Stemma.Cli;
 
 /// <summary>What one theme/format combination produced.</summary>
-public sealed record RenderedFile(string Path, string Theme, string Format, int NodeCount, int Width, int Height);
+/// <param name="HasAlpha">
+/// Whether the written file can express a transparent pixel, read back from the artefact. Null for
+/// SVG, where transparency is a property of the markup rather than of an encoding. The manifest
+/// reports this rather than the request — see <see cref="PngFacts"/> and B-003.
+/// </param>
+public sealed record RenderedFile(string Path, string Theme, string Format, int NodeCount, int Width, int Height, bool? HasAlpha);
 
 /// <summary>
 /// Drives the canvas's own render mode and captures what it draws.
@@ -102,7 +107,8 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
             });
         }
 
-        return new RenderedFile(target, theme, format, nodeCount, (int)box.Width, (int)box.Height);
+        var hasAlpha = format == "png" ? PngFacts.HasAlpha(target) : null;
+        return new RenderedFile(target, theme, format, nodeCount, (int)box.Width, (int)box.Height, hasAlpha);
     }
 
     /// <summary>
@@ -138,10 +144,21 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
     private static async Task<Clip> ContentBoxAsync(IPage page, int pad)
     {
         var raw = await page.EvaluateAsync<JsonElement>(ContentBoundsScript);
-        double x = raw.GetProperty("x").GetDouble(), y = raw.GetProperty("y").GetDouble();
-        double w = raw.GetProperty("width").GetDouble(), h = raw.GetProperty("height").GetDouble();
-        var vw = raw.GetProperty("vw").GetDouble();
-        var vh = raw.GetProperty("vh").GetDouble();
+
+        // Read every field before using any of it. `JSON.stringify` writes a NaN as `null`, so a
+        // single bad coordinate upstream used to surface here as "requires an element of type
+        // 'Number'" — a message that names neither the workspace, the view, nor the field. The page
+        // guards against publishing one now; this is the second half of that, because the renderer
+        // cannot assume it is talking to a page it shipped with.
+        if (Number(raw, "x") is not { } x || Number(raw, "y") is not { } y ||
+            Number(raw, "width") is not { } w || Number(raw, "height") is not { } h ||
+            Number(raw, "vw") is not { } vw || Number(raw, "vh") is not { } vh)
+        {
+            throw new InvalidOperationException(
+                "the page published a content box that is not four numbers, which means the layout " +
+                "solved to something that is not a position — check this view's `layout` constraint " +
+                "in stemma.layout.json, then run `stemma validate`");
+        }
 
         var left = Math.Max(0, x - pad);
         var top = Math.Max(0, y - pad);
@@ -153,6 +170,11 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
             Height = (float)Math.Max(1, Math.Min(vh, y + h + pad) - top),
         };
     }
+
+    /// <summary>A finite number at that property, or null if it is absent, null, or not a number.</summary>
+    private static double? Number(JsonElement obj, string name) =>
+        obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+        && v.TryGetDouble(out var d) && double.IsFinite(d) ? d : null;
 
     private const string ContentBoundsScript = """
         () => {

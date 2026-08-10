@@ -165,9 +165,16 @@ but you are usually better off saying what the arrangement *is*:
 | Constraint | Fields | Shape |
 |---|---|---|
 | `grid` | `columns` (column-major), `gap: [x, y]`, `align` | Columns as wide as their widest member, rows as tall as their tallest. |
-| `row` | `ids`, `gap`, `align` | Left to right. |
-| `column` | `ids`, `gap`, `align` | Top to bottom. |
+| `row` | `ids`, `gap: x`, `align` | Left to right. |
+| `column` | `ids`, `gap: y`, `align` | Top to bottom. |
 | `stack` | `ids`, `step: [dx, dy]` | Overlapping, offset by a fixed step. |
+
+**`gap` is a pair on the two-axis kinds and a single number on the one-axis kinds.** A single number
+is accepted everywhere, so `gap: 56` is always safe; a pair on a `row` is not, and `validate` reports
+it as `constraint/bad-gap`. Getting this wrong does not fail the render — the canvas falls back to
+its default spacing — so the picture comes out subtly different with nothing said. This is
+[B-004](../bugs/B-004-bad-constraint-shape-kills-or-silently-changes-a-render.md), and it is the
+single best reason to run `validate` before rendering.
 
 Three properties make this worth preferring:
 

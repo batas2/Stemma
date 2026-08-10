@@ -300,4 +300,127 @@ public sealed class WorkspaceCheckTests : IDisposable
             f.Message.Length.Should().BeGreaterThan(20);
         }
     }
+
+    // ---- layout constraints -------------------------------------------------------------------
+    //
+    // The solver used to produce coordinates that were not numbers when a `gap` had the wrong shape,
+    // and the headless render died on a JSON type error naming neither the file nor the field. It
+    // now falls back to its default spacing, which turns a dead render into a quietly different
+    // picture — so this is the layer that has to say something.
+
+    private void Constraint(string layout) => Sidecar($$"""{ "layout": {{layout}} }""");
+
+    [Fact]
+    public void A_row_gap_written_as_a_grid_pair_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "row", "ids": ["mod_a", "mod_b"], "gap": [60, 40] }""");
+
+        Run().Should().ContainSingle(f => f.Rule == "constraint/bad-gap")
+            .Which.Message.Should().Contain("row").And.Contain("one number");
+    }
+
+    [Fact]
+    public void A_grid_gap_written_as_a_pair_is_accepted()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "grid", "columns": [["mod_a"], ["mod_b"]], "gap": [60, 40] }""");
+
+        Run().Should().NotContain(f => f.Rule == "constraint/bad-gap");
+    }
+
+    [Fact]
+    public void A_single_number_gap_is_accepted_for_every_kind()
+    {
+        // The solver takes it for all four, so reporting it would be a warning about nothing.
+        Model(TwoModules);
+        Constraint("""{ "kind": "grid", "columns": [["mod_a"], ["mod_b"]], "gap": 40 }""");
+
+        Run().Should().NotContain(f => f.Rule == "constraint/bad-gap");
+    }
+
+    [Fact]
+    public void A_gap_that_is_not_a_number_at_all_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "row", "ids": ["mod_a", "mod_b"], "gap": "wide" }""");
+
+        Run().Should().Contain(f => f.Rule == "constraint/bad-gap");
+    }
+
+    [Fact]
+    public void A_stack_step_of_the_wrong_shape_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "stack", "ids": ["mod_a", "mod_b"], "step": "x" }""");
+
+        Run().Should().Contain(f => f.Rule == "constraint/bad-gap");
+    }
+
+    [Fact]
+    public void A_layout_of_an_unknown_kind_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "radial", "ids": ["mod_a", "mod_b"] }""");
+
+        Run().Should().ContainSingle(f => f.Rule == "constraint/unknown-kind")
+            .Which.Message.Should().Contain("radial");
+    }
+
+    [Fact]
+    public void A_constraint_arranging_a_missing_element_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "row", "ids": ["mod_a", "mod_ghost"], "gap": 40 }""");
+
+        Run().Should().ContainSingle(f => f.Rule == "constraint/dangling-id")
+            .Which.ElementId.Should().Be("mod_ghost");
+    }
+
+    [Fact]
+    public void A_grid_arranging_a_missing_element_is_found_inside_its_columns()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "grid", "columns": [["mod_a"], ["mod_ghost"]] }""");
+
+        Run().Should().ContainSingle(f => f.Rule == "constraint/dangling-id")
+            .Which.ElementId.Should().Be("mod_ghost");
+    }
+
+    [Fact]
+    public void A_row_with_no_ids_array_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "row", "gap": 40 }""");
+
+        Run().Should().Contain(f => f.Rule == "constraint/no-members");
+    }
+
+    [Fact]
+    public void A_grid_looks_for_columns_rather_than_ids()
+    {
+        // Naming the wrong member is the other easy mistake, and it places nothing at all.
+        Model(TwoModules);
+        Constraint("""{ "kind": "grid", "ids": ["mod_a", "mod_b"] }""");
+
+        Run().Should().Contain(f => f.Rule == "constraint/no-members");
+    }
+
+    [Fact]
+    public void A_correct_constraint_reports_nothing()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "row", "ids": ["mod_a", "mod_b"], "gap": 40, "align": "center" }""");
+
+        Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
+    }
+
+    [Fact]
+    public void A_view_with_no_layout_reports_nothing()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "nodes": { "mod_a": { "x": 0, "y": 0 } } }""");
+
+        Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
+    }
 }

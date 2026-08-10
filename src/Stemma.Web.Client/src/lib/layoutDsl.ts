@@ -83,12 +83,33 @@ export function constraintIds(c: LayoutConstraint): string[] {
   return [...new Set(raw)];
 }
 
+/**
+ * A usable number, or the fallback.
+ *
+ * The sidecar is hand-written and agent-written, so a field can hold anything the author's editor
+ * accepted. The costly mistake is not the wrong value but the wrong *type*: `gap: [56, 30]` is
+ * correct for a grid and lands three lines away in the same document, and on a row it made `x`
+ * a string, then NaN, then a `null` in the published render box, and the headless render died with
+ * a JSON type error that named neither the file nor the field. A bad number now degrades to the
+ * default; `stemma validate` is what reports it (rule `constraint/bad-gap`).
+ */
+function finite(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+/** A gap pair, accepting the single number that reads naturally for a one-axis arrangement. */
+function gapPair(value: unknown, fallback: [number, number]): [number, number] {
+  if (typeof value === 'number') return [finite(value, fallback[0]), finite(value, fallback[1])];
+  if (Array.isArray(value)) return [finite(value[0], fallback[0]), finite(value[1], fallback[1])];
+  return fallback;
+}
+
 function sizeOf(sizes: Record<string, NodeSize>, id: string): NodeSize {
   return sizes[id] ?? FALLBACK_SIZE;
 }
 
 function solveGrid(c: GridConstraint, sizes: Record<string, NodeSize>): Record<string, SavedPosition> {
-  const [gapX, gapY] = c.gap ?? DEFAULT_GAP;
+  const [gapX, gapY] = gapPair(c.gap, DEFAULT_GAP);
   const centred = c.align === 'center';
 
   // Columns are as wide as their widest member and rows as tall as their tallest — measured per
@@ -117,7 +138,7 @@ function solveGrid(c: GridConstraint, sizes: Record<string, NodeSize>): Record<s
 }
 
 function solveRow(c: RowConstraint, sizes: Record<string, NodeSize>): Record<string, SavedPosition> {
-  const gap = c.gap ?? DEFAULT_GAP[0];
+  const gap = finite(c.gap, DEFAULT_GAP[0]);
   const tallest = Math.max(0, ...c.ids.map((id) => sizeOf(sizes, id).h));
   const out: Record<string, SavedPosition> = {};
   let x = 0;
@@ -130,7 +151,7 @@ function solveRow(c: RowConstraint, sizes: Record<string, NodeSize>): Record<str
 }
 
 function solveColumn(c: ColumnConstraint, sizes: Record<string, NodeSize>): Record<string, SavedPosition> {
-  const gap = c.gap ?? DEFAULT_GAP[1];
+  const gap = finite(c.gap, DEFAULT_GAP[1]);
   const widest = Math.max(0, ...c.ids.map((id) => sizeOf(sizes, id).w));
   const out: Record<string, SavedPosition> = {};
   let y = 0;
@@ -143,7 +164,7 @@ function solveColumn(c: ColumnConstraint, sizes: Record<string, NodeSize>): Reco
 }
 
 function solveStack(c: StackConstraint): Record<string, SavedPosition> {
-  const [dx, dy] = c.step ?? DEFAULT_STACK_STEP;
+  const [dx, dy] = gapPair(c.step, DEFAULT_STACK_STEP);
   const out: Record<string, SavedPosition> = {};
   c.ids.forEach((id, i) => { out[id] = { x: i * dx, y: i * dy }; });
   return out;

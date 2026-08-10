@@ -74,6 +74,39 @@ still missing: [`.doc/product/agent-authored-diagrams.md`](./.doc/product/agent-
 - A **correlation id could take the client down** on an insecure origin, where `crypto.randomUUID` is
   present and throws rather than absent.
 
+### Render fixes — 2026-08-10
+
+Three defects found by using `stemma render` to produce figures for a real essay. All three shared a
+shape: the command exited `0` and printed dimensions while the picture was not the one the file
+described.
+
+**Fixed**
+
+- **[B-002](./.doc/bugs/B-002-render-ignores-authored-node-positions.md) — a hand-written layout was
+  silently auto-arranged.** A view stating absolute `nodes` positions rendered in the default
+  arrangement instead. On a view no human had opened, the first paint happened before the sidecar
+  finished loading, and the placeholder positions it produced then outranked the authored ones on
+  every later pass. The schema and the protocol reference both promised those positions were
+  authoritative; they are now.
+- **[B-003](./.doc/bugs/B-003-render-transparent-emits-opaque-png.md) — transparent renders were
+  opaque, and the manifest said otherwise.** A wrapper inside the canvas painted the page colour
+  from an inline style that the publication profile never named, so every exported PNG shipped with
+  a light slab baked in — the exact thing the transparent export exists to remove. The manifest's
+  `transparent` was a copy of the request, so it recorded `true` beside a file with no alpha channel
+  at all. It is now read back from the written PNG, and a render whose output contradicts its flags
+  fails instead of reporting success.
+- **[B-004](./.doc/bugs/B-004-bad-constraint-shape-kills-or-silently-changes-a-render.md) — a
+  constraint field of the wrong type killed the render or quietly changed it.** `gap` is a pair on a
+  grid and a single number on a row; writing one for the other produced either an error naming a
+  JSON type rather than a field, or no error and a different picture. Bad spacing now falls back to
+  the default, a single number is accepted for every kind, and **`stemma validate` reports the
+  constraint** — wrong gap shape, unknown kind, missing members, and ids arranged but not modelled.
+
+**Changed**
+
+- `stemma render` fails with a sentence naming the view's `layout` when a page cannot place its
+  content, rather than surfacing an internal type error.
+
 ### Diagnostics — 2026-08-08
 
 The backend had one diagnostic statement in it, and eight `catch` blocks that swallowed without a
