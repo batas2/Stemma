@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Stemma
+GenericName=Architecture Model
+Comment=The living architecture model — your C# source is the database
+# Rewritten to an absolute path by install.sh. %f is a folder, which is what makes Stemma an
+# "Open with…" target for a workspace (F-002 AC5); the shell takes a bare path as the workspace.
+Exec=stemma-desktop %f
+Icon=stemma
+Terminal=false
+Categories=Development;IDE;
+Keywords=architecture;model;c4;diagram;
+MimeType=inode/directory;
+# Without this the window is a separate taskbar entry from its launcher on most shells.
+StartupWMClass=stemma-desktop
+StartupNotify=true
