@@ -572,8 +572,24 @@ function NameEditor({ id, initial, onCommit, onCancel }: {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
+    // Focusing once on mount is not enough, and the reason is invisible from here: React Flow keeps
+    // a node `visibility: hidden` until it has measured it, and `focus()` on a hidden element does
+    // nothing at all. A newly created element mounts its editor before that measurement, so the
+    // field appeared ready to type into and silently was not — you typed into the canvas.
+    //
+    // Retry until it takes. Bounded, and it stops the instant it succeeds. Found by driving the
+    // journey (F-003 AC6) rather than by reading this code, which looks perfectly correct.
+    let frame = 0;
+    let attempts = 0;
+    function claim() {
+      const el = ref.current;
+      if (!el || document.activeElement === el) return;
+      el.focus();
+      el.select();
+      if (document.activeElement !== el && attempts++ < 30) frame = requestAnimationFrame(claim);
+    }
+    claim();
+    return () => cancelAnimationFrame(frame);
   }, []);
   function commit() {
     const trimmed = value.trim();
@@ -583,6 +599,9 @@ function NameEditor({ id, initial, onCommit, onCancel }: {
   return (
     <input
       ref={ref}
+      // Creating an element lands here immediately, so for anyone using a screen reader this is the
+      // first thing they meet on the canvas. Unlabelled it announces as "edit text, blank".
+      aria-label="Element name"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
