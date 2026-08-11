@@ -47,6 +47,9 @@ The argument in full, and why a diagram that *can* drift always does:
 - **Diagrams without a mouse** — `stemma render` turns a model and a view into a publication-ready
   image from one command; `stemma validate` catches the broken references the compiler cannot see.
   See below.
+- **A desktop window** — `stemma-desktop` runs Stemma as an application rather than a localhost tab:
+  one process holding both the server and a native window, on a port the OS picks, with a real
+  folder picker and no server left running when you close it.
 - **Diagnostics** — a leveled, structured record of every operation, with content hashes on each
   document write so the fidelity guarantee is observable rather than merely asserted.
 
@@ -97,6 +100,48 @@ The full contract is [`.doc/protocol/authoring-a-diagram.md`](./.doc/protocol/au
 written for someone who will never see the canvas, with three worked examples that were run rather
 than sketched.
 
+## An application, not a tab
+
+A local-first tool that exists only as `localhost:5050` is fighting its own distribution story. The
+tab is lost among forty others, it has no dock or alt-tab identity, closing it leaves the server
+running, and a second run collides on the port. Worse: a browser tab cannot open a folder picker, so
+opening a workspace meant **typing an absolute filesystem path**.
+
+```bash
+./run.sh --window                            # from a clone
+stemma-desktop ~/models/payments-platform    # installed
+```
+
+`stemma-desktop` is **one process holding both the server and the window**. That is the whole design,
+and most of the properties fall out of it:
+
+- **Closing the window stops the backend** because there is no second thing to stop. No orphan, no
+  reclaim logic to get wrong.
+- **The port belongs to the OS.** Kestrel binds `:0` and the assignment is read back off the server,
+  so two windows can be open at once and neither knows or cares what the other took.
+- **Open is the OS folder picker**, and a folder can arrive from outside the app entirely —
+  `stemma-desktop <folder>`, or *Open with… Stemma* on the folder itself.
+- **The window remembers itself** — size and maximised state, pulled back onto a monitor that still
+  exists, because a window restored onto an undocked screen has no title bar to drag it back by.
+- **It never opens blank.** A splash while the server binds; if it never does, the window says why
+  and where the log is.
+
+The renderer is the platform's own — WebKitGTK on Linux, via [Photino](https://www.tryphotino.io/) —
+not a bundled Chromium, which is a real risk for a canvas application and was treated as one: the
+decision was gated on a frame-time benchmark of React Flow's DOM shape under both engines, and the
+numbers are recorded in [ADR-0017](./.doc/architecture/decisions/0017-desktop-shell-photino.md)
+rather than asserted.
+
+```bash
+scripts/package/package-linux.sh             # → dist/stemma-linux-x64.tar.gz, self-contained
+```
+
+Unpack and run, or `./install.sh` to put Stemma on the menu and on `PATH` without root. Combined with
+the SDK-free load path ([ADR-0016](./.doc/architecture/decisions/0016-sdk-free-model-only-workspaces.md)),
+that tarball creates and opens a model on a machine with **no .NET and no Node installed at all** —
+only WebKitGTK 4.1, which current desktops already have. A workspace that is a real repository still
+needs the .NET SDK, because MSBuild is what knows how the code actually compiles.
+
 ## What's changed
 
 [`CHANGELOG.md`](./CHANGELOG.md) — grouped by what a user would notice, not by commit.
@@ -124,7 +169,10 @@ stemma/
 │   ├── Stemma.Model/      — the DSL vocabulary (records) user workspaces reference
 │   ├── Stemma.Engine/     — Roslyn workspace, operations, DSL reader/writer, layout sidecar
 │   ├── Stemma.Web/        — ASP.NET Core 10 host + SignalR + (LLM access)
-│   └── Stemma.Web.Client/ — React 19 + Vite + @xyflow/react + zustand + Tailwind
+│   ├── Stemma.Web.Client/ — React 19 + Vite + @xyflow/react + zustand + Tailwind
+│   ├── Stemma.Cli/        — `stemma` — render, validate, open
+│   └── Stemma.Desktop/    — `stemma-desktop` — the window (Photino over the OS webview)
+├── scripts/package/      — the Linux tarball and its .desktop entry
 └── samples/              — demo workspaces (AuroraRail, StemmaArchitecture, DemoSolution)
 ```
 
@@ -138,8 +186,15 @@ cd Stemma
 ./run.sh --dev --workspace samples/AuroraRail
 ```
 
-`--dev` runs the backend on `:5050` and Vite on `:5173`; `--prod` bundles the client and serves
-everything from `:5050`. A model-only workspace (no `.csproj`) opens without the SDK entirely.
+`--dev` runs the backend on `:5050` and Vite on `:5173` with HMR; `--prod` bundles the client and
+serves everything from a port the OS picks, printing the URL. A model-only workspace (no `.csproj`)
+opens without the SDK entirely.
+
+For a window instead of a tab — [see above](#an-application-not-a-tab):
+
+```bash
+./run.sh --window --workspace samples/AuroraRail
+```
 
 [`samples/AuroraRail`](./samples/AuroraRail/) is the reference workspace: a fictional rail-ticketing
 platform with 66 elements, four saved views and three narrative books, exercising every part of the

@@ -1,7 +1,7 @@
 # Roadmap
 
 > Horizon framing, not date commitments. "Now" = built and in the product. "Next" = committed and
-> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-08-08**.
+> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-08-11**.
 
 ## Now — shipped and load-bearing
 
@@ -19,6 +19,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Inspector as an icon rail** — one panel at a time (Properties, Appearance, Text & attributes, Lifecycle, Ownership, Custom properties, Comments, Layout).
 - **Multi-select / align / distribute**, undo/redo for layout, violations surfacing, live sync via SignalR.
 - **Headless CLI** (`src/Stemma.Cli`) — `stemma render` turns a model and a view into an image with no browser open and no mouse; `stemma validate` reports the dangling ids and silently-missing edges the compiler cannot see; `stemma render --check` tells a build when a committed image has stopped matching its model.
+- **A desktop window** ([F-002](../features/F-002-desktop-shell.md), [ADR-0017](../architecture/decisions/0017-desktop-shell-photino.md)) — `stemma-desktop` is one process holding both Kestrel and a native WebKitGTK window, on a port the OS chooses. Closing the window stops the backend because there is nothing else to stop; two windows cannot collide; **Open** is the OS folder picker rather than a typed path; size and maximised state persist. Ships as a self-contained Linux tarball with a `.desktop` entry, so a machine with neither .NET nor Node can run it — combined with the SDK-free load path ([ADR-0016](../architecture/decisions/0016-sdk-free-model-only-workspaces.md)), it can create and open a model with no .NET installed at all.
 
 ## Next — committed, in flight
 
@@ -26,7 +27,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Navigation & views clarity** (Epic 13) — faster, more obvious view switching and view management.
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
 - **Sample gallery** — curated demo workspaces (today `samples/AuroraRail` and `samples/StemmaArchitecture`) that exercise every feature as living documentation.
-- **Publication rendering** (*largely shipped 2026-08-08*) — turning a model plus a view into a correct image without a human touching a mouse: a `stemma render` CLI, a publication profile and palettes, layout expressed as a constraint rather than as dragged coordinates, and a documented sidecar format. Serves the new **Essayist's Agent** persona, and is the projection half of "the diagram *is* the code". `stemma render`, `stemma validate`, the publication profile and palettes, the layout constraint and the `Concept` kind (ADR-0018) are in. Outstanding: the protocol reference, shapes as an authoring surface, true vector output, and a UI for layout constraints. Records F-004…F-010; the gap analysis, the six decisions behind it and the phasing are in [`agent-authored-diagrams.md`](./agent-authored-diagrams.md).
+- **Publication rendering** (*shipped 2026-08-08…11*) — turning a model plus a view into a correct image without a human touching a mouse: a `stemma render` CLI, a publication profile and palettes, layout expressed as a constraint rather than as dragged coordinates, a documented sidecar format and protocol reference, true vector SVG, a render manifest with `--check`, and the `Concept`/`Relation` kinds (ADR-0018, ADR-0019). Serves the **Essayist's Agent** persona, and is the projection half of "the diagram *is* the code". Records F-004…F-010, all shipped. Outstanding and small: an embedded or outlined font in the SVG (F-009 AC5), a keyboard path to the constraint panel, and a figure-shaped sample. The gap analysis, the six decisions behind it and the phasing are in [`agent-authored-diagrams.md`](./agent-authored-diagrams.md).
 
 ## Later — directional
 

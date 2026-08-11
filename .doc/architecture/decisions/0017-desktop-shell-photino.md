@@ -32,8 +32,17 @@ runtime in the distribution, window lifetime owns process lifetime (closing the 
 backend), and native file dialogs become available — which is what lets **Open** use a real folder
 picker.
 
-Until the shell exists, `run.sh` gains a `--window` flag that opens the app in the user's browser in
-app-mode (`--app=`), giving a chrome-less window with its own icon today for essentially no work.
+The shell shipped on 2026-08-11 as `src/Stemma.Desktop` (binary: `stemma-desktop`). Kestrel binds
+`127.0.0.1:0` in the shell's own process and the assigned address is read back off
+`IServerAddressesFeature`, so the window navigates to a port nothing else can collide with and the
+"no orphaned process" property holds by construction rather than by cleanup.
+
+`run.sh --window` now launches that shell. It keeps the browser app-mode (`--app=`) it had before as
+the fallback for `--dev`, where the app must be served from Vite's origin for HMR to work.
+
+**One consequence worth stating: an origin can no longer be enumerated in advance.** The CORS
+allow-list that named the dev server was already wrong for `--prod` and became unfixable once the
+port belonged to the OS; it is now a loopback predicate ([B-005](../../bugs/B-005-cors-policy-refuses-the-page-the-host-is-serving.md)).
 
 ## Consequences
 
@@ -64,14 +73,26 @@ Chromium baseline, recorded 2026-08-01 on this machine (120 Hz display):
 | realistic (60/70) | 118.9 | 8.3 ms | 8.4 ms | 8.5 ms | 0.3% |
 | stress (250/400) | 118.9 | 8.3 ms | 8.4 ms | 8.5 ms | 0% |
 
-**The WebKitGTK half has not been run**: this machine has no WebKitGTK runtime installed
-(`libwebkit2gtk-4.0`/`4.1` absent, no Epiphany, no PyGObject WebKit2), and installing one needs root.
-Until it is run, this ADR is a decision made on architecture-fit, not on measured rendering.
+**The WebKitGTK half was run on 2026-08-11** — WebKitGTK 2.52.3 / JSC 4.1 via Epiphany 49.2, the
+same engine and version Photino renders with on Linux — and **it passes**. Full numbers and their
+reading are in [F-002 §7.1](../../features/F-002-desktop-shell.md#71-canvas-benchmark-result-the-6-spike);
+the decisive column:
 
-Acceptance bar, to be recorded here when the run happens: p95 frame time within roughly 2× of the
-Chromium baseline at the realistic profile, and no sustained frame times above 33 ms while panning.
-If WebKitGTK misses that, the fallback is **Electron** — accepting ~150 MB and a Node toolchain to
-guarantee the renderer — and this ADR is superseded.
+| profile | engine | frames > 33.3 ms | worst frame |
+|---|---|---|---|
+| realistic (60/70) | WebKit | **0%** | 18 ms |
+| stress (250/400) | WebKit | **0.3–0.7%** | ~230 ms, once, reproducibly |
+
+The acceptance bar was written as "p95 within roughly 2× of Chromium, and no sustained frame times
+above 33 ms". The second half is met outright. The first half turned out to be the wrong question:
+WebKitGTK caps `requestAnimationFrame` at 60 Hz while Chromium presents at 120 on this display, so
+every WebKit frame is ~17 ms *by construction* — a cadence difference, not stutter. What the bar was
+reaching for is dropped frames, and there are none at the realistic profile.
+
+**Photino is therefore accepted on measurement as well as on fit, and Electron is not needed.** Two
+caveats stand: Epiphany is a proxy for Photino rather than Photino itself, so the benchmark should be
+re-run against the shell now that it exists; and this is one machine, with no low-end or
+software-rendered case tested.
 
 ## Alternatives considered
 

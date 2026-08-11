@@ -6,6 +6,7 @@
 |---|---|
 | Engine / Model | .NET 10, C#, Roslyn (`Microsoft.CodeAnalysis`, MSBuildWorkspace, `DocumentEditor`) |
 | Web host | ASP.NET Core 10, SignalR, REST (minimal/controller endpoints) |
+| Desktop shell | Photino.NET 4 over the OS webview — WebKitGTK 4.1 / GTK3 on Linux ([ADR-0017](./decisions/0017-desktop-shell-photino.md)) |
 | Frontend | React 19, Vite, TypeScript, `@xyflow/react` (React Flow 12), `zustand`, Tailwind CSS |
 | Rich text | contenteditable + a custom markdown ⇄ DOM bridge (`lib/markdownDom.ts`); Monaco available |
 | Export | `html-to-image` (PNG/SVG) |
@@ -16,6 +17,17 @@
 Sample workspaces target `net8.0` and reference `src/Stemma.Model` (they only need the DSL
 vocabulary), e.g. [`../../samples/AuroraRail/AuroraRail.csproj`](../../samples/AuroraRail/AuroraRail.csproj).
 A workspace with no project file at all loads through the SDK-free path (ADR-0016).
+
+**Three binaries, one host.** `Stemma.Web` is the application; `StemmaWebHost.Build(args)` returns it
+so that anything can start it. `stemma-desktop` (`src/Stemma.Desktop`) hosts it in its own process
+behind a native window; `stemma` (`src/Stemma.Cli`) runs it as a short-lived child for a render. The
+CLI deliberately does **not** reference the shell — the render path must stay headless — so
+`stemma open` launches the shell as a process instead.
+
+The host binds `127.0.0.1:0` unless told otherwise and reports the assigned address off
+`IServerAddressesFeature`; `--port-file <path>` writes it out for a launcher that is not in the same
+process. `run.sh --dev` is the one thing that still pins a port (5050), because the Vite proxy has to
+name a target.
 
 ## Build & test commands
 

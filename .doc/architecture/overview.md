@@ -6,6 +6,11 @@ Stemma is a .NET backend that owns a Roslyn-parsed model and a React frontend th
 it. There is **no runtime database** — the model is the source files in Git, held in memory while a
 workspace is open.
 
+Three things start that backend, and the difference between them is only who owns the process:
+`dotnet run` (a browser tab), `stemma-desktop` (in-process, behind a native window —
+[ADR-0017](./decisions/0017-desktop-shell-photino.md)), and `stemma render` (a short-lived child, so
+a render never disturbs the workspace you have open). All three call `StemmaWebHost.Build`.
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Client  ·  src/Stemma.Web.Client                             │
@@ -76,5 +81,7 @@ in [`engine-backend.md`](./engine-backend.md) and enforced in [`../engineering/c
 | Engine, operations, sidecar | `src/Stemma.Engine/` |
 | Web host, SignalR, REST, LLM | `src/Stemma.Web/` |
 | Frontend | `src/Stemma.Web.Client/` |
+| Headless CLI (`stemma`) | `src/Stemma.Cli/` |
+| Desktop shell (`stemma-desktop`) | `src/Stemma.Desktop/` |
 | Sample workspaces | `samples/` |
 | Architecture decisions | [`decisions/README.md`](./decisions/README.md) |

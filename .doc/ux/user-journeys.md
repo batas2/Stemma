@@ -5,14 +5,18 @@ states that must be handled (cross-reference [`states-and-interactions.md`](./st
 
 ## J1 — Open a workspace and orient (Architect)
 
-1. Point Stemma at a folder (a Git working tree with `Architecture/Architecture.cs`).
+1. Point Stemma at a folder (a Git working tree with `Architecture/Architecture.cs`). In the desktop
+   shell this is the OS folder picker; in a browser tab, where no such thing exists, it is still a
+   typed path ([F-002](../features/F-002-desktop-shell.md) AC4). Either way the folder can also
+   arrive from outside: `stemma-desktop <folder>`, or "Open with…" on the folder itself.
 2. **Loading state** while the engine parses with Roslyn and primes the sidecar.
 3. Land on the default **Module Map** view: bounded contexts as lanes, modules nested, links drawn.
 4. Switch views via the bottom tab bar (Module Map · Dependencies · saved custom views).
 
 **Must-handle:** empty workspace (no model) → an empty state that explains how to add the first
 element; a custom view persisted as active must not trap the user — clicking a built-in view always
-returns to it.
+returns to it. In the shell, step 1 has a step 0: the window appears with a splash while the backend
+binds, and if it never does, the window says why and where the log is — never a blank white page.
 
 ## J2 — Edit the model (Architect)
 

@@ -7,6 +7,48 @@ versioned yet, so entries are dated and the top section is what is in `main` but
 
 ## Unreleased
 
+### A window of its own — 2026-08-11
+
+Stemma stops being a localhost tab. `stemma-desktop` is one process holding both the server and a
+native window: close the window and the backend is gone, because there was never a second thing to
+stop. Background and the measured renderer benchmark that gated it:
+[F-002](./.doc/features/F-002-desktop-shell.md), [ADR-0017](./.doc/architecture/decisions/0017-desktop-shell-photino.md).
+
+**Added**
+
+- **The desktop shell** (`src/Stemma.Desktop`, Photino over the OS webview). Launch it with
+  `./run.sh --window`, `stemma open`, or the binary. Window size and maximised state persist between
+  runs, clamped back onto a monitor that still exists; a saved position is honoured where the
+  platform permits one, which Wayland does not. A splash while the backend binds, and — if it never
+  does — a window that says why and where the log is, rather than a blank white page.
+- **A real folder picker.** In the shell, **Open** is the OS dialog instead of a typed absolute path,
+  which is the thing a browser tab cannot do and the reason this feature existed. **Create somewhere
+  else…** puts a new model wherever you point. In a browser both fall back to what they were.
+- **A Linux tarball** — `scripts/package/package-linux.sh` produces a self-contained folder with the
+  shell, the CLI, the built front end, a `.desktop` entry and an `install.sh` that needs no root.
+  Registered as a folder handler, so "Open with… Stemma" works on a workspace. With the SDK-free
+  load path this runs on a machine with no .NET and no Node.
+- **`stemma open`** — the window, from the command line the CLI already owns. The shell stays a
+  separate binary so the render path never acquires a native webview.
+
+**Changed**
+
+- **The port is the OS's to choose.** Kestrel binds `:0` and the assignment is read back off the
+  server rather than scraped from a log line, so a second instance never collides with the first.
+  `run.sh --prod` uses it and prints the real URL; the stale-process reclaim now runs only in
+  `--dev`, which still pins 5050 because the Vite proxy has to name a target.
+- **The backend can be hosted, not only run.** `Program.cs` was 450 lines of top-level statements;
+  the application moved to `StemmaWebHost.Build(args)` and `Program.cs` became four lines that call
+  it. Same endpoints, same behaviour — the shell simply needs the object rather than a process.
+
+**Fixed**
+
+- **[B-005](./.doc/bugs/B-005-cors-policy-refuses-the-page-the-host-is-serving.md) — the host refused
+  the page it was serving.** The CORS allow-list named the Vite dev server and nothing else, so under
+  `--prod` (and in the shell, where the port is unknowable in advance) every request logged a policy
+  failure. Nothing broke — a same-origin request does not need the header — but roughly sixty records
+  per page load buried the log the shell points at when something is genuinely wrong.
+
 ### Diagrams without a mouse — 2026-08-08
 
 The largest change so far. A model plus a view now becomes a publication-ready image from one
@@ -38,6 +80,9 @@ still missing: [`.doc/product/agent-authored-diagrams.md`](./.doc/product/agent-
   tenable once something other than the canvas started writing it.
 - **A protocol reference** for producing a diagram entirely from text, written for a reader who
   cannot see the result: [`.doc/protocol/authoring-a-diagram.md`](./.doc/protocol/authoring-a-diagram.md).
+  Every workspace Stemma creates now also carries a short `STEMMA.md` brief at its root — the
+  vocabulary, the id prefixes, and the four rules nothing else enforces — so an agent editing the
+  files by hand lands on them instead of on source archaeology.
 - **A render manifest and `stemma render --check`.** Each render fingerprints the model, the view and
   the layout; `--check` fails when a committed image no longer matches its source, without rendering
   anything.
