@@ -140,6 +140,44 @@ public static class DslReader
         return new ArchOwnership(squad, domain);
     }
 
+    /// <summary>
+    /// The statement in the file that declares this id, exactly as it is written there.
+    ///
+    /// Read off the tree rather than composed from the model: the point of showing someone the C#
+    /// their first click produced is that it is the file's own text. Anything reconstructed could
+    /// be right and would still be a claim about the file rather than the file, which is the one
+    /// thing this product cannot afford to be casual about.
+    /// </summary>
+    public static DslDeclaration? FindDeclaration(string filePath, SyntaxNode root, string id)
+    {
+        var buildBody = FindBuildMethodBody(root);
+        if (buildBody is null) return null;
+
+        foreach (var statement in buildBody.Statements.OfType<LocalDeclarationStatementSyntax>())
+        {
+            foreach (var v in statement.Declaration.Variables)
+            {
+                if (v.Initializer?.Value is not BaseObjectCreationExpressionSyntax oc) continue;
+                var typeName = ExtractTypeName(oc, statement.Declaration.Type);
+                if (typeName is null) continue;
+                if (!ElementTypeNames.Contains(typeName) && !LinkTypeNames.Contains(typeName)) continue;
+
+                // The id is the first constructor argument for every kind in the vocabulary, and is
+                // also nameable, so ask the parsed arguments rather than the first literal.
+                var args = ExtractArgs(oc);
+                var declaredId = args.Select((a, i) => (Key: a.Name ?? (i == 0 ? "id" : $"arg{i}"), a.Value))
+                    .FirstOrDefault(a => a.Key == "id").Value;
+                if (declaredId != id) continue;
+
+                // Leading trivia excluded: a doc comment or a blank line above belongs to the file,
+                // not to this declaration, and including it makes the snippet start with whitespace.
+                var line = statement.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                return new DslDeclaration(id, filePath, line, statement.ToString());
+            }
+        }
+        return null;
+    }
+
     private static BlockSyntax? FindBuildMethodBody(SyntaxNode root)
     {
         // Multi-file workspaces have additional `static class XxxArchitecture { Build() }` files;

@@ -38,3 +38,10 @@ public sealed record ArchOwnership(
     IReadOnlyList<string>? Decide = null);
 
 public sealed record ArchTag(string TargetId, ArchLifecycle? Lifecycle, ArchOwnership? Ownership);
+
+/// <summary>
+/// Where an id is declared, and the line of C# that declares it — the file's own text, not a
+/// rendering of the model. Used to show someone what their edit actually wrote.
+/// </summary>
+/// <param name="Line">1-based, so it matches what an editor shows.</param>
+public sealed record DslDeclaration(string Id, string FilePath, int Line, string Text);

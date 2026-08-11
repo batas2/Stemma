@@ -881,6 +881,24 @@ public sealed class StemmaEngine : IAsyncDisposable
     }
 
     /// <summary>
+    /// The line of C# that declares this id, read back out of the file the engine just wrote.
+    ///
+    /// Deliberately a read of the source rather than a render of the model: showing an architect
+    /// "here is what your click became" is only worth anything if it is the file's own text.
+    /// </summary>
+    public async Task<ArchModel.DslDeclaration?> ReadDeclarationAsync(string id, CancellationToken ct = default)
+    {
+        foreach (var doc in FindArchitectureDocuments())
+        {
+            var root = await doc.GetSyntaxRootAsync(ct);
+            if (root is null) continue;
+            var found = DslReader.FindDeclaration(doc.FilePath!, root, id);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Find the document that declares the given element/link id, falling back to the primary
     /// Architecture document if the id is not yet present (i.e. for AddElement / AddLink ops).
     /// </summary>
