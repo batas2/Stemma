@@ -16,7 +16,8 @@
     "preview": "vite preview --port 5173",
     "test": "vitest run",
     "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots"
+    "test:visual:update": "playwright test --update-snapshots",
+    "test:journey": "playwright test --config playwright.journey.config.ts"
   },
   "dependencies": {
     "@microsoft/signalr": "^8.0.7",

@@ -59,3 +59,7 @@ src/Stemma.Web.Client/vite.config.js
 src/Stemma.Web.Client/tsconfig.node.tsbuildinfo
 src/Stemma.Web.Client/tsconfig.tsbuildinfo
 *.lscache
+
+# Playwright run artefacts (journey + visual)
+src/Stemma.Web.Client/test-results/
+src/Stemma.Web.Client/playwright-report/
