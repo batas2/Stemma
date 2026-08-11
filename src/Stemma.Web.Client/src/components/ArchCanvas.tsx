@@ -54,6 +54,12 @@ function nodeRect(n: Node): DockRect {
 }
 import { ContextMenu, ContextIcons, type ContextMenuState } from './ContextMenu';
 import { EmptyCanvasGuide } from './EmptyCanvasGuide';
+import { FirstElementStrip } from './FirstElementStrip';
+import { elementSource, type DeclarationSource } from '@/lib/api';
+import {
+  hasSeenFirstElementExplainer, markFirstElementExplained,
+  shouldExplainFirstElement, shouldShowEmptyCanvasGuide,
+} from '@/lib/onboarding';
 import { confirmAction } from './ConfirmDialog';
 import { promptText, pickFromList } from './PromptDialog';
 import { suggestElementName } from '@/lib/naming';
@@ -1321,9 +1327,30 @@ function CanvasInner() {
     });
   }, [selectLink, startEdgeEdit]);
 
+  // AC7 — the strip that shows what the first element wrote. Held here rather than in the store
+  // because it is a one-off piece of teaching, not application state anything else reads.
+  const [firstSource, setFirstSource] = useState<DeclarationSource | null>(null);
+
+  const explainFirstElement = useCallback(async (elementId: string, elementsBefore: number) => {
+    if (!shouldExplainFirstElement(hasSeenFirstElementExplainer(), elementsBefore)) return;
+    try {
+      const source = await elementSource(elementId);
+      // No source is a reason to stay quiet, never to show a reconstruction of what it probably says.
+      if (source) setFirstSource(source);
+    } catch (e) {
+      reportFailure('Api', ClientEvent.RequestFailed, 'Reading the source of the first element')(e);
+    }
+  }, []);
+
+  const dismissFirstSource = useCallback(() => {
+    markFirstElementExplained();
+    setFirstSource(null);
+  }, []);
+
   const addElementAt = useCallback(async (kind: ArchElementKind, pos: SavedPosition) => {
     const fresh = useApp.getState().arch;
     const prevIds = new Set((fresh?.elements ?? []).map((e) => e.id));
+    const elementsBefore = prevIds.size;
     const name = suggestElementName(kind, fresh?.elements ?? []);
     const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
     if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return; }
@@ -1332,9 +1359,12 @@ function CanvasInner() {
       setToast({ kind: 'success', text: revealToast(revealed) });
       // Land straight in the name field: creating an element is a typing flow, not a menu hunt.
       handleStartRename(revealed.id);
+      // The one moment the premise can be demonstrated rather than asserted: this person has just
+      // drawn their first box, so show them the line of C# it became (F-003 AC7).
+      void explainFirstElement(revealed.id, elementsBefore);
     }
     else setToast({ kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` });
-  }, [setToast, handleStartRename]);
+  }, [setToast, handleStartRename, explainFirstElement]);
 
   const templateBoundedContextWithModules = useCallback(async (pos: SavedPosition) => {
     const fresh = useApp.getState().arch;
@@ -1401,7 +1431,7 @@ function CanvasInner() {
   }, [screenToFlowPosition]);
 
   // An open workspace whose model is still empty gets in-canvas guidance rather than a bare grid.
-  const modelIsEmpty = !!workspace && (arch?.elements.length ?? 0) === 0;
+  const modelIsEmpty = shouldShowEmptyCanvasGuide(!!workspace, arch?.elements.length ?? 0);
 
   // Epic 13 — templates can be clicked from the sidebar palette (not just dragged). Drop them
   // near the centre of the current viewport so they land somewhere visible.
@@ -1901,6 +1931,7 @@ function CanvasInner() {
       {modelIsEmpty && (
         <EmptyCanvasGuide onAdd={(kind) => addElementAt(kind, centreOfCanvas())} />
       )}
+      {firstSource && <FirstElementStrip source={firstSource} onDismiss={dismissFirstSource} />}
       <ContextMenu state={menu} onClose={() => setMenu(null)} />
     </div>
   );

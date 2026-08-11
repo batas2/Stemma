@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { reportFailure, ClientEvent } from '@/lib/log';
-import { Sparkles, FolderOpen, Clock, FileCode, Lightbulb, Layers, FolderSearch } from 'lucide-react';
+import { Sparkles, FolderOpen, Clock, FileCode, Lightbulb, Layers, FolderSearch, Shapes } from 'lucide-react';
 import { StemmaMark } from './Logo';
 import { useApp } from '@/lib/store';
-import { initWorkspace, openWorkspace, listRecents } from '@/lib/api';
-import { promptText } from './PromptDialog';
+import { initWorkspace, openWorkspace, listRecents, archModel } from '@/lib/api';
+import { applyOperation } from '@/lib/signalr';
+import { saveLayout } from '@/lib/layout';
+import { promptText, pickFromList } from './PromptDialog';
 import { isDesktopShell, pickFolder } from '@/lib/shell';
-import type { RecentEntry } from '@/lib/types';
+import { TEMPLATES, applyTemplate, boxCount, findTemplate, parentSlot, type TemplateRunner } from '@/lib/templates';
+import type { RecentEntry, WorkspaceModel } from '@/lib/types';
 
 /**
  * The first screen. Two doors — start a new model, or open one that exists — plus recents. Neither
@@ -58,6 +61,94 @@ export function EmptyState() {
         });
     if (!path) return;
     await open(path.trim());
+  }
+
+  /**
+   * The second door: a model that already has something in it (AC2).
+   *
+   * A template is a script of the same operations a person would perform by hand, so what lands is
+   * ordinary C# — nothing here is a special kind of model, and deleting a box from it is just a
+   * deletion. The alternative, a stored template format, would be a parallel store by another name.
+   */
+  async function startFromTemplate() {
+    const chosen = await pickFromList({
+      title: 'Start from a template',
+      body: 'A few boxes to react to, which is easier than an empty page. Everything it creates is '
+        + 'ordinary C# in Architecture.cs — rename it, delete it, or keep going.',
+      options: TEMPLATES.map((t) => ({ value: t.id, label: t.name, hint: `${boxCount(t)} boxes` })),
+      searchable: false,
+    });
+    const template = chosen ? findTemplate(chosen) : undefined;
+    if (!template) return;
+
+    const name = await promptText({
+      title: 'Name this model',
+      body: 'Stemma will create it in your home folder and start a Git repository for it.',
+      placeholder: 'Payments Platform',
+      confirmLabel: 'Create',
+      validate: (v) => (v.trim().length === 0 ? 'Give the model a name' : null),
+    });
+    if (!name) return;
+
+    setLoading(true);
+    try {
+      const w = await initWorkspace(undefined, name.trim());
+      setWs(w);
+      const outcome = await applyTemplate(template, templateRunner(w));
+      setToast(outcome.failed.length === 0
+        ? { kind: 'success', text: `Created ${name.trim()} with ${outcome.elementsAdded} elements` }
+        : { kind: 'error', text: `Created ${name.trim()}, but ${outcome.failed.length} element(s) could not be added` });
+    } catch (e) {
+      setToast({ kind: 'error', text: (e as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /**
+   * The impure half of applying a template.
+   *
+   * The engine assigns ids as it writes, and there is no operation that hands one back, so each new
+   * element is found by re-reading the model and looking for the id that was not there before. Read
+   * over HTTP rather than off the store: the store is fed by the delta stream and lags the write,
+   * which is why the canvas's own template helpers had to sprinkle timeouts around.
+   */
+  function templateRunner(w: WorkspaceModel): TemplateRunner {
+    return {
+      addElement: async (element, parentId) => {
+        const before = new Set(((await archModel())?.elements ?? []).map((e) => e.id));
+        const result = await applyOperation({
+          kind: 'AddElement',
+          opId: `op_${Date.now()}_${element.ref}`,
+          elementKind: element.kind,
+          name: element.name,
+          [parentSlot(element.kind)]: parentId ?? null,
+          containerKind: element.containerKind ?? null,
+          role: element.role ?? null,
+        });
+        if ('reason' in result) return null;
+        const after = (await archModel())?.elements ?? [];
+        return after.find((e) => !before.has(e.id))?.id ?? null;
+      },
+      addLink: async (link, fromId, toId) => {
+        const result = await applyOperation({
+          kind: 'AddLink',
+          opId: `op_${Date.now()}_${link.from}_${link.to}`,
+          linkKind: link.kind,
+          fromId,
+          toId,
+          payload: link.payload ?? null,
+          dependencyKind: link.dependencyKind ?? null,
+        });
+        return !('reason' in result);
+      },
+      place: (positions) => {
+        // The default view a new workspace lands on. Committed to the sidecar, so the arrangement
+        // travels with the repository rather than living in this browser.
+        saveLayout(w.rootPath, 'moduleMap', positions);
+        window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: 'moduleMap' } }));
+      },
+    };
   }
 
   /** Create somewhere the user chooses, rather than in the default location under the home folder. */
@@ -116,13 +207,23 @@ export function EmptyState() {
 
         <div className="flex flex-col sm:flex-row gap-3 mb-8">
           <button
-            onClick={createModel}
+            onClick={startFromTemplate}
             className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500
                        focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
                        focus-visible:outline-indigo-500 px-4 py-3 text-sm font-medium text-white transition-colors"
           >
+            <Shapes className="w-4 h-4" aria-hidden="true" />
+            Start from a template
+          </button>
+          <button
+            onClick={createModel}
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-zinc-200
+                       dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60
+                       focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
+                       focus-visible:outline-indigo-500 px-4 py-3 text-sm font-medium transition-colors"
+          >
             <Sparkles className="w-4 h-4" aria-hidden="true" />
-            Start a new model
+            Start empty
           </button>
           <button
             onClick={openExisting}

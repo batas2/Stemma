@@ -57,6 +57,16 @@ export async function archModel(): Promise<ArchModel | null> {
   return r.json();
 }
 
+/** Where an id is declared and the line of C# that declares it — the file's own text (F-003 AC7). */
+export interface DeclarationSource { id: string; filePath: string; line: number; text: string }
+
+export async function elementSource(id: string): Promise<DeclarationSource | null> {
+  const r = await request(`${BASE}/api/workspace/source/${encodeURIComponent(id)}`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`Source fetch failed: ${r.status}`);
+  return r.json();
+}
+
 export async function books(): Promise<Book[] | null> {
   const r = await request(`${BASE}/api/workspace/books`);
   if (r.status === 404) return null;
