@@ -74,11 +74,85 @@ public static class WorkspaceScaffold
 
              Open this folder in Stemma, or edit the C# directly — both work, and both round-trip.
 
+             See [`STEMMA.md`](./STEMMA.md) before editing these files by hand.
+
              """, ct);
+
+        await WriteIfMissingAsync(Path.Combine(resolved, "STEMMA.md"), Brief(name), ct);
 
         var (initialised, error) = await TryGitInitAsync(resolved, ct);
         return new Result(resolved, initialised, error);
     }
+
+    /// <summary>
+    /// The agent-facing brief (F-007 AC6). A workspace created by Stemma is very often edited by
+    /// something that will never open the canvas — an agent with a shell, or a person writing the
+    /// files directly — and the rules that matter are the ones neither the compiler nor the type
+    /// system enforces. Those go here, at the root, where a reader lands. The full reference is in
+    /// the Stemma repository; this is what has to be true before reading it is worth the trouble.
+    /// </summary>
+    internal static string Brief(string name) =>
+        $$"""
+          # Working on this model
+
+          A brief for whoever edits these files by hand — including an agent that will never see the
+          canvas. The full reference is `.doc/protocol/authoring-a-diagram.md` in the Stemma
+          repository; everything below is the part you cannot get wrong.
+
+          **`Architecture/Architecture.cs` says what exists. `Views/<Name>.cs` says what one picture
+          is about. `stemma.layout.json` says how it is arranged.** Nothing else is required — this
+          workspace has no project file and opens without the .NET SDK.
+
+          ## The model
+
+          One `public static Model Build()`, read off the syntax tree by name: one `var` per element,
+          one per link, all collected into `Model.Of(...)`.
+
+          ```csharp
+          var api = new Container("cnt_api", "Booking API", "sys_platform", "service");
+          var store = new Container("cnt_store", "Booking Store", "sys_platform", "db");
+          var persist = new DataFlow("flow_persist", "cnt_api", "cnt_store", "order");
+
+          return Model.Of(api, store, persist);
+          ```
+
+          Elements: `Person`, `SoftwareSystem`, `Container`, `BoundedContext`, `Module`,
+          `Capability`, `UseCase`, `Question`, `Assumption`, `Risk`, and `Concept`. Links:
+          `DataFlow`, `Dependency`, `Relation`.
+
+          `Concept` is the one to understand first. Every other kind claims something — "this is a
+          bounded context", "this is deployable". A box in an argument claims nothing, and forcing it
+          into `Module` writes a falsehood into a file other people will copy from.
+
+          ## The rules nothing enforces
+
+          Ids are strings. A typo produces a missing node or a missing edge, silently, which is
+          invisible to anyone who cannot look at the result.
+
+          - Ids must be unique.
+          - Every `fromId`, `toId`, `contextId`, `systemId` and `aboutId` must name a real element.
+          - Prefixes keep them readable: `per_`, `sys_`, `cnt_`, `ctx_`, `mod_`, `cap_`, `uc_`,
+            `q_`, `asm_`, `risk_`, `con_`, and `flow_` / `dep_` / `rel_` for links.
+          - **A link is drawn only when both of its endpoints are in the view.** This is the usual
+            reason a diagram comes out looking right and missing an arrow.
+          - **Seven boxes is the working maximum.** Past that a picture has generally stopped
+            answering one question.
+          - **Never add an element to make a picture work.** That is what a free-form shape in the
+            sidecar is for. An element is a claim about the system and it outlives the diagram.
+
+          ## Checking and rendering
+
+          ```
+          stemma validate --workspace .            # what is broken; --json to act on it
+          stemma render --workspace . --view <id> --out diagram.png
+          ```
+
+          `validate` is the answer to every "did I get the ids right" question. Run it before you
+          look at anything. `render` produces the image with no browser open, and writes a manifest
+          beside it so `render --check` can later tell you the picture has stopped matching
+          `{{name}}`.
+
+          """;
 
     private static async Task WriteIfMissingAsync(string path, string content, CancellationToken ct)
     {

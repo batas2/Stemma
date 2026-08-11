@@ -3,11 +3,11 @@
 | Field | Value |
 |---|---|
 | **ID** | F-007 |
-| **Status** | `In progress` — schema and protocol reference shipped; scaffold outstanding |
+| **Status** | `Shipped (v1)` |
 | **Owner** | Bartosz |
 | **Persona served** | The Essayist's Agent ("Ada") |
 | **Roadmap horizon** | `Next` |
-| **Created / Updated** | 2026-08-08 / 2026-08-08 |
+| **Created / Updated** | 2026-08-08 / 2026-08-11 |
 
 ## 1. Product — why
 
@@ -32,8 +32,11 @@
       or `$id` drift from the engine's constants.
 - [x] AC5 — `.doc/protocol/authoring-a-diagram.md` covers `Architecture.cs` → `Views/<Name>.cs` →
       `stemma.layout.json` → render, with three complete worked examples (argument, C4, dependency).
-- [ ] AC6 — `WorkspaceScaffold` drops a `STEMMA.md` brief at the root of every new workspace. **Not
-      done — the only outstanding part of this record.**
+- [x] AC6 — `WorkspaceScaffold` drops a `STEMMA.md` brief at the root of every new workspace. It
+      carries the vocabulary, the id prefixes, and the four rules nothing else enforces (unique ids,
+      a link needs both endpoints in the view, seven boxes, never add an element to fix a picture),
+      then hands the reader `stemma validate`. Deliberately not a copy of the protocol reference:
+      the reference is what you read next, this is what has to be true first.
 
 ## 3. Architecture impact
 
@@ -68,7 +71,7 @@
 
 ## 8. Definition of Done
 
-- [x] Schema shipped and guarded · [x] protocol reference written · [ ] scaffold updated
+- [x] Schema shipped and guarded · [x] protocol reference written · [x] scaffold updated
 
 ## 9. Notes / open questions
 

@@ -15,7 +15,7 @@
 > kind (ADR-0019); free-form shapes persisted, documented and validated; a draw.io export that
 > honours the view and the layout; and true vector SVG out of the publication profile.
 >
-> **Still open, and small:** `STEMMA.md` in the workspace scaffold (F-007 AC6); an embedded or
+> **Still open, and small:** an embedded or
 > outlined font in the SVG, without which it re-wraps on a machine that lacks Inter (F-009 AC5); a
 > keyboard path to the constraint panel; and a figure-shaped sample, since Aurora Rail is an
 > architecture and deliberately exercises neither new kind.
@@ -347,10 +347,10 @@ The goal is that Ada, reading one document, can write a correct workspace on the
   Stemma. This one explains it to a writer who will never open the app, and it must carry **three
   complete, copy-pasteable worked examples**: an argument diagram, a C4 container view, and a
   dependency view. Examples beat prose for this reader by a wide margin.
-- **A3 · `STEMMA.md` in the workspace scaffold — not built.** `WorkspaceScaffold.cs` already generates new
-  workspaces; have it drop a short agent-facing brief at the root — vocabulary, id conventions,
-  "run `stemma render` to see it", the seven-box rule. The same trick this repository's own
-  contributor guide plays, applied to every workspace Stemma creates.
+- **A3 · `STEMMA.md` in the workspace scaffold. ✅ Shipped.** `WorkspaceScaffold.cs` drops a short
+  agent-facing brief at the root of every new workspace — vocabulary, id conventions, "run
+  `stemma render` to see it", the seven-box rule. The same trick this repository's own contributor
+  guide plays, applied to every workspace Stemma creates.
 - **A4 · `stemma validate --json`. ✅ Shipped.** Expose the existing `RuleEngine` plus the id-integrity check
   that currently lives only in `AuroraRailSampleTests`, as machine-readable output: dangling ids,
   view members that don't exist, links whose endpoints aren't both in the view (they silently don't
