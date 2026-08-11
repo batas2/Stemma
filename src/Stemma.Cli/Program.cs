@@ -16,6 +16,7 @@ try
 {
     return command switch
     {
+        "open" => await OpenCommand.RunAsync(rest),
         "render" => await RenderCommand.RunAsync(rest),
         "validate" => await ValidateCommand.RunAsync(rest),
         _ => Cli.Fail($"unknown command '{command}'"),
@@ -32,8 +33,9 @@ namespace Stemma.Cli
     internal static class Cli
     {
         public const string RootUsage = """
-            stemma — headless tools for a Stemma workspace.
+            stemma — tools for a Stemma workspace.
 
+              stemma open      Open Stemma in its own window.
               stemma render    Turn a model and a view into an image.
               stemma validate  Check a workspace for the things the compiler cannot see.
 

@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
 import { reportFailure, ClientEvent } from '@/lib/log';
-import { Sparkles, FolderOpen, Clock, FileCode, Lightbulb, Layers } from 'lucide-react';
+import { Sparkles, FolderOpen, Clock, FileCode, Lightbulb, Layers, FolderSearch } from 'lucide-react';
 import { StemmaMark } from './Logo';
 import { useApp } from '@/lib/store';
 import { initWorkspace, openWorkspace, listRecents } from '@/lib/api';
 import { promptText } from './PromptDialog';
+import { isDesktopShell, pickFolder } from '@/lib/shell';
 import type { RecentEntry } from '@/lib/types';
 
 /**
  * The first screen. Two doors — start a new model, or open one that exists — plus recents. Neither
- * door requires knowing or typing a filesystem path: a new model is created by name.
+ * door requires knowing or typing a filesystem path: a new model is created by name, and in the
+ * desktop shell an existing one is chosen in the OS folder picker rather than typed (F-002 AC4).
  */
 export function EmptyState() {
   const setWs = useApp((s) => s.setWorkspace);
   const setLoading = useApp((s) => s.setLoading);
   const setToast = useApp((s) => s.setToast);
   const [recents, setRecents] = useState<RecentEntry[]>([]);
+  const desktop = isDesktopShell();
 
   useEffect(() => { listRecents().then(setRecents).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading recent workspaces')); }, []);
 
@@ -41,15 +44,45 @@ export function EmptyState() {
   }
 
   async function openExisting() {
-    const path = await promptText({
-      title: 'Open a workspace',
-      body: 'A folder containing an Architecture/ model, or a repository with a .sln or .csproj.',
-      placeholder: '/home/you/code/your-service',
-      confirmLabel: 'Open',
-      validate: (v) => (v.trim().length === 0 ? 'Enter a folder path' : null),
-    });
+    // In the window this is the whole point of having one: a real folder picker, in which a path
+    // can still be typed the way the OS dialog has always allowed. In a tab there is no such thing,
+    // so the typed path stays.
+    const path = desktop
+      ? await pickFolder('Open a Stemma workspace')
+      : await promptText({
+          title: 'Open a workspace',
+          body: 'A folder containing an Architecture/ model, or a repository with a .sln or .csproj.',
+          placeholder: '/home/you/code/your-service',
+          confirmLabel: 'Open',
+          validate: (v) => (v.trim().length === 0 ? 'Enter a folder path' : null),
+        });
     if (!path) return;
     await open(path.trim());
+  }
+
+  /** Create somewhere the user chooses, rather than in the default location under the home folder. */
+  async function createInChosenFolder() {
+    const folder = await pickFolder('Where should the model live?');
+    if (!folder) return;
+    const suggested = folder.split('/').filter(Boolean).pop() ?? '';
+    const name = await promptText({
+      title: 'Name this model',
+      body: `It will be created in ${folder}.`,
+      initialValue: suggested,
+      confirmLabel: 'Create',
+      validate: (v) => (v.trim().length === 0 ? 'Give the model a name' : null),
+    });
+    if (!name) return;
+    setLoading(true);
+    try {
+      const w = await initWorkspace(folder, name.trim());
+      setWs(w);
+      setToast({ kind: 'success', text: `Created ${name.trim()} in ${w.rootPath}` });
+    } catch (e) {
+      setToast({ kind: 'error', text: (e as Error).message });
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function open(path: string) {
@@ -102,6 +135,20 @@ export function EmptyState() {
             Open an existing one
           </button>
         </div>
+
+        {desktop && (
+          <div className="text-center -mt-5 mb-8">
+            <button
+              onClick={createInChosenFolder}
+              className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-700
+                         dark:hover:text-zinc-300 focus-visible:outline focus-visible:outline-2
+                         focus-visible:outline-offset-2 focus-visible:outline-indigo-500 rounded px-1.5 py-1"
+            >
+              <FolderSearch className="w-3.5 h-3.5" aria-hidden="true" />
+              Create somewhere else…
+            </button>
+          </div>
+        )}
 
         {recents.length > 0 && (
           <div className="mb-8">
