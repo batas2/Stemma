@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Stemma.Desktop</RootNamespace>
+    <!-- `stemma` is taken by the headless CLI, and keeping the two apart is deliberate: the render
+         path must never acquire a native webview dependency (ADR-0017). -->
+    <AssemblyName>stemma-desktop</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Stemma.Web\Stemma.Web.csproj" />
+    <!-- 4.0.16 pulls Photino.Native 4.0.22, which links libwebkit2gtk-4.1 / GTK3 on Linux — the
+         version modern Flatpak runtimes carry. -->
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+  </ItemGroup>
+</Project>

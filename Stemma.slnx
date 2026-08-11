@@ -4,9 +4,11 @@
     <Project Path="src/Stemma.Model/Stemma.Model.csproj" />
     <Project Path="src/Stemma.Cli/Stemma.Cli.csproj" />
     <Project Path="src/Stemma.Web/Stemma.Web.csproj" />
+    <Project Path="src/Stemma.Desktop/Stemma.Desktop.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Stemma.Cli.Tests/Stemma.Cli.Tests.csproj" />
+    <Project Path="tests/Stemma.Desktop.Tests/Stemma.Desktop.Tests.csproj" />
     <Project Path="tests/Stemma.Engine.Tests/Stemma.Engine.Tests.csproj" />
     <Project Path="tests/Stemma.Web.Tests/Stemma.Web.Tests.csproj" />
   </Folder>
