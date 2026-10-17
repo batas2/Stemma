@@ -13,6 +13,9 @@
     <ProjectReference Include="..\..\src\Stemma.Engine\Stemma.Engine.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The fidelity fixtures are Architecture.cs files: inputs to the engine, not part of this build. -->
+    <Compile Remove="Fixtures\**" />
+    <None Include="Fixtures\**\*.cs" />
     <None Update="Fixtures\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -23,6 +23,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-006](./B-006-model-only-edit-adds-a-byte-order-mark.md) | The first edit to a model-only workspace gives the file a byte-order mark it never had | S2 major | engine | Fixed |
 | [B-007](./B-007-undo-rebuilds-instead-of-restoring.md) | Undo rebuilds what an edit removed instead of putting it back | S2 major | engine | Fixed |
 | [B-008](./B-008-outside-edit-is-written-back-forever.md) | An edit made outside Stemma is written back to disk, again and again, without its BOM | S2 major | engine | Fixed |
+| [B-009](./B-009-edits-rebuild-the-declaration.md) | Setting an attribute or a tag rewrote the whole declaration, and removing one took the lines above it | S2 major | engine | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 

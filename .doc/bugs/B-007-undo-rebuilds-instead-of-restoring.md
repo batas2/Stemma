@@ -78,6 +78,8 @@ says. An inverse built from it can only re-create the summary. `RestoreElementOp
   removal, for a cleared tag, and across three edits undone in order; that redo reproduces the edit
   exactly; that a new edit discards the redo branch; that after an outside edit undo keeps that edit
   and still restores what a Risk was about; and that the fallback for a `Relation` keeps its label.
+  The fidelity suite ([B-009](./B-009-edits-rebuild-the-declaration.md)) repeats edit → undo → redo,
+  byte for byte, for every operation on every fixture.
 
 ## 8. Verification
 

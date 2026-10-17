@@ -93,11 +93,12 @@ public static class DslReader
             ArchOwnership? ownership = null;
             foreach (var arg in inv.ArgumentList.Arguments.Skip(1))
             {
-                var name = arg.NameColon?.Name.Identifier.Text;
-                if (name == "lifecycle" && arg.Expression is BaseObjectCreationExpressionSyntax lcOc)
-                    lifecycle = ParseLifecycleFromCreation(lcOc);
-                else if (name == "ownership" && arg.Expression is BaseObjectCreationExpressionSyntax owOc)
-                    ownership = ParseOwnershipFromCreation(owOc);
+                if (arg.Expression is not BaseObjectCreationExpressionSyntax part) continue;
+                switch (TagPartOf(arg))
+                {
+                    case "lifecycle": lifecycle = ParseLifecycleFromCreation(part); break;
+                    case "ownership": ownership = ParseOwnershipFromCreation(part); break;
+                }
             }
             tags.Add(new ArchTag(targetId, lifecycle, ownership));
         }
@@ -105,14 +106,26 @@ public static class DslReader
         return new ArchModel(filePath, elements, links, tags);
     }
 
+    /// <summary>
+    /// Which part of a tag an argument of <c>Tag.For</c> is: by its name when it has one
+    /// (<c>lifecycle: …</c>), otherwise by the type it constructs (<c>new Lifecycle(…)</c>).
+    /// </summary>
+    internal static string? TagPartOf(ArgumentSyntax arg)
+    {
+        if (arg.NameColon is { } nc) return nc.Name.Identifier.Text;
+        return arg.Expression is ObjectCreationExpressionSyntax { Type: var t } && GetSimpleTypeName(t) is { } typeName
+            ? DslVocabulary.AttributeName(typeName)
+            : null;
+    }
+
     private static ArchLifecycle ParseLifecycleFromCreation(BaseObjectCreationExpressionSyntax oc)
     {
         var args = ExtractArgs(oc);
-        var positional = new[] { "Status", "Phase", "ValidFrom", "ValidUntil" };
+        var positional = DslVocabulary.ParametersOf("Lifecycle")!;
         string? status = null, phase = null, from = null, until = null;
         for (var i = 0; i < args.Count; i++)
         {
-            var key = args[i].Name ?? (i < positional.Length ? positional[i] : $"arg{i}");
+            var key = args[i].Name ?? (i < positional.Count ? positional[i] : $"arg{i}");
             switch (key.ToLowerInvariant())
             {
                 case "status": status = args[i].Value; break;
@@ -130,10 +143,11 @@ public static class DslReader
         // are placeholders. The DSL writer below still accepts and persists them; the reader will
         // be extended in a follow-up pass.
         var args = ExtractArgs(oc);
+        var positional = DslVocabulary.ParametersOf("Ownership")!;
         string? squad = null, domain = null;
         for (var i = 0; i < args.Count; i++)
         {
-            var key = args[i].Name?.ToLowerInvariant();
+            var key = args[i].Name ?? (i < positional.Count ? positional[i] : null);
             if (key == "squad") squad = args[i].Value;
             else if (key == "domain") domain = args[i].Value;
         }
@@ -178,7 +192,7 @@ public static class DslReader
         return null;
     }
 
-    private static BlockSyntax? FindBuildMethodBody(SyntaxNode root)
+    internal static BlockSyntax? FindBuildMethodBody(SyntaxNode root)
     {
         // Multi-file workspaces have additional `static class XxxArchitecture { Build() }` files;
         // we accept any class that exposes a Build method body (the convention is: one class per
@@ -191,7 +205,7 @@ public static class DslReader
         return null;
     }
 
-    private static string? ExtractTypeName(BaseObjectCreationExpressionSyntax oc, TypeSyntax declaredType)
+    internal static string? ExtractTypeName(BaseObjectCreationExpressionSyntax oc, TypeSyntax declaredType)
     {
         // var x = new Module(...) — type comes from the constructor expression.
         if (oc is ObjectCreationExpressionSyntax explicitOc)
@@ -202,20 +216,22 @@ public static class DslReader
         return GetSimpleTypeName(declaredType);
     }
 
-    private static string? GetSimpleTypeName(TypeSyntax? type) => type switch
+    internal static string? GetSimpleTypeName(TypeSyntax? type) => type switch
     {
         IdentifierNameSyntax id => id.Identifier.Text,
         QualifiedNameSyntax q => GetSimpleTypeName(q.Right),
         _ => null
     };
 
-    private static IReadOnlyList<(string? Name, string? Value)> ExtractArgs(BaseObjectCreationExpressionSyntax oc)
+    internal static IReadOnlyList<(string? Name, string? Value)> ExtractArgs(BaseObjectCreationExpressionSyntax oc)
     {
         var result = new List<(string?, string?)>();
         if (oc.ArgumentList is null) return result;
         foreach (var arg in oc.ArgumentList.Arguments)
         {
-            var argName = arg.NameColon?.Name.Identifier.Text;
+            // `Id:` and `id` are the same argument. Compared as written, every named-argument
+            // declaration was invisible to the reader, so there was nothing for an edit to find.
+            var argName = arg.NameColon is { } nc ? DslVocabulary.AttributeName(nc.Name.Identifier.Text) : null;
             var literal = ResolveStringValue(arg.Expression);
             result.Add((argName, literal));
         }
@@ -235,29 +251,12 @@ public static class DslReader
         ArchElementKind kind, IReadOnlyList<(string? Name, string? Value)> args)
     {
         var attrs = new Dictionary<string, string?>();
-        // Positional defaults by kind.
-        var positional = kind switch
-        {
-            ArchElementKind.Module => new[] { "id", "name", "contextId" },
-            ArchElementKind.BoundedContext => new[] { "id", "name" },
-            ArchElementKind.SoftwareSystem => new[] { "id", "name" },
-            ArchElementKind.Container => new[] { "id", "name", "systemId", "kind" },
-            ArchElementKind.Person => new[] { "id", "name", "role" },
-            ArchElementKind.UseCase => new[] { "id", "name" },
-            ArchElementKind.Capability => new[] { "id", "name", "contextId" },
-            ArchElementKind.Question => new[] { "id", "name", "aboutId" },
-            ArchElementKind.Assumption => new[] { "id", "name", "aboutId" },
-            ArchElementKind.Risk => new[] { "id", "name", "aboutId" },
-            // Id and name, and nothing else. A Concept that acquired a contextId would be a Module
-            // with extra steps, which is the thing this kind exists to avoid.
-            ArchElementKind.Concept => new[] { "id", "name" },
-            _ => new[] { "id", "name" }
-        };
+        var positional = DslVocabulary.ParametersOf(kind.ToString()) ?? ["id", "name"];
         string? id = null;
         string? name = null;
         for (var i = 0; i < args.Count; i++)
         {
-            var key = args[i].Name ?? (i < positional.Length ? positional[i] : $"arg{i}");
+            var key = args[i].Name ?? (i < positional.Count ? positional[i] : $"arg{i}");
             var value = args[i].Value;
             if (key == "id") id = value;
             else if (key == "name") name = value;
@@ -270,19 +269,13 @@ public static class DslReader
         ArchLinkKind kind, IReadOnlyList<(string? Name, string? Value)> args)
     {
         var attrs = new Dictionary<string, string?>();
-        var positional = kind switch
-        {
-            ArchLinkKind.DataFlow => new[] { "id", "fromId", "toId", "payload", "direction" },
-            ArchLinkKind.Dependency => new[] { "id", "fromId", "toId", "kind" },
-            ArchLinkKind.Relation => new[] { "id", "fromId", "toId", "label" },
-            _ => new[] { "id", "fromId", "toId" }
-        };
+        var positional = DslVocabulary.ParametersOf(kind.ToString()) ?? ["id", "fromId", "toId"];
         string? id = null;
         string? from = null;
         string? to = null;
         for (var i = 0; i < args.Count; i++)
         {
-            var key = args[i].Name ?? (i < positional.Length ? positional[i] : $"arg{i}");
+            var key = args[i].Name ?? (i < positional.Count ? positional[i] : $"arg{i}");
             var value = args[i].Value;
             if (key == "id") id = value;
             else if (key == "fromId") from = value;

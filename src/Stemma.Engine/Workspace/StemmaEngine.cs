@@ -1011,14 +1011,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         foreach (var doc in FindArchitectureDocuments())
         {
             var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
-            if (root is null) continue;
-            var hit = root.DescendantNodes().OfType<LocalDeclarationStatementSyntax>()
-                .Any(s => s.Declaration.Variables.Any(v =>
-                    v.Initializer?.Value is BaseObjectCreationExpressionSyntax oc
-                    && oc.ArgumentList?.Arguments.Count > 0
-                    && oc.ArgumentList.Arguments[0].Expression is LiteralExpressionSyntax lit
-                    && lit.Token.ValueText == id));
-            if (hit) return doc;
+            if (root is not null && DslReader.FindDeclaration(doc.FilePath ?? "", root, id) is not null) return doc;
         }
         return null;
     }
@@ -1119,7 +1112,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
 
         SyntaxNode newRoot;
-        try { newRoot = DslWriter.RemoveStatementById(root, op.ElementId); }
+        try { newRoot = DslWriter.RemoveDeclaration(root, op.ElementId); }
         catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
@@ -1142,12 +1135,9 @@ public sealed class StemmaEngine : IAsyncDisposable
             && !current!.Elements.Any(e => e.Id == op.ContextId && e.Kind == ArchElementKind.BoundedContext))
             return new OperationFailed(op.OpId, "ContextNotFound", op.ContextId);
 
-        var attrs = new Dictionary<string, string?>(element.Attributes);
-        if (string.IsNullOrEmpty(op.ContextId)) attrs.Remove("contextId");
-        else attrs["contextId"] = op.ContextId;
-        var updated = element with { Attributes = attrs };
-
-        var newRoot = DslWriter.SetElement(root, updated);
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.SetAttribute(root, op.ElementId, "contextId", string.IsNullOrEmpty(op.ContextId) ? null : op.ContextId); }
+        catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
         if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "No change");
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
@@ -1165,12 +1155,9 @@ public sealed class StemmaEngine : IAsyncDisposable
         var element = current?.Elements.FirstOrDefault(e => e.Id == op.ElementId);
         if (element is null) return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
 
-        var attrs = new Dictionary<string, string?>(element.Attributes);
-        if (string.IsNullOrEmpty(op.Value)) attrs.Remove(op.AttributeName);
-        else attrs[op.AttributeName] = op.Value;
-        var updated = element with { Attributes = attrs };
-
-        var newRoot = DslWriter.SetElement(root, updated);
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.SetAttribute(root, op.ElementId, op.AttributeName, string.IsNullOrEmpty(op.Value) ? null : op.Value); }
+        catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
         if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "No change");
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
@@ -1218,12 +1205,9 @@ public sealed class StemmaEngine : IAsyncDisposable
         var link = current.Links.FirstOrDefault(l => l.Id == op.LinkId);
         if (link is null) return new OperationFailed(op.OpId, "LinkNotFound", op.LinkId);
 
-        var attrs = new Dictionary<string, string?>(link.Attributes);
-        if (op.Value is null) attrs.Remove(op.AttributeName);
-        else attrs[op.AttributeName] = op.Value;
-
-        var updated = link with { Attributes = attrs };
-        var newRoot = DslWriter.SetLinkAttribute(root, updated);
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.SetAttribute(root, op.LinkId, op.AttributeName, op.Value); }
+        catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
         if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "No change");
 
         var oldSolution = _workspace.CurrentSolution;
@@ -1240,7 +1224,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
 
         SyntaxNode newRoot;
-        try { newRoot = DslWriter.RemoveStatementById(root, op.LinkId); }
+        try { newRoot = DslWriter.RemoveDeclaration(root, op.LinkId); }
         catch (Exception e) { return new OperationFailed(op.OpId, "RemoveFailed", e.Message); }
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
@@ -1289,53 +1273,32 @@ public sealed class StemmaEngine : IAsyncDisposable
             () => new OperationApplied(op.OpId, []), ct);
     }
 
-    private async Task<OperationResult> SetLifecycleAsync(SetLifecycleOp op, CancellationToken ct)
-    {
-        var doc = FindDocumentForId(op.TargetId) ?? FindArchitectureDocument();
-        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var current = await ReadArchModelAsync(ct);
-        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
-        var existingTag = current.Tags.FirstOrDefault(t => t.TargetId == op.TargetId);
-        var existingOwnership = existingTag?.Ownership;
+    private Task<OperationResult> SetLifecycleAsync(SetLifecycleOp op, CancellationToken ct) =>
+        SetTagAsync(op.OpId, op.TargetId, "lifecycle",
+            [("status", Blank(op.Status)), ("phase", Blank(op.Phase)), ("validFrom", Blank(op.ValidFrom)), ("validUntil", Blank(op.ValidUntil))], ct);
 
-        var allEmpty = string.IsNullOrEmpty(op.Status) && string.IsNullOrEmpty(op.Phase)
-                    && string.IsNullOrEmpty(op.ValidFrom) && string.IsNullOrEmpty(op.ValidUntil);
-        var lifecycle = allEmpty ? null : new ArchLifecycle(op.Status, op.Phase, op.ValidFrom, op.ValidUntil);
+    /// <summary>Squad and domain only: the RAPID roles are not part of this operation, so it leaves them as written.</summary>
+    private Task<OperationResult> SetOwnershipAsync(SetOwnershipOp op, CancellationToken ct) =>
+        SetTagAsync(op.OpId, op.TargetId, "ownership", [("squad", Blank(op.Squad)), ("domain", Blank(op.Domain))], ct);
+
+    private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private async Task<OperationResult> SetTagAsync(
+        string opId, string targetId, string part, IReadOnlyList<(string Field, string? Value)> fields, CancellationToken ct)
+    {
+        var doc = FindDocumentForId(targetId) ?? FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(opId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(opId, "ParseError", "Could not parse");
 
         SyntaxNode newRoot;
-        try { newRoot = DslWriter.SetTag(root, op.TargetId, lifecycle, existingOwnership); }
-        catch (Exception e) { return new OperationFailed(op.OpId, "SetTagFailed", e.Message); }
+        try { newRoot = DslWriter.SetTag(root, targetId, part, fields); }
+        catch (DslEditRefusedException e) { return new OperationFailed(opId, e.Reason, e.Message); }
+        catch (InvalidOperationException e) { return new OperationFailed(opId, "SetTagFailed", e.Message); }
 
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
-        return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
-    }
-
-    private async Task<OperationResult> SetOwnershipAsync(SetOwnershipOp op, CancellationToken ct)
-    {
-        var doc = FindDocumentForId(op.TargetId) ?? FindArchitectureDocument();
-        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var current = await ReadArchModelAsync(ct);
-        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
-        var existingTag = current.Tags.FirstOrDefault(t => t.TargetId == op.TargetId);
-        var existingLifecycle = existingTag?.Lifecycle;
-
-        var allEmpty = string.IsNullOrEmpty(op.Squad) && string.IsNullOrEmpty(op.Domain);
-        var ownership = allEmpty ? null : new ArchOwnership(op.Squad, op.Domain);
-
-        SyntaxNode newRoot;
-        try { newRoot = DslWriter.SetTag(root, op.TargetId, existingLifecycle, ownership); }
-        catch (Exception e) { return new OperationFailed(op.OpId, "SetTagFailed", e.Message); }
-
-        var oldSolution = _workspace.CurrentSolution;
-        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
-        return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
+        return await CommitAsync(opId, oldSolution, newSolution, () => new OperationApplied(opId, []), ct);
     }
 
     private static string GenerateId(ArchElementKind kind, ArchModel.ArchModel current)
