@@ -22,6 +22,7 @@ internal static class OpenCommand
         """;
 
     private const string ShellName = "stemma-desktop";
+    private const string ShellDll = ShellName + ".dll";
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -36,7 +37,7 @@ internal static class OpenCommand
             return Cli.Fail($"could not find '{ShellName}'. It ships beside this binary; from a source "
                             + "tree, build it with `dotnet build src/Stemma.Desktop`.");
 
-        var psi = new ProcessStartInfo(shell) { UseShellExecute = false };
+        var psi = SiblingProgram.StartInfo(shell);
         // A bare path is the natural way to type this, and the shell only understands the flag.
         if (args.Length > 0 && !args[0].StartsWith('-'))
         {
@@ -50,7 +51,7 @@ internal static class OpenCommand
         }
 
         using var process = Process.Start(psi);
-        if (process is null) return Cli.Fail($"could not start '{shell}'");
+        if (process is null) return Cli.Fail($"could not start '{psi.FileName}'");
 
         // Waited on rather than detached: Ctrl-C then closes the window, and whatever the shell
         // writes reaches the terminal that asked for it.
@@ -63,7 +64,7 @@ internal static class OpenCommand
     {
         var here = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
 
-        var published = Path.Combine(here, ShellName);
+        var published = Path.Combine(here, ShellDll);
         if (File.Exists(published)) return published;
 
         // …/src/Stemma.Cli/bin/<cfg>/<tfm>/ → …/src/Stemma.Desktop/bin/<cfg>/<tfm>/
@@ -73,7 +74,7 @@ internal static class OpenCommand
         var srcDir = dir.Parent?.Parent?.Parent?.Parent;
         if (cfg is null || srcDir is null) return null;
 
-        var built = Path.Combine(srcDir.FullName, "Stemma.Desktop", "bin", cfg, tfm, ShellName);
+        var built = Path.Combine(srcDir.FullName, "Stemma.Desktop", "bin", cfg, tfm, ShellDll);
         return File.Exists(built) ? built : null;
     }
 }

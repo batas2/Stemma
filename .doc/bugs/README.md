@@ -30,6 +30,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-013](./B-013-append-to-a-crowded-line-starts-a-new-one.md) | An id added to a list laid out several to a line went on a line of its own, at column 0 | S3 minor | engine | Fixed |
 | [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md) | The sidecar is written whole from the session's copy: one drag rewrites it, and a pull made meanwhile is lost | S2 major | sidecar | Fixed |
 | [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md) | A file added or deleted outside Stemma, or several changed at once, was not taken in | S2 major | engine | Fixed |
+| [B-016](./B-016-tarball-render-needs-the-dotnet-it-ships-without.md) | `stemma render` from the tarball needs the `dotnet` the tarball is built to do without | S2 major | cli | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 
@@ -87,5 +88,10 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
   on bind, before anything is written. The round-trip test still passes, because it only asserts what
   the type declares. Any nested type in `LayoutSidecar` needs `[JsonExtensionData]` — see
   [B-001](./B-001-layout-sidecar-drops-shapes-and-edge-handles.md).
+- **A distribution tried on the machine that built it** → every tool the build needed is on that
+  machine, so whatever the package quietly still depends on is found there and nowhere else. Try a
+  package unpacked somewhere new with the things it promises to do without hidden. See
+  [B-016](./B-016-tarball-render-needs-the-dotnet-it-ships-without.md) and
+  `scripts/package/smoke-test.sh`.
 
 The QA / Test Engineer owns this board.

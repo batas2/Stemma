@@ -62,7 +62,8 @@ Stemma — the living architecture model
 
 Requires WebKitGTK 4.1 (libwebkit2gtk-4.1). Everything else is in this folder.
 A workspace that is only a model needs nothing more; a workspace that is a repository needs the
-.NET SDK, because that is what knows how the code actually compiles.
+.NET SDK, because that is what knows how the code actually compiles. `stemma render` draws with
+the Google Chrome installed on the machine.
 EOF
 
 TARBALL="$OUT/stemma-$RUNTIME.tar.gz"

@@ -49,13 +49,9 @@ public sealed class HostProcess : IAsyncDisposable
         var port = FreePort();
         var baseUrl = $"http://127.0.0.1:{port}";
 
-        var psi = new ProcessStartInfo("dotnet")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        psi.ArgumentList.Add(hostDll);
+        var psi = SiblingProgram.StartInfo(hostDll);
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError = true;
         psi.ArgumentList.Add("--urls");
         psi.ArgumentList.Add(baseUrl);
         // Without this the content root is the *caller's* working directory, so `wwwroot` resolves
