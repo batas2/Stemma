@@ -7,7 +7,7 @@
 | **Severity** | `S2 major` |
 | **Area** | `sidecar` |
 | **Reported by / Date** | Bartosz / 2026-10-17 |
-| **Affected version / commit** | since the comments panel (Epic 07); 0.1.0 |
+| **Affected version / commit** | since the comments panel (Epic 07); fixed before 0.1.0 was published |
 
 ## 1. Summary
 

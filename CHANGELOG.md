@@ -9,27 +9,11 @@ within one, entries are dated. How a release is cut:
 
 ## Unreleased
 
-### Comments, written as changes — 2026-10-17
-
-**Fixed**
-
-- **[B-018](./.doc/bugs/B-018-comments-written-whole-and-read-as-empty.md) — comments were written
-  whole from the panel's copy, and a file that did not parse read as none.** A comment that arrived
-  in a pull while the panel was open was lost with the next one posted; every write re-serialized
-  the file, dropping keys it did not know and escaping every Polish letter; and a file a merge had
-  left its markers in showed no comments and was replaced by the next one. The panel now sends
-  what it did — add, reply, resolve, remove — by id, onto the file as it is, and shows the file the
-  engine answers with; an open panel picks up a comment written outside. A file that does not parse
-  is said to be, with the line to look at, and nothing is written to it; the report export says the
-  same instead of shipping without comments.
-- **New text in a sidecar is no longer escaped unless the file already escapes.** A file with raw
-  characters, or none at all yet, gets them raw.
-
 ## 0.1.0 — 2026-10-17
 
 The first release: everything below, as one version you can install in one command. It is the
 first point at which the promise Stemma is built on — the `git diff` of an edit is that edit — is
-held by tests for both of its stores, the code and the presentation sidecar.
+held by tests for every file it writes: the code, the presentation sidecar and the comments.
 
 ```bash
 dotnet tool install -g Stemma                # with the .NET 10 SDK
@@ -135,6 +119,17 @@ down, for the first time, in the [operations catalog](./.doc/architecture/engine
   ([ADR-0021](./.doc/architecture/decisions/0021-sidecar-written-as-changes.md)). The same drag is
   +8/−1, and a pull made mid-session is read and kept. A sidecar that does not parse is refused
   rather than read as empty and written back.
+- **[B-018](./.doc/bugs/B-018-comments-written-whole-and-read-as-empty.md) — comments were written
+  whole from the panel's copy, and a file that did not parse read as none.** A comment that arrived
+  in a pull while the panel was open was lost with the next one posted; every write re-serialized
+  the file, dropping keys it did not know and escaping every Polish letter; and a file a merge had
+  left its markers in showed no comments and was replaced by the next one. The panel now sends
+  what it did — add, reply, resolve, remove — by id, onto the file as it is, and shows the file the
+  engine answers with; an open panel picks up a comment written outside. A file that does not parse
+  is said to be, with the line to look at, and nothing is written to it; the report export says the
+  same instead of shipping without comments.
+- **New text in a sidecar is no longer escaped unless the file already escapes.** A file with raw
+  characters, or none at all yet, gets them raw.
 
 ### The first ten minutes — 2026-08-11
 
