@@ -47,6 +47,10 @@ Linux x64 only, for now: it is the one platform this release is built and tested
   .NET every render failed before it began. The CLI now starts the host and the window the way it
   was itself shipped: on the runtime it is running on, or from their own executables when it
   carries its runtime with it. The tarball's README says what `render` does need: Google Chrome.
+- **[B-017](./.doc/bugs/B-017-new-model-left-uncommitted-where-git-knows-nobody.md) — a new model
+  was left uncommitted where git had not been told who you are**, so your first `git status` listed
+  every file Stemma wrote. The scaffold's one commit is now made in Stemma's name when git has no
+  name for you, for that commit only; your own first commit still asks.
 
 ### Fidelity, enforced — 2026-10-17
 

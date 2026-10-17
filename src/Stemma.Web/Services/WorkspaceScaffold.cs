@@ -19,7 +19,13 @@ public static class WorkspaceScaffold
 
     public sealed record Result(string RootPath, bool GitInitialised, string? GitError);
 
-    public static async Task<Result> CreateAsync(string name, string? rootPath, CancellationToken ct = default)
+    public static Task<Result> CreateAsync(string name, string? rootPath, CancellationToken ct = default) =>
+        CreateAsync(name, rootPath, gitEnvironment: null, ct);
+
+    /// <param name="gitEnvironment">Changes to the environment git runs in, a null value removing a
+    /// variable; null to run it in this process's own.</param>
+    public static async Task<Result> CreateAsync(string name, string? rootPath,
+        IReadOnlyDictionary<string, string?>? gitEnvironment, CancellationToken ct = default)
     {
         var resolved = string.IsNullOrWhiteSpace(rootPath) ? PathFor(name) : Path.GetFullPath(rootPath);
         var identifier = Identifier(name);
@@ -80,7 +86,7 @@ public static class WorkspaceScaffold
 
         await WriteIfMissingAsync(Path.Combine(resolved, "STEMMA.md"), Brief(name), ct);
 
-        var (initialised, error) = await TryGitInitAsync(resolved, ct);
+        var (initialised, error) = await TryGitInitAsync(resolved, gitEnvironment, ct);
         return new Result(resolved, initialised, error);
     }
 
@@ -162,22 +168,31 @@ public static class WorkspaceScaffold
     }
 
     /// <summary>
-    /// Git-native is the pitch, so a new model starts as a repository with one commit. Best-effort:
-    /// a machine without git still gets a working model, just not a repo.
+    /// Git-native is the pitch, so a new model starts as a repository with one commit: the first diff
+    /// its author reads is then their own first edit (F-003 AC4). Best-effort: a machine without git
+    /// still gets a working model, just not a repo.
     /// </summary>
-    private static async Task<(bool, string?)> TryGitInitAsync(string root, CancellationToken ct)
+    private static async Task<(bool, string?)> TryGitInitAsync(
+        string root, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct)
     {
         if (Directory.Exists(Path.Combine(root, ".git"))) return (true, null);
         try
         {
-            var init = await RunGitAsync(root, ct, "init", "--quiet");
+            var init = await RunGitAsync(root, environment, ct, "init", "--quiet");
             if (init is not null) return (false, init);
 
-            var add = await RunGitAsync(root, ct, "add", ".");
+            var add = await RunGitAsync(root, environment, ct, "add", ".");
             if (add is not null) return (false, add);
 
-            var commit = await RunGitAsync(root, ct, "commit", "--quiet", "-m", "Start architecture model");
-            // An empty or failed commit (no identity configured, say) still leaves a usable repo.
+            // Git will not commit for someone it cannot name, and on a fresh machine nobody has told
+            // it a name yet. That commit is then made in Stemma's name, which is who made it, and
+            // for that one command only: the user's own first commit still asks who they are (B-017).
+            string[] author = await HasIdentityAsync(root, environment, ct)
+                ? []
+                : ["-c", "user.name=Stemma", "-c", "user.email=stemma@localhost"];
+            var commit = await RunGitAsync(root, environment, ct,
+                [.. author, "commit", "--quiet", "-m", "Start architecture model"]);
+            // A commit that still fails (a hook, say) leaves a usable repo with the files staged.
             return (true, commit);
         }
         catch (Exception ex)
@@ -186,7 +201,14 @@ public static class WorkspaceScaffold
         }
     }
 
-    private static async Task<string?> RunGitAsync(string workingDir, CancellationToken ct, params string[] args)
+    /// <summary>Whether git can name both an author and a committer here, as a commit needs.</summary>
+    private static async Task<bool> HasIdentityAsync(
+        string root, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct) =>
+        await RunGitAsync(root, environment, ct, "var", "GIT_AUTHOR_IDENT") is null
+        && await RunGitAsync(root, environment, ct, "var", "GIT_COMMITTER_IDENT") is null;
+
+    private static async Task<string?> RunGitAsync(
+        string workingDir, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct, params string[] args)
     {
         var psi = new ProcessStartInfo("git")
         {
@@ -196,6 +218,11 @@ public static class WorkspaceScaffold
             UseShellExecute = false,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
+        foreach (var (key, value) in environment ?? new Dictionary<string, string?>())
+        {
+            if (value is null) psi.Environment.Remove(key);
+            else psi.Environment[key] = value;
+        }
 
         using var proc = Process.Start(psi);
         if (proc is null) return "git is not available on PATH";

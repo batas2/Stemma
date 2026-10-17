@@ -31,6 +31,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md) | The sidecar is written whole from the session's copy: one drag rewrites it, and a pull made meanwhile is lost | S2 major | sidecar | Fixed |
 | [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md) | A file added or deleted outside Stemma, or several changed at once, was not taken in | S2 major | engine | Fixed |
 | [B-016](./B-016-tarball-render-needs-the-dotnet-it-ships-without.md) | `stemma render` from the tarball needs the `dotnet` the tarball is built to do without | S2 major | cli | Fixed |
+| [B-017](./B-017-new-model-left-uncommitted-where-git-knows-nobody.md) | A new model is left uncommitted where git has not been told who the user is | S3 minor | web | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 
@@ -92,6 +93,8 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
   machine, so whatever the package quietly still depends on is found there and nowhere else. Try a
   package unpacked somewhere new with the things it promises to do without hidden. See
   [B-016](./B-016-tarball-render-needs-the-dotnet-it-ships-without.md) and
-  `scripts/package/smoke-test.sh`.
+  `scripts/package/smoke-test.sh`. The same goes for tests: a test that shells out to git or any
+  other tool runs against that machine's configuration of it unless it is given its own — see
+  [B-017](./B-017-new-model-left-uncommitted-where-git-knows-nobody.md), invisible until CI.
 
 The QA / Test Engineer owns this board.
