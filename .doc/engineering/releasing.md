@@ -44,13 +44,18 @@ adds the commit), the tarball's README. Never write a version anywhere else.
    ./dist/stemma/stemma-desktop samples/StemmaArchitecture     # the one check that needs a display
    ```
 
-4. **Commit, tag and push the tag:**
+4. **Commit, rehearse on CI, then tag:**
 
    ```bash
    git commit -am "chore(release): X.Y.Z"
-   git tag -a vX.Y.Z -m "Stemma X.Y.Z"
-   git push origin master vX.Y.Z
+   git push origin master
+   gh workflow run release.yml --ref master     # everything the tag does except the release
+   git tag -a vX.Y.Z -m "Stemma X.Y.Z"          # once the rehearsal is green
+   git push origin vX.Y.Z
    ```
+
+   The rehearsal builds on a clean machine, which yours is not, and attaches what it built to the
+   run for a week.
 
    The [release workflow](../../.github/workflows/release.yml) checks the tag against
    `Directory.Build.props`, runs every test with the front end built (so the render tests render),
