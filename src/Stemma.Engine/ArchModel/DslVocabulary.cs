@@ -32,6 +32,7 @@ internal static class DslVocabulary
         "Relation" => ["id", "fromId", "toId", "label"],
         "Lifecycle" => ["status", "phase", "validFrom", "validUntil"],
         "Ownership" => ["squad", "domain", "recommend", "agree", "perform", "input", "decide"],
+        "View" => ["id", "name", "baseView", "elementIds"],
         _ => null,
     };
 

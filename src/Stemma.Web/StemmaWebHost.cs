@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Stemma.Engine.Adapters.Yaml;
 using Stemma.Engine.ArchModel;
+using Stemma.Engine.Operations;
 using Stemma.Engine.Workspace;
 using Serilog;
 using Stemma.Web.Diagnostics;
@@ -412,46 +413,29 @@ public static class StemmaWebHost
             return Results.Ok(ViewsAdapter.ReadAllFrom(docs));
         });
 
+        // Both go through the engine, so a view file is edited in place, compile-gated, and found by
+        // the id it declares — never rewritten from a template or picked out by a text search (B-010).
         workspaceApi.MapPut("/views", async (ArchView view, EngineHost host, CancellationToken ct) =>
         {
             var engine = host.Engine;
             if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
-            var ns = engine.NamespaceForViews();
-            var (path, content) = ViewsAdapter.Render(engine.RootPath, ns, view);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            // Remove any existing file for this view id first (in case the name changed).
-            var viewsDir = Path.GetDirectoryName(path)!;
-            if (Directory.Exists(viewsDir))
-            {
-                foreach (var existing in Directory.EnumerateFiles(viewsDir, "*.cs"))
-                {
-                    if (existing == path) continue;
-                    try
-                    {
-                        var existingContent = await File.ReadAllTextAsync(existing, ct);
-                        if (existingContent.Contains($"\"{view.Id}\"")) File.Delete(existing);
-                    }
-                    catch { /* ignore */ }
-                }
-            }
-            await File.WriteAllTextAsync(path, content, ct);
-            return Results.NoContent();
+            var result = await engine.SaveViewAsync($"view_{Guid.NewGuid():N}", view, ct);
+            return result is OperationFailed f
+                ? Results.Conflict(new { reason = f.Reason, message = f.Message })
+                : Results.NoContent();
         });
 
         workspaceApi.MapDelete("/views/{viewId}", async (string viewId, EngineHost host, CancellationToken ct) =>
         {
             var engine = host.Engine;
             if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
-            var viewsDir = Path.Combine(engine.RootPath, "Views");
-            if (!Directory.Exists(viewsDir)) return Results.NotFound();
-            foreach (var filePath in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
+            var result = await engine.RemoveViewAsync($"view_{Guid.NewGuid():N}", viewId, ct);
+            return result switch
             {
-                var content = await File.ReadAllTextAsync(filePath, ct);
-                if (!content.Contains($"\"{viewId}\"")) continue;
-                File.Delete(filePath);
-                return Results.NoContent();
-            }
-            return Results.NotFound();
+                OperationFailed { Reason: "ViewNotFound" } => Results.NotFound(),
+                OperationFailed f => Results.Conflict(new { reason = f.Reason, message = f.Message }),
+                _ => Results.NoContent(),
+            };
         });
 
         workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));

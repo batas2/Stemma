@@ -149,7 +149,16 @@ internal static class Trivia
         return SyntaxFactory.TriviaList(leading.Skip(start).TakeWhile(t => t.IsKind(SyntaxKind.WhitespaceTrivia)));
     }
 
-    /// <summary>Only the whitespace and line endings: the layout of some trivia without its content.</summary>
-    public static SyntaxTriviaList Layout(SyntaxTriviaList trivia) =>
-        SyntaxFactory.TriviaList(trivia.Where(t => t.IsKind(SyntaxKind.WhitespaceTrivia) || t.IsKind(SyntaxKind.EndOfLineTrivia)));
+    /// <summary>
+    /// Only the whitespace and line endings: the layout of some trivia without its content. The space
+    /// that separated a removed comment from its comma would be left trailing, so it goes too.
+    /// </summary>
+    public static SyntaxTriviaList Layout(SyntaxTriviaList trivia)
+    {
+        var kept = trivia.Where(t => t.IsKind(SyntaxKind.WhitespaceTrivia) || t.IsKind(SyntaxKind.EndOfLineTrivia)).ToList();
+        for (var i = kept.Count - 2; i >= 0; i--)
+            if (kept[i].IsKind(SyntaxKind.WhitespaceTrivia) && kept[i + 1].IsKind(SyntaxKind.EndOfLineTrivia))
+                kept.RemoveAt(i);
+        return SyntaxFactory.TriviaList(kept);
+    }
 }

@@ -528,8 +528,7 @@ public class ArchModelTests
     public async Task ViewsAdapter_round_trips_a_view_definition()
     {
         var view = new ArchView("view_abc", "Buyer Journey", "moduleMap", new[] { "mod_001", "mod_002" });
-        var (path, content) = ViewsAdapter.Render("/tmp", "Sample", view);
-        path.Should().EndWith(Path.Combine("Views", "BuyerJourney.cs"));
+        var content = ViewsAdapter.Render("Sample", ViewsAdapter.ClassNameFromViewName(view.Name), view);
         content.Should().Contain("public static class BuyerJourney");
         content.Should().Contain("Id: \"view_abc\"");
         content.Should().Contain("\"mod_001\"");

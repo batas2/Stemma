@@ -81,6 +81,9 @@ is out of date for as long as the watcher has not caught up.
     was computed from. If they differ the edit is refused as `ChangedOnDisk`, the new text is taken
     in, and clients are told — so a retry lands on top of the save instead of under it.
   - The bare `catch` around the handler now logs.
+  - Follow-up ([B-010](./B-010-saving-a-view-rewrites-its-file.md)): the time window that treated any
+    write within 1.5 s of Stemma's own as an echo also swallowed a real save made inside it. With
+    echoes recognised by content the window was unnecessary, and it is gone.
 - **Affected files:** `src/Stemma.Engine/Workspace/StemmaEngine.cs`,
   `src/Stemma.Engine/Workspace/ModelWorkspaceLoader.cs`
 - [x] Fix implemented

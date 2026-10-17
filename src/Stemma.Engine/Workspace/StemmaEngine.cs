@@ -25,8 +25,6 @@ public sealed class StemmaEngine : IAsyncDisposable
     private ExternalWatcher? _watcher;
     private ArchModel.ArchModel? _archBeforeOp;
     private IReadOnlyList<DocumentWrite> _lastWrites = [];
-    private readonly Dictionary<string, DateTime> _lastSelfWriteAt = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly TimeSpan SelfWriteEchoWindow = TimeSpan.FromSeconds(1.5);
 
     public WorkspaceModel Model => _model;
     public string RootPath => _model.RootPath;
@@ -66,17 +64,13 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async void OnExternalChange(string path)
     {
-        // Suppress the engine's own write echo: file events that arrive shortly after Stemma wrote
-        // the same file via TryApplyChanges are not user edits.
-        lock (_lastSelfWriteAt)
-        {
-            if (_lastSelfWriteAt.TryGetValue(path, out var ts) && DateTime.UtcNow - ts < SelfWriteEchoWindow)
-                return;
-        }
         await _gate.WaitAsync();
         try
         {
-            // An echo that arrives after the window, or a save that changed nothing, is not a change.
+            // The echo of Stemma's own write is told apart by content, not by time: the file says
+            // exactly what the workspace holds, so there is nothing to take in. A window of "writes
+            // within 1.5 s are ours" also swallowed a real save made inside it, and the engine then
+            // never saw that save at all.
             if (!await TakeInFromDiskAsync(path, CancellationToken.None)) return;
             await ReloadAsync();
             _undo.OnExternalChange();
@@ -116,9 +110,8 @@ public sealed class StemmaEngine : IAsyncDisposable
         else
         {
             // MSBuildWorkspace has no way to update a document without persisting it, so this writes
-            // the bytes it just read straight back — identical, encoding included. Marked as our own
-            // write so its echo is not taken for another outside edit.
-            lock (_lastSelfWriteAt) _lastSelfWriteAt[path] = DateTime.UtcNow;
+            // the bytes it just read straight back — identical, encoding included — and its echo
+            // finds nothing to take in.
             _workspace.TryApplyChanges(doc.WithText(disk).Project.Solution);
         }
         return true;
@@ -348,7 +341,9 @@ public sealed class StemmaEngine : IAsyncDisposable
         var touchedPaths = new List<string>();
         foreach (var projectChange in changes.GetProjectChanges())
         {
-            foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetAddedDocuments()))
+            foreach (var docId in projectChange.GetChangedDocuments()
+                         .Concat(projectChange.GetAddedDocuments())
+                         .Concat(projectChange.GetRemovedDocuments()))
             {
                 var doc = oldSolution.GetDocument(docId) ?? newSolution.GetDocument(docId);
                 if (doc?.FilePath is not null) touchedPaths.Add(doc.FilePath);
@@ -360,20 +355,13 @@ public sealed class StemmaEngine : IAsyncDisposable
             backups[path] = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
         }
 
-        // Mark touched paths as self-writes so the file watcher's echo doesn't trigger a
-        // spurious ExternalChange round-trip when MSBuildWorkspace persists the new content.
-        lock (_lastSelfWriteAt)
-        {
-            var now = DateTime.UtcNow;
-            foreach (var path in touchedPaths) _lastSelfWriteAt[path] = now;
-        }
 
         // Never write over a version of a file this edit was not computed from. Between someone's
         // save and the watcher noticing it there is a window of a second or so, and an edit applied
         // in it would put the old text back with the new change on top (B-008).
         foreach (var projectChange in changes.GetProjectChanges())
         {
-            foreach (var docId in projectChange.GetChangedDocuments())
+            foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetRemovedDocuments()))
             {
                 var before = oldSolution.GetDocument(docId);
                 if (before?.FilePath is not { } path || !File.Exists(path)) continue;
@@ -397,8 +385,10 @@ public sealed class StemmaEngine : IAsyncDisposable
         // a statement isn't mistaken for a new one.
         var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, ct);
 
+        var projectFiles = await SnapshotProjectFilesAsync(oldSolution, ct);
         if (!_workspace.TryApplyChanges(newSolution))
             return new OperationFailed(opId, "ApplyFailed", "TryApplyChanges returned false");
+        await RestoreProjectFilesAsync(projectFiles, ct);
 
         var introduced = await CollectIntroducedErrorsAsync(baselineErrors, ct);
         if (introduced.Count > 0)
@@ -415,6 +405,7 @@ public sealed class StemmaEngine : IAsyncDisposable
                 }
             }
             _workspace.TryApplyChanges(oldSolution);
+            await RestoreProjectFilesAsync(projectFiles, ct);
             return new OperationFailed(opId, "WouldBreakBuild", "This change introduced compile errors and was rolled back.", introduced);
         }
 
@@ -423,6 +414,36 @@ public sealed class StemmaEngine : IAsyncDisposable
 
         await ReloadAsync(ct);
         return buildSuccessResult();
+    }
+
+    /// <summary>
+    /// The project files as they are before an edit, so they can be put back after it. Adding a
+    /// document through MSBuildWorkspace writes an explicit <c>&lt;Compile Include&gt;</c> into the
+    /// project; in an SDK-style project that already compiles the file by glob, that item is a
+    /// duplicate and the user's next build fails. Stemma edits the model, never the project — unless
+    /// the project opts out of the glob, in which case the item is the only thing that compiles the
+    /// file, and is kept.
+    /// </summary>
+    private static async Task<IReadOnlyList<(string Path, byte[] Bytes)>> SnapshotProjectFilesAsync(Solution solution, CancellationToken ct)
+    {
+        var snapshot = new List<(string, byte[])>();
+        foreach (var path in solution.Projects.Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(path)) continue;
+            var bytes = await File.ReadAllBytesAsync(path, ct);
+            if (System.Text.Encoding.UTF8.GetString(bytes).Contains("<EnableDefaultCompileItems>false", StringComparison.OrdinalIgnoreCase)) continue;
+            snapshot.Add((path, bytes));
+        }
+        return snapshot;
+    }
+
+    private static async Task RestoreProjectFilesAsync(IReadOnlyList<(string Path, byte[] Bytes)> snapshot, CancellationToken ct)
+    {
+        foreach (var (path, bytes) in snapshot)
+        {
+            if (File.Exists(path) && (await File.ReadAllBytesAsync(path, ct)).AsSpan().SequenceEqual(bytes)) continue;
+            await File.WriteAllBytesAsync(path, bytes, ct);
+        }
     }
 
     /// <summary>The tree each changed or added document had before this commit, and the text it has now.</summary>
@@ -1050,6 +1071,107 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (fsns is not null) return fsns.Name.ToString();
         var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
         return ns?.Name.ToString() ?? _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
+    }
+
+    /// <summary>
+    /// Save a view to the file that declares it, editing its name, lens and members in place; or,
+    /// when no file declares it, to a new <c>Views/&lt;Name&gt;.cs</c> that does not take an existing
+    /// file's name. Through <see cref="CommitAsync"/> like any edit, so it is compile-gated, verified
+    /// and never written over a version of the file Stemma has not seen.
+    ///
+    /// Not on the undo stack: the client keeps the views list itself, and an undo it did not hear
+    /// about would leave the canvas and the file disagreeing.
+    /// </summary>
+    public async Task<OperationResult> SaveViewAsync(string opId, ArchView view, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            return await LoggedAsync("SaveView", async () =>
+            {
+                var oldSolution = _workspace.CurrentSolution;
+                Solution newSolution;
+                if (await FindViewDocumentAsync(view.Id, ct) is { } found)
+                {
+                    SyntaxNode newRoot;
+                    try { newRoot = ViewsAdapter.Edit(found.Root, view); }
+                    catch (DslEditRefusedException e) { return new OperationFailed(opId, e.Reason, e.Message); }
+                    if (ReferenceEquals(newRoot, found.Root)) return new OperationApplied(opId, []);
+                    newSolution = found.Document.WithSyntaxRoot(newRoot).Project.Solution;
+                }
+                else
+                {
+                    var project = FindArchitectureDocument()?.Project ?? oldSolution.Projects.FirstOrDefault();
+                    if (project is null) return new OperationFailed(opId, "NoProject", "No project to hold the view");
+                    var (className, path) = NewViewFile(oldSolution, view.Name);
+                    var text = SourceText.From(ViewsAdapter.Render(NamespaceForViews(), className, view),
+                        new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                    newSolution = project.AddDocument(Path.GetFileName(path), text, folders: ["Views"], filePath: path).Project.Solution;
+                }
+                return await CommitAsync(opId, oldSolution, newSolution, () => new OperationApplied(opId, []), ct);
+            });
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>Delete the file that declares <paramref name="viewId"/> — found by reading it, not by searching text.</summary>
+    public async Task<OperationResult> RemoveViewAsync(string opId, string viewId, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            return await LoggedAsync("RemoveView", async () =>
+            {
+                if (await FindViewDocumentAsync(viewId, ct) is not { } found)
+                    return new OperationFailed(opId, "ViewNotFound", viewId);
+                var oldSolution = _workspace.CurrentSolution;
+                return await CommitAsync(opId, oldSolution, oldSolution.RemoveDocument(found.Document.Id),
+                    () => new OperationApplied(opId, []), ct);
+            });
+        }
+        finally { _gate.Release(); }
+    }
+
+    private async Task<OperationResult> LoggedAsync(string operation, Func<Task<OperationResult>> run)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        _currentOpType = operation;
+        var result = await run();
+        var elapsedMs = (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+        if (result is OperationFailed failed)
+            EngineLog.OperationFailed(_log, operation, elapsedMs, $"{failed.Reason}: {failed.Message}", null);
+        else
+            EngineLog.OperationApplied(_log, operation, elapsedMs, 0);
+        return result;
+    }
+
+    private async Task<(Document Document, SyntaxNode Root)?> FindViewDocumentAsync(string viewId, CancellationToken ct)
+    {
+        foreach (var doc in _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents))
+        {
+            if (doc.FilePath is null || !doc.FilePath.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            var root = await doc.GetSyntaxRootAsync(ct);
+            if (root is not null && ViewsAdapter.TryReadOne(root)?.Id == viewId) return (doc, root);
+        }
+        return null;
+    }
+
+    /// <summary>A class and file name for a new view that no file and no class in the workspace already has.</summary>
+    private (string ClassName, string Path) NewViewFile(Solution solution, string viewName)
+    {
+        var taken = solution.Projects.SelectMany(p => p.Documents)
+            .Select(d => d.GetSyntaxRootAsync().GetAwaiter().GetResult())
+            .SelectMany(r => r?.DescendantNodes().OfType<ClassDeclarationSyntax>() ?? [])
+            .Select(c => c.Identifier.Text)
+            .ToHashSet(StringComparer.Ordinal);
+        var stem = ViewsAdapter.ClassNameFromViewName(viewName);
+        var dir = Path.Combine(_model.RootPath, "Views");
+        for (var n = 1; ; n++)
+        {
+            var className = n == 1 ? stem : $"{stem}{n}";
+            var path = Path.Combine(dir, className + ".cs");
+            if (!taken.Contains(className) && !File.Exists(path)) return (className, path);
+        }
     }
 
     public IEnumerable<Project> AllProjects() => _workspace.CurrentSolution.Projects;

@@ -83,7 +83,7 @@ public static class DslWriter
     /// where every parameter is nullable (a Lifecycle, an Ownership) it becomes <c>null</c>, and
     /// elsewhere the edit is refused, because the parameter is required.
     /// </summary>
-    private static ArgumentListSyntax? SetArgument(
+    internal static ArgumentListSyntax? SetArgument(
         ArgumentListSyntax list, IReadOnlyList<string> parameters, string attribute, string? value, string typeName, bool nullablePlaceholder)
     {
         var args = list.Arguments;
@@ -366,10 +366,10 @@ public static class DslWriter
     private static StatementSyntax LocalDeclaration(string varName, string typeName, IEnumerable<string> args) =>
         SyntaxFactory.ParseStatement($"var {varName} = new {typeName}({string.Join(", ", args)});");
 
-    private static LiteralExpressionSyntax Literal(string value) =>
+    internal static LiteralExpressionSyntax Literal(string value) =>
         SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(value));
 
-    private static ArgumentSyntax NamedArgument(string name, ExpressionSyntax value) =>
+    internal static ArgumentSyntax NamedArgument(string name, ExpressionSyntax value) =>
         SyntaxFactory.Argument(
             SyntaxFactory.NameColon(SyntaxFactory.IdentifierName(name))
                 .WithColonToken(SyntaxFactory.Token(SyntaxKind.ColonToken).WithTrailingTrivia(SyntaxFactory.Space)),
