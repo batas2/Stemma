@@ -66,12 +66,14 @@ down, for the first time, in the [operations catalog](./.doc/architecture/engine
 - **[B-013](./.doc/bugs/B-013-append-to-a-crowded-line-starts-a-new-one.md) — an id added to a view
   laid out several ids to a line** went on a line of its own, at column 0. It now goes at the end of
   the last line.
-
-**Known**
-
-- **[B-014](./.doc/bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)** — every canvas
-  edit rewrites the whole of `stemma.layout.json`, re-serialized, and a change made to it outside
-  during a session is written over. The fix changes how the sidecar is written, and starts with an ADR.
+- **[B-014](./.doc/bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md) — every canvas
+  edit rewrote the whole of `stemma.layout.json`,** re-serialized from the copy read at the start of
+  the session: a box dragged into a view was a 102-line diff, and a change made to the sidecar
+  outside during the session was written over. The canvas now sends what changed and the engine
+  applies it to the file's text as it is
+  ([ADR-0021](./.doc/architecture/decisions/0021-sidecar-written-as-changes.md)). The same drag is
+  +8/−1, and a pull made mid-session is read and kept. A sidecar that does not parse is refused
+  rather than read as empty and written back.
 
 ### The first ten minutes — 2026-08-11
 

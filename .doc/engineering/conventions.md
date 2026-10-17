@@ -36,7 +36,9 @@ Background and the full fidelity rationale: [`../architecture/engine-backend.md`
 
 ## Frontend store discipline (load-bearing)
 
-- Prime the presentation sidecar **once** per workspace; never re-fetch mid-session.
+- Prime the presentation sidecar **once** per workspace; read it again only when someone else
+  changed it, with this session's unsent edits laid over it. Write it as changes, never as a copy
+  of the file ([ADR-0021](../architecture/decisions/0021-sidecar-written-as-changes.md)).
 - Preserve React Flow `selected` across node rebuilds; never rebuild node objects mid-drag.
 - Keep model edits (operations) and presentation edits (sidecar) on their own paths.
 

@@ -59,7 +59,9 @@ the contract while the suite was green:
 - opening writes nothing;
 - an inspector edit changes its own argument, and undo puts every byte back;
 - an outside edit is shown and not written back;
-- a pulled view is edited where it is.
+- a pulled view is edited where it is;
+- moving a box adds its lines to the sidecar and changes none;
+- a sidecar note changed outside survives the next drag.
 
 Journeys run one at a time (`workers: 1`), because the backend holds one workspace per process.
 
@@ -88,7 +90,9 @@ STEMMA_BASE_URL=http://127.0.0.1:5050 npm run test:journey   # against a server 
 - **Markdown bridge change** → a round-trip test (`md → DOM → md` is stable) for the new element.
 - **Sidecar change** → that edits survive a re-prime (no clobber) and the model/presentation split
   holds; that nothing is written before the sidecar has been read; and that an entry the sidecar no
-  longer has is not brought back from `localStorage` (`browserCache.test.ts`).
+  longer has is not brought back from `localStorage` (`browserCache.test.ts`). A change to how the
+  file is *written* is a `SidecarPatchTests` case: the whole file against hand-written edits, on a
+  Stemma-written fixture and a hand-formatted one.
 - **Bug fix** → a regression test that fails before the fix and passes after (link it from the bug
   record in [`../bugs/`](../bugs/)).
 

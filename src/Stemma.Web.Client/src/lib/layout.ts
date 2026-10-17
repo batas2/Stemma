@@ -1,6 +1,6 @@
 import type { ViewKind } from './types';
 import { reportFailure, ClientEvent } from './log';
-import { fetchLayout, saveLayoutSidecar } from './api';
+import { fetchLayout, patchLayoutSidecar, type SidecarChange } from './api';
 import { isLayoutConstraint, type LayoutConstraint, type LayoutOffsets } from './layoutDsl';
 
 export interface SavedPosition { x: number; y: number; }
@@ -29,13 +29,110 @@ function scheduleSidecarWrite(rootPath: string): void {
   if (pendingWrite?.rootPath === rootPath) clearTimeout(pendingWrite.timer);
   const timer = setTimeout(() => {
     pendingWrite = null;
-    // Until the committed sidecar has been read, the cache holds this session's edits and nothing
-    // else, and a PUT would replace the whole file with them. Priming writes them, over the file.
-    if (!isSidecarPrimed(rootPath)) return;
-    saveLayoutSidecar(sidecarCache!.sidecar)
-      .catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
+    // Until the committed sidecar has been read there is nothing to measure the edits against, so
+    // nothing is sent; priming sends them once it has read the file.
+    void flushSidecar(rootPath);
   }, 400);
   pendingWrite = { rootPath, sidecar: ensureSidecar(rootPath), timer };
+}
+
+/**
+ * The changes that turn `from` into `to`, down to the smallest value that differs: a key whose
+ * value changed is set, one that went is removed, and an object present in both is compared key by
+ * key. Arrays are values. An empty object that `from` does not have is nothing — it is how an empty
+ * section looks in memory, not something anyone wrote.
+ */
+export function sidecarChanges(from: unknown, to: unknown, path: string[] = [], out: SidecarChange[] = []): SidecarChange[] {
+  if (isPlainObject(from) && isPlainObject(to)) {
+    for (const key of Object.keys(from)) {
+      if (from[key] !== undefined && to[key] === undefined) out.push({ path: [...path, key], remove: true });
+    }
+    for (const key of Object.keys(to)) {
+      const value = to[key];
+      if (value === undefined) continue;
+      if (from[key] === undefined) {
+        if (!(isPlainObject(value) && Object.keys(value).length === 0)) out.push({ path: [...path, key], value });
+      } else {
+        sidecarChanges(from[key], value, [...path, key], out);
+      }
+    }
+  } else if (JSON.stringify(from) !== JSON.stringify(to)) {
+    out.push({ path, value: to });
+  }
+  return out;
+}
+
+/** Apply `changes` to `target` in place, creating the objects a path needs. */
+export function applySidecarChanges(target: Record<string, unknown>, changes: SidecarChange[]): void {
+  for (const change of changes) {
+    let node = target;
+    const last = change.path.length - 1;
+    let reachable = true;
+    for (let i = 0; i < last; i++) {
+      const next = node[change.path[i]];
+      if (!isPlainObject(next)) {
+        if ('remove' in change) { reachable = false; break; }
+        node[change.path[i]] = {};
+      }
+      node = node[change.path[i]] as Record<string, unknown>;
+    }
+    if (!reachable) continue;
+    if ('remove' in change) delete node[change.path[last]];
+    else node[change.path[last]] = structuredClone(change.value);
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Send what changed since the copy last read or written, and nothing else (ADR-0021). The server
+ * applies it to the file as it is now, so whatever anyone else changed since stays, and the diff of
+ * an edit is that edit — sending the whole copy rewrote the file and put back what others had
+ * changed (B-014). One send at a time; edits made meanwhile go in the next one.
+ */
+async function flushSidecar(rootPath: string): Promise<void> {
+  if (!isSidecarPrimed(rootPath) || sidecarBase?.rootPath !== rootPath) return;
+  if (flushing) { flushAgain = true; return; }
+  const changes = sidecarChanges(sidecarBase.sidecar, sidecarCache!.sidecar);
+  if (changes.length === 0) return;
+  flushing = true;
+  try {
+    const refused = await patchLayoutSidecar(changes);
+    if (refused) {
+      // Kept against the copy, so the next send carries them again.
+      reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(new Error(`${refused.reason}: ${refused.message}`));
+    } else if (sidecarBase?.rootPath === rootPath) {
+      applySidecarChanges(sidecarBase.sidecar as Record<string, unknown>, changes);
+    }
+  } catch (error) {
+    reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(error);
+  } finally {
+    flushing = false;
+    if (flushAgain) { flushAgain = false; void flushSidecar(rootPath); }
+  }
+}
+
+/**
+ * Read the sidecar again after someone else changed it — a pull, a hand edit, an agent — and lay
+ * this session's unsent changes over what it now says (ADR-0021). Reading it again used to be
+ * forbidden, because the copy it replaced held edits not yet sent; laying those over the new copy is
+ * what makes it safe, and not reading it meant the next edit wrote the stale copy over the change.
+ */
+export async function rereadLayoutSidecar(workspaceRoot: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+  // Not read yet: priming will read the file as it is now.
+  if (!isSidecarPrimed(workspaceRoot) || sidecarBase?.rootPath !== workspaceRoot) return;
+  const raw = (await fetchLayout()) as SidecarShape | null;
+  if (raw === null || !isSidecarPrimed(workspaceRoot) || sidecarBase?.rootPath !== workspaceRoot) return;
+  const unsent = sidecarChanges(sidecarBase.sidecar, sidecarCache!.sidecar);
+  const next = structuredClone(raw);
+  applySidecarChanges(next as Record<string, unknown>, unsent);
+  sidecarBase = { rootPath: workspaceRoot, sidecar: structuredClone(raw) };
+  sidecarCache = { rootPath: workspaceRoot, sidecar: next };
+  if (unsent.length > 0) scheduleSidecarWrite(workspaceRoot);
+  window.dispatchEvent(new CustomEvent('stemma:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
 }
 
 /** Whether this session has read the committed sidecar of `rootPath`, and so holds all of it. */
@@ -170,6 +267,7 @@ export function clearViewOffsets(rootPath: string, viewKey: string): void {
 /** Test seam: inject the shared sidecar cache without going through fetch. */
 export function setSidecarCacheForTest(rootPath: string, sidecar: unknown): void {
   sidecarCache = { rootPath, sidecar: sidecar as SidecarShape };
+  sidecarBase = { rootPath, sidecar: structuredClone(sidecar) as SidecarShape };
   primedRoot = rootPath;
 }
 
@@ -187,6 +285,11 @@ function migratedKey(workspaceRoot: string): string {
 // In-memory cache of the latest sidecar so reads don't refetch every drag-stop.
 let sidecarCache: { rootPath: string; sidecar: SidecarShape } | null = null;
 let pendingWrite: { rootPath: string; sidecar: SidecarShape; timer: ReturnType<typeof setTimeout> } | null = null;
+// The sidecar as the file has it, as far as this session knows: what was last read, plus what has
+// been written since. What the cache holds beyond it is what is still to be sent.
+let sidecarBase: { rootPath: string; sidecar: SidecarShape } | null = null;
+let flushing = false;
+let flushAgain = false;
 // Workspace the committed sidecar has already been fetched for. Once set, the in-memory cache is
 // authoritative for the session and we never re-fetch (re-fetching clobbers unflushed local edits).
 let primedRoot: string | null = null;
@@ -352,6 +455,8 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
     // Opening primes from two places at once. Whichever read lands second finds the cache already
     // read — not edits held back while it loaded — and must leave it alone rather than write it.
     if (primedRoot === workspaceRoot) return;
+    // What the file says, before anything below adds to the copy: the measure of what to send.
+    sidecarBase = { rootPath: workspaceRoot, sidecar: structuredClone(raw) };
     // Preserve any in-memory edits made before this first fetch resolved (local wins).
     const pending = sidecarCache?.rootPath === workspaceRoot ? sidecarCache.sidecar : null;
     const sidecar: SidecarShape = pending ? mergeSidecar(raw, pending) : raw;
@@ -396,9 +501,7 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
     }
     // Edits made while it loaded were held back (see scheduleSidecarWrite); they go out with the
     // migration, over what the file had.
-    if (touched || pending) {
-      saveLayoutSidecar(sidecar).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
-    }
+    if (touched || pending) void flushSidecar(workspaceRoot);
     // Tell the store/canvas to re-hydrate styles/notes/props from the now-loaded committed sidecar.
     window.dispatchEvent(new CustomEvent('stemma:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
   } catch {

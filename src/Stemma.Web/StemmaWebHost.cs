@@ -448,31 +448,51 @@ public static class StemmaWebHost
             return Results.Ok(violations);
         });
 
+        // The file as it is, not the C# type's reading of it: the canvas sees what the file says,
+        // keys it does not model included. One that does not parse is refused rather than read as
+        // empty, since the canvas would then write that emptiness back (ADR-0021).
         workspaceApi.MapGet("/layout", (EngineHost host) =>
         {
             var engine = host.Engine;
             if (engine is null) return Results.NotFound();
-            var sidecar = LayoutSidecar.Read(engine.RootPath);
-            return Results.Ok(sidecar);
+            var path = LayoutSidecar.PathFor(engine.RootPath);
+            if (!File.Exists(path)) return Results.Text("{\n  \"version\": 1,\n  \"views\": {}\n}\n", "application/json");
+            var text = File.ReadAllText(path);
+            try
+            {
+                using var doc = JsonDocument.Parse(text);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException("not an object");
+            }
+            catch (JsonException e)
+            {
+                return Results.Conflict(new { reason = "UnreadableSidecar", message = $"stemma.layout.json cannot be read: {e.Message}" });
+            }
+            return Results.Text(text, "application/json");
         });
 
-        workspaceApi.MapPut("/layout", async (LayoutSidecar sidecar, EngineHost host, ILoggerFactory logs) =>
+        // Changes, applied to the file as it is on disk — never the canvas's copy of the whole file,
+        // which wrote over whatever anyone else had changed since it was read (B-014, ADR-0021).
+        workspaceApi.MapPatch("/layout", async (LayoutPatch patch, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
         {
             var engine = host.Engine;
             if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            if (patch.Changes.Any(c => c.Path.Length == 0 || (!c.Remove && c.Value is null)))
+                return Results.BadRequest(new { error = "every change needs a path, and a value or remove: true" });
+            var changes = patch.Changes.Select(c => new SidecarChange(c.Path, c.Remove ? null : c.Value)).ToList();
             try
             {
-                sidecar.Write(engine.RootPath);
+                var result = await engine.PatchSidecarAsync($"layout_{Guid.NewGuid():N}", changes, ct);
+                return result is OperationFailed f
+                    ? Results.Conflict(new { reason = f.Reason, message = f.Message })
+                    : Results.NoContent();
             }
             catch (IOException e)
             {
-                // Every position and annotation from this session is now lost on the next reload, and the
-                // canvas has no way to know. Reported rather than surfaced, because the edit itself stands.
+                // The edit stands on the canvas but not on disk, and the canvas sends it again with the
+                // next change; reported so a full disk or a lock is not invisible.
                 WebLog.SidecarWriteFailed(logs.CreateLogger("Stemma.Web.Api"), e);
                 return Results.Problem("The layout could not be saved.");
             }
-            await Task.CompletedTask;
-            return Results.NoContent();
         });
 
         // ---------------- Comments substrate ----------------
@@ -587,4 +607,10 @@ public static class StemmaWebHost
         if (!sidecar.Views.TryGetValue(viewKey, out var layout)) return null;
         return layout.Nodes.ToDictionary(kv => kv.Key, kv => (kv.Value.X, kv.Value.Y), StringComparer.Ordinal);
     }
+}
+
+/// <summary>The body of <c>PATCH /api/workspace/layout</c>: each change sets the value at a path of keys, or removes it.</summary>
+internal sealed record LayoutPatch(List<LayoutPatch.Change> Changes)
+{
+    internal sealed record Change(string[] Path, JsonElement? Value, bool Remove);
 }

@@ -119,6 +119,20 @@ declares, never by searching file text. Saving edits the name, the lens and the 
 no other file or class is named after. Refuses `ViewNotFound`, `UnreadableView`. Not on the undo
 stack: the client keeps the views list and would not hear about an undo.
 
+### The sidecar (`stemma.layout.json`)
+
+Written through `PATCH /api/workspace/layout`, which calls `StemmaEngine.PatchSidecarAsync` with a
+list of changes — a path of keys and a value, or a removal — and never with the file
+([ADR-0021](./decisions/0021-sidecar-written-as-changes.md)). `SidecarPatch` applies each to the
+file's text: a changed value's span is replaced; an object set onto an object changes only what
+differs inside it; a new key goes after its object's last one, laid out like it — on its line when
+the object is written on one line, otherwise with that member's indentation and the file's indent
+unit, line ending and escaping; a removed key takes its lines and one comma, and the last one out
+leaves `{}`. The BOM, or its absence, survives. Refuses `UnreadableSidecar` (the file does not parse:
+a merge conflict is never read as empty and written back), `NotAnObject`, `EmptyPath`. A workspace
+without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.
+Not on the undo stack; layout undo lives in the client.
+
 ### Layout: what "only the target" means
 
 - **New code** takes its indentation from the line it is placed beside and its line ending from the
@@ -169,7 +183,7 @@ An outside edit is taken in without being written back
 | Type operations' syntax edits | `Stemma.Engine/Operations/TypeWriter.cs` |
 | Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` |
 | Undo | `Stemma.Engine/Workspace/UndoStack.cs` |
-| Presentation sidecar | `Stemma.Engine/Workspace/LayoutSidecar.cs` |
+| Presentation sidecar | `Stemma.Engine/Workspace/LayoutSidecar.cs` (typed reading), `SidecarPatch.cs` (writing) |
 | Operation polymorphism | `Stemma.Engine/Operations/Operations.cs` |
 
 ## Testing

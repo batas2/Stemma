@@ -41,7 +41,8 @@ The shared vocabulary. When a term here appears in code or docs, it means exactl
 - **Presentation sidecar** — `stemma.layout.json`: committed, presentation-only state (positions,
   styles, notes, custom props, shapes, per-view layout). Never holds model data.
 - **Sidecar cache** — the single in-memory cache (`lib/layout.ts`) that owns presentation during a
-  session; primed once, debounce-flushed, never re-fetched mid-session.
+  session; primed once, debounce-flushed as changes, re-read only when someone else changed the
+  file, with unsent edits laid over it.
 - **Layout mode** — a view's auto-layout choice (Organic / Hierarchical / By-type / Custom),
   remembered per view; a manual move/add flips it to Custom.
 - **Dock handle** — one of the 6 connection dots on a node where relationships anchor.

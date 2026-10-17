@@ -126,3 +126,59 @@ test('a view pulled in while the canvas is open is edited where it is (B-010, B-
     .toBe(pulled.replace('new[] { "sys_git" }', 'new[] { "sys_git", "sys_roslyn" }'));
   expect(await readdir(join(root, 'Views'))).toEqual(views);
 });
+
+/** Drag the box labelled `element` by (dx, dy) on the canvas. */
+async function drag(page: Page, element: string, dx: number, dy: number) {
+  const box = (await page.locator('.react-flow__node', { hasText: element }).first().boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + dx, box.y + 12 + dy, { steps: 8 });
+  await page.mouse.up();
+}
+
+/**
+ * Whether `after` is `before` with lines added and nothing else: every line of `before` is still
+ * there, in order, the one before an insertion allowed to gain its comma. A file rewritten — keys
+ * reordered, defaults written out — fails this however few values changed.
+ */
+function onlyAdds(before: string, after: string): boolean {
+  const strip = (l: string) => l.replace(/,$/, '');
+  const old = before.split('\n').map(strip);
+  const now = after.split('\n').map(strip);
+  let i = 0;
+  for (const line of now) if (i < old.length && line === old[i]) i++;
+  return i === old.length;
+}
+
+test('moving a box writes that box, not the file (B-014)', async ({ page }) => {
+  const sidecar = join(root, 'stemma.layout.json');
+  const before = await read('stemma.layout.json');
+  await page.getByRole('button', { name: /^Views\s*\d*$/ }).first().click();
+  await page.getByText('What ships', { exact: true }).click();
+  await expect(page.locator('.react-flow__node', { hasText: 'Desktop shell' })).toBeVisible();
+
+  await drag(page, 'Desktop shell', 60, 40);
+
+  await expect.poll(() => readFile(sidecar, 'utf8')).not.toBe(before);
+  const after = await readFile(sidecar, 'utf8');
+  expect(onlyAdds(before, after)).toBe(true);
+  expect(after.split('\n').length - before.split('\n').length).toBeLessThan(10);
+});
+
+test('a change made to the sidecar outside survives the next edit (B-014)', async ({ page }) => {
+  const sidecar = join(root, 'stemma.layout.json');
+  const pulled = (await read('stemma.layout.json')).replace(/("mod_writer": ")/, '$1Changed by a pull. ');
+  expect(pulled).toContain('Changed by a pull.');
+  await writeFile(sidecar, pulled);
+  await page.waitForTimeout(2_000); // the watcher, and the canvas reading it again
+
+  await page.getByRole('button', { name: /^Views\s*\d*$/ }).first().click();
+  await page.getByText('What ships', { exact: true }).click();
+  await expect(page.locator('.react-flow__node', { hasText: 'Desktop shell' })).toBeVisible();
+  await drag(page, 'Desktop shell', 60, 40);
+
+  await expect.poll(() => readFile(sidecar, 'utf8')).not.toBe(pulled);
+  const after = await readFile(sidecar, 'utf8');
+  expect(after).toContain('Changed by a pull.');
+  expect(onlyAdds(pulled, after)).toBe(true);
+});

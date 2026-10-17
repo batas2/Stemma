@@ -15,7 +15,8 @@ canvas gesture (drag/rename/link/style/note)
    │                                                       recompute model ► delta ► all clients
    │
    └── presentation change?  ──► lib/layout.ts sidecar cache (in-memory)
-                                      └── debounced PUT /api/workspace/layout ──► stemma.layout.json
+                                      └── debounced PATCH /api/workspace/layout ──► stemma.layout.json
+                                          (what changed, applied to the file as it is)
 ```
 
 The decisive question for any edit is **"does this change the model or only its presentation?"**
@@ -54,21 +55,27 @@ Frontend rules that keep it correct:
 
 1. **Fetch once per workspace** (`primeLayoutSidecar`, `primedRoot` guard); the in-memory cache is
    then authoritative and debounce-flushed.
-2. **Never re-fetch mid-session** — re-fetching overwrites not-yet-flushed local edits. This was the
-   root cause of the "drag snaps back / routing reverts / canvas blinks" bugs. The other side of
-   this rule is an open bug: a change made to the sidecar outside during a session is written over
-   by the next edit, and every edit rewrites the whole file
+2. **Never re-read over unsent edits.** Re-reading on every refresh overwrote not-yet-flushed local
+   edits — the root cause of the "drag snaps back / routing reverts / canvas blinks" bugs. The file
+   is read again only when the engine says someone else changed it (`SidecarChanged`), and this
+   session's unsent edits are laid over what it now says (`rereadLayoutSidecar`). Not reading it
+   at all meant the next edit wrote the stale copy over a pull
    ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)).
 3. **One shared cache** routes node styles, edge styles, notes, custom props, and shapes — they must
    not keep separate caches that clobber each other on save.
-4. **Write nothing before it has been read.** Until then the cache holds only this session's edits,
-   and a PUT would replace the whole file with them. Edits made while it loads are held back and
-   written once it has been read, merged over it.
+4. **Write nothing before it has been read.** Until then there is nothing to measure the edits
+   against. Edits made while it loads are held back and sent once it has been read.
 5. **The browser's copy is a cache, never a source.** `localStorage` keeps what was drawn last, so
    the canvas has something to show before the sidecar arrives. Once it has, the sidecar *replaces*
    that copy; it is not merged with it, because an entry only the browser has is one the repository
    no longer has ([B-012](../bugs/B-012-the-browser-outranks-the-repository.md)). The one exception
    is the migration of layout modes from before they were committed, which runs once per workspace.
+6. **Write what changed, never the file** ([ADR-0021](./decisions/0021-sidecar-written-as-changes.md)).
+   The client sends the difference between the copy it last read or wrote and its current one, down
+   to the smallest value; the engine applies it to the file's text as it is on disk now, so every
+   other byte — order, unknown keys, escaping, number spelling, a hand-formatted line — stays, and
+   whatever anyone else changed since stays with it. A file that does not parse is refused, never
+   read as empty and written back.
 
 ## The read path & live sync
 

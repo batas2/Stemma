@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Avoid real network for the debounced PUT.
-vi.mock('./api', () => ({ fetchLayout: vi.fn(async () => null), saveLayoutSidecar: vi.fn(async () => {}) }));
+vi.mock('./api', () => ({ fetchLayout: vi.fn(async () => null), patchLayoutSidecar: vi.fn(async () => null) }));
 
 import { setSidecarCacheForTest, sidecarMap, primeLayoutSidecar } from './layout';
 import { loadNodeStyles, setNodeStyle } from './nodeStyles';

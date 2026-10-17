@@ -26,11 +26,15 @@ annotations, per-view layout choices — is routed through **one shared cache** 
 (`sidecarMap` / `sidecarSet` / `loadViewShapes` / `saveViewShapes`). The cache:
 
 - is **fetched once per workspace** (`primeLayoutSidecar` with a `primedRoot` guard); after that the
-  in-memory cache is the session's source of truth and is debounce-flushed to `stemma.layout.json`;
-- must **never be re-fetched mid-session** — re-fetching clobbers unflushed edits (the cause of the
-  "box jumps back / routing reverts / canvas blinks while editing" class of bugs).
+  in-memory cache is the session's source of truth and is debounce-flushed to `stemma.layout.json`
+  **as changes** — what differs from the copy last read or written (`sidecarChanges`), applied by the
+  engine to the file as it is ([ADR-0021](./decisions/0021-sidecar-written-as-changes.md));
+- is **never re-read over unsent edits** — re-reading on refresh clobbered them (the cause of the
+  "box jumps back / routing reverts / canvas blinks while editing" class of bugs). When the engine
+  announces `SidecarChanged`, `rereadLayoutSidecar` reads the file and lays the unsent edits over it.
 
-A `stemma:sidecar-primed` event triggers `store.rehydratePresentation()` exactly once.
+A `stemma:sidecar-primed` event — after the first read and after each re-read — triggers
+`store.rehydratePresentation()`.
 
 ## The canvas (`ArchCanvas.tsx`)
 

@@ -11,7 +11,7 @@ import type { CustomView } from './types';
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchLayout: vi.fn(),
-  saveLayoutSidecar: vi.fn(async () => {}),
+  patchLayoutSidecar: vi.fn(async () => null),
   listServerViews: vi.fn(),
   saveServerView: vi.fn(async () => null),
   deleteServerView: vi.fn(async () => null),
@@ -34,7 +34,7 @@ async function session() {
   const api = vi.mocked(await import('./api'));
   // The mocked module outlives resetModules, so what one session told it is cleared here.
   vi.clearAllMocks();
-  api.saveLayoutSidecar.mockResolvedValue(undefined);
+  api.patchLayoutSidecar.mockResolvedValue(null);
   api.saveServerView.mockResolvedValue(null);
   api.deleteServerView.mockResolvedValue(null);
   const layout = await import('./layout');
@@ -58,10 +58,14 @@ async function open(s: Session, sidecar: unknown, views: ServerView[] | Error = 
 const flush = () => vi.advanceTimersByTimeAsync(1000);
 const seed = (key: string, value: unknown) => localStorage.setItem(key, JSON.stringify(value));
 const cache = (key: string) => JSON.parse(localStorage.getItem(key) ?? 'null');
-const written = (s: Session) => s.api.saveLayoutSidecar.mock.calls.map((c) => c[0] as {
-  views?: Record<string, { layoutMode?: string; nodes?: Record<string, unknown> }>;
-  nodeStyles?: Record<string, unknown>;
-});
+// Every change the canvas has sent to the sidecar, in order (ADR-0021).
+const sent = (s: Session) => s.api.patchLayoutSidecar.mock.calls.flatMap((c) => c[0]);
+/** The file the sidecar would be once what was sent has landed on it. */
+const landed = (s: Session, file: unknown) => {
+  const result = structuredClone(file) as Record<string, unknown>;
+  s.layout.applySidecarChanges(result, sent(s));
+  return result as { views?: Record<string, { layoutMode?: string }> };
+};
 
 beforeEach(() => {
   localStorage.clear();
@@ -135,7 +139,7 @@ describe('nothing is written to the sidecar before it has been read', () => {
     await Promise.all([s.layout.primeLayoutSidecar(ROOT), s.layout.primeLayoutSidecar(ROOT)]);
     await flush();
 
-    expect(s.api.saveLayoutSidecar).not.toHaveBeenCalled();
+    expect(s.api.patchLayoutSidecar).not.toHaveBeenCalled();
   });
 
   it('an edit made while it loads is written over the file, not instead of it', async () => {
@@ -147,16 +151,15 @@ describe('nothing is written to the sidecar before it has been read', () => {
     styles.setNodeStyle(ROOT, 'mod_1', { borderWidth: 2, borderStyle: 'dashed' });
     const priming = s.layout.primeLayoutSidecar(ROOT);
     await vi.advanceTimersByTimeAsync(2000);
-    // A PUT now would replace the whole file with one style.
-    expect(s.api.saveLayoutSidecar).not.toHaveBeenCalled();
+    // Sent now, it could only be measured against nothing.
+    expect(s.api.patchLayoutSidecar).not.toHaveBeenCalled();
 
     answer({ version: 1, views: { moduleMap: { nodes: { mod_2: { x: 1, y: 2 } } } }, nodeStyles: { mod_2: { borderWidth: 1, borderStyle: 'solid' } } });
     await priming;
     await vi.advanceTimersByTimeAsync(2000);
 
-    const last = written(s).at(-1)!;
-    expect(last.views?.moduleMap?.nodes).toEqual({ mod_2: { x: 1, y: 2 } });
-    expect(last.nodeStyles).toEqual({ mod_2: { borderWidth: 1, borderStyle: 'solid' }, mod_1: { borderWidth: 2, borderStyle: 'dashed' } });
+    // The edit, and only the edit: what the file already had is not sent back to it.
+    expect(sent(s)).toEqual([{ path: ['nodeStyles', 'mod_1'], value: { borderWidth: 2, borderStyle: 'dashed' } }]);
   });
 });
 
@@ -174,7 +177,7 @@ describe('layout modes', () => {
     await open(s, { version: 1, views: { moduleMap: { layoutMode: 'hierarchical' } } });
 
     expect(s.useApp.getState().viewLayouts.moduleMap).toBe('hierarchical');
-    expect(written(s).some((w) => w.views?.moduleMap?.layoutMode === 'force')).toBe(false);
+    expect(landed(s, { version: 1, views: { moduleMap: { layoutMode: 'hierarchical' } } }).views?.moduleMap?.layoutMode).toBe('hierarchical');
   });
 
   it('a mode only this browser had is moved into the sidecar once, and is not brought back after', async () => {
@@ -182,13 +185,13 @@ describe('layout modes', () => {
     let s = await session();
     await open(s, empty());
     expect(s.useApp.getState().viewLayouts.moduleMap).toBe('force');
-    expect(written(s).at(-1)?.views?.moduleMap?.layoutMode).toBe('force');
+    expect(landed(s, empty()).views?.moduleMap?.layoutMode).toBe('force');
 
     // A teammate sets the view back; the file no longer has the mode. This browser still does.
     s = await session();
     await open(s, empty());
     expect(s.useApp.getState().viewLayouts.moduleMap).toBeUndefined();
-    expect(written(s)).toEqual([]);
+    expect(sent(s)).toEqual([]);
   });
 });
 

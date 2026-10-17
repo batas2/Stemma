@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-014 |
-| **Status** | `Triaged` |
+| **Status** | `Fixed` |
 | **Severity** | `S2 major` |
 | **Area** | `sidecar` |
 | **Reported by / Date** | Bartosz / 2026-10-17 |
@@ -74,34 +74,66 @@ This is the presentation-file counterpart of [B-009](./B-009-edits-rebuild-the-d
 
 ## 6. Fix
 
-Not decided. It changes how the sidecar is written, so it needs an ADR first. The direction this
-record proposes:
+- **Approach:** [ADR-0021](../architecture/decisions/0021-sidecar-written-as-changes.md). The sidecar
+  is written as changes to the file as it is, and taken in when someone else changes it.
+  - **The client sends changes, not the file.** It keeps the copy it last read or wrote, and sends
+    the difference down to the smallest value: `{ path, value }` or `{ path, remove: true }`
+    (`sidecarChanges`). `PATCH /api/workspace/layout` replaces `PUT`.
+  - **The engine applies them to the text.** `SidecarPatch` finds each value's span with
+    `Utf8JsonReader` and replaces, inserts or removes only that. New text is laid out like its
+    neighbours. Everything else stays byte for byte.
 
-- **Write a patch, not the file.** The client sends the entries it changed (`section`, `key`, value
-  or deletion). The server applies them to the file as it is on disk now, through `JsonNode`, so
-  order, unknown keys and everything else stay as they are. It writes the result with the file's own
-  indentation and line ending. The diff of a one-box move is then one entry, and changes from
-  outside to other entries survive by construction.
-- **Take the sidecar in like a source file.** The engine already watches the workspace. When the
-  sidecar changes outside, the client reads it again and lays its own unsent edits over the result.
-  Rule 2 becomes "never re-read *over unsent edits*" instead of "never re-read".
-
-- [ ] Fix implemented
-- [ ] Inviolable rules respected
-- [ ] No new data store / boundary intact
+    The first design in this record went through `JsonNode`. A probe showed it re-escapes every
+    string with one encoder, puts every array on lines and drops the final newline, so a
+    hand-formatted file would still be rewritten.
+  - **Outside changes are taken in.** The engine watches the sidecar and announces `SidecarChanged`
+    for any text it did not write itself, telling its own write apart by content. The client reads
+    the file again and lays its unsent changes over it (`rereadLayoutSidecar`).
+  - **An unreadable file is refused,** by `GET` as well as `PATCH`, instead of being read as empty
+    and written back.
+- **Affected files:**
+  - `src/Stemma.Engine/Workspace/SidecarPatch.cs` (new)
+  - `src/Stemma.Engine/Workspace/StemmaEngine.cs`, `ExternalWatcher.cs`
+  - `src/Stemma.Web/StemmaWebHost.cs`, `Services/EngineHost.cs`
+  - `src/Stemma.Web.Client/src/lib/layout.ts`, `api.ts`, `signalr.ts`, `App.tsx`
+- [x] Fix implemented
+- [x] Inviolable rules respected: the fidelity rule now covers the sidecar too
+- [x] No new data store / boundary intact
 
 ## 7. Regression test (required)
 
-- [ ] **Test location (planned):** `tests/Stemma.Web.Tests` and
-      `src/Stemma.Web.Client/src/lib/presentationSidecar.test.ts`
-- **What it will assert:**
-  - On the server: a one-entry change to a hand-formatted sidecar changes that entry and no other
-    byte.
-  - On the client: an outside change to the sidecar is shown, and survives the next edit, which
-    is laid over it.
+- [x] **Test location:**
+  - `tests/Stemma.Engine.Tests/SidecarPatchTests.cs`
+  - `SidecarWriteTests.cs`
+  - `tests/Stemma.Web.Tests/LayoutEndpointTests.cs`
+  - `src/Stemma.Web.Client/src/lib/sidecarChanges.test.ts`
+  - two journeys in `tests/journey/fidelity.spec.ts`
+- **What it asserts:**
+  - **Engine:** each change to a Stemma-written file and to a hand-written one (tabs, CRLF, compact
+    lines, raw characters, no final newline) produces exactly the hand-written edit. The comparison
+    is of the whole file.
+  - **Engine, file and watcher:** the BOM survives; a missing file is created with `$schema`; a
+    conflicted file is refused and left alone; an outside change is announced once, and the engine's
+    own write is not announced.
+  - **Server:** `GET` returns the file as it is; `PATCH` changes only what it names; an unreadable
+    file is refused by both; `PUT` is gone.
+  - **Client:**
+    - an edit sends only its own values, and is not sent again once it has landed;
+    - a refused change is sent again;
+    - an outside change is shown and not written over;
+    - an unsent edit survives a re-read.
+  - **Journeys:**
+    - moving a box adds lines to the sidecar and changes none;
+    - a note changed outside survives the next drag.
 
 ## 8. Verification
 
-- [ ] `dotnet test` / `npm test` green
-- [ ] Manually verified in the app
-- [ ] Docs updated: an ADR, `data-flow-and-sync.md` rule 2, the bug board
+- [x] `dotnet test` / `npm test` / journeys green
+- [x] Manually verified in the app: one box moved into place in *What ships* is +8/−1 in the diff,
+      down from +102/−90. The one changed line is the comma before the new entry.
+- [x] Docs updated:
+  - ADR-0021;
+  - `data-flow-and-sync.md` rules 2, 4 and 6;
+  - the operations catalog;
+  - conventions, glossary, client-frontend, the frontend persona;
+  - the bug board.

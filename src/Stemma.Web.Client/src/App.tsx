@@ -12,12 +12,12 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied, onExternalChange, undoOperation, redoOperation, applyOperation } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, undoOperation, redoOperation, applyOperation } from './lib/signalr';
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
 import { removeShape, saveShapes } from './lib/shapes';
 import { archModel, books as fetchBooks, listViolations, snapshot } from './lib/api';
-import { primeLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
+import { primeLayoutSidecar, rereadLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
 import { RenderShell } from './components/RenderShell';
@@ -83,7 +83,12 @@ export default function App() {
     }
     const offOp = onOperationApplied(refresh);
     const offExt = onExternalChange(refresh);
-    return () => { offOp(); offExt(); };
+    // A pull or a hand edit changed the sidecar: read it again, with this session's unsent edits laid over it.
+    const offSidecar = onSidecarChanged(() => {
+      const root = useApp.getState().workspace?.rootPath;
+      if (root) rereadLayoutSidecar(root).catch(reportFailure('Sidecar', ClientEvent.RequestFailed, 'Reading the changed layout sidecar'));
+    });
+    return () => { offOp(); offExt(); offSidecar(); };
   }, [setWs, setArch, setViolations, setBooks]);
 
   // Load the active workspace's model + presentation whenever the workspace changes — on the

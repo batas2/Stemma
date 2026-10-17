@@ -46,6 +46,18 @@ public sealed class EngineHost : IAsyncDisposable
                     WebLog.BroadcastFailed(_log, "ExternalChange", e);
                 }
             };
+            _engine.SidecarChanged += async () =>
+            {
+                if (_hub is null) return;
+                try
+                {
+                    await _hub.Clients.All.SendAsync("SidecarChanged");
+                }
+                catch (Exception e)
+                {
+                    WebLog.BroadcastFailed(_log, "SidecarChanged", e);
+                }
+            };
             _engine.StartWatching();
             RecentWorkspaces.Touch(rootPath);
             return _engine.Model;

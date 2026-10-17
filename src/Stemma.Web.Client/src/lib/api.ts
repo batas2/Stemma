@@ -149,18 +149,25 @@ export async function listRecents(): Promise<RecentEntry[]> {
   return r.json();
 }
 
+/** The sidecar as the file has it. A file that cannot be read (409) throws: nothing is primed from it. */
 export async function fetchLayout(): Promise<unknown> {
   const r = await request(`${BASE}/api/workspace/layout`);
   if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`Layout fetch failed: ${r.status}`);
+  if (!r.ok) throw new Error(`Layout fetch failed: ${r.status} ${await r.text()}`);
   return r.json();
 }
 
-export async function saveLayoutSidecar(sidecar: unknown): Promise<void> {
+/** One change to the sidecar: the value at a path of keys, or its removal (ADR-0021). */
+export type SidecarChange = { path: string[]; value: unknown } | { path: string[]; remove: true };
+
+/** Apply changes to the sidecar as it is on disk; resolves to the refusal (409) if it declines them. */
+export async function patchLayoutSidecar(changes: SidecarChange[]): Promise<OperationFailed | null> {
   const r = await request(`${BASE}/api/workspace/layout`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(sidecar),
+    body: JSON.stringify({ changes }),
   });
+  if (r.status === 409) return refusal(r);
   if (!r.ok) throw new Error(`Layout save failed: ${r.status}`);
+  return null;
 }

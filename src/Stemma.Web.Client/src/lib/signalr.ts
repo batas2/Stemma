@@ -5,6 +5,7 @@ import type { OperationEnvelope, OperationResult } from './types';
 let connection: signalR.HubConnection | null = null;
 const opListeners = new Set<(r: OperationResult) => void>();
 const externalListeners = new Set<() => void>();
+const sidecarListeners = new Set<() => void>();
 
 export async function ensureConnection(): Promise<signalR.HubConnection> {
   if (connection?.state === signalR.HubConnectionState.Connected) return connection;
@@ -18,6 +19,7 @@ export async function ensureConnection(): Promise<signalR.HubConnection> {
     .build();
   connection.on('OperationApplied', (r: OperationResult) => opListeners.forEach(l => l(r)));
   connection.on('ExternalChange', () => externalListeners.forEach(l => l()));
+  connection.on('SidecarChanged', () => sidecarListeners.forEach(l => l()));
   await connection.start();
   return connection;
 }
@@ -30,6 +32,12 @@ export function onOperationApplied(cb: (r: OperationResult) => void) {
 export function onExternalChange(cb: () => void) {
   externalListeners.add(cb);
   return () => externalListeners.delete(cb);
+}
+
+/** stemma.layout.json changed on disk by someone other than this canvas (ADR-0021). */
+export function onSidecarChanged(cb: () => void) {
+  sidecarListeners.add(cb);
+  return () => sidecarListeners.delete(cb);
 }
 
 /**

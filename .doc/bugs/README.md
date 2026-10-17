@@ -28,7 +28,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-011](./B-011-type-operations-ignore-layout.md) | The type operations wrote members with no layout and removed them by the wrong rules | S3 minor | engine | Fixed |
 | [B-012](./B-012-the-browser-outranks-the-repository.md) | The browser's copy of a workspace outranked the repository, and could replace its sidecar | S2 major | sidecar | Fixed |
 | [B-013](./B-013-append-to-a-crowded-line-starts-a-new-one.md) | An id added to a list laid out several to a line went on a line of its own, at column 0 | S3 minor | engine | Fixed |
-| [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md) | The sidecar is written whole from the session's copy: one drag rewrites it, and a pull made meanwhile is lost | S2 major | sidecar | Triaged |
+| [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md) | The sidecar is written whole from the session's copy: one drag rewrites it, and a pull made meanwhile is lost | S2 major | sidecar | Fixed |
 | [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md) | A file added or deleted outside Stemma, or several changed at once, was not taken in | S2 major | engine | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
@@ -36,7 +36,8 @@ Living bug records — one Markdown file per bug, created from
 Before deep-diving, rule these out — they cause a recurring class of canvas bugs:
 
 - **Sidecar re-fetched mid-session** → unflushed edits clobbered (boxes jump back, routing reverts,
-  canvas blinks). Prime once; never re-fetch.
+  canvas blinks). Prime once; re-read only when someone else changed the file, with the unsent edits
+  laid over it (ADR-0021).
 - **Node objects rebuilt mid-drag** or `selected` not preserved across rebuilds → drag snaps back;
   multi-selection wiped by the ~1.5 s poll.
 - **Stale store selector** returning a fresh object each snapshot → render loop.

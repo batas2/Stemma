@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -32,6 +33,14 @@ public sealed class StemmaEngine : IAsyncDisposable
     public Microsoft.CodeAnalysis.Solution Solution => _workspace.CurrentSolution;
     public event Action<string>? ExternalChange;
 
+    /// <summary>Raised when stemma.layout.json changes on disk by any hand but this engine's (ADR-0021).</summary>
+    public event Action? SidecarChanged;
+
+    private readonly SemaphoreSlim _sidecarGate = new(1, 1);
+    // The sidecar as this engine last wrote or announced it. A watcher event that finds the same text
+    // is the echo of that, not news — told apart by content, never by the clock (B-008).
+    private string? _sidecarSeen;
+
     /// <summary>
     /// Diagnostics only. Defaults to <see cref="NullLogger{T}.Instance"/> so the engine stays
     /// constructible, testable and embeddable with no logging stack present at all (ADR-0020).
@@ -48,6 +57,7 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     public void StartWatching()
     {
+        _sidecarSeen = ReadSidecarText();
         _watcher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _watcher = new ExternalWatcher(_model.RootPath, ShouldWatch, _log);
         _watcher.Changed += OnExternalChange;
@@ -55,6 +65,7 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private bool ShouldWatch(string path)
     {
+        if (IsSidecar(path)) return true;
         // Watch Architecture/, every file the workspace holds, and every file it would hold if it
         // were opened now — which is what a file added by a pull is.
         if (path.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) return true;
@@ -89,6 +100,11 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async void OnExternalChange(string path)
     {
+        if (IsSidecar(path))
+        {
+            await TakeInSidecarAsync();
+            return;
+        }
         await _gate.WaitAsync();
         try
         {
@@ -188,6 +204,76 @@ public sealed class StemmaEngine : IAsyncDisposable
         var projectFiles = await SnapshotProjectFilesAsync(_workspace.CurrentSolution, ct);
         _workspace.TryApplyChanges(_workspace.CurrentSolution.RemoveDocument(doc.Id));
         await RestoreProjectFilesAsync(projectFiles, ct);
+    }
+
+    private bool IsSidecar(string path) =>
+        string.Equals(Path.GetFullPath(path), Path.GetFullPath(LayoutSidecar.PathFor(_model.RootPath)), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The sidecar's text without its byte-order mark; <c>null</c> when there is no file.</summary>
+    private string? ReadSidecarText()
+    {
+        var path = LayoutSidecar.PathFor(_model.RootPath);
+        if (!File.Exists(path)) return null;
+        var bytes = File.ReadAllBytes(path);
+        return Encoding.UTF8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes);
+    }
+
+    private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
+
+    /// <summary>What a sidecar Stemma creates starts as: the schema it is written against, and a version.</summary>
+    private static readonly string NewSidecar = $"{{\n  \"$schema\": \"{LayoutSidecar.SchemaUrl}\",\n  \"version\": 1\n}}\n";
+
+    private async Task TakeInSidecarAsync()
+    {
+        try
+        {
+            await _sidecarGate.WaitAsync();
+            try
+            {
+                var text = ReadSidecarText();
+                if (text == _sidecarSeen) return;
+                _sidecarSeen = text;
+            }
+            finally { _sidecarGate.Release(); }
+            SidecarChanged?.Invoke();
+        }
+        catch (Exception e)
+        {
+            // async void upstream: an exception here would take the process down.
+            EngineLog.ExternalChangeFailed(_log, e);
+        }
+    }
+
+    /// <summary>
+    /// Apply <paramref name="changes"/> to stemma.layout.json as it is on disk now, through
+    /// <see cref="SidecarPatch"/>: only the values that changed are written, and every other byte —
+    /// including what someone else changed since the canvas read the file — stays (ADR-0021, B-014).
+    /// A file that does not parse is refused, never replaced.
+    /// </summary>
+    public async Task<OperationResult> PatchSidecarAsync(string opId, IReadOnlyList<SidecarChange> changes, CancellationToken ct = default)
+    {
+        await _sidecarGate.WaitAsync(ct);
+        try
+        {
+            return await LoggedAsync("PatchSidecar", async () =>
+            {
+                var path = LayoutSidecar.PathFor(_model.RootPath);
+                var exists = File.Exists(path);
+                var bytes = exists ? await File.ReadAllBytesAsync(path, ct) : [];
+                var bom = bytes.AsSpan().StartsWith(Utf8Bom);
+                var text = exists ? Encoding.UTF8.GetString(bom ? bytes[Utf8Bom.Length..] : bytes) : NewSidecar;
+
+                string patched;
+                try { patched = SidecarPatch.Apply(text, changes); }
+                catch (SidecarPatchRefusedException e) { return new OperationFailed(opId, e.Reason, e.Message); }
+                if (exists && patched == text) return new OperationApplied(opId, []);
+
+                _sidecarSeen = patched;
+                await File.WriteAllBytesAsync(path, [.. (bom ? Utf8Bom : []), .. Encoding.UTF8.GetBytes(patched)], ct);
+                return new OperationApplied(opId, []);
+            });
+        }
+        finally { _sidecarGate.Release(); }
     }
 
     private static SourceText ReadFromDisk(string path)
