@@ -1,4 +1,5 @@
 using Stemma.Cli;
+using Stemma.Engine.Diagnostics;
 
 // `stemma` — the headless half of Stemma. Everything here exists so that turning a model into a
 // picture needs no browser of your own open and no mouse.
@@ -6,6 +7,12 @@ using Stemma.Cli;
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {
     Console.WriteLine(Cli.RootUsage);
+    return 0;
+}
+
+if (args[0] is "--version")
+{
+    Console.WriteLine($"stemma {StemmaVersion.Release}");
     return 0;
 }
 
@@ -39,7 +46,7 @@ namespace Stemma.Cli
               stemma render    Turn a model and a view into an image.
               stemma validate  Check a workspace for the things the compiler cannot see.
 
-            Run a command with --help for its options.
+            Run a command with --help for its options, or `stemma --version` for which Stemma this is.
             """;
 
         public static int Fail(string message)

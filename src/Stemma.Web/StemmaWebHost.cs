@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Stemma.Engine.Adapters.Yaml;
 using Stemma.Engine.ArchModel;
+using Stemma.Engine.Diagnostics;
 using Stemma.Engine.Operations;
 using Stemma.Engine.Workspace;
 using Serilog;
@@ -549,6 +550,7 @@ public static class StemmaWebHost
 
         diagnosticsApi.MapGet("/", (StemmaLogging.Options options, Serilog.Core.LoggingLevelSwitch levelSwitch) => Results.Ok(new
         {
+            version = StemmaVersion.Release,
             level = levelSwitch.MinimumLevel.ToString(),
             format = options.Format,
             fileSink = options.FileSink,
@@ -572,6 +574,8 @@ public static class StemmaWebHost
         {
             var environment = new Dictionary<string, string>
             {
+                // The release and the commit: the first thing anyone reading the bundle asks.
+                ["stemma"] = StemmaVersion.Build,
                 ["os"] = Environment.OSVersion.ToString(),
                 ["dotnet"] = Environment.Version.ToString(),
                 ["processors"] = Environment.ProcessorCount.ToString(),

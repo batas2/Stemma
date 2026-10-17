@@ -7,6 +7,8 @@ namespace Stemma.Desktop;
 /// </summary>
 public sealed record DesktopOptions(string? WorkspacePath, bool ShowHelp, IReadOnlyList<string> HostArgs)
 {
+    public bool ShowVersion { get; init; }
+
     public const string Usage = """
         stemma-desktop — Stemma in its own window.
 
@@ -15,6 +17,7 @@ public sealed record DesktopOptions(string? WorkspacePath, bool ShowHelp, IReadO
           --workspace <path>   Open this workspace on launch. A bare path does the same.
           --log-level <level>  trace | debug | information | warning | error | critical | none
           --log-format <fmt>   simple | json
+          --version            Print which Stemma this is.
 
         The window owns the backend: closing it stops the server. The port is chosen by the OS, so
         several windows can be open at once.
@@ -24,6 +27,7 @@ public sealed record DesktopOptions(string? WorkspacePath, bool ShowHelp, IReadO
     {
         string? workspace = null;
         var showHelp = false;
+        var showVersion = false;
         var hostArgs = new List<string>();
 
         for (var i = 0; i < args.Count; i++)
@@ -35,6 +39,9 @@ public sealed record DesktopOptions(string? WorkspacePath, bool ShowHelp, IReadO
                     break;
                 case "-h" or "--help" or "help":
                     showHelp = true;
+                    break;
+                case "--version":
+                    showVersion = true;
                     break;
                 // A bare path, which is what a `.desktop` entry's `%f` expands to when Stemma is
                 // registered as a folder handler — and what anyone types by hand. Distinguished
@@ -53,7 +60,7 @@ public sealed record DesktopOptions(string? WorkspacePath, bool ShowHelp, IReadO
         // of anything.
         if (workspace is not null) workspace = Path.GetFullPath(workspace);
 
-        return new DesktopOptions(workspace, showHelp, hostArgs);
+        return new DesktopOptions(workspace, showHelp, hostArgs) { ShowVersion = showVersion };
     }
 
     /// <summary>`--log-level debug` — "debug" belongs to the flag, not to the shell.</summary>

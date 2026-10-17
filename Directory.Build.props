@@ -9,6 +9,9 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <!-- The one place the version is stated. Every assembly is stamped with it, the version flags
+         and the diagnostics bundle read it back from there, and a release tag must match it (F-012). -->
+    <VersionPrefix>0.1.0</VersionPrefix>
     <Authors>Bartosz Frąckowiak</Authors>
     <Copyright>Copyright 2026 Bartosz Frąckowiak</Copyright>
     <RepositoryUrl>https://github.com/batas2/Stemma</RepositoryUrl>

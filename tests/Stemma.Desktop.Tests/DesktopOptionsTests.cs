@@ -93,11 +93,21 @@ public class DesktopOptionsTests
     }
 
     [Fact]
+    public void Asks_for_the_version()
+    {
+        var options = DesktopOptions.Parse(["--version"]);
+
+        options.ShowVersion.Should().BeTrue();
+        options.HostArgs.Should().BeEmpty("the host is never started to answer it");
+    }
+
+    [Fact]
     public void No_arguments_just_opens_the_window()
     {
         var options = DesktopOptions.Parse([]);
 
         options.ShowHelp.Should().BeFalse();
+        options.ShowVersion.Should().BeFalse();
         options.WorkspacePath.Should().BeNull();
         options.HostArgs.Should().BeEmpty();
     }

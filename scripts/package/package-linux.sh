@@ -50,8 +50,10 @@ cp scripts/package/stemma.desktop "$STAGE/stemma.desktop"
 cp scripts/package/install.sh "$STAGE/install.sh"
 chmod +x "$STAGE/install.sh" "$STAGE/stemma-desktop" "$STAGE/stemma"
 
-cat > "$STAGE/README.txt" <<'EOF'
-Stemma — the living architecture model
+# Asked of MSBuild rather than restated here: Directory.Build.props is the one place it is written
+# down. Not asked of the binary, which need not run on this machine when --runtime is another one.
+VERSION="$(dotnet msbuild src/Stemma.Cli/Stemma.Cli.csproj -getProperty:Version -nologo)"
+{ echo "Stemma $VERSION — the living architecture model"; cat; } > "$STAGE/README.txt" <<'EOF'
 
   ./stemma-desktop            open the window
   ./stemma-desktop <folder>   open the window on a workspace

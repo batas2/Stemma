@@ -14,6 +14,11 @@ if (options.ShowHelp)
     Console.WriteLine(DesktopOptions.Usage);
     return 0;
 }
+if (options.ShowVersion)
+{
+    Console.WriteLine($"stemma-desktop {Stemma.Engine.Diagnostics.StemmaVersion.Release}");
+    return 0;
+}
 
 var geometryPath = WindowGeometry.DefaultPath;
 var tracker = new GeometryTracker(WindowGeometry.Load(geometryPath));
