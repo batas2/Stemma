@@ -28,6 +28,10 @@ removed).
 | [0015](./0015-project-name-and-market-positioning.md) | **Name and positioning** — the project is Stemma; the pitch is one source both humans and agents edit. | ✅ Current — see [value-proposition](../../product/value-proposition.md). |
 | [0016](./0016-sdk-free-model-only-workspaces.md) | **SDK-free model-only workspaces** — a second load path with no MSBuild, so a model opens without a .NET SDK. | ✅ Current — see [F-003](../../features/F-003-from-scratch-onboarding.md). |
 | [0017](./0017-desktop-shell-photino.md) | **Photino as the desktop shell** — one .NET process hosting Kestrel and a native window. | 🟡 Accepted, pending the WebKitGTK benchmark — see [F-002](../../features/F-002-desktop-shell.md). |
+| [0018](./0018-concept-element-kind.md) | **A `Concept` element kind** — a box that asserts nothing, so a figure need not pretend to be a `Module`. | ✅ Current — see [F-010](../../features/F-010-concept-element-kind.md). |
+| [0019](./0019-relation-link-kind.md) | **A `Relation` link kind** — an arrow that asserts nothing, the same escape for links. | ✅ Current. |
+| [0020](./0020-diagnostics-contract.md) | **The diagnostics contract** — levels, categories, and no network sink. | ✅ Current — see [F-011](../../features/F-011-diagnostics-and-logging.md). |
+| [0021](./0021-sidecar-written-as-changes.md) | **The sidecar is written as changes** to the file as it is, and re-read when someone else changes it. | 🟡 Proposed — see [B-014](../../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md). |
 
 ## Legend
 
