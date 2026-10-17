@@ -222,4 +222,30 @@ public sealed class ViewWriteTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Theory]
+    // Ids several to a line, each with its comma: the new one continues the last line, where the
+    // next id would have been typed. It used to start a line of its own, at column 0.
+    [InlineData("\"mod_a\", \"mod_b\",", "\"mod_a\", \"mod_b\", \"mod_c\",")]
+    // A note at the end of that line stays at the end of it.
+    [InlineData("\"mod_a\", \"mod_b\", // the core", "\"mod_a\", \"mod_b\", \"mod_c\", // the core")]
+    public async Task Adding_to_ids_laid_out_several_to_a_line_continues_the_last_line(string before, string after)
+    {
+        var shape = Shape.Replace(
+            """
+                        "mod_a",
+                        "mod_b", // the one people forget
+            """,
+            $"            {before}");
+        var root = await CreateAsync(("Shape.cs", shape));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            Applied(await engine.SaveViewAsync("op", new ArchView("view_shape", "What ships", "all", ["mod_a", "mod_b", "mod_c"])));
+
+            (await File.ReadAllTextAsync(Path.Combine(root, "Views", "Shape.cs"))).Should()
+                .Be(shape.Replace($"            {before}", $"            {after}"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }

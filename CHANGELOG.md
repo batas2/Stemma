@@ -58,6 +58,9 @@ down, for the first time, in the [operations catalog](./.doc/architecture/engine
   replaced `stemma.layout.json` with the modes alone. The browser's copy is now a cache: it is drawn
   until the repository has been read and then replaced, never merged. Views are read from the code
   on every refresh, and a refused view save is put back and said, not only logged.
+- **[B-013](./.doc/bugs/B-013-append-to-a-crowded-line-starts-a-new-one.md) — an id added to a view
+  laid out several ids to a line** went on a line of its own, at column 0. It now goes at the end of
+  the last line.
 
 ### The first ten minutes — 2026-08-11
 

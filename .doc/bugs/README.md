@@ -27,6 +27,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-010](./B-010-saving-a-view-rewrites-its-file.md) | Saving a view from the canvas regenerated its file, and deleting one removed any file that quoted its id | S2 major | web | Fixed |
 | [B-011](./B-011-type-operations-ignore-layout.md) | The type operations wrote members with no layout and removed them by the wrong rules | S3 minor | engine | Fixed |
 | [B-012](./B-012-the-browser-outranks-the-repository.md) | The browser's copy of a workspace outranked the repository, and could replace its sidecar | S2 major | sidecar | Fixed |
+| [B-013](./B-013-append-to-a-crowded-line-starts-a-new-one.md) | An id added to a list laid out several to a line went on a line of its own, at column 0 | S3 minor | engine | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 

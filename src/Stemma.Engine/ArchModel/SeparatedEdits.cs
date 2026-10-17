@@ -26,9 +26,24 @@ internal static class SeparatedEdits
 
         if (commas.Count == items.Count)
         {
-            // `"a",⏎ "b",⏎` — every item carries its own comma, so the new one does too.
-            items.Add(placed.WithTrailingTrivia(last.GetTrailingTrivia()));
-            commas.Add(Comma(commas[^1]));
+            // Every item carries its own comma, so the new one does too.
+            var lastComma = commas[^1];
+            // Read from the list alone, which an earlier edit may have detached from its tree. Leading
+            // whitespace only exists at the start of a line; anywhere else it trails the token before.
+            var startsLine = Trivia.EndsLine(last.GetLeadingTrivia()) || Trivia.Indentation(last.GetLeadingTrivia()).Count > 0
+                             || (commas.Count >= 2 && Trivia.EndsLine(commas[^2].TrailingTrivia));
+            if (startsLine || !Trivia.EndsLine(lastComma.TrailingTrivia))
+            {
+                // `"a",⏎ "b",⏎` — one to a line: a line of its own.
+                items.Add(placed.WithTrailingTrivia(last.GetTrailingTrivia()));
+                commas.Add(Comma(lastComma));
+                return SyntaxFactory.SeparatedList(items, commas);
+            }
+            // `"a", "b",⏎` — several to a line: the end of the last one, where it would be typed.
+            // What ended that line — a note, the line break — now follows the new item instead.
+            commas[^1] = lastComma.WithTrailingTrivia(SyntaxFactory.Space);
+            items.Add(item.WithLeadingTrivia(SyntaxTriviaList.Empty).WithTrailingTrivia(last.GetTrailingTrivia()));
+            commas.Add(SyntaxFactory.Token(Trivia.Layout(lastComma.LeadingTrivia), SyntaxKind.CommaToken, lastComma.TrailingTrivia));
             return SyntaxFactory.SeparatedList(items, commas);
         }
 
