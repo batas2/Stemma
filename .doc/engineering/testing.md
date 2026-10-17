@@ -65,6 +65,17 @@ the contract while the suite was green:
 
 Journeys run one at a time (`workers: 1`), because the backend holds one workspace per process.
 
+## The distributions, as shipped
+
+A package is tried the way the person who downloads it will try it, never only on the machine that
+built it: that machine has every tool the build needed, so whatever the package still quietly
+depends on is found there and nowhere else ([B-016](../bugs/B-016-tarball-render-needs-the-dotnet-it-ships-without.md)).
+`scripts/package/smoke-test.sh` unpacks the tarball somewhere new and runs it with `dotnet` hidden
+from PATH, and installs the tool package from its folder alone into a fresh tool path with a NuGet
+cache of its own. Each then reports its version and runs `validate` and `render` on the self-model.
+The release workflow runs both before it drafts anything; the window, which needs a display, is the
+one check left to a person ([`releasing.md`](./releasing.md)).
+
 ## Commands
 
 ```bash
@@ -78,6 +89,10 @@ npx vitest run                                # unit/integration (must be green)
 npx vitest run src/lib/autoLayout.test.ts     # a single file
 npm run test:journey                          # journeys: builds, starts the server, drives Chrome
 STEMMA_BASE_URL=http://127.0.0.1:5050 npm run test:journey   # against a server already running
+
+# Distributions (from the repository root)
+scripts/package/smoke-test.sh dist/stemma-linux-x64.tar.gz --version 0.1.0
+scripts/package/smoke-test.sh --tool dist/tool --version 0.1.0
 ```
 
 ## What to test (by area)

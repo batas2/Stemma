@@ -18,7 +18,7 @@ UX, UI** — plus the shared engineering standards and the actionable templates.
 | [`architecture/`](./architecture/) | You need to understand how the system is built and the rules you must not break. |
 | [`ux/`](./ux/) | You're designing a flow, a state, or an interaction. |
 | [`ui/`](./ui/) | You're touching the visual system, tokens, or components. |
-| [`engineering/`](./engineering/) | You need conventions, testing rules, contribution flow, or vocabulary. |
+| [`engineering/`](./engineering/) | You need conventions, testing rules, contribution flow, vocabulary, or to cut a release. |
 | [`protocol/`](./protocol/) | You're producing a diagram from text, without opening the app. |
 | [`templates/`](./templates/) | You're starting a feature, filing a bug, or recording a decision. |
 | [`features/`](./features/) | Active and shipped feature records (instances of the feature template). |
