@@ -67,6 +67,12 @@ down, for the first time, in the [operations catalog](./.doc/architecture/engine
   laid out several ids to a line** went on a line of its own, at column 0. It now goes at the end of
   the last line.
 
+**Known**
+
+- **[B-014](./.doc/bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)** — every canvas
+  edit rewrites the whole of `stemma.layout.json`, re-serialized, and a change made to it outside
+  during a session is written over. The fix changes how the sidecar is written, and starts with an ADR.
+
 ### The first ten minutes — 2026-08-11
 
 Stemma was good at opening a model and weak at starting one. Walking the real path from a scratch

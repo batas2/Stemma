@@ -102,5 +102,7 @@ is out of date for as long as the watcher has not caught up.
 ## 8. Verification
 
 - [x] `dotnet test` green
-- [ ] Manually verified in the app — not done here
+- [x] Manually verified in the app, 2026-10-17, model-only and project workspaces: an outside
+      rename shows on the canvas; the file is not written in the four seconds that follow; an edit
+      through the inspector lands on top of it
 - [x] Docs updated: the bug board

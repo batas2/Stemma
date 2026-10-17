@@ -84,5 +84,9 @@ says. An inverse built from it can only re-create the summary. `RestoreElementOp
 ## 8. Verification
 
 - [x] `dotnet test` green
-- [ ] Manually verified in the app — not done here
+- [x] Manually verified in the app, 2026-10-17, on a scratch copy of the self-model:
+  - a Phase, a Squad and a rename, undone three times, leave the file byte-identical to the commit;
+    redone and undone again, the same;
+  - a context change, a status change and a remove of a tagged element, undone, the same;
+  - after an outside edit, undo returns to the outside version, not to the commit
 - [x] Docs updated: the bug board

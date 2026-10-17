@@ -102,5 +102,10 @@ no writer except the template.
 ## 8. Verification
 
 - [x] `dotnet test` green
-- [ ] Manually verified in the app — not done here
+- [x] Manually verified in the app, 2026-10-17:
+  - removing an element from *What ships* and adding it back edited `Shape.cs` in place, doc comment
+    intact;
+  - a new view got a file of its own, and deleting it removed only that file;
+  - adding it back first went to column 0, which was
+    [B-013](./B-013-append-to-a-crowded-line-starts-a-new-one.md)
 - [x] Docs updated: the bug board

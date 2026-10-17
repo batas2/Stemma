@@ -82,5 +82,6 @@ BOM, which is the one case the wrong default cannot break.
 ## 8. Verification
 
 - [x] `dotnet test` green
-- [x] Manually verified: not applicable beyond the test — the symptom is three bytes on disk
+- [x] Manually verified in the app, 2026-10-17: the first edit through the inspector to a BOM-less
+      model-only workspace leaves it without one
 - [x] Docs updated: the bug board

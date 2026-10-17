@@ -28,6 +28,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-011](./B-011-type-operations-ignore-layout.md) | The type operations wrote members with no layout and removed them by the wrong rules | S3 minor | engine | Fixed |
 | [B-012](./B-012-the-browser-outranks-the-repository.md) | The browser's copy of a workspace outranked the repository, and could replace its sidecar | S2 major | sidecar | Fixed |
 | [B-013](./B-013-append-to-a-crowded-line-starts-a-new-one.md) | An id added to a list laid out several to a line went on a line of its own, at column 0 | S3 minor | engine | Fixed |
+| [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md) | The sidecar is written whole from the session's copy: one drag rewrites it, and a pull made meanwhile is lost | S2 major | sidecar | Triaged |
 | [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md) | A file added or deleted outside Stemma, or several changed at once, was not taken in | S2 major | engine | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
@@ -77,6 +78,10 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
   keeps compiling what was deleted, never sees what arrived, and writes a second copy of it. A
   debounce that keeps the last path drops the others. See
   [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md).
+- **A shared file written whole from a copy read once** → every write re-serializes the file
+  (a diff of all of it for a one-line change) and puts back what anyone else changed since the read.
+  Write the change, onto the file as it is now. See
+  [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md).
 - **A closed C# type inside a pass-through format** → members the client writes are silently dropped
   on bind, before anything is written. The round-trip test still passes, because it only asserts what
   the type declares. Any nested type in `LayoutSidecar` needs `[JsonExtensionData]` — see

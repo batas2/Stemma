@@ -123,5 +123,7 @@ Found on the way, by the pathological fixture:
 - [x] Verified on the self-model sample: seven edits — a RAPID tag's status and squad, a context,
       removing a person and a tagged flow, a rename and an add — each producing only its own lines
       in `diff -u`
-- [ ] Manually verified in the app — not done here
+- [x] Manually verified in the app, 2026-10-17: Phase, Squad, Status, Context, a rename and a
+      remove through the inspector each changed only their own argument, declaration, tag and
+      `Model.Of` entry
 - [x] Docs updated: the bug board; the operations catalog and the testing guide follow in the same series

@@ -55,7 +55,10 @@ Frontend rules that keep it correct:
 1. **Fetch once per workspace** (`primeLayoutSidecar`, `primedRoot` guard); the in-memory cache is
    then authoritative and debounce-flushed.
 2. **Never re-fetch mid-session** — re-fetching overwrites not-yet-flushed local edits. This was the
-   root cause of the "drag snaps back / routing reverts / canvas blinks" bugs.
+   root cause of the "drag snaps back / routing reverts / canvas blinks" bugs. The other side of
+   this rule is an open bug: a change made to the sidecar outside during a session is written over
+   by the next edit, and every edit rewrites the whole file
+   ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)).
 3. **One shared cache** routes node styles, edge styles, notes, custom props, and shapes — they must
    not keep separate caches that clobber each other on save.
 4. **Write nothing before it has been read.** Until then the cache holds only this session's edits,
