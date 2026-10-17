@@ -64,8 +64,18 @@ jobs:
           npm test
           npm run build
 
+      # Built whole before anything is tested: `dotnet test` on a solution runs each test project as
+      # soon as that project is built, and the render tests need the host, which none of them
+      # references. They skip rather than fail without it, so a skip is checked for here.
       - name: Backend
-        run: dotnet test Stemma.slnx -c Release --logger "console;verbosity=normal"
+        run: |
+          set -o pipefail
+          dotnet build Stemma.slnx -c Release
+          dotnet test Stemma.slnx -c Release --no-build --logger "console;verbosity=normal" | tee "$RUNNER_TEMP/backend.log"
+          if grep -q 'Skipped Stemma.Cli.Tests.RenderContractTests' "$RUNNER_TEMP/backend.log"; then
+            echo "::error::The render tests were skipped, so nothing checked what a render draws."
+            exit 1
+          fi
 
       - name: Package
         run: |
