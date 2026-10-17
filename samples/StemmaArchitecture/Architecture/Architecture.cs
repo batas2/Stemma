@@ -210,7 +210,7 @@ public static class Architecture
         // ── What everything else rests on ────────────────────────────────────────────────────
         var asmGit = new Assumption("asm_git", "Persistence is Git, and there is no runtime database", "sys_git");
         var asmSourceIsModel = new Assumption("asm_sourceismodel", "The source on disk is the model, not an export of it", "mod_concepts");
-        var asmPrimeOnce = new Assumption("asm_primeonce", "The sidecar is read once per workspace, then owned in memory", "mod_layoutcache");
+        var asmPrimeOnce = new Assumption("asm_primeonce", "The sidecar is read once, and again only when someone else writes it", "mod_layoutcache");
         var asmOneRenderer = new Assumption("asm_onerenderer", "There is one renderer, and the publication profile is a mode of it", "mod_rendershell");
 
         // ── Lifecycle and ownership ──────────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ public static class Architecture
         Tag.For(modFidelity, lifecycle: new Lifecycle(Status: "current", Phase: "the gate"), ownership: new Ownership(Squad: "QA", Domain: "Quality"));
         Tag.For(modYaml, lifecycle: new Lifecycle(Status: "current", Phase: "trivia-preserving"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
         Tag.For(modDiag, lifecycle: new Lifecycle(Status: "current", Phase: "local only, no network sink"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
-        Tag.For(modLayoutCache, lifecycle: new Lifecycle(Status: "current", Phase: "prime once"), ownership: new Ownership(Squad: "Frontend", Domain: "Sidecar"));
+        Tag.For(modLayoutCache, lifecycle: new Lifecycle(Status: "current", Phase: "sends changes, not the file"), ownership: new Ownership(Squad: "Frontend", Domain: "Sidecar"));
         Tag.For(modBooks, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Frontend", Domain: "Narrative"));
 
         Tag.For(sysGit, lifecycle: new Lifecycle(Status: "current", Phase: "the only store"));
@@ -246,7 +246,7 @@ public static class Architecture
         Tag.For(modLlm, lifecycle: new Lifecycle(Status: "target", Phase: "ADR-0008, web layer only"), ownership: new Ownership(Squad: "Core", Domain: "AI"));
         Tag.For(capAi, lifecycle: new Lifecycle(Status: "target", Phase: "ADR-0008"));
         Tag.For(flowPrompt, lifecycle: new Lifecycle(Status: "target"));
-        Tag.For(modScaffold, lifecycle: new Lifecycle(Status: "to-adapt", Phase: "F-007: still owes the workspace a STEMMA.md"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
+        Tag.For(modScaffold, lifecycle: new Lifecycle(Status: "current", Phase: "writes STEMMA.md (F-007)"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
         Tag.For(modExport, lifecycle: new Lifecycle(Status: "to-adapt", Phase: "Mermaid still drops kinds outside its three lenses"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
 
         return Model.Of(

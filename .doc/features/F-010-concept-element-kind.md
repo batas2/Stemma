@@ -74,7 +74,9 @@
 
 - [x] Round-trip fixtures: twelve, across minimal / realistic / pathological.
 - [x] `DslReader` reads a `Concept` declaration; `DslWriter` emits one that reads back identically.
-- [ ] A sample workspace exercising it, so the kind is covered by something that ships.
+- [x] A sample workspace exercising it, so the kind is covered by something that ships:
+      `samples/StemmaArchitecture` declares three, and its *Three rules that win arguments* view
+      mixes them with structural elements on purpose — the one warning that sample ships with.
 - [x] `validate` emits the two checks.
 
 ## 8. Definition of Done
