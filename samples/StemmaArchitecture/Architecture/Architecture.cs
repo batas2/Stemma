@@ -3,264 +3,283 @@ using Stemma.Model;
 namespace StemmaArchitecture;
 
 /// <summary>
-/// Stemma modelling <b>itself</b> — the architecture of the Stemma tool expressed in Stemma's own DSL.
+/// Stemma, modelled in Stemma.
 ///
-/// Stemma is a web-based architecture modelling tool whose core claim is "the C# source on disk is the
-/// model database": UI edits become Roslyn rewrites of real <c>.cs</c> files, and only presentation
-/// (positions, styles, notes) lives in the committed <c>stemma.layout.json</c> sidecar. There is no
-/// runtime database.
+/// This is the architecture of the tool you are reading it in. Everything here describes code that
+/// sits in this repository, one directory up, so the fastest way to find out whether the model is
+/// honest is to go and look. That is the point of shipping it: a modelling tool whose own model
+/// cannot be checked is asking for a lot of trust.
 ///
-///   Architect / AI Agent → Web Client (React/React-Flow) → SignalR op → Web Host (ASP.NET)
-///                        → StemmaEngine → DocumentEditor rewrite of Architecture.cs (Git working tree)
-///                        → recompute model → delta → every client
+/// It doubles as the feature tour. Between this file, <c>Views/</c>, <c>Concepts/</c> and the
+/// committed <c>stemma.layout.json</c>, every part of the vocabulary is exercised at least once:
+/// all eleven element kinds, all three link kinds, lifecycle and ownership including RAPID roles,
+/// six saved views over one model, three narrative books for three audiences, the YAML data and
+/// resource layers, and the presentation sidecar with styles, notes, shapes and a layout constraint.
 ///
-/// The four layers map onto the model like the canonical samples: the deployable units (the ASP.NET
-/// host and the React SPA bundle) become C4 Containers; the layers become Bounded Contexts; the
-/// subsystems inside each layer become Modules; project / call references become Dependencies; the
-/// documented write / read / sidecar / AI flows become DataFlows. The inviolable rules from the
-/// conventions (round-trip fidelity, no NormalizeWhitespace, no parallel store, prime-the-sidecar-once, engine
-/// purity) are captured as Risks / Questions / Assumptions plus lifecycle / ownership tags, so the
-/// model doubles as a self-referential feature demo for Stemma.
+/// The shape in one paragraph. A canvas gesture becomes an operation, the operation travels over
+/// SignalR to the host, the host hands it to the engine, and the engine rewrites the C# on disk
+/// through a Roslyn DocumentEditor. There is no database anywhere in that sentence. The same engine
+/// is driven headlessly by the CLI, which renders a view to an image with no browser open and no
+/// mouse, and writes a manifest so a build can tell when the picture stopped matching the model.
 ///
-/// The AI / LLM path (the LLM Service, <c>cap_ai</c>, and the prompt / completion / apply flows) is
-/// documented-but-planned per ADR-0008 — modelled with <c>target</c> lifecycle tags, not as shipped
-/// code.
+/// Two things are deliberately marked as not-yet-shipped rather than quietly implied: the LLM path
+/// (ADR-0008, target) and the workspace scaffold's agent brief (F-007, target). A self-model that
+/// flatters the project is worth nothing.
 /// </summary>
 public static class Architecture
 {
     public static Model Build()
     {
-        // --- Actors -----------------------------------------------------------------
+        // ── Who touches it ───────────────────────────────────────────────────────────────────
+        // Three people, and only one of them is looking at a screen. The reviewer sees the change
+        // as a diff and never opens the app; the agent has a shell and cannot click at all.
         var perArchitect = new Person("per_architect", "Architect", "user");
-        var perAgent = new Person("per_agent", "AI Agent", "external");
         var perReviewer = new Person("per_reviewer", "Reviewer", "internal");
+        var perAgent = new Person("per_agent", "Essayist's agent", "external");
 
-        // --- The system + neighbouring systems --------------------------------------
+        // ── What we do not own ───────────────────────────────────────────────────────────────
+        var sysGit = new SoftwareSystem("sys_git", "Git working tree");
+        var sysRoslyn = new SoftwareSystem("sys_roslyn", "Roslyn");
+        var sysChromium = new SoftwareSystem("sys_chromium", "Chromium");
+        var sysLlm = new SoftwareSystem("sys_llm", "LLM provider");
+
+        // ── What ships ───────────────────────────────────────────────────────────────────────
         var sysStemma = new SoftwareSystem("sys_stemma", "Stemma");
-        var sysGit = new SoftwareSystem("sys_git", "Git Working Tree (the database)");
-        var sysBrowser = new SoftwareSystem("sys_browser", "Web Browser");
-        var sysRoslyn = new SoftwareSystem("sys_roslyn", "Roslyn · MSBuildWorkspace");
-        var sysLlm = new SoftwareSystem("sys_llm", "LLM Provider (Anthropic)");
-        var sysVite = new SoftwareSystem("sys_vite", "Vite Build / Dev Server");
+        var cntWeb = new Container("cnt_web", "Web host", "sys_stemma", "service");
+        var cntClient = new Container("cnt_client", "Canvas", "sys_stemma", "spa");
+        var cntCli = new Container("cnt_cli", "stemma CLI", "sys_stemma", "cli");
+        var cntDesktop = new Container("cnt_desktop", "Desktop shell", "sys_stemma", "app");
 
-        // --- Deployable containers (what actually ships / runs) ---------------------
-        var cntClient = new Container("cnt_client", "Web Client (React SPA)", "sys_stemma", "spa");
-        var cntWeb = new Container("cnt_web", "Web Host (ASP.NET Core)", "sys_stemma", "service");
+        // ── The layers, as bounded contexts ──────────────────────────────────────────────────
+        var ctxModel = new BoundedContext("ctx_model", "Model");
+        var ctxEngine = new BoundedContext("ctx_engine", "Engine");
+        var ctxWeb = new BoundedContext("ctx_web", "Web");
+        var ctxClient = new BoundedContext("ctx_client", "Client");
+        var ctxHeadless = new BoundedContext("ctx_headless", "Headless");
+        var ctxQuality = new BoundedContext("ctx_quality", "Quality");
 
-        // --- Bounded contexts = the layers ------------------------------------------
-        var ctxClient = new BoundedContext("ctx_client", "Client · React SPA");
-        var ctxWeb = new BoundedContext("ctx_web", "Web · Host & Sync");
-        var ctxEngine = new BoundedContext("ctx_engine", "Engine · Roslyn Core");
-        var ctxModel = new BoundedContext("ctx_model", "Model · DSL Vocabulary");
-        var ctxQuality = new BoundedContext("ctx_quality", "Quality · Fidelity & Tests");
+        // ── Model layer ──────────────────────────────────────────────────────────────────────
+        var modConcepts = new Module("mod_concepts", "Concepts", "ctx_model");
+        var modModelOf = new Module("mod_modelof", "Model.Of", "ctx_model");
 
-        // --- Modules = the subsystems inside each layer -----------------------------
-        // Model layer (src/Stemma.Model)
-        var modConcepts = new Module("mod_concepts", "Concepts (DSL records)", "ctx_model");
-        var modModelOf = new Module("mod_modelof", "Model.Of aggregate", "ctx_model");
-        // Engine layer (src/Stemma.Engine)
-        var modEngine = new Module("mod_stemmaengine", "StemmaEngine (workspace facade)", "ctx_engine");
-        var modDslReader = new Module("mod_dslreader", "DslReader", "ctx_engine");
-        var modDslWriter = new Module("mod_dslwriter", "DslWriter (DocumentEditor)", "ctx_engine");
-        var modArchOps = new Module("mod_archops", "ArchOperations", "ctx_engine");
-        var modViews = new Module("mod_viewsadapter", "ViewsAdapter", "ctx_engine");
-        var modOps = new Module("mod_operations", "Operations (polymorphic)", "ctx_engine");
-        var modUndo = new Module("mod_undo", "UndoStack", "ctx_engine");
+        // ── Engine layer ─────────────────────────────────────────────────────────────────────
+        var modEngine = new Module("mod_engine", "StemmaEngine", "ctx_engine");
+        var modReader = new Module("mod_reader", "DslReader", "ctx_engine");
+        var modWriter = new Module("mod_writer", "DslWriter", "ctx_engine");
+        var modOps = new Module("mod_ops", "Operations catalogue", "ctx_engine");
         var modSidecar = new Module("mod_sidecar", "LayoutSidecar", "ctx_engine");
-        var modValidation = new Module("mod_validation", "Validation", "ctx_engine");
-        // Web layer (src/Stemma.Web)
-        var modRest = new Module("mod_rest", "REST Endpoints", "ctx_web");
-        var modHub = new Module("mod_hub", "SignalR Hub", "ctx_web");
-        var modLlm = new Module("mod_llmservice", "LLM Service", "ctx_web");
-        // Client layer (src/Stemma.Web.Client)
-        var modStore = new Module("mod_store", "Store (zustand)", "ctx_client");
-        var modLayoutCache = new Module("mod_layoutcache", "Sidecar Cache (lib/layout)", "ctx_client");
-        var modCanvas = new Module("mod_canvas", "ArchCanvas (@xyflow/react)", "ctx_client");
+        var modYaml = new Module("mod_yaml", "YAML adapter", "ctx_engine");
+        var modRules = new Module("mod_rules", "RuleEngine", "ctx_engine");
+        var modExport = new Module("mod_export", "Exporters", "ctx_engine");
+
+        // ── Web layer ────────────────────────────────────────────────────────────────────────
+        var modRest = new Module("mod_rest", "REST endpoints", "ctx_web");
+        var modHub = new Module("mod_hub", "SignalR hub", "ctx_web");
+        var modScaffold = new Module("mod_scaffold", "Workspace scaffold", "ctx_web");
+        var modPdf = new Module("mod_pdf", "Book PDF exporter", "ctx_web");
+        var modDiag = new Module("mod_diag", "Diagnostics", "ctx_web");
+        var modLlm = new Module("mod_llm", "LLM service", "ctx_web");
+
+        // ── Client layer ─────────────────────────────────────────────────────────────────────
+        var modCanvas = new Module("mod_canvas", "ArchCanvas", "ctx_client");
         var modInspector = new Module("mod_inspector", "ArchInspector", "ctx_client");
+        var modStore = new Module("mod_store", "Store", "ctx_client");
+        var modLayoutCache = new Module("mod_layoutcache", "Sidecar cache", "ctx_client");
         var modAutoLayout = new Module("mod_autolayout", "Auto-layout", "ctx_client");
-        var modRichText = new Module("mod_richtext", "RichTextEditor + markdown bridge", "ctx_client");
-        var modSignalrClient = new Module("mod_signalrclient", "SignalR client", "ctx_client");
-        var modApiClient = new Module("mod_apiclient", "REST client (lib/api)", "ctx_client");
-        // Quality layer (cross-cutting)
-        var modFidelity = new Module("mod_fidelity", "Round-trip Fidelity Suite", "ctx_quality");
+        var modBooks = new Module("mod_books", "Books", "ctx_client");
 
-        // --- Business capabilities --------------------------------------------------
-        var capLoad = new Capability("cap_load", "Load a workspace through Roslyn", "ctx_engine");
-        var capApply = new Capability("cap_apply", "Apply an operation as a targeted rewrite", "ctx_engine");
-        var capFidelity = new Capability("cap_fidelity", "Preserve round-trip fidelity", "ctx_quality");
-        var capRender = new Capability("cap_render", "Render the active view", "ctx_client");
-        var capEdit = new Capability("cap_edit", "Capture canvas gestures as operations", "ctx_client");
-        var capSync = new Capability("cap_sync", "Stream operations & broadcast deltas", "ctx_web");
-        var capLayout = new Capability("cap_layout", "Persist presentation in the sidecar", "ctx_web");
-        var capAi = new Capability("cap_ai", "Propose model edits via the LLM", "ctx_web");
+        // ── Headless layer ───────────────────────────────────────────────────────────────────
+        var modRender = new Module("mod_render", "DiagramRenderer", "ctx_headless");
+        var modCheck = new Module("mod_check", "WorkspaceCheck", "ctx_headless");
+        var modManifest = new Module("mod_manifest", "Render manifest", "ctx_headless");
+        var modRenderShell = new Module("mod_rendershell", "RenderShell", "ctx_headless");
 
-        // --- User-visible use cases -------------------------------------------------
-        var ucEdit = new UseCase("uc_edit", "Drag / rename / link an element on the canvas");
-        var ucReview = new UseCase("uc_review", "Review an architecture change as a PR diff");
+        // ── Quality layer ────────────────────────────────────────────────────────────────────
+        var modFidelity = new Module("mod_fidelity", "Round-trip fidelity suite", "ctx_quality");
 
-        // --- Write path: gesture → operation → rewrite → delta ----------------------
-        var flowGesture = new DataFlow("flow_gesture", "per_architect", "cnt_client", "Canvas gesture (drag · rename · link)");
-        var flowOp = new DataFlow("flow_op", "cnt_client", "cnt_web", "Operation (polymorphic JSON · SignalR)");
-        var flowInvoke = new DataFlow("flow_invoke", "cnt_web", "mod_stemmaengine", "ApplyOperation(op)");
-        var flowRewrite = new DataFlow("flow_rewrite", "mod_stemmaengine", "sys_git", "DocumentEditor rewrite of Architecture.cs");
-        var flowRecompute = new DataFlow("flow_recompute", "mod_stemmaengine", "cnt_web", "Delta (recomputed model)");
-        var flowDelta = new DataFlow("flow_delta", "cnt_web", "cnt_client", "Delta broadcast (SignalR)");
+        // ── What the thing can do ────────────────────────────────────────────────────────────
+        var capEdit = new Capability("cap_edit", "Edit a model on a canvas", "ctx_client");
+        var capRewrite = new Capability("cap_rewrite", "Rewrite source without collateral damage", "ctx_engine");
+        var capProject = new Capability("cap_project", "Project one model into many views", "ctx_client");
+        var capNarrate = new Capability("cap_narrate", "Walk a room through the model", "ctx_client");
+        var capHeadless = new Capability("cap_headless", "Produce a diagram with no mouse", "ctx_headless");
+        var capProve = new Capability("cap_prove", "Prove a published image is current", "ctx_headless");
+        var capAi = new Capability("cap_ai", "Propose edits through a model", "ctx_web");
 
-        // --- Read / load path: open → Roslyn parse → snapshot -----------------------
-        var flowOpen = new DataFlow("flow_open", "cnt_client", "cnt_web", "POST /api/workspace/open");
-        var flowLoad = new DataFlow("flow_load", "cnt_web", "mod_stemmaengine", "Load(root)");
-        var flowRoslyn = new DataFlow("flow_roslyn", "mod_stemmaengine", "sys_roslyn", "MSBuildWorkspace · parse Build() / Define()");
-        var flowRead = new DataFlow("flow_read", "sys_roslyn", "sys_git", "Read .cs model + Views/*.cs");
-        var flowSnapshot = new DataFlow("flow_snapshot", "cnt_web", "cnt_client", "GET /api/workspace/snapshot");
+        // ── What people actually come here to do ─────────────────────────────────────────────
+        var ucRename = new UseCase("uc_rename", "Rename an element and read the diff");
+        var ucPresent = new UseCase("uc_present", "Present the architecture to a room");
+        var ucIllustrate = new UseCase("uc_illustrate", "Illustrate an essay from a model");
 
-        // --- Presentation path: sidecar ---------------------------------------------
-        var flowPresent = new DataFlow("flow_present", "cnt_client", "cnt_web", "PUT /api/workspace/layout (debounced)");
-        var flowSidecar = new DataFlow("flow_sidecar", "cnt_web", "sys_git", "Write stemma.layout.json");
-        var flowPrime = new DataFlow("flow_prime", "cnt_web", "cnt_client", "Prime sidecar (positions · styles · notes)");
+        // ── The write path ───────────────────────────────────────────────────────────────────
+        // Six hops from a gesture to a diff. Every one of them is in this repository.
+        var flowGesture = new DataFlow("flow_gesture", "per_architect", "cnt_client", "gesture");
+        var flowOp = new DataFlow("flow_op", "cnt_client", "mod_hub", "operation · delta", "twoway");
+        var flowApply = new DataFlow("flow_apply", "mod_hub", "mod_engine", "ApplyOperation");
+        var flowRewrite = new DataFlow("flow_rewrite", "mod_writer", "sys_roslyn", "rewrite");
+        var flowWrite = new DataFlow("flow_write", "sys_roslyn", "sys_git", "Architecture.cs");
 
-        // --- AI path: agent → LLM service → engine ----------------------------------
-        var flowPrompt = new DataFlow("flow_prompt", "per_agent", "cnt_web", "Prompt · proposed edits");
-        var flowLlm = new DataFlow("flow_llm", "cnt_web", "sys_llm", "Chat completion (tool use)");
-        var flowAiOp = new DataFlow("flow_aiop", "cnt_web", "mod_stemmaengine", "Apply proposed operations");
+        // ── The read path ────────────────────────────────────────────────────────────────────
+        var flowOpen = new DataFlow("flow_open", "cnt_client", "cnt_web", "open · snapshot", "twoway");
+        var flowParse = new DataFlow("flow_parse", "mod_engine", "sys_roslyn", "parse");
 
-        // --- Hosting / build / review -----------------------------------------------
-        var flowServe = new DataFlow("flow_serve", "cnt_web", "sys_browser", "Serve SPA bundle (wwwroot)");
-        var flowBuild = new DataFlow("flow_build", "sys_vite", "cnt_client", "npx vite build → bundle");
-        var flowReview = new DataFlow("flow_review", "per_reviewer", "sys_git", "Review PR diff (code + canvas)");
+        // ── Presentation, which never enters the model ───────────────────────────────────────
+        var flowLayout = new DataFlow("flow_layout", "cnt_client", "cnt_web", "layout");
+        var flowSidecar = new DataFlow("flow_sidecar", "mod_sidecar", "sys_git", "stemma.layout.json");
 
-        // --- Dependencies = the reference / call graph ------------------------------
-        // Engine facade → its submodules
-        var depEngineDslReader = new Dependency("dep_001", "mod_stemmaengine", "mod_dslreader", "uses");
-        var depEngineDslWriter = new Dependency("dep_002", "mod_stemmaengine", "mod_dslwriter", "uses");
-        var depEngineArchOps = new Dependency("dep_003", "mod_stemmaengine", "mod_archops", "uses");
-        var depEngineViews = new Dependency("dep_004", "mod_stemmaengine", "mod_viewsadapter", "uses");
-        var depEngineOps = new Dependency("dep_005", "mod_stemmaengine", "mod_operations", "uses");
-        var depEngineUndo = new Dependency("dep_006", "mod_stemmaengine", "mod_undo", "uses");
-        var depEngineSidecar = new Dependency("dep_007", "mod_stemmaengine", "mod_sidecar", "uses");
-        var depEngineValidation = new Dependency("dep_008", "mod_stemmaengine", "mod_validation", "uses");
-        // ArchModel operation surface
-        var depArchOpsDslWriter = new Dependency("dep_009", "mod_archops", "mod_dslwriter", "uses");
-        var depArchOpsDslReader = new Dependency("dep_010", "mod_archops", "mod_dslreader", "uses");
-        var depArchOpsOps = new Dependency("dep_011", "mod_archops", "mod_operations", "uses");
-        var depArchOpsRoslyn = new Dependency("dep_012", "mod_archops", "sys_roslyn", "uses");
-        // DSL read / write / views → Roslyn + Model
-        var depDslReaderRoslyn = new Dependency("dep_013", "mod_dslreader", "sys_roslyn", "uses");
-        var depDslWriterRoslyn = new Dependency("dep_014", "mod_dslwriter", "sys_roslyn", "uses");
-        var depDslReaderConcepts = new Dependency("dep_015", "mod_dslreader", "mod_concepts", "uses");
-        var depDslWriterConcepts = new Dependency("dep_016", "mod_dslwriter", "mod_concepts", "uses");
-        var depViewsConcepts = new Dependency("dep_017", "mod_viewsadapter", "mod_concepts", "uses");
-        var depViewsRoslyn = new Dependency("dep_018", "mod_viewsadapter", "sys_roslyn", "uses");
-        // Engine ↔ storage
-        var depEngineGit = new Dependency("dep_019", "mod_stemmaengine", "sys_git", "reads");
-        var depSidecarGit = new Dependency("dep_020", "mod_sidecar", "sys_git", "uses");
-        // Validation + Model
-        var depValidationConcepts = new Dependency("dep_021", "mod_validation", "mod_concepts", "uses");
-        var depModelOfConcepts = new Dependency("dep_022", "mod_modelof", "mod_concepts", "uses");
-        // Web → Engine (the one allowed direction across the purity boundary)
-        var depRestEngine = new Dependency("dep_023", "mod_rest", "mod_stemmaengine", "calls");
-        var depHubEngine = new Dependency("dep_024", "mod_hub", "mod_stemmaengine", "calls");
-        var depHubOps = new Dependency("dep_025", "mod_hub", "mod_operations", "consumes");
-        var depRestSidecar = new Dependency("dep_026", "mod_rest", "mod_sidecar", "uses");
-        var depLlmServiceLlm = new Dependency("dep_027", "mod_llmservice", "sys_llm", "calls");
-        var depLlmServiceEngine = new Dependency("dep_028", "mod_llmservice", "mod_stemmaengine", "calls");
-        // Client internal
-        var depStoreApiClient = new Dependency("dep_029", "mod_store", "mod_apiclient", "uses");
-        var depStoreSignalrClient = new Dependency("dep_030", "mod_store", "mod_signalrclient", "uses");
-        var depCanvasStore = new Dependency("dep_031", "mod_canvas", "mod_store", "uses");
-        var depCanvasAutoLayout = new Dependency("dep_032", "mod_canvas", "mod_autolayout", "uses");
-        var depCanvasLayoutCache = new Dependency("dep_033", "mod_canvas", "mod_layoutcache", "uses");
-        var depInspectorStore = new Dependency("dep_034", "mod_inspector", "mod_store", "uses");
-        var depInspectorRichText = new Dependency("dep_035", "mod_inspector", "mod_richtext", "uses");
-        var depInspectorLayoutCache = new Dependency("dep_036", "mod_inspector", "mod_layoutcache", "uses");
-        var depStoreLayoutCache = new Dependency("dep_037", "mod_store", "mod_layoutcache", "uses");
-        // Client → Web (runtime, over REST / SignalR)
-        var depApiClientWeb = new Dependency("dep_038", "mod_apiclient", "cnt_web", "calls");
-        var depSignalrClientHub = new Dependency("dep_039", "mod_signalrclient", "mod_hub", "calls");
-        // Containers host / bundle their modules
-        var depWebHostsEngine = new Dependency("dep_040", "cnt_web", "mod_stemmaengine", "hosts");
-        var depWebHostsRest = new Dependency("dep_041", "cnt_web", "mod_rest", "hosts");
-        var depWebHostsHub = new Dependency("dep_042", "cnt_web", "mod_hub", "hosts");
-        var depWebHostsLlm = new Dependency("dep_043", "cnt_web", "mod_llmservice", "hosts");
-        var depClientBundlesStore = new Dependency("dep_044", "cnt_client", "mod_store", "bundles");
-        var depClientBundlesCanvas = new Dependency("dep_045", "cnt_client", "mod_canvas", "bundles");
-        // Quality → Engine (tests)
-        var depFidelityEngine = new Dependency("dep_046", "mod_fidelity", "mod_stemmaengine", "tests");
-        var depFidelityArchOps = new Dependency("dep_047", "mod_fidelity", "mod_archops", "tests");
-        var depFidelityDslWriter = new Dependency("dep_048", "mod_fidelity", "mod_dslwriter", "tests");
+        // ── The headless path ────────────────────────────────────────────────────────────────
+        // The half that has no person in it. An agent writes three files and runs one command.
+        var flowAuthor = new DataFlow("flow_author", "per_agent", "sys_git", "writes by hand");
+        var flowInvoke = new DataFlow("flow_invoke", "per_agent", "cnt_cli", "stemma render");
+        var flowSpawn = new DataFlow("flow_spawn", "cnt_cli", "cnt_web", "spawns host");
+        var flowImage = new DataFlow("flow_image", "cnt_cli", "sys_git", "png · manifest · --check", "twoway");
 
-        // --- Risks (about a model element via the 3rd ctor arg) ---------------------
-        var riskFidelity = new Risk("risk_fidelity", "A non-targeted rewrite changes trivia → git diff shows noise (fidelity break)", "mod_dslwriter");
-        var riskNormalize = new Risk("risk_normalize", "Any call to NormalizeWhitespace() destroys all trivia in the file", "mod_dslwriter");
-        var riskParallelStore = new Risk("risk_parallelstore", "A feature tempts a third data store beside code + sidecar", "mod_sidecar");
-        var riskRefetch = new Risk("risk_refetch", "Re-fetching the sidecar mid-session clobbers unflushed edits (box snaps back)", "mod_layoutcache");
-        var riskDangling = new Risk("risk_dangling", "View / flow string ids are unchecked by the C# compiler → dangling refs", "mod_viewsadapter");
-        var riskDragRebuild = new Risk("risk_dragrebuild", "Rebuilding node objects mid-drag loses selection / snaps back", "mod_canvas");
-        var riskPurity = new Risk("risk_purity", "An LLM / web reference leaking into the Engine breaks purity (ADR-0008)", "mod_stemmaengine");
+        // ── Review, which is the whole point ─────────────────────────────────────────────────
+        var flowReview = new DataFlow("flow_review", "per_reviewer", "sys_git", "read the diff");
 
-        // --- Open questions ---------------------------------------------------------
-        var qMethodBody = new Question("q_methodbody", "Will method-body edits ever come into scope? (v1: explicitly no)", "mod_stemmaengine");
-        var qConflict = new Question("q_conflict", "How are concurrent multi-client deltas merged without clobbering local edits?", "mod_hub");
-        var qOpCatalog = new Question("q_opcatalog", "Is the operations catalog complete and curated into the live docs?", "mod_operations");
+        // ── Planned, not shipped ─────────────────────────────────────────────────────────────
+        var flowPrompt = new DataFlow("flow_prompt", "cnt_web", "sys_llm", "prompt");
 
-        // --- Assumptions ------------------------------------------------------------
-        var asmGit = new Assumption("asm_git", "Persistence is Git; there is no runtime database", "mod_concepts");
-        var asmModelCode = new Assumption("asm_modelcode", "The C# source on disk IS the model database", "mod_concepts");
-        var asmPrimeOnce = new Assumption("asm_primeonce", "The sidecar is fetched once per workspace, then authoritative in memory", "mod_layoutcache");
-        var asmPurity = new Assumption("asm_purity", "Stemma.Engine references only Roslyn + Stemma.Model", "ctx_engine");
+        // ── The reference graph ──────────────────────────────────────────────────────────────
+        var depEngineReader = new Dependency("dep_engine_reader", "mod_engine", "mod_reader", "uses");
+        var depEngineWriter = new Dependency("dep_engine_writer", "mod_engine", "mod_writer", "uses");
+        var depEngineOps = new Dependency("dep_engine_ops", "mod_engine", "mod_ops", "uses");
+        var depEngineSidecar = new Dependency("dep_engine_sidecar", "mod_engine", "mod_sidecar", "uses");
+        var depEngineYaml = new Dependency("dep_engine_yaml", "mod_engine", "mod_yaml", "uses");
+        var depEngineRules = new Dependency("dep_engine_rules", "mod_engine", "mod_rules", "uses");
+        var depEngineExport = new Dependency("dep_engine_export", "mod_engine", "mod_export", "uses");
+        var depReaderRoslyn = new Dependency("dep_reader_roslyn", "mod_reader", "sys_roslyn", "uses");
+        var depReaderConcepts = new Dependency("dep_reader_concepts", "mod_reader", "mod_concepts", "reads");
+        var depWriterConcepts = new Dependency("dep_writer_concepts", "mod_writer", "mod_concepts", "reads");
+        var depModelOfConcepts = new Dependency("dep_modelof_concepts", "mod_modelof", "mod_concepts", "uses");
+        var depRulesConcepts = new Dependency("dep_rules_concepts", "mod_rules", "mod_concepts", "reads");
+        var depSidecarGit = new Dependency("dep_sidecar_git", "mod_sidecar", "sys_git", "writes");
+        var depYamlGit = new Dependency("dep_yaml_git", "mod_yaml", "sys_git", "writes");
 
-        // --- Ownership & lifecycle tags ---------------------------------------------
-        Tag.For(cntWeb, lifecycle: new Lifecycle(Status: "current", Phase: "GA"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
-        Tag.For(cntClient, lifecycle: new Lifecycle(Status: "current", Phase: "GA"), ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
+        var depRestEngine = new Dependency("dep_rest_engine", "mod_rest", "mod_engine", "calls");
+        var depScaffoldEngine = new Dependency("dep_scaffold_engine", "mod_scaffold", "mod_engine", "calls");
+        var depPdfYaml = new Dependency("dep_pdf_yaml", "mod_pdf", "mod_yaml", "reads");
+        var depLlmEngine = new Dependency("dep_llm_engine", "mod_llm", "mod_engine", "calls");
+
+        var depCanvasStore = new Dependency("dep_canvas_store", "mod_canvas", "mod_store", "uses");
+        var depCanvasLayout = new Dependency("dep_canvas_layout", "mod_canvas", "mod_layoutcache", "uses");
+        var depCanvasAuto = new Dependency("dep_canvas_auto", "mod_canvas", "mod_autolayout", "uses");
+        var depInspectorStore = new Dependency("dep_inspector_store", "mod_inspector", "mod_store", "uses");
+        var depBooksStore = new Dependency("dep_books_store", "mod_books", "mod_store", "uses");
+
+        var depRenderShellCanvas = new Dependency("dep_rendershell_canvas", "mod_rendershell", "mod_canvas", "uses");
+        var depRenderChromium = new Dependency("dep_render_chromium", "mod_render", "sys_chromium", "drives");
+        var depRenderShellDep = new Dependency("dep_render_shell", "mod_render", "mod_rendershell", "renders");
+        var depManifestRender = new Dependency("dep_manifest_render", "mod_manifest", "mod_render", "records");
+        var depCheckRules = new Dependency("dep_check_rules", "mod_check", "mod_rules", "uses");
+
+        var depFidelityWriter = new Dependency("dep_fidelity_writer", "mod_fidelity", "mod_writer", "tests");
+        var depFidelityOps = new Dependency("dep_fidelity_ops", "mod_fidelity", "mod_ops", "tests");
+
+        var depWebHostsEngine = new Dependency("dep_web_engine", "cnt_web", "mod_engine", "hosts");
+        var depClientBundles = new Dependency("dep_client_canvas", "cnt_client", "mod_canvas", "bundles");
+        var depCliRender = new Dependency("dep_cli_render", "cnt_cli", "mod_render", "hosts");
+        var depDesktopWeb = new Dependency("dep_desktop_web", "cnt_desktop", "cnt_web", "hosts");
+
+        // ── The three rules, as boxes that assert nothing about a system ─────────────────────
+        // Concepts, not Modules: a rule is not a thing that ships, it is a claim about how we work.
+        // Relation is the matching arrow — it carries a label and no architectural meaning.
+        var conFidelity = new Concept("con_fidelity", "A UI edit diffs as only that edit");
+        var conOneStore = new Concept("con_onestore", "No second store, ever");
+        var conPurity = new Concept("con_purity", "The engine knows nothing about the web");
+
+        var relFidelityWriter = new Relation("rel_fidelity_writer", "con_fidelity", "mod_writer", "implemented by");
+        var relFidelityFixtures = new Relation("rel_fidelity_fixtures", "con_fidelity", "mod_fidelity", "gated by");
+        var relStoreSidecar = new Relation("rel_store_sidecar", "con_onestore", "mod_sidecar", "the only exception");
+        var relStoreGit = new Relation("rel_store_git", "con_onestore", "sys_git", "which is");
+        var relPurityEngine = new Relation("rel_purity_engine", "con_purity", "mod_engine", "constrains");
+
+        // ── What keeps me up ─────────────────────────────────────────────────────────────────
+        var riskTrivia = new Risk("risk_trivia", "A rewrite that touches trivia turns every diff into noise", "mod_writer");
+        var riskSecondStore = new Risk("risk_secondstore", "A feature that wants state finds neither the code nor the sidecar convenient", "mod_sidecar");
+        var riskRefetch = new Risk("risk_refetch", "Re-fetching the sidecar mid-session throws away unflushed edits", "mod_layoutcache");
+        var riskDangling = new Risk("risk_dangling", "Ids are strings the compiler never checks, so a typo deletes a node silently", "mod_rules");
+        var riskExitZero = new Risk("risk_exitzero", "A headless render exits zero whatever it drew", "mod_render");
+        var riskSingleton = new Risk("risk_singleton", "The engine is process-global, so two renders would fight", "mod_render");
+
+        // ── What I have not decided ──────────────────────────────────────────────────────────
+        var qMethodBodies = new Question("q_methodbodies", "Do method bodies ever come into scope?", "mod_writer");
+        var qConflict = new Question("q_conflict", "How do two clients editing the same workspace merge?", "mod_hub");
+        var qLanguages = new Question("q_languages", "Is C# the notation, or the ceiling?", "mod_concepts");
+
+        // ── What everything else rests on ────────────────────────────────────────────────────
+        var asmGit = new Assumption("asm_git", "Persistence is Git, and there is no runtime database", "sys_git");
+        var asmSourceIsModel = new Assumption("asm_sourceismodel", "The source on disk is the model, not an export of it", "mod_concepts");
+        var asmPrimeOnce = new Assumption("asm_primeonce", "The sidecar is read once per workspace, then owned in memory", "mod_layoutcache");
+        var asmOneRenderer = new Assumption("asm_onerenderer", "There is one renderer, and the publication profile is a mode of it", "mod_rendershell");
+
+        // ── Lifecycle and ownership ──────────────────────────────────────────────────────────
+        // RAPID on the two decisions that actually get argued about. Everywhere else a squad and a
+        // domain is enough, and pretending otherwise would be governance theatre.
+        Tag.For(modWriter,
+            lifecycle: new Lifecycle(Status: "current", Phase: "fidelity-critical"),
+            ownership: new Ownership(Squad: "Core", Domain: "Engine",
+                Recommend: ["Core"], Agree: ["QA"], Perform: ["Core"], Input: ["Frontend"], Decide: ["Architect"]));
+
+        Tag.For(modConcepts,
+            lifecycle: new Lifecycle(Status: "current", Phase: "the vocabulary is the contract"),
+            ownership: new Ownership(Squad: "Core", Domain: "Model",
+                Recommend: ["Core"], Agree: ["Frontend", "QA"], Perform: ["Core"], Input: ["Docs"], Decide: ["Architect"]));
+
+        Tag.For(cntWeb, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
+        Tag.For(cntClient, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
+        Tag.For(cntCli, lifecycle: new Lifecycle(Status: "current", Phase: "shipped 2026-08"), ownership: new Ownership(Squad: "Core", Domain: "Headless"));
+        Tag.For(cntDesktop, lifecycle: new Lifecycle(Status: "current", Phase: "Photino, Linux tarball"), ownership: new Ownership(Squad: "Core", Domain: "Shell"));
+
         Tag.For(modEngine, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
-        Tag.For(modDslWriter, lifecycle: new Lifecycle(Status: "current", Phase: "fidelity-critical"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
-        Tag.For(modArchOps, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
-        Tag.For(modConcepts, ownership: new Ownership(Squad: "Core", Domain: "Model"));
-        Tag.For(modLlm, lifecycle: new Lifecycle(Status: "target", Phase: "AI access — Web-layer only"), ownership: new Ownership(Squad: "Core", Domain: "AI"));
-        Tag.For(modCanvas, ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
-        Tag.For(modInspector, ownership: new Ownership(Squad: "Frontend", Domain: "Inspector"));
-        Tag.For(modLayoutCache, lifecycle: new Lifecycle(Status: "current", Phase: "prime-once"), ownership: new Ownership(Squad: "Frontend", Domain: "Sidecar"));
-        Tag.For(modFidelity, lifecycle: new Lifecycle(Status: "current", Phase: "core gate"), ownership: new Ownership(Squad: "QA", Domain: "Quality"));
-        Tag.For(modValidation, lifecycle: new Lifecycle(Status: "current", Phase: "rule set growing"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
+        Tag.For(modRender, lifecycle: new Lifecycle(Status: "current", Phase: "one process per render"), ownership: new Ownership(Squad: "Core", Domain: "Headless"));
+        Tag.For(modManifest, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Headless"));
+        Tag.For(modFidelity, lifecycle: new Lifecycle(Status: "current", Phase: "the gate"), ownership: new Ownership(Squad: "QA", Domain: "Quality"));
+        Tag.For(modYaml, lifecycle: new Lifecycle(Status: "current", Phase: "trivia-preserving"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
+        Tag.For(modDiag, lifecycle: new Lifecycle(Status: "current", Phase: "local only, no network sink"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
+        Tag.For(modLayoutCache, lifecycle: new Lifecycle(Status: "current", Phase: "prime once"), ownership: new Ownership(Squad: "Frontend", Domain: "Sidecar"));
+        Tag.For(modBooks, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Frontend", Domain: "Narrative"));
+
         Tag.For(sysGit, lifecycle: new Lifecycle(Status: "current", Phase: "the only store"));
 
-        // The AI / LLM path is planned, not shipped (ADR-0008) — mark it so it does not read as fact.
-        Tag.For(capAi, lifecycle: new Lifecycle(Status: "target", Phase: "AI access — Web-layer only"));
+        // Not shipped, and marked so it cannot be read as shipped.
+        Tag.For(modLlm, lifecycle: new Lifecycle(Status: "target", Phase: "ADR-0008, web layer only"), ownership: new Ownership(Squad: "Core", Domain: "AI"));
+        Tag.For(capAi, lifecycle: new Lifecycle(Status: "target", Phase: "ADR-0008"));
         Tag.For(flowPrompt, lifecycle: new Lifecycle(Status: "target"));
-        Tag.For(flowLlm, lifecycle: new Lifecycle(Status: "target"));
-        Tag.For(flowAiOp, lifecycle: new Lifecycle(Status: "target"));
+        Tag.For(modScaffold, lifecycle: new Lifecycle(Status: "to-adapt", Phase: "F-007: still owes the workspace a STEMMA.md"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
+        Tag.For(modExport, lifecycle: new Lifecycle(Status: "to-adapt", Phase: "Mermaid still drops kinds outside its three lenses"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
 
         return Model.Of(
-            perArchitect, perAgent, perReviewer,
-            sysStemma, sysGit, sysBrowser, sysRoslyn, sysLlm, sysVite,
-            cntClient, cntWeb,
-            ctxClient, ctxWeb, ctxEngine, ctxModel, ctxQuality,
+            perArchitect, perReviewer, perAgent,
+            sysGit, sysRoslyn, sysChromium, sysLlm, sysStemma,
+            cntWeb, cntClient, cntCli, cntDesktop,
+            ctxModel, ctxEngine, ctxWeb, ctxClient, ctxHeadless, ctxQuality,
             modConcepts, modModelOf,
-            modEngine, modDslReader, modDslWriter, modArchOps, modViews, modOps, modUndo, modSidecar, modValidation,
-            modRest, modHub, modLlm,
-            modStore, modLayoutCache, modCanvas, modInspector, modAutoLayout, modRichText, modSignalrClient, modApiClient,
+            modEngine, modReader, modWriter, modOps, modSidecar, modYaml, modRules, modExport,
+            modRest, modHub, modScaffold, modPdf, modDiag, modLlm,
+            modCanvas, modInspector, modStore, modLayoutCache, modAutoLayout, modBooks,
+            modRender, modCheck, modManifest, modRenderShell,
             modFidelity,
-            capLoad, capApply, capFidelity, capRender, capEdit, capSync, capLayout, capAi,
-            ucEdit, ucReview,
-            flowGesture, flowOp, flowInvoke, flowRewrite, flowRecompute, flowDelta,
-            flowOpen, flowLoad, flowRoslyn, flowRead, flowSnapshot,
-            flowPresent, flowSidecar, flowPrime,
-            flowPrompt, flowLlm, flowAiOp,
-            flowServe, flowBuild, flowReview,
-            depEngineDslReader, depEngineDslWriter, depEngineArchOps, depEngineViews, depEngineOps,
-            depEngineUndo, depEngineSidecar, depEngineValidation,
-            depArchOpsDslWriter, depArchOpsDslReader, depArchOpsOps, depArchOpsRoslyn,
-            depDslReaderRoslyn, depDslWriterRoslyn, depDslReaderConcepts, depDslWriterConcepts,
-            depViewsConcepts, depViewsRoslyn,
-            depEngineGit, depSidecarGit, depValidationConcepts, depModelOfConcepts,
-            depRestEngine, depHubEngine, depHubOps, depRestSidecar, depLlmServiceLlm, depLlmServiceEngine,
-            depStoreApiClient, depStoreSignalrClient, depCanvasStore, depCanvasAutoLayout,
-            depCanvasLayoutCache, depInspectorStore, depInspectorRichText, depInspectorLayoutCache,
-            depStoreLayoutCache, depApiClientWeb, depSignalrClientHub,
-            depWebHostsEngine, depWebHostsRest, depWebHostsHub, depWebHostsLlm,
-            depClientBundlesStore, depClientBundlesCanvas,
-            depFidelityEngine, depFidelityArchOps, depFidelityDslWriter,
-            riskFidelity, riskNormalize, riskParallelStore, riskRefetch, riskDangling, riskDragRebuild, riskPurity,
-            qMethodBody, qConflict, qOpCatalog,
-            asmGit, asmModelCode, asmPrimeOnce, asmPurity);
+            capEdit, capRewrite, capProject, capNarrate, capHeadless, capProve, capAi,
+            ucRename, ucPresent, ucIllustrate,
+            conFidelity, conOneStore, conPurity,
+            flowGesture, flowOp, flowApply, flowRewrite, flowWrite,
+            flowOpen, flowParse,
+            flowLayout, flowSidecar,
+            flowAuthor, flowInvoke, flowSpawn, flowImage,
+            flowReview, flowPrompt,
+            depEngineReader, depEngineWriter, depEngineOps, depEngineSidecar, depEngineYaml,
+            depEngineRules, depEngineExport,
+            depReaderRoslyn, depReaderConcepts, depWriterConcepts,
+            depModelOfConcepts, depRulesConcepts, depSidecarGit, depYamlGit,
+            depRestEngine, depScaffoldEngine, depPdfYaml, depLlmEngine,
+            depCanvasStore, depCanvasLayout, depCanvasAuto, depInspectorStore, depBooksStore,
+            depRenderShellCanvas, depRenderChromium, depRenderShellDep, depManifestRender, depCheckRules,
+            depFidelityWriter, depFidelityOps,
+            depWebHostsEngine, depClientBundles, depCliRender, depDesktopWeb,
+            relFidelityWriter, relFidelityFixtures, relStoreSidecar, relStoreGit, relPurityEngine,
+            riskTrivia, riskSecondStore, riskRefetch, riskDangling, riskExitZero, riskSingleton,
+            qMethodBodies, qConflict, qLanguages,
+            asmGit, asmSourceIsModel, asmPrimeOnce, asmOneRenderer);
     }
 }

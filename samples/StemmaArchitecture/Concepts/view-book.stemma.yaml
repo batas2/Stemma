@@ -1,0 +1,91 @@
+version: 1
+
+# Three walks over the same six views. Nobody needs all three: pick the one whose audience you
+# are standing in front of. Each page names a view and the thing you would actually say while
+# it is on the screen, which is the part a slide deck normally loses.
+books:
+  # =========================================================================
+  - id: book_tour
+    name: Stemma in ten minutes
+    audience: engineering
+    pages:
+      - viewId: view_shape
+        title: Four things ship
+        narrative: |
+          Start here. A web host, a canvas in the browser, a command-line tool and a desktop
+          window that wraps the first two. Underneath sit the only two things Stemma cannot do
+          without: Roslyn, which reads and rewrites the C#, and a Git working tree, which is
+          where the model lives. There is no database on this picture because there is no
+          database anywhere.
+
+      - viewId: view_write
+        title: A gesture becomes a diff
+        narrative: |
+          Follow the top row left to right, then drop down and come back along the bottom. You
+          rename a box on the canvas, the canvas sends one operation over SignalR, the hub hands
+          it to the engine, the engine goes through DslWriter, DslWriter asks Roslyn for a
+          targeted edit, and Roslyn writes Architecture.cs. Seven hops, and the last one is a
+          line in `git diff`. The dashed arrow going back to Roslyn is the read path: the same
+          file, parsed, is where the model came from in the first place.
+
+      - viewId: view_deps
+        title: What the engine is allowed to know
+        narrative: |
+          The facade on the left, its leaves on the right, and nothing pointing back. The engine
+          references Roslyn and the record vocabulary and nothing else — not the web layer, not
+          the client, not an HTTP type. That constraint is why the fidelity suite can test the
+          whole write path without starting a server, and it is the first thing to check when a
+          new feature wants to reach for a convenience.
+
+  # =========================================================================
+  - id: book_review
+    name: Why the diff is worth trusting
+    audience: leadership
+    pages:
+      - viewId: view_principles
+        title: Three rules that win arguments
+        narrative: |
+          These are not aspirations. Each one has something on the right that enforces it, and
+          when a rule and a feature disagree, the rule wins and the feature gets redesigned.
+          The middle row is the one people push back on hardest: everything that is not the C#
+          model lives in one committed sidecar, and a third store has been proposed and refused
+          more than once.
+
+      - viewId: view_write
+        title: Where the guarantee actually lives
+        narrative: |
+          The guarantee is not a policy, it is DslWriter plus the fixtures behind it. A rename
+          rewrites the declaration and the references Roslyn can see, and touches nothing else:
+          no reordering, no reformatting, no lost comment. Every operation carries minimal,
+          realistic and deliberately pathological round-trip fixtures, and when they fail the
+          implementation is wrong, not the test.
+
+      - viewId: view_concerns
+        title: What I am not sure about
+        narrative: |
+          The honest slide. A risk, an open question and a standing assumption, each anchored to
+          the thing it concerns rather than filed in a wiki nobody opens. The assumption at the
+          bottom is the one everything else rests on: if the source on disk stops being the
+          model, none of the rest of this argument survives.
+
+  # =========================================================================
+  - id: book_agent
+    name: Drawing without a mouse
+    audience: engineering
+    pages:
+      - viewId: view_headless
+        title: One command, no browser
+        narrative: |
+          This is the half with no person in it. An agent writes three text files by hand,
+          runs `stemma render`, and the CLI starts a short-lived host of its own, drives a bare
+          canvas through Chromium, and writes a PNG next to a manifest. The short-lived host is
+          the reason two renders never fight over one workspace.
+
+      - viewId: view_headless
+        title: The manifest is the point
+        narrative: |
+          The image is the boring output. The manifest beside it fingerprints the model, the
+          view, the layout and the profile it was drawn from, so `stemma render --check` can
+          tell a build that a committed picture has stopped matching its source. That is the
+          "cannot drift" claim extended past the app window, and it is the thing a drawing tool
+          structurally cannot offer.

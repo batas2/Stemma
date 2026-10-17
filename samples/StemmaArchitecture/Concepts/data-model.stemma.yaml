@@ -1,0 +1,58 @@
+version: 1
+
+# What Stemma holds in memory while a workspace is open, and who owns each piece.
+# Worth reading next to the assumption `asm_git` in the C# model: none of this is persisted as
+# data. It is projected from source on open and thrown away on close, which is why there is no
+# migration story anywhere in the repository. `owner` points at the module that builds it, so
+# the cross-adapter check fails loudly the day somebody deletes that module.
+concepts:
+  - id: agg_model
+    kind: AggregateRoot
+    name: Model
+    layer: data
+    domain: architecture
+    owner: mod_modelof
+
+  - id: ent_element
+    kind: DomainEntity
+    name: ArchElement
+    layer: data
+    parent: agg_model
+
+  - id: ent_link
+    kind: DomainEntity
+    name: ArchLink
+    layer: data
+    parent: agg_model
+
+  - id: vo_lifecycle
+    kind: ValueObject
+    name: Lifecycle
+    layer: data
+    parent: agg_model
+
+  - id: vo_ownership
+    kind: ValueObject
+    name: Ownership
+    layer: data
+    parent: agg_model
+
+  - id: agg_sidecar
+    kind: AggregateRoot
+    name: LayoutSidecar
+    layer: data
+    domain: presentation
+    owner: mod_sidecar
+
+  - id: ent_viewlayout
+    kind: DomainEntity
+    name: ViewLayout
+    layer: data
+    parent: agg_sidecar
+
+  - id: agg_operation
+    kind: AggregateRoot
+    name: Operation
+    layer: data
+    domain: editing
+    owner: mod_ops

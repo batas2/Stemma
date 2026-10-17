@@ -1,52 +1,88 @@
-# StemmaArchitecture — Stemma modelling itself
+# StemmaArchitecture — Stemma, modelled in Stemma
 
-A Stemma workspace whose subject **is Stemma**. The architecture of the tool described in
-[`.doc/architecture/`](../../.doc/architecture/) is expressed here in Stemma's own DSL, so the model
-doubles as a self-referential feature demo and as living documentation of the system.
+The architecture of the tool, expressed in the tool's own vocabulary. Two reasons it exists.
 
-It mirrors the structure of the reference [`AuroraRail`](../AuroraRail/) sample:
-deployable units → C4 Containers, layers → Bounded Contexts, subsystems → Modules, references →
-Dependencies, documented runtime flows → DataFlows, and the inviolable rules → Risks / Questions /
-Assumptions with lifecycle / ownership tags.
+**It is checkable.** Every element here describes code one directory up. A modelling tool whose
+own model cannot be verified is asking for a lot of trust, and the usual demo workspace — a
+fictional company designed so the tool looks good — cannot answer that. If something in this model
+is wrong, `grep` will tell you.
 
-## The three dedicated views
+**It is the feature tour.** Between `Architecture/`, `Views/`, `Concepts/` and the committed
+`stemma.layout.json`, every part of the vocabulary is exercised at least once.
 
-| View | Lens | Story |
-|---|---|---|
-| **System & Sync Flow** (`view_sync`) | `moduleMap` | Runtime. Actors, the React SPA and the ASP.NET host, the `StemmaEngine` facade, and every neighbouring system, wired by the write path (gesture → operation → `DocumentEditor` rewrite → delta), the load path (open → Roslyn parse → snapshot), the presentation path (debounced PUT → `stemma.layout.json` → prime), and the AI path (prompt → LLM service → operations). *"How an edit travels."* |
-| **Code & Ownership** (`view_code`) | `moduleMap` | Structure. The five layer Bounded Contexts (Client, Web, Engine, Model, Quality) with their Modules, Capabilities, and use cases, plus the open Risks / Questions / Assumptions — the fidelity contract, the no-parallel-store rule, prime-the-sidecar-once, engine purity. *"How the code is organised, who owns it, what's open."* |
-| **Dependency Graph** (`view_deps`) | `dependencyGraph` | Build / call time. The module "uses / calls" graph across the four layers (the lens renders modules, so containers and external systems are scoped out — their edges live in the model and surface in the Flow view). Makes the **purity boundary** visible: Web and Client modules point inward to the Engine, the Engine points inward to the Model — and **no** Engine module ever points out to a Web, LLM, or Client module. *"What depends on what."* |
+```bash
+./run.sh --dev --workspace samples/StemmaArchitecture
+```
 
-## How it maps to the real source
+## What is in it
 
-| Model element | Real artefact |
+| | |
 |---|---|
-| `ctx_model` · `mod_concepts`, `mod_modelof` | `src/Stemma.Model` (`Concepts.cs`, `Model.cs`) |
-| `ctx_engine` · `mod_stemmaengine`, `mod_dslreader`, `mod_dslwriter`, `mod_archops`, `mod_viewsadapter`, `mod_operations`, `mod_undo`, `mod_sidecar`, `mod_validation` | `src/Stemma.Engine` (`Workspace/`, `ArchModel/`, `Operations/`, `Validation/`) |
-| `ctx_web` · `mod_rest`, `mod_hub`, `mod_llmservice` | `src/Stemma.Web` (REST endpoints, `Hubs/`, `Services/`) |
-| `ctx_client` · `mod_store`, `mod_layoutcache`, `mod_canvas`, `mod_inspector`, … | `src/Stemma.Web.Client` (`lib/store.ts`, `lib/layout.ts`, `components/ArchCanvas.tsx`, …) |
-| `cnt_web`, `cnt_client` | the ASP.NET host and the served React SPA bundle |
-| `sys_git`, `sys_roslyn`, `sys_llm` | the Git working tree, Roslyn `MSBuildWorkspace`, the LLM provider |
+| Elements | All eleven kinds: person, software system, container, bounded context, module, capability, use case, risk, question, assumption, and `Concept` |
+| Links | All three: `DataFlow` with payloads and direction, `Dependency` with a kind, `Relation` for arrows that claim nothing |
+| Tags | Lifecycle (`current`, `target`, `to-adapt`) and ownership, including RAPID roles on the two decisions that actually get argued about |
+| Views | Six, each answering one question, each at or under seven boxes |
+| Books | Three, for three audiences, in `Concepts/view-book.stemma.yaml` |
+| Data layer | Aggregates, entities and value objects in `Concepts/data-model.stemma.yaml` |
+| Resource layer | The HTTP surface as a tree, in `Concepts/resources.stemma.yaml` |
+| Presentation | Layout constraints, edge docking, per-edge routing and line style, markdown notes, and free-form ink — all in the sidecar, none of it in the model |
 
-The Risks / Questions / Assumptions encode the inviolable rules from
-[`conventions.md`](../../.doc/engineering/conventions.md) and
-[`engine-backend.md`](../../.doc/architecture/engine-backend.md):
-round-trip fidelity, never `NormalizeWhitespace()`, never a third data store, prime the sidecar once,
-and engine purity (ADR-0008).
+## The six views
 
-## Files
+| View | The question it answers |
+|---|---|
+| `view_shape` | What actually ships, and what it cannot do without |
+| `view_write` | How a gesture on a canvas becomes a line in a diff |
+| `view_headless` | How a diagram gets produced with no browser and no mouse |
+| `view_deps` | What the engine is allowed to know about |
+| `view_concerns` | What I am not sure about, anchored to what it concerns |
+| `view_principles` | The three rules that override any argument, and what enforces each |
+
+## Things this workspace learned the hard way
+
+Worth reading before building your own, because each of these cost a rewrite here.
+
+**A view draws every link between its members.** There is no way to hide one. So if two elements
+have a second relationship you did not want in this particular picture, the picture gets it anyway.
+Twice in this workspace the fix was to correct the *model* rather than the layout: an operation
+going out and a delta coming back is one `twoway` flow, not two arrows, and a `Dependency` that
+restates what a `DataFlow` already says is a modelling smell that renders as a smeared label.
+
+**Edge labels sit at the midpoint between two nodes, not along the routed path.** Docking handles
+and per-edge routing move the *line* and leave the label where it was. Two labelled edges between
+the same pair will overlap, and no sidecar setting fixes it — `labelOffset` is in the schema and in
+the engine's type and is read by nothing in the client. Design around it: one labelled edge per
+pair, per view.
+
+**Node titles are names, not descriptions.** `StemmaEngine · the façade` reads fine in a list and
+overflows its box on a canvas. The explanation belongs in a note, which is why six elements here
+carry markdown and every title is short.
+
+**The `dependencyGraph` lens draws modules, bounded contexts and capabilities and silently drops
+everything else.** An earlier `view_deps` listed Roslyn and rendered six boxes out of seven with no
+warning. If a box you asked for is missing, check the lens before you check your ids.
+
+**Row-align pairs in a grid.** `view_concerns` puts each concern in the same row as the thing it is
+about. The first version did not, and four `about` edges crossed the whole diagram to find their
+targets.
+
+## The one warning it ships with
 
 ```
-StemmaArchitecture/
-├── StemmaArchitecture.csproj      # references src/Stemma.Model (DSL vocabulary only)
-├── Architecture/Architecture.cs  # static Build() → Model.Of(...)
-├── Views/
-│   ├── SystemAndSyncFlow.cs      # view_sync
-│   ├── CodeAndOwnership.cs        # view_code
-│   └── DependencyGraph.cs         # view_deps
-└── stemma.layout.json             # presentation sidecar: positions, styles, notes, custom props
+warning view/mixed-register   view 'view_principles' mixes 3 Concept(s) with 3 structural elements
 ```
 
-> The C# compiler does **not** check the string ids used in flows / dependencies / `AboutId` / views.
-> A typo there is a dangling reference, not a build error — so the ids in this workspace are
-> cross-checked against the declared elements.
+Deliberate, and the demonstration. The check is right that mixing rules with the things that ship
+is usually a mistake. Here it is the entire point, because a rule with nothing enforcing it is a
+poster. A warning you can explain is more useful in a sample than a warning you avoided by drawing
+something duller.
+
+Everything else is clean: `stemma validate --workspace samples/StemmaArchitecture` reports zero
+errors.
+
+## What is marked as not shipped
+
+The model says `target` in two places and it means it. The LLM service and the `cap_ai` capability
+are ADR-0008 and are not built. The workspace scaffold is `to-adapt` because F-007 still owes every
+new workspace a `STEMMA.md`, and the Mermaid exporter is `to-adapt` because it drops element kinds
+outside its three lenses. A self-model that flatters the project is worth nothing.

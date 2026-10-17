@@ -1,0 +1,50 @@
+version: 1
+
+# The HTTP surface the canvas and the CLI both talk to. Small on purpose: everything that
+# changes the model goes through the operation stream on the hub instead, so this tree is
+# mostly load, snapshot and the one debounced write that carries presentation.
+concepts:
+  - id: res_root
+    kind: Resource
+    name: StemmaApi
+    layer: api
+    parent: ""
+
+  - id: res_workspace
+    kind: Resource
+    name: Workspace
+    layer: api
+    parent: res_root
+    action_open: "open:w"
+    action_snapshot: "snapshot:r"
+
+  - id: res_layout
+    kind: Resource
+    name: Layout
+    layer: api
+    parent: res_workspace
+    action_get: "get:r"
+    action_put: "put:w"
+
+  - id: res_views
+    kind: Resource
+    name: Views
+    layer: api
+    parent: res_workspace
+    action_list: "list:r"
+
+  - id: res_export
+    kind: Resource
+    name: Export
+    layer: api
+    parent: res_workspace
+    action_drawio: "drawio:r"
+    action_mermaid: "mermaid:r"
+
+  - id: res_diagnostics
+    kind: Resource
+    name: Diagnostics
+    layer: api
+    parent: res_root
+    action_get: "get:r"
+    action_bundle: "bundle:r"
