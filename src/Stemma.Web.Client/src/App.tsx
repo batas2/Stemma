@@ -74,6 +74,8 @@ export default function App() {
       if (s) {
         setWs(s);
         primeLayoutSidecar(s.rootPath).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
+        // A view file added or deleted outside Stemma — a pull, an IDE — shows now, not on reopen.
+        void useApp.getState().syncViews();
       }
       if ((a as unknown) !== PRESERVE) setArch(a);
       setViolations(v);

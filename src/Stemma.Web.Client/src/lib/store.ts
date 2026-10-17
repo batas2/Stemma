@@ -8,8 +8,9 @@ import {
   loadCustomProps, setCustomProp as setCP, removeCustomProp as rmCP,
   renameCustomProp as renameCP, type CustomProps,
 } from './customProps';
-import { saveServerView, deleteServerView, listServerViews } from './api';
-import { loadViewLayoutModes, saveViewLayoutMode } from './layout';
+import { saveServerView, deleteServerView, listServerViews, type ServerView } from './api';
+import { isSidecarPrimed, loadViewLayoutModes, saveViewLayoutMode } from './layout';
+import { friendlyOpError } from './opError';
 import type { Shape, ShapeKind } from './shapes';
 
 /** What the canvas pointer is doing right now. `select` is the default (drag/select model nodes). */
@@ -42,24 +43,55 @@ export const DEFAULT_BYTYPE_PARAMS: ByTypeParams = { gap: 40, groupGap: 100, row
 export type LayoutMode = 'custom' | 'force' | 'hierarchical' | 'byType';
 
 function viewLayoutsKey(root: string): string { return `stemma.viewLayouts:${root}`; }
+function viewLayoutsMigratedKey(root: string): string { return `stemma.viewLayouts.migrated:${root}`; }
 /**
- * Layout modes for a workspace. The committed sidecar is the source of truth; the localStorage
- * entry is only a migration source for workspaces last opened before the mode was committed, and
- * anything found there is written into the sidecar on read so it starts travelling in Git.
+ * Layout modes for a workspace. The committed sidecar is the source of truth once it has been read;
+ * until then, the localStorage copy is drawn. That copy is also where modes lived before they were
+ * committed, so the first time a workspace's sidecar is read, a mode only the browser has is moved
+ * into it — once. After that, a mode the sidecar lacks was taken out of it, and moving it up on
+ * every read put this browser's memory back over the file each time it was opened (B-012).
  */
 function loadViewLayouts(root: string): Record<string, LayoutMode> {
   if (typeof window === 'undefined') return {};
+  let cached: Record<string, LayoutMode> = {};
+  try { const raw = localStorage.getItem(viewLayoutsKey(root)); cached = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
+  if (!isSidecarPrimed(root)) return cached;
+
   const committed = loadViewLayoutModes(root) as Record<string, LayoutMode>;
-
-  let legacy: Record<string, LayoutMode> = {};
-  try { const raw = localStorage.getItem(viewLayoutsKey(root)); legacy = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
-
-  // Committed wins; anything only in localStorage is migrated up, once.
-  const merged: Record<string, LayoutMode> = { ...legacy, ...committed };
-  for (const [key, mode] of Object.entries(merged)) {
-    if (committed[key] !== mode) saveViewLayoutMode(root, key, mode);
+  let modes = committed;
+  if (localStorage.getItem(viewLayoutsMigratedKey(root)) !== '1') {
+    modes = { ...cached, ...committed };
+    for (const [key, mode] of Object.entries(modes)) {
+      if (committed[key] !== mode) saveViewLayoutMode(root, key, mode);
+    }
+    try { localStorage.setItem(viewLayoutsMigratedKey(root), '1'); } catch { /* ignore */ }
   }
-  return merged;
+  try { localStorage.setItem(viewLayoutsKey(root), JSON.stringify(modes)); } catch { /* ignore */ }
+  return modes;
+}
+
+/**
+ * View saves and deletes the engine has not answered yet, by view id (`view: null` for a delete).
+ * The list of views is what Views/*.cs declares, read again on every refresh; until the engine has
+ * written a change, that list does not have it, and the view would vanish and come back.
+ */
+const viewsInFlight = new Map<string, { root: string; view: CustomView | null }>();
+
+/** The list the canvas shows: the code's, with what is still on its way laid over it. */
+function viewsFromCode(root: string, fromCode: ServerView[], known: CustomView[]): CustomView[] {
+  const createdAt = new Map(known.map((v) => [v.id, v.createdAt]));
+  const views: CustomView[] = fromCode.map((s) => ({
+    id: s.id, name: s.name, baseView: s.baseView as CustomView['baseView'], elementIds: s.elementIds,
+    createdAt: createdAt.get(s.id) ?? new Date().toISOString(),
+  }));
+  for (const [id, pending] of viewsInFlight) {
+    if (pending.root !== root) continue;
+    const at = views.findIndex((v) => v.id === id);
+    if (pending.view === null) { if (at >= 0) views.splice(at, 1); }
+    else if (at >= 0) views[at] = pending.view;
+    else views.push(pending.view);
+  }
+  return views;
 }
 function saveViewLayouts(root: string, m: Record<string, LayoutMode>, changedKey?: string): void {
   if (typeof window === 'undefined') return;
@@ -137,6 +169,8 @@ interface AppState {
   activeBookPageIndex: number;
   setWorkspace: (ws: WorkspaceModel | null) => void;
   rehydratePresentation: () => void;
+  /** Re-read the views from Views/*.cs; the list in the browser is only a cache of it (B-012). */
+  syncViews: () => Promise<void>;
   setArch: (a: ArchModel | null) => void;
   setView: (v: ViewKind) => void;
   setCustomViews: (vs: CustomView[]) => void;
@@ -192,6 +226,31 @@ interface AppState {
   setActiveBookPageIndex: (i: number) => void;
   nextBookPage: () => void;
   prevBookPage: () => void;
+}
+
+/**
+ * Write a view to Views/*.cs (or delete it, for `null`). The list already shows the change; once
+ * the engine answers, it is read again from the code, so a refused or lost write is put back as the
+ * code has it rather than left looking saved — and the refusal is said, not just logged.
+ */
+function sendView(get: () => AppState, id: string, view: CustomView | null): void {
+  const root = get().workspace?.rootPath;
+  if (!root) return;
+  const pending = { root, view };
+  viewsInFlight.set(id, pending);
+  const request = view
+    ? saveServerView({ id: view.id, name: view.name, baseView: view.baseView, elementIds: view.elementIds })
+    : deleteServerView(id);
+  request
+    .then((refused) => { if (refused) get().setToast({ kind: 'error', text: friendlyOpError(refused) }); })
+    .catch((error) => {
+      reportFailure('Views', ClientEvent.RequestFailed, view ? 'Saving the view' : 'Deleting the view')(error);
+      get().setToast({ kind: 'error', text: view ? "The view couldn't be saved." : "The view couldn't be deleted." });
+    })
+    .finally(() => {
+      if (viewsInFlight.get(id) === pending) viewsInFlight.delete(id);
+      void get().syncViews();
+    });
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -256,15 +315,25 @@ export const useApp = create<AppState>((set, get) => ({
     const nStyles = loadNodeStyles(ws.rootPath);
     const cProps = loadCustomProps(ws.rootPath);
     set({ customViews: views, activeCustomViewId: active, openViewIds: openIds, edgeStyles: eStyles, nodeStyles: nStyles, customProps: cProps, collapsedBcs: new Set(), viewLayouts: loadViewLayouts(ws.rootPath) });
-    listServerViews().then((server) => {
-      if (server.length === 0) return;
-      const merged = [
-        ...server.map((s) => ({ id: s.id, name: s.name, baseView: s.baseView as 'all', elementIds: s.elementIds, createdAt: new Date().toISOString() })),
-        ...views.filter((v) => !server.some((s) => s.id === v.id)),
-      ];
-      set({ customViews: merged });
-      saveViews(ws.rootPath, merged);
-    }).catch(reportFailure('Views', ClientEvent.RequestFailed, 'Merging server views'));
+    void get().syncViews();
+  },
+  syncViews: async () => {
+    const ws = get().workspace;
+    if (!ws) return;
+    let fromCode: ServerView[];
+    try { fromCode = await listServerViews(); }
+    catch (error) { reportFailure('Views', ClientEvent.RequestFailed, 'Reading the views')(error); return; }
+    if (get().workspace?.rootPath !== ws.rootPath) return;
+
+    const views = viewsFromCode(ws.rootPath, fromCode, get().customViews);
+    const ids = new Set(views.map((v) => v.id));
+    const openViewIds = get().openViewIds.filter((id) => ids.has(id));
+    const active = get().activeCustomViewId;
+    const stillActive = active !== null && ids.has(active);
+    set({ customViews: views, openViewIds, ...(stillActive ? {} : { activeCustomViewId: null }) });
+    saveViews(ws.rootPath, views);
+    saveOpenViews(ws.rootPath, openViewIds);
+    if (active !== null && !stillActive) saveActiveView(ws.rootPath, null);
   },
   // Re-read styles/custom-props from the committed sidecar once it finishes loading
   // (the localStorage values loaded synchronously on open are then superseded by the repo copy).
@@ -275,6 +344,7 @@ export const useApp = create<AppState>((set, get) => ({
       nodeStyles: loadNodeStyles(ws.rootPath),
       edgeStyles: loadEdgeStyles(ws.rootPath),
       customProps: loadCustomProps(ws.rootPath),
+      viewLayouts: loadViewLayouts(ws.rootPath),
     });
   },
   setArch: (a) => set({ arch: a }),
@@ -300,9 +370,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ customViews: next });
     const ws = get().workspace;
     if (ws) saveViews(ws.rootPath, next);
-    // Mirror to source as Views/<Name>.cs (best-effort; localStorage stays the in-flight cache).
-    saveServerView({ id: v.id, name: v.name, baseView: v.baseView, elementIds: v.elementIds })
-      .catch(reportFailure('Views', ClientEvent.RequestFailed, 'Saving the view'));
+    sendView(get, v.id, v);
   },
   removeCustomView: (id) => {
     const next = get().customViews.filter((v) => v.id !== id);
@@ -315,7 +383,7 @@ export const useApp = create<AppState>((set, get) => ({
       saveOpenViews(ws.rootPath, nextOpen);
       if (wasActive) saveActiveView(ws.rootPath, null);
     }
-    deleteServerView(id).catch(reportFailure('Views', ClientEvent.RequestFailed, 'Deleting the view'));
+    sendView(get, id, null);
   },
   setActiveCustomView: (id) => {
     // Activating a saved view also opens it as a bottom tab (closing later only hides the tab).
@@ -350,8 +418,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
     const updated = next.find((v) => v.id === activeCustomViewId);
-    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds })
-      .catch(reportFailure('Views', ClientEvent.RequestFailed, 'Saving the view'));
+    if (updated) sendView(get, updated.id, updated);
   },
   removeElementFromActiveView: (elementId) => {
     const { activeCustomViewId, customViews, workspace } = get();
@@ -364,8 +431,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
     const updated = next.find((v) => v.id === activeCustomViewId);
-    if (updated) saveServerView({ id: updated.id, name: updated.name, baseView: updated.baseView, elementIds: updated.elementIds })
-      .catch(reportFailure('Views', ClientEvent.RequestFailed, 'Saving the view'));
+    if (updated) sendView(get, updated.id, updated);
   },
   setSidebarOpen: (b) => set({ sidebarOpen: b }),
   // Remember the user's explicit panel choice per domain so selection changes restore it.

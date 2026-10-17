@@ -58,11 +58,22 @@ Frontend rules that keep it correct:
    root cause of the "drag snaps back / routing reverts / canvas blinks" bugs.
 3. **One shared cache** routes node styles, edge styles, notes, custom props, and shapes — they must
    not keep separate caches that clobber each other on save.
+4. **Write nothing before it has been read.** Until then the cache holds only this session's edits,
+   and a PUT would replace the whole file with them. Edits made while it loads are held back and
+   written once it has been read, merged over it.
+5. **The browser's copy is a cache, never a source.** `localStorage` keeps what was drawn last, so
+   the canvas has something to show before the sidecar arrives. Once it has, the sidecar *replaces*
+   that copy; it is not merged with it, because an entry only the browser has is one the repository
+   no longer has ([B-012](../bugs/B-012-the-browser-outranks-the-repository.md)). The one exception
+   is the migration of layout modes from before they were committed, which runs once per workspace.
 
 ## The read path & live sync
 
 - On open: REST returns the model snapshot + the engine primes the sidecar; the client hydrates
   presentation once (`stemma:sidecar-primed` → `rehydratePresentation`).
+- Views are read from `Views/*.cs` on open and on every refresh, and the browser's list is a cache
+  of that. A save or delete still on its way is laid over it until the engine answers, so a refresh
+  in between does not take the change away.
 - During a session: model edits broadcast as **deltas** over SignalR; the client merges them.
   External file edits (git pull, IDE) are picked up by the engine and broadcast too — once per change,
   and without the engine writing the file in reply. An edit computed from a version of a file the

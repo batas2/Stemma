@@ -1,4 +1,4 @@
-import type { ArchModel, Book, RecentEntry, Violation, WorkspaceModel } from './types';
+import type { ArchModel, Book, OperationFailed, RecentEntry, Violation, WorkspaceModel } from './types';
 
 const BASE = '';
 
@@ -89,25 +89,39 @@ export async function listViolations(): Promise<Violation[]> {
 
 export interface ServerView { id: string; name: string; baseView: string; elementIds: string[]; }
 
+/**
+ * The views `Views/*.cs` declares. A list that cannot be read throws rather than coming back
+ * empty, because the caller takes this list as the whole truth (B-012).
+ */
 export async function listServerViews(): Promise<ServerView[]> {
   const r = await request(`${BASE}/api/workspace/views`);
-  if (r.status === 404) return [];
-  if (!r.ok) return [];
+  if (!r.ok) throw new Error(`views fetch failed: ${r.status}`);
   return r.json();
 }
 
-export async function saveServerView(view: ServerView): Promise<void> {
+/** Save a view through the engine; resolves to its refusal (409) when it declines the edit. */
+export async function saveServerView(view: ServerView): Promise<OperationFailed | null> {
   const r = await request(`${BASE}/api/workspace/views`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(view),
   });
+  if (r.status === 409) return refusal(r);
   if (!r.ok) throw new Error(`view save failed: ${r.status} ${await r.text()}`);
+  return null;
 }
 
-export async function deleteServerView(viewId: string): Promise<void> {
+/** Delete a view through the engine. One that is already gone (404) is not a failure. */
+export async function deleteServerView(viewId: string): Promise<OperationFailed | null> {
   const r = await request(`${BASE}/api/workspace/views/${encodeURIComponent(viewId)}`, { method: 'DELETE' });
+  if (r.status === 409) return refusal(r);
   if (!r.ok && r.status !== 404) throw new Error(`view delete failed: ${r.status}`);
+  return null;
+}
+
+async function refusal(r: Response): Promise<OperationFailed> {
+  const body = (await r.json().catch(() => ({}))) as { reason?: string; message?: string };
+  return { opId: '', reason: body.reason ?? 'ApplyFailed', message: body.message ?? '' };
 }
 
 export async function exportDrawio(): Promise<string> {

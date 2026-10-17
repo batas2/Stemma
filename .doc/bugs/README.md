@@ -26,6 +26,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-009](./B-009-edits-rebuild-the-declaration.md) | Setting an attribute or a tag rewrote the whole declaration, and removing one took the lines above it | S2 major | engine | Fixed |
 | [B-010](./B-010-saving-a-view-rewrites-its-file.md) | Saving a view from the canvas regenerated its file, and deleting one removed any file that quoted its id | S2 major | web | Fixed |
 | [B-011](./B-011-type-operations-ignore-layout.md) | The type operations wrote members with no layout and removed them by the wrong rules | S3 minor | engine | Fixed |
+| [B-012](./B-012-the-browser-outranks-the-repository.md) | The browser's copy of a workspace outranked the repository, and could replace its sidecar | S2 major | sidecar | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 
@@ -64,6 +65,11 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
   so a real save inside the window was never seen; and an echo arriving late was taken in again and
   written back, forever. Tell the engine's own writes apart by **content** — the file says what the
   workspace holds — never by the clock. See [B-008](./B-008-outside-edit-is-written-back-forever.md).
+- **"The committed copy wins" written as a merge** → `{ ...local, ...committed }` lets the committed
+  copy win where both have an entry, and keeps every entry only the browser has. That covers what a
+  teammate removed and what a checkout went back past, and it comes back on every open. A cache is
+  *replaced* by what it caches. The same goes for writes: a write sent before the file was read
+  sends the cache, which is not the file. See [B-012](./B-012-the-browser-outranks-the-repository.md).
 - **A closed C# type inside a pass-through format** → members the client writes are silently dropped
   on bind, before anything is written. The round-trip test still passes, because it only asserts what
   the type declares. Any nested type in `LayoutSidecar` needs `[JsonExtensionData]` — see

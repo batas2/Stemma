@@ -1,17 +1,13 @@
-// Per-element rich-text notes, stored per workspace in localStorage (the same client-side
-// sidecar model as custom properties / layout). The `#Key: value` hashtags inside a note are
+// Per-element rich-text notes, committed per workspace in the presentation sidecar (the same
+// model as custom properties / layout). The `#Key: value` hashtags inside a note are
 // parsed out and mirrored into custom properties so they render on the canvas.
 
-import { sidecarMap, sidecarSet } from './layout';
+import { cachedSection, sidecarSet } from './layout';
 
 const KEY = (root: string) => `stemma.notes:${root}`;
 
 function loadAll(root: string): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  let local: Record<string, string> = {};
-  try { local = JSON.parse(localStorage.getItem(KEY(root)) ?? '{}') as Record<string, string>; } catch { /* ignore */ }
-  const committed = sidecarMap<string>(root, 'notes');
-  return committed ? { ...local, ...committed } : local;
+  return cachedSection<string>(root, 'notes', KEY(root));
 }
 
 export function loadNote(root: string, id: string): string {

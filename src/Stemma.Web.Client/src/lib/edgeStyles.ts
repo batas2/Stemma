@@ -1,4 +1,4 @@
-import { sidecarMap, sidecarSet } from './layout';
+import { cachedSection, sidecarSet } from './layout';
 
 export type EdgeLineStyle = 'solid' | 'dashed' | 'dotted';
 /** Endpoint marker styles available at each end of a relationship. */
@@ -42,11 +42,7 @@ const KEY_PREFIX = 'stemma.edgeStyles';
 function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
 
 export function loadEdgeStyles(rootPath: string): Record<string, EdgeStyle> {
-  if (typeof window === 'undefined') return {};
-  let local: Record<string, EdgeStyle> = {};
-  try { const raw = localStorage.getItem(key(rootPath)); local = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
-  const committed = sidecarMap<EdgeStyle>(rootPath, 'edgeStyles');
-  return committed ? { ...local, ...committed } : local;
+  return cachedSection<EdgeStyle>(rootPath, 'edgeStyles', key(rootPath));
 }
 
 export function saveEdgeStyles(rootPath: string, styles: Record<string, EdgeStyle>): void {

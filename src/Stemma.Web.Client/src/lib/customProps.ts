@@ -1,9 +1,10 @@
 // Free-form key/value properties attached to elements on the canvas.
-// Persisted client-side in localStorage; the engine doesn't know about them.
+// Committed in the presentation sidecar, with localStorage as the copy drawn before it has been
+// read; the engine doesn't know about them.
 // If we ever lift these into the model, swap the storage backend without
 // touching callers — the public API is small on purpose.
 
-import { sidecarMap, sidecarSet } from './layout';
+import { cachedSection, sidecarSet } from './layout';
 
 export type CustomProps = Record<string, string>;
 
@@ -12,11 +13,7 @@ const KEY_PREFIX = 'stemma.customProps';
 function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
 
 export function loadCustomProps(rootPath: string): Record<string, CustomProps> {
-  if (typeof window === 'undefined') return {};
-  let local: Record<string, CustomProps> = {};
-  try { const raw = localStorage.getItem(key(rootPath)); local = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
-  const committed = sidecarMap<CustomProps>(rootPath, 'customProps');
-  return committed ? { ...local, ...committed } : local;
+  return cachedSection<CustomProps>(rootPath, 'customProps', key(rootPath));
 }
 
 /** Mirror a node's whole custom-prop map into the committed sidecar (or delete when empty). */

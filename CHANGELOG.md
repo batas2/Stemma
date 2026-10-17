@@ -50,6 +50,14 @@ down, for the first time, in the [operations catalog](./.doc/architecture/engine
 - **[B-011](./.doc/bugs/B-011-type-operations-ignore-layout.md) — the type operations ignored
   layout:** a new property landed on the closing brace's line, removing one left its doc comment on
   the next, and RemoveInheritance on a type with only interfaces removed an interface.
+- **[B-012](./.doc/bugs/B-012-the-browser-outranks-the-repository.md) — the browser's copy of a
+  workspace outranked the repository.** A view deleted in a pull, a note or style a teammate removed
+  came back on every open from `localStorage`, and a returned view was written back into `Views/`
+  the first time it was edited. Each open put this browser's layout modes over the committed ones,
+  by way of a write sent before the sidecar had been read, and if the read was slow that write
+  replaced `stemma.layout.json` with the modes alone. The browser's copy is now a cache: it is drawn
+  until the repository has been read and then replaced, never merged. Views are read from the code
+  on every refresh, and a refused view save is put back and said, not only logged.
 
 ### The first ten minutes — 2026-08-11
 

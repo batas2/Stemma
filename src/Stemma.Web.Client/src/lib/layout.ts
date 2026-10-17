@@ -28,17 +28,42 @@ function ensureSidecar(rootPath: string): SidecarShape {
 function scheduleSidecarWrite(rootPath: string): void {
   if (pendingWrite?.rootPath === rootPath) clearTimeout(pendingWrite.timer);
   const timer = setTimeout(() => {
+    pendingWrite = null;
+    // Until the committed sidecar has been read, the cache holds this session's edits and nothing
+    // else, and a PUT would replace the whole file with them. Priming writes them, over the file.
+    if (!isSidecarPrimed(rootPath)) return;
     saveLayoutSidecar(sidecarCache!.sidecar)
       .catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
-    pendingWrite = null;
   }, 400);
   pendingWrite = { rootPath, sidecar: ensureSidecar(rootPath), timer };
 }
 
+/** Whether this session has read the committed sidecar of `rootPath`, and so holds all of it. */
+export function isSidecarPrimed(rootPath: string): boolean {
+  return primedRoot === rootPath && sidecarCache?.rootPath === rootPath;
+}
+
 /** Read a whole pass-through section from the primed sidecar (undefined if not primed yet). */
 export function sidecarMap<T = unknown>(rootPath: string, section: SidecarSection): Record<string, T> | undefined {
-  if (sidecarCache?.rootPath !== rootPath) return undefined;
-  return sidecarCache.sidecar[section] as Record<string, T> | undefined;
+  if (!isSidecarPrimed(rootPath)) return undefined;
+  return sidecarCache!.sidecar[section] as Record<string, T> | undefined;
+}
+
+/**
+ * A pass-through section as the canvas should draw it. Once the committed sidecar has been read it
+ * is the whole answer, and the browser's copy under `cacheKey` is overwritten with it; until then,
+ * that copy is all there is. The two are never merged: an entry only the browser has is one the
+ * repository no longer has — a teammate removed it, a checkout went back past it — and merging it
+ * in drew it again on every open (B-012).
+ */
+export function cachedSection<T>(rootPath: string, section: SidecarSection, cacheKey: string): Record<string, T> {
+  if (typeof window === 'undefined') return {};
+  if (isSidecarPrimed(rootPath)) {
+    const committed = { ...sidecarMap<T>(rootPath, section) };
+    try { localStorage.setItem(cacheKey, JSON.stringify(committed)); } catch { /* ignore */ }
+    return committed;
+  }
+  try { const raw = localStorage.getItem(cacheKey); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
 }
 
 /** Set (or delete, when value is undefined) one entry in a pass-through section and schedule a PUT. */
@@ -187,7 +212,17 @@ function mergeSidecar(server: SidecarShape, local: SidecarShape): SidecarShape {
 
 export function loadLayout(workspaceRoot: string, view: ViewKind | string): Record<string, SavedPosition> {
   if (typeof window === 'undefined') return {};
-  // Sidecar wins — populated by `primeLayoutSidecar` during workspace open.
+  // Once read, the sidecar is the whole answer: a view it has no positions for is laid out afresh,
+  // not from what this browser remembers of it (B-012).
+  if (isSidecarPrimed(workspaceRoot)) {
+    const nodes = sidecarCache!.sidecar.views?.[view]?.nodes;
+    try {
+      if (nodes) localStorage.setItem(key(workspaceRoot, view), JSON.stringify(nodes));
+      else localStorage.removeItem(key(workspaceRoot, view));
+    } catch { /* ignore */ }
+    return nodes ?? {};
+  }
+  // Before that: what was moved during the load, then what this browser remembers.
   if (sidecarCache?.rootPath === workspaceRoot) {
     const v = sidecarCache.sidecar.views?.[view];
     if (v?.nodes) return v.nodes;
@@ -203,21 +238,11 @@ export function saveLayout(workspaceRoot: string, view: ViewKind | string, posit
   // Localstorage as the durable in-browser cache.
   try { localStorage.setItem(key(workspaceRoot, view), JSON.stringify(positions)); } catch { /* ignore */ }
 
-  // Update in-memory cache.
-  if (!sidecarCache || sidecarCache.rootPath !== workspaceRoot) {
-    sidecarCache = { rootPath: workspaceRoot, sidecar: { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} } };
-  }
-  if (!sidecarCache.sidecar.views) sidecarCache.sidecar.views = {};
-  sidecarCache.sidecar.views[view] = { ...sidecarCache.sidecar.views[view], nodes: positions };
-
-  // Debounced PUT to stemma.layout.json.
-  if (pendingWrite?.rootPath === workspaceRoot) clearTimeout(pendingWrite.timer);
-  const timer = setTimeout(() => {
-    saveLayoutSidecar(sidecarCache!.sidecar)
-      .catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
-    pendingWrite = null;
-  }, 400);
-  pendingWrite = { rootPath: workspaceRoot, sidecar: sidecarCache.sidecar, timer };
+  // Update in-memory cache, and a debounced PUT to stemma.layout.json.
+  const s = ensureSidecar(workspaceRoot);
+  s.views = s.views ?? {};
+  s.views[view] = { ...s.views[view], nodes: positions };
+  scheduleSidecarWrite(workspaceRoot);
 }
 
 export function mergePositions(
@@ -253,26 +278,17 @@ export function saveEdgeWaypoints(
   waypoints: SavedPosition[]
 ): void {
   if (typeof window === 'undefined') return;
-  if (!sidecarCache || sidecarCache.rootPath !== workspaceRoot) {
-    sidecarCache = { rootPath: workspaceRoot, sidecar: { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} } };
-  }
-  if (!sidecarCache.sidecar.views) sidecarCache.sidecar.views = {};
-  const v = sidecarCache.sidecar.views[view] ?? {};
+  const s = ensureSidecar(workspaceRoot);
+  s.views = s.views ?? {};
+  const v = s.views[view] ?? {};
   const edges = v.edges ?? {};
   if (waypoints.length === 0) {
     delete edges[edgeId];
   } else {
     edges[edgeId] = { ...(edges[edgeId] as object | undefined), waypoints };
   }
-  sidecarCache.sidecar.views[view] = { ...v, edges };
-
-  if (pendingWrite?.rootPath === workspaceRoot) clearTimeout(pendingWrite.timer);
-  const timer = setTimeout(() => {
-    saveLayoutSidecar(sidecarCache!.sidecar)
-      .catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
-    pendingWrite = null;
-  }, 400);
-  pendingWrite = { rootPath: workspaceRoot, sidecar: sidecarCache.sidecar, timer };
+  s.views[view] = { ...v, edges };
+  scheduleSidecarWrite(workspaceRoot);
 }
 
 /** Which connection dot each end of a relationship is anchored to (see lib/edgeDock DockId). */
@@ -330,17 +346,25 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
   if (primedRoot === workspaceRoot) return;
   try {
     const raw = (await fetchLayout()) as SidecarShape | null;
-    const server: SidecarShape = raw ?? { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} };
+    // No workspace open on the server: nothing has been read, so nothing may be written. Treating
+    // it as an empty sidecar would let the next edit replace the real one with that edit alone.
+    if (raw === null) return;
+    // Opening primes from two places at once. Whichever read lands second finds the cache already
+    // read — not edits held back while it loaded — and must leave it alone rather than write it.
+    if (primedRoot === workspaceRoot) return;
     // Preserve any in-memory edits made before this first fetch resolved (local wins).
     const pending = sidecarCache?.rootPath === workspaceRoot ? sidecarCache.sidecar : null;
-    const sidecar: SidecarShape = pending ? mergeSidecar(server, pending) : server;
+    const sidecar: SidecarShape = pending ? mergeSidecar(raw, pending) : raw;
     sidecarCache = { rootPath: workspaceRoot, sidecar };
+    // Marked only after a successful read, so a failed fetch retries on the next call. From here on
+    // the session holds the whole sidecar, and may write it.
+    primedRoot = workspaceRoot;
 
     // First-load migration from localStorage (idempotent).
+    let touched = false;
     const alreadyMigrated = localStorage.getItem(migratedKey(workspaceRoot)) === '1';
     if (!alreadyMigrated) {
       const candidates = ['moduleMap', 'dependencyGraph'];
-      let touched = false;
       sidecar.views = sidecar.views ?? {};
       for (const v of candidates) {
         const stored = localStorage.getItem(key(workspaceRoot, v));
@@ -368,13 +392,13 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
           }
         } catch { /* ignore */ }
       }
-      if (touched) {
-        await saveLayoutSidecar(sidecar);
-      }
       localStorage.setItem(migratedKey(workspaceRoot), '1');
     }
-    // Mark primed only after a successful load so a failed fetch retries on the next call.
-    primedRoot = workspaceRoot;
+    // Edits made while it loaded were held back (see scheduleSidecarWrite); they go out with the
+    // migration, over what the file had.
+    if (touched || pending) {
+      saveLayoutSidecar(sidecar).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar'));
+    }
     // Tell the store/canvas to re-hydrate styles/notes/props from the now-loaded committed sidecar.
     window.dispatchEvent(new CustomEvent('stemma:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
   } catch {

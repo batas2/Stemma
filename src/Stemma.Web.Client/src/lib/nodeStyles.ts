@@ -1,4 +1,4 @@
-import { sidecarMap, sidecarSet } from './layout';
+import { cachedSection, sidecarSet } from './layout';
 
 export type NodeBorderStyle = 'solid' | 'dashed' | 'dotted';
 export type NodeFillStyle = 'solid' | 'gradient' | 'glass' | 'hatch';
@@ -58,12 +58,8 @@ const KEY_PREFIX = 'stemma.nodeStyles';
 function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
 
 export function loadNodeStyles(rootPath: string): Record<string, NodeStyle> {
-  if (typeof window === 'undefined') return {};
-  let local: Record<string, NodeStyle> = {};
-  try { const raw = localStorage.getItem(key(rootPath)); local = raw ? JSON.parse(raw) : {}; } catch { /* ignore */ }
-  // The committed sidecar (stemma.layout.json) wins once primed; localStorage is the offline cache.
-  const committed = sidecarMap<NodeStyle>(rootPath, 'nodeStyles');
-  return committed ? { ...local, ...committed } : local;
+  // The committed sidecar (stemma.layout.json) once primed; localStorage until then.
+  return cachedSection<NodeStyle>(rootPath, 'nodeStyles', key(rootPath));
 }
 
 export function saveNodeStyles(rootPath: string, styles: Record<string, NodeStyle>): void {
