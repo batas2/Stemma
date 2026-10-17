@@ -7,7 +7,7 @@
 | **Owner** | Bartosz |
 | **Persona served** | Sam (builder) · Priya (stakeholder) · Aria-as-reviewer (peer architect) — authored by Aria/Devin |
 | **Roadmap horizon** | `Now` |
-| **Created / Updated** | 2026-06-10 / 2026-06-10 |
+| **Created / Updated** | 2026-06-10 / 2026-10-17 |
 
 **What it is.** One self-contained `*.report.html` file exported from Stemma that anyone can open in
 a browser with zero installation: an interactive, read-only publication of the architecture model —
@@ -69,6 +69,10 @@ how everyone else reads, follows, and challenges it.
       200-element model has not been formally measured)*.
 - [x] AC9 — Uploading to Google Drive and sharing works per the distribution decision (Q1):
       recipients download and open locally; the flow is stated on the export toast and in J6b.
+- [x] AC10 — Every report says it was made with Stemma and links to the project page: at the foot
+      of the rail and on the logo on screen, and as a line of text when printed, where the rail is
+      hidden. A link and never a request, so AC1 holds; it is the credit the commercialization plan
+      calls for (Phase 0, §4.6), and the paid tiers may remove it later. *(Added 2026-10-17, F-012.)*
 
 ## 3. Architecture impact
 
@@ -146,6 +150,8 @@ how everyone else reads, follows, and challenges it.
       comment → pack → import).
 - [x] Round-trip test: pack exported from report imports into a workspace and merges into
       `comments.stemma.json` losslessly; re-import is idempotent.
+- [x] Credit: the real viewer, run over a bundle, carries the link, opens it with `noopener`, and
+      keeps the credit in print (`src/report/credit.test.ts`).
 - [ ] Accessibility pass on the report shell (keyboard-only walk, contrast check).
 
 ## 8. Definition of Done

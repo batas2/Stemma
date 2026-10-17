@@ -58,7 +58,7 @@ input, textarea { font: inherit; color: var(--vr-text); }
   height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 12px;
   padding: 0 16px; background: var(--vr-surface); border-bottom: 1px solid var(--vr-border);
 }
-.vr-logo { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.02em; }
+.vr-logo { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.02em; color: inherit; text-decoration: none; }
 .vr-logo svg { display: block; }
 .vr-title { font-size: 13px; font-weight: 600; }
 .vr-meta { font-size: 11px; color: var(--vr-faint); }
@@ -340,8 +340,14 @@ input, textarea { font: inherit; color: var(--vr-text); }
   .vr-rail { display: none; }
   .vr-panel { position: fixed; right: 0; top: 52px; bottom: 0; z-index: 40; box-shadow: -8px 0 24px rgba(0,0,0,0.18); }
 }
+/* ---- Credit ---- */
+.vr-credit { display: block; padding: 6px 6px 0; font-size: 11px; color: var(--vr-faint); text-decoration: none; }
+.vr-credit:hover { color: var(--vr-accent); text-decoration: underline; }
+.vr-print-credit { display: none; }
+
 @media print {
   .vr-topbar, .vr-rail, .vr-panel, .vr-layers, .vr-zoomctl { display: none !important; }
+  .vr-print-credit { display: block; padding: 12px 0 0; font-size: 10px; color: #71717a; text-align: center; }
   .vr-page { overflow: visible; }
   body { background: #fff; }
 }

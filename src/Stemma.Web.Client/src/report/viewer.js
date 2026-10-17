@@ -7,6 +7,9 @@
   'use strict';
 
   var data = JSON.parse(document.getElementById('stemma-report-data').textContent);
+  // The report travels to people who have never heard of Stemma; this is how they would. A link,
+  // never a request: nothing is fetched from it.
+  var STEMMA_URL = 'https://bfrackowiak.pl/stemma/';
   var root = data.meta.rootPath;
   var LS = {
     state: 'stemma.report.state:' + root,
@@ -299,6 +302,10 @@
     toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2600);
   }
 
+  function credit(cls, text) {
+    return h('a', { class: cls, href: STEMMA_URL, target: '_blank', rel: 'noopener', text: text });
+  }
+
   // ---------- shell ----------
   var app = document.getElementById('app');
   function setTheme(t) { state.theme = t; document.body.classList.toggle('vr-dark', t === 'dark'); persistState(); }
@@ -334,7 +341,7 @@
       onclick: function () { setTheme(state.theme === 'dark' ? 'light' : 'dark'); },
     }, ['◐']);
     var top = h('div', { class: 'vr-topbar' }, [
-      h('span', { class: 'vr-logo' }, [logo, h('span', { text: 'Stemma' })]),
+      h('a', { class: 'vr-logo', href: STEMMA_URL, target: '_blank', rel: 'noopener', title: 'Made with Stemma' }, [logo, h('span', { text: 'Stemma' })]),
       h('span', { class: 'vr-title', text: data.meta.workspace + ' — Architecture Report' }),
       h('span', { class: 'vr-meta', text: 'exported ' + new Date(data.meta.exportedAt).toLocaleString() }),
       h('div', { class: 'vr-spacer' }),
@@ -345,6 +352,8 @@
     panelEl = null;
     app.appendChild(top);
     app.appendChild(h('div', { class: 'vr-body' }, [railEl, mainEl]));
+    // The rail is not printed, so a printed report carries its credit as text.
+    app.appendChild(h('div', { class: 'vr-print-credit', text: 'Made with Stemma — ' + STEMMA_URL }));
     app.appendChild(toastEl);
   }
 
@@ -400,6 +409,7 @@
     railEl.appendChild(viewsWrap);
 
     railEl.appendChild(h('div', { class: 'vr-hint', style: 'margin-top:auto;padding:0 6px', text: 'Read-only export. Comments you write here stay local until you export the comment pack.' }));
+    railEl.appendChild(credit('vr-credit', 'Made with Stemma'));
   }
 
   // ---------- canvas ----------
