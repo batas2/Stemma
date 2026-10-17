@@ -18,6 +18,26 @@ element; a custom view persisted as active must not trap the user — clicking a
 returns to it. In the shell, step 1 has a step 0: the window appears with a splash while the backend
 binds, and if it never does, the window says why and where the log is — never a blank white page.
 
+## J1b — Start from nothing (Architect with no repository yet)
+
+The path an evaluator takes, and the one a consultant takes on a new engagement
+([F-003](../features/F-003-from-scratch-onboarding.md)). **No filesystem path is typed at any point.**
+
+1. Choose a door: **Start from a template** (a few boxes to react to), **Start empty**, or **Open an
+   existing one**.
+2. Name it. A model created by name lands in `~/stemma/<name>` as a Git repository with one commit
+   and no build output — so the next diff is the author's first edit and nothing else.
+3. It opens immediately. A template arrives pre-arranged; an empty model shows in-canvas guidance
+   with one primary action rather than a bare grid.
+4. Add the first element → the name field is focused and selected. Type, Enter, done.
+5. **Once**, and dismissible: the line of C# that element became, quoted from `Architecture.cs`.
+
+**Must-handle:** the guidance disappears for good once the model has an element, including across a
+reload; the explainer is shown once per person, not once per model; a workspace created here opens on
+a machine with no .NET SDK at all ([ADR-0016](../architecture/decisions/0016-sdk-free-model-only-workspaces.md)).
+
+Three interactions on the template route, four on the empty one — measured, in F-003 §7.1.
+
 ## J2 — Edit the model (Architect)
 
 1. Select an element → the inspector rail opens **Appearance**; other panels (Properties, Text &

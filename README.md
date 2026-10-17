@@ -50,6 +50,9 @@ The argument in full, and why a diagram that *can* drift always does:
 - **A desktop window** — `stemma-desktop` runs Stemma as an application rather than a localhost tab:
   one process holding both the server and a native window, on a port the OS picks, with a real
   folder picker and no server left running when you close it.
+- **Starting from nothing** — three doors (a template, an empty model, an existing repository), a
+  model created by *name* into a clean Git repository, and — once — the line of C# your first box
+  became, quoted from `Architecture.cs`. No filesystem path is typed at any point.
 - **Diagnostics** — a leveled, structured record of every operation, with content hashes on each
   document write so the fidelity guarantee is observable rather than merely asserted.
 
@@ -235,7 +238,12 @@ cd src/Stemma.Web.Client
 npx tsc --noEmit -p tsconfig.json           # typecheck
 npx vite build                              # build
 npx vitest run                              # tests
+npm run test:journey                        # the first-ten-minutes path, end to end (needs Chrome)
 ```
+
+`test:journey` builds the client, starts the real backend, and drives launch → model → first named
+element in a browser. It is local-only, like the visual regression suite: CI runs neither, because
+neither has a browser.
 
 ## The thinking behind it
 

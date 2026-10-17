@@ -27,6 +27,26 @@ The frontend's building blocks, what they own, and the rules for changing them. 
 - **Shapes** (`ShapeLayer.tsx`) — the free-form annotation layer: rect/ellipse/triangle/label/arrow/
   image with appearance + text; arrows can dock to elements/shapes.
 
+## Starting from nothing ([F-003](../features/F-003-from-scratch-onboarding.md))
+
+Three surfaces, each for one state, none of which may ask for a filesystem path.
+
+- **`EmptyState.tsx`** — no workspace open. Three doors, each a real button: *Start from a template*,
+  *Start empty*, *Open an existing one*, plus recents inline and — in the desktop shell only —
+  *Create somewhere else…*, which opens the OS folder picker.
+- **`EmptyCanvasGuide.tsx`** — a workspace is open and its model is empty. A dashed target with one
+  primary action and a line naming right-click and ⌘K, which are otherwise invisible until you
+  already know they exist. A labelled `region`, so it is announced and not merely drawn.
+- **`FirstElementStrip.tsx`** — shown once per person, dismissible, after the element that takes a
+  model out of empty. It quotes the line of C# that element became, **read back out of
+  `Architecture.cs`** via `GET /api/workspace/source/{id}`. This is the only place in the product
+  where the premise is demonstrated rather than asserted: the moment it renders something composed
+  from the model instead, it stops being evidence.
+
+There is deliberately **no template picker component** — `pickFromList` in `PromptDialog.tsx` is one,
+and a second list surface would only have to be kept in step with the first. The templates themselves
+are in `lib/templates.ts` as scripts of ordinary operations, never a stored format.
+
 ## Inspector (right-edge icon rail)
 
 `ArchInspector.tsx` is an **icon rail** that opens one panel at a time:

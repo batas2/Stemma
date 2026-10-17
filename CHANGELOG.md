@@ -7,6 +7,42 @@ versioned yet, so entries are dated and the top section is what is in `main` but
 
 ## Unreleased
 
+### The first ten minutes — 2026-08-11
+
+Stemma was good at opening a model and weak at starting one. Walking the real path from a scratch
+directory found six distinct stops, and two of them were invisible from inside a development
+checkout. [F-003](./.doc/features/F-003-from-scratch-onboarding.md) is the whole account; this is
+what changed.
+
+**Added**
+
+- **Three doors on the start screen** — start from a template, start empty, or open something that
+  exists. A model is created by *name* and lands in `~/stemma/<name>`: no filesystem path is typed
+  at any point, which is what the old flow demanded of everyone.
+- **Templates** — a C4 system with its containers, DDD contexts with their capabilities, and a data
+  flow. Each is a *script of the ordinary operations*, so what it leaves behind is ordinary C# you
+  can rename or delete; nothing is stored that describes a template, and there is nothing to
+  migrate when the vocabulary moves.
+- **Guidance on an empty canvas** instead of a bare grid. Every way to add the first element —
+  right-click, the palette, ⌘K — was invisible until you already knew it existed. It disappears for
+  good once the model has something in it.
+- **The line of C# your first box became**, shown once and dismissible, read back out of
+  `Architecture.cs` rather than rendered from the model. It is the only place in the product where
+  the premise is demonstrated instead of asserted, and it is only worth anything because it is the
+  file's own text. New: `GET /api/workspace/source/{id}`.
+
+**Fixed**
+
+- **Creating an element did not actually focus its name field.** It has claimed to since the feature
+  was written, and the code reads as correct: the editor mounts, calls `focus()`, selects the text.
+  React Flow keeps a node `visibility: hidden` until it has measured it, a new element mounts its
+  editor before that measurement, and focusing a hidden element does nothing at all — so the field
+  looked ready to type into and what you typed went to the canvas as shortcuts. Found by driving the
+  journey rather than by reading the code, which is the same lesson as the render defects: a call
+  that succeeds is not an outcome that happened.
+- **The rename field had no accessible name**, so it announced as "edit text, blank" — and it is the
+  first thing on the canvas that an element's creator meets.
+
 ### A window of its own — 2026-08-11
 
 Stemma stops being a localhost tab. `stemma-desktop` is one process holding both the server and a

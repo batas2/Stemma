@@ -18,7 +18,7 @@ Living feature records — one Markdown file per feature, created from
 |---|---|---|---|---|
 | [F-001](./F-001-architecture-report-export.md) | Architecture Report — single-file interactive HTML export | Shipped (v1) | Now | Bartosz |
 | [F-002](./F-002-desktop-shell.md) | Desktop shell — run Stemma in its own window | Shipped (v1) | Next | Bartosz |
-| [F-003](./F-003-from-scratch-onboarding.md) | Designing from scratch — the first ten minutes | In progress | Now | Bartosz |
+| [F-003](./F-003-from-scratch-onboarding.md) | Designing from scratch — the first ten minutes | Shipped (v1) | Now | Bartosz |
 | [F-004](./F-004-headless-diagram-render.md) | Headless diagram render (`stemma render`) | Shipped (v1) | Next | Bartosz |
 | [F-005](./F-005-publication-profile-and-palettes.md) | Publication render profile & named export palettes | Shipped (v1) | Next | Bartosz |
 | [F-006](./F-006-declarative-layout-dsl.md) | Declarative layout DSL in the presentation sidecar | Shipped (v1) | Next | Bartosz |
