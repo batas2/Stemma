@@ -208,16 +208,41 @@ published. The name is not owned yet (domain, NuGet id, org), and the project pa
 - [ ] Employment contract IP/non-compete review (blocks everything commercial) — §6
 - [ ] Model-diff feature record (blocks Phase 3) — §4 Phase 3
 
-## 8. Immediate next actions (when we "plan it correctly")
+## 8. Immediate next actions — the maintainer's, in order
 
-1. Buy `stemma.dev`; reserve the `Stemma` NuGet id and the `stemmahq` GitHub org. The repository
-   itself is published from a personal account first: <https://github.com/batas2/Stemma>.
-   The NuGet id is claimed by the first push of the tool, which the release workflow makes when
-   0.1.0 is published, once the repository has a `NUGET_API_KEY` secret.
-2. Pricing-line decision (the licence itself is settled — PolyForm Noncommercial 1.0.0).
-3. Accountant call (MoR + JDG question).
-4. ~~Add report footer link~~ (done 2026-10-17) + opt-in telemetry (deferred; Phase 0 item 7).
-5. Landing page + demo GIF → soft-launch to 10 architects you know personally.
+*Rewritten 2026-10-17, when 0.1.0 was tagged and left as a draft release.* Tick them here; this is
+the list, not a copy of one.
+
+**A. Publish 0.1.0 (this week).** Everything to build it is done; these steps are a person's because
+they cannot be taken back.
+
+- [ ] Create a nuget.org account and an API key scoped to push `Stemma` and `Stemma.*`, and store
+      it as the repository secret `NUGET_API_KEY` (`gh secret set NUGET_API_KEY`). The first push is
+      what claims the id, so until then it is anyone's.
+- [ ] Read the draft release *Stemma 0.1.0* (GitHub → Releases): the notes, four assets, sizes.
+      Publish it. The workflow then pushes the tool to nuget.org; if the secret was missing, add it
+      and re-run that job. Procedure: [`releasing.md`](../engineering/releasing.md).
+- [ ] On a machine that is not this one: `dotnet tool install -g Stemma` and the tarball one-liner.
+- [ ] Put the demo (`npm run demo:record` → `dist/demo/stemma-demo.mp4`) and the two install lines
+      on [bfrackowiak.pl/stemma](https://bfrackowiak.pl/stemma/).
+
+**B. Close Phase 0 (before telling anyone beyond friends).** None of it is code.
+
+- [ ] Employment contract: IP and non-compete clauses (§6). First, because it blocks everything
+      commercial, though not a noncommercial release.
+- [ ] Buy `stemma.dev`; reserve the `stemmahq` GitHub org.
+- [ ] Trademark search, EUIPO/USPTO classes 9 and 42 (§7).
+- [ ] One hour with an accountant: Merchant-of-Record income, JDG, which PIT form (Phase 0 item 3).
+- [ ] The free/paid line, written once (§3). It blocks the pricing page, not the launch.
+
+**C. Phase 1 — audience (§4).** Starts when A is done; B can run alongside.
+
+- [ ] Soft launch to ten architects you know personally, with the demo and the install line. Ask
+      each for one thing that stopped them.
+- [ ] Then the public posts listed in Phase 1, and set the kill date (§6) as an absolute date on the
+      day you post: three months later.
+- [ ] Count what Phase 1 counts — 20 external users, 5 conversations, 3 who would pay — with
+      release downloads and nuget.org installs as the free signal until there is more.
 
 ---
 
