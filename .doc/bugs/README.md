@@ -54,6 +54,16 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
   A value that never varies while you build the thing looks like a constant and is usually a
   *topology*: change how the app is served and it is wrong, silently, because the case that proves
   it is the case you never run. See [B-005](./B-005-cors-policy-refuses-the-page-the-host-is-serving.md).
+- **A rewrite checked with `Contains`** → the test asserts the new literal is present, and passes
+  while the comment above the line, the line's layout and every argument the model does not read are
+  gone. Six operations rebuilt whole declarations, from the day they were written, behind tests like
+  that. Assert the whole file against hand-written edits — see
+  [B-009](./B-009-edits-rebuild-the-declaration.md) and the fidelity suite in
+  [`../engineering/testing.md`](../engineering/testing.md).
+- **"Ours" decided by timing** → a write within some window of Stemma's own was taken for its echo,
+  so a real save inside the window was never seen; and an echo arriving late was taken in again and
+  written back, forever. Tell the engine's own writes apart by **content** — the file says what the
+  workspace holds — never by the clock. See [B-008](./B-008-outside-edit-is-written-back-forever.md).
 - **A closed C# type inside a pass-through format** → members the client writes are silently dropped
   on bind, before anything is written. The round-trip test still passes, because it only asserts what
   the type declares. Any nested type in `LayoutSidecar` needs `[JsonExtensionData]` — see

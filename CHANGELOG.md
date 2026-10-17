@@ -7,6 +7,50 @@ versioned yet, so entries are dated and the top section is what is in `main` but
 
 ## Unreleased
 
+### Fidelity, enforced — 2026-10-17
+
+The fidelity suite the testing guide has always described — every operation, a minimal, a realistic
+and a pathological fixture, the diff containing only the intended change — did not exist. What did
+exist checked each edit with `Contains`, which passes while the comment two lines up disappears.
+Writing the suite properly, comparing whole files byte for byte, failed 52 of its first 54 cases.
+Everything below was found by it or on the way to it. The rules each operation now keeps are written
+down, for the first time, in the [operations catalog](./.doc/architecture/engine-backend.md#the-operations-catalog).
+
+**Added**
+
+- **The fidelity suite** (`tests/Stemma.Engine.Tests/Fidelity/`). Every model and type operation,
+  against three fixtures each — the pathological ones with a BOM, tabs, mixed line endings,
+  `#region`/`#if`, block comments inside argument lists and named arguments — compared with
+  hand-written edits, then undone and redone, byte for byte: 84 cases.
+- **The operations catalog** — what each operation edits exactly and what it refuses.
+
+**Fixed**
+
+- **[B-009](./.doc/bugs/B-009-edits-rebuild-the-declaration.md) — setting an attribute or a tag
+  rewrote the whole declaration.** Moving a module, setting what a Risk is about, a payload or a
+  lifecycle deleted the comments around the line, re-indented it, collapsed it onto one line and —
+  for a tag — deleted the RAPID roles. Removing an element took every comment and `#endregion` above
+  it, and a tagged element or link could not be removed at all. Each edit now changes one argument,
+  in place. Declarations written with named arguments, which the reader could not see, are read and
+  edited like the rest.
+- **[B-007](./.doc/bugs/B-007-undo-rebuilds-instead-of-restoring.md) — undo rebuilt what an edit
+  removed** at the end of the method, without its comment, its tag or what it was about. Undo now
+  puts back exactly what the edit changed, so edit-then-undo is no diff at all; when the file has
+  been edited elsewhere in between, it falls back to re-declaring rather than erasing that edit.
+- **[B-008](./.doc/bugs/B-008-outside-edit-is-written-back-forever.md) — an outside edit was written
+  back to disk about once a second, forever**, without its BOM, with every canvas re-fetching each
+  time. And an edit made in the second before the watcher noticed a save was written over that save;
+  it is now refused as `ChangedOnDisk`, the save is read, and a retry lands on top of it.
+- **[B-006](./.doc/bugs/B-006-model-only-edit-adds-a-byte-order-mark.md) — the first edit to a
+  model created from the start screen gave the file a BOM**, so line 1 changed in every first diff.
+- **[B-010](./.doc/bugs/B-010-saving-a-view-rewrites-its-file.md) — saving a view regenerated its
+  file from a template**, losing its doc comment, renaming it after the view, and deleting any other
+  view file that quoted its id. Views are now edited in place by the engine. A new file in a project
+  workspace no longer adds a duplicate `<Compile Include>` to the `.csproj`.
+- **[B-011](./.doc/bugs/B-011-type-operations-ignore-layout.md) — the type operations ignored
+  layout:** a new property landed on the closing brace's line, removing one left its doc comment on
+  the next, and RemoveInheritance on a type with only interfaces removed an interface.
+
 ### The first ten minutes — 2026-08-11
 
 Stemma was good at opening a model and weak at starting one. Walking the real path from a scratch

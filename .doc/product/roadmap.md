@@ -1,13 +1,13 @@
 # Roadmap
 
 > Horizon framing, not date commitments. "Now" = built and in the product. "Next" = committed and
-> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-08-11**.
+> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-10-17**.
 
 ## Now — shipped and load-bearing
 
 The engine and canvas are real and round-trip against non-trivial samples.
 
-- **Roslyn engine + round-trip fidelity** — operations rewrite `Architecture.cs` via `DocumentEditor`; the fidelity test suite gates every change.
+- **Roslyn engine + round-trip fidelity** — operations rewrite `Architecture.cs` via targeted syntax edits, and the fidelity suite gates every one: each operation in the [catalog](../architecture/engine-backend.md#the-operations-catalog), against a minimal, a realistic and a pathological fixture, compared byte for byte with hand-written edits and then undone and redone. (Until 2026-10-17 the suite existed only on paper, and six operations rebuilt whole declarations — [B-009](../bugs/B-009-edits-rebuild-the-declaration.md); undo, outside edits and view saves had the same class of fault — B-006…B-011.)
 - **Canonical model** — elements (person, software system, container, bounded context, module, capability, use case, risk, question, assumption, and `Concept` for a box that asserts nothing — [ADR-0018](../architecture/decisions/0018-concept-element-kind.md)), `DataFlow`/`Dependency` links, `Lifecycle`/`Ownership` tags, code-defined `View`s.
 - **React Flow canvas** — module map, dependency graph, and custom views; bounded-context grouping; pan/zoom/minimap; PNG/SVG export of the whole graph including shapes, with transparency and scale as remembered options.
 - **A published sidecar schema** — `schema/stemma.layout.schema.json` describes `stemma.layout.json` for editors and for anyone authoring the format by hand; every sidecar is stamped with a `$schema` pointer.
@@ -24,7 +24,6 @@ The engine and canvas are real and round-trip against non-trivial samples.
 
 ## Next — committed, in flight
 
-- **Fidelity hardening across the operation catalog** — every operation in the catalog has minimal/realistic/pathological round-trip fixtures.
 - **Navigation & views clarity** (Epic 13) — faster, more obvious view switching and view management.
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
 - **Sample gallery** — curated demo workspaces (today `samples/AuroraRail` and `samples/StemmaArchitecture`) that exercise every feature as living documentation.

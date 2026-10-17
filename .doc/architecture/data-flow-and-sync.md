@@ -33,13 +33,16 @@ code, stop — the boundary is wrong.
 
 ## Operations (the model edit primitive)
 
-Operations are a closed, polymorphic set (`Stemma.Engine/Operations/Operations.cs`) — e.g.
-`AddElement`, `RenameElement`, `RemoveElement`, `SetElementContext`, `SetElementAttribute`,
-`AddLink`, `RemoveLink`, `SetLinkAttribute`, `SetLifecycle`, `SetOwnership`. Each:
+Operations are a closed, polymorphic set (`Stemma.Engine/Operations/Operations.cs`). The full list —
+what each one edits exactly, and what it refuses — is the
+[operations catalog](./engine-backend.md#the-operations-catalog). Each:
 
 - is serialized as JSON with a `kind` discriminator and an `opId`;
 - maps to a single targeted Roslyn rewrite preserving trivia;
 - returns either a success (with a delta) or a structured failure reason.
+
+Saving a view is not an operation but goes the same way: `PUT /api/workspace/views` asks the engine,
+which edits the view's file in place rather than writing it from a template.
 
 To add one, follow the procedure in [`engine-backend.md`](./engine-backend.md#adding-or-changing-an-operation-the-procedure).
 
@@ -61,7 +64,9 @@ Frontend rules that keep it correct:
 - On open: REST returns the model snapshot + the engine primes the sidecar; the client hydrates
   presentation once (`stemma:sidecar-primed` → `rehydratePresentation`).
 - During a session: model edits broadcast as **deltas** over SignalR; the client merges them.
-  External file edits (git pull, IDE) are picked up by the engine and broadcast too.
+  External file edits (git pull, IDE) are picked up by the engine and broadcast too — once per change,
+  and without the engine writing the file in reply. An edit computed from a version of a file the
+  engine has not yet seen is refused as `ChangedOnDisk` rather than written over it.
 - The client merges deltas **without clobbering in-flight local edits** — the same discipline as the
   sidecar cache.
 
