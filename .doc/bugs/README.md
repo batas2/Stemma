@@ -15,7 +15,7 @@ Living bug records — one Markdown file per bug, created from
 
 | ID | Bug | Severity | Area | Status |
 |---|---|---|---|---|
-| [B-001](./B-001-layout-sidecar-drops-shapes-and-edge-handles.md) | `stemma.layout.json` silently discards free-form shapes and edge dock handles | S2 major | sidecar | Fixed (pending in-app verification) |
+| [B-001](./B-001-layout-sidecar-drops-shapes-and-edge-handles.md) | `stemma.layout.json` silently discards free-form shapes and edge dock handles | S2 major | sidecar | Fixed |
 | [B-002](./B-002-render-ignores-authored-node-positions.md) | `stemma render` ignores authored `nodes` positions, so a hand-written layout is silently auto-arranged | S2 major | layout | Fixed |
 | [B-003](./B-003-render-transparent-emits-opaque-png.md) | `stemma render` writes an opaque PNG while recording `transparent: true` in its manifest | S2 major | web | Fixed |
 | [B-004](./B-004-bad-constraint-shape-kills-or-silently-changes-a-render.md) | A constraint field of the wrong shape either kills the render with an unreadable error or silently redraws the picture | S2 major | layout | Fixed |

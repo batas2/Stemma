@@ -192,11 +192,13 @@ Checked against the standard pitfalls:
       §8 · Q6 of the capability analysis will add. They were included deliberately to prove the fix
       covers the sections that do not exist yet, which was the whole argument for extension data over
       typed members.
-- [ ] Manually verified in the product: draw a shape, dock an edge, reload — both persist; `git diff`
-      on `stemma.layout.json` shows the shape and the handles. **Not done — needs a running app.**
-- [ ] A sample workspace gains a committed shape and a docked edge, so the format is exercised by
-      something that ships. **Not done** — best folded into the F-007 schema work, which is where the
-      format gets documented.
+- [x] Manually verified in the product, 2026-10-17, on a scratch copy of the self-model:
+  - a label drawn on *What ships* and a relationship re-docked to another dot both survive a reload;
+  - `git diff` on `stemma.layout.json` shows the one shape and the one `handles` entry, and nothing
+    else (since [ADR-0021](../architecture/decisions/0021-sidecar-written-as-changes.md) the sidecar
+    is written as changes).
+- [x] A sample workspace carries a committed shape and docked edges: `samples/StemmaArchitecture`
+      has a `shapes` array and 27 `handles` entries.
 - [x] Docs updated: `roadmap.md`'s "Now" section no longer claims these two capabilities ship intact;
       `bugs/README.md` gained the failure mode. The format itself stays undocumented here on purpose —
       that is F-007's job, and this bug is the argument for it.
