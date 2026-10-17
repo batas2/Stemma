@@ -76,7 +76,9 @@ Frontend rules that keep it correct:
   in between does not take the change away.
 - During a session: model edits broadcast as **deltas** over SignalR; the client merges them.
   External file edits (git pull, IDE) are picked up by the engine and broadcast too — once per change,
-  and without the engine writing the file in reply. An edit computed from a version of a file the
+  and without the engine writing the file in reply. Files added and deleted outside are taken in the
+  same way, and so is every file a pull touches, not only the last
+  ([B-015](../bugs/B-015-outside-changes-to-the-set-of-files-are-missed.md)). An edit computed from a version of a file the
   engine has not yet seen is refused as `ChangedOnDisk` rather than written over it.
 - The client merges deltas **without clobbering in-flight local edits** — the same discipline as the
   sidecar cache.

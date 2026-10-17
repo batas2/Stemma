@@ -28,6 +28,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-011](./B-011-type-operations-ignore-layout.md) | The type operations wrote members with no layout and removed them by the wrong rules | S3 minor | engine | Fixed |
 | [B-012](./B-012-the-browser-outranks-the-repository.md) | The browser's copy of a workspace outranked the repository, and could replace its sidecar | S2 major | sidecar | Fixed |
 | [B-013](./B-013-append-to-a-crowded-line-starts-a-new-one.md) | An id added to a list laid out several to a line went on a line of its own, at column 0 | S3 minor | engine | Fixed |
+| [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md) | A file added or deleted outside Stemma, or several changed at once, was not taken in | S2 major | engine | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 
@@ -71,6 +72,11 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
   teammate removed and what a checkout went back past, and it comes back on every open. A cache is
   *replaced* by what it caches. The same goes for writes: a write sent before the file was read
   sends the cache, which is not the file. See [B-012](./B-012-the-browser-outranks-the-repository.md).
+- **Watching the files' contents, not the set of files** → a pull adds and deletes as well as edits,
+  and touches several files at once. An engine that only takes in edits to files it already holds
+  keeps compiling what was deleted, never sees what arrived, and writes a second copy of it. A
+  debounce that keeps the last path drops the others. See
+  [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md).
 - **A closed C# type inside a pass-through format** → members the client writes are silently dropped
   on bind, before anything is written. The round-trip test still passes, because it only asserts what
   the type declares. Any nested type in `LayoutSidecar` needs `[JsonExtensionData]` — see

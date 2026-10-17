@@ -25,6 +25,12 @@ public sealed class ExternalWatcher : IAsyncDisposable
     private readonly ILogger _log;
     private readonly object _lock = new();
     private CancellationTokenSource? _debounceCts;
+    // Every path a burst touched. A pull writes several files inside one debounce, and keeping only
+    // the last of them left the others unread until something else happened to change them.
+    private readonly HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
+    // Whether the mtimes have been seen once. After that, a path the poller has not seen before is a
+    // file that was added, and is reported like any other change.
+    private bool _seeded;
 
     public event Action<string>? Changed;
 
@@ -44,7 +50,12 @@ public sealed class ExternalWatcher : IAsyncDisposable
         _watcher.Changed += OnFsEvent;
         _watcher.Created += OnFsEvent;
         _watcher.Deleted += OnFsEvent;
-        _watcher.Renamed += (_, e) => OnFsEvent(_, e);
+        // A rename is the old path going and the new one arriving; both are changes.
+        _watcher.Renamed += (_, e) =>
+        {
+            if (_shouldWatch(e.OldFullPath)) ScheduleEmit(e.OldFullPath);
+            OnFsEvent(_, e);
+        };
         // The OS handle can be exhausted or the directory removed, at which point the watcher stops
         // and external edits quietly stop appearing. The poller compensates, but the degradation is
         // real and was previously invisible.
@@ -65,6 +76,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
             {
                 _mtimes[path] = File.GetLastWriteTimeUtc(path);
             }
+            _seeded = true;
         }
         catch (Exception e)
         {
@@ -105,9 +117,10 @@ public sealed class ExternalWatcher : IAsyncDisposable
                 if (!_mtimes.TryGetValue(path, out var prev) || prev != mt)
                 {
                     _mtimes[path] = mt;
-                    if (prev != default) ScheduleEmit(path);
+                    if (prev != default || _seeded) ScheduleEmit(path);
                 }
             }
+            _seeded = true;
             // Detect deletions.
             foreach (var known in _mtimes.Keys.ToArray())
             {
@@ -128,18 +141,28 @@ public sealed class ExternalWatcher : IAsyncDisposable
     {
         lock (_lock)
         {
+            _pending.Add(path);
             _debounceCts?.Cancel();
             _debounceCts = new CancellationTokenSource();
             var token = _debounceCts.Token;
             _ = Task.Delay(500, token).ContinueWith(t =>
             {
                 if (t.IsCanceled) return;
-                // A subscriber throwing must not take the watcher down with it — the next
-                // external edit still has to be noticed — but the failure is the user's stale
-                // canvas, so it is a warning rather than nothing.
-                EngineLog.ExternalChangeDetected(_log, path);
-                try { Changed?.Invoke(path); }
-                catch (Exception e) { EngineLog.ExternalChangeFailed(_log, e); }
+                string[] paths;
+                lock (_lock)
+                {
+                    paths = [.. _pending];
+                    _pending.Clear();
+                }
+                foreach (var changed in paths)
+                {
+                    // A subscriber throwing must not take the watcher down with it — the next
+                    // external edit still has to be noticed — but the failure is the user's stale
+                    // canvas, so it is a warning rather than nothing.
+                    EngineLog.ExternalChangeDetected(_log, changed);
+                    try { Changed?.Invoke(changed); }
+                    catch (Exception e) { EngineLog.ExternalChangeFailed(_log, e); }
+                }
             }, TaskScheduler.Default);
         }
     }

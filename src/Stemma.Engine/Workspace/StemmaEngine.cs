@@ -55,11 +55,36 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private bool ShouldWatch(string path)
     {
-        // Watch Architecture/ + any project's tracked files.
+        // Watch Architecture/, every file the workspace holds, and every file it would hold if it
+        // were opened now — which is what a file added by a pull is.
         if (path.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) return true;
         return _workspace.CurrentSolution.Projects
             .SelectMany(p => p.Documents)
-            .Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            .Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase))
+            || ProjectFor(path) is not null;
+    }
+
+    /// <summary>
+    /// The project a source file at <paramref name="path"/> would belong to if the workspace were
+    /// opened now: the one project of a model-only workspace, or the project whose directory holds
+    /// it, the deepest if they nest. None for what the loader skips — bin, obj, generated files.
+    /// </summary>
+    private Project? ProjectFor(string path)
+    {
+        if (!path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!IsUnder(_model.RootPath, path) || ModelWorkspaceLoader.IsExcluded(_model.RootPath, path)) return null;
+        var projects = _workspace.CurrentSolution.Projects;
+        if (_workspace is FileBackedWorkspace) return projects.FirstOrDefault();
+        return projects
+            .Where(p => p.FilePath is { Length: > 0 } file && IsUnder(Path.GetDirectoryName(file)!, path))
+            .OrderByDescending(p => p.FilePath!.Length)
+            .FirstOrDefault();
+    }
+
+    private static bool IsUnder(string directory, string path)
+    {
+        var relative = Path.GetRelativePath(directory, path);
+        return !relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative);
     }
 
     private async void OnExternalChange(string path)
@@ -95,9 +120,22 @@ public sealed class StemmaEngine : IAsyncDisposable
         var doc = _workspace.CurrentSolution.Projects
             .SelectMany(p => p.Documents)
             .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
-        // A file the workspace does not hold, or one that has gone: the model is rebuilt from what
-        // the workspace has, as before.
-        if (doc is null || !File.Exists(path)) return true;
+        if (doc is null)
+        {
+            // A file the workspace does not hold: one a pull or an IDE has just added, if it is a
+            // source the workspace would have loaded, and otherwise nothing to do with the model.
+            // Not taken in, a view that arrived this way was saved into a second file with its id.
+            if (!File.Exists(path) || ProjectFor(path) is not { } project) return false;
+            await TakeInAddedAsync(project, path, ReadFromDisk(path), ct);
+            return true;
+        }
+        if (!File.Exists(path))
+        {
+            // Deleted outside: it leaves the workspace. Kept, it went on being compiled and read
+            // into the model, and when it came back with the same text that was taken for an echo.
+            await TakeOutAsync(doc, ct);
+            return true;
+        }
 
         var disk = ReadFromDisk(path);
         var current = await doc.GetTextAsync(ct);
@@ -115,6 +153,41 @@ public sealed class StemmaEngine : IAsyncDisposable
             _workspace.TryApplyChanges(doc.WithText(disk).Project.Solution);
         }
         return true;
+    }
+
+    private async Task TakeInAddedAsync(Project project, string path, SourceText text, CancellationToken ct)
+    {
+        if (_workspace is FileBackedWorkspace fileBacked)
+        {
+            fileBacked.TakeIn(DocumentInfo.Create(
+                DocumentId.CreateNewId(project.Id, path),
+                Path.GetFileName(path),
+                loader: TextLoader.From(TextAndVersion.Create(text, VersionStamp.Create(), path)),
+                filePath: path));
+            return;
+        }
+        // MSBuildWorkspace writes what it adds, the same bytes it was just given, and lists the file
+        // in the project, which globs its sources and needs no such item; that is put back.
+        var projectDir = Path.GetDirectoryName(project.FilePath)!;
+        var folders = Path.GetRelativePath(projectDir, Path.GetDirectoryName(path)!)
+            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Where(s => s is not ("." or ""))
+            .ToArray();
+        var projectFiles = await SnapshotProjectFilesAsync(_workspace.CurrentSolution, ct);
+        _workspace.TryApplyChanges(project.AddDocument(Path.GetFileName(path), text, folders, path).Project.Solution);
+        await RestoreProjectFilesAsync(projectFiles, ct);
+    }
+
+    private async Task TakeOutAsync(Document doc, CancellationToken ct)
+    {
+        if (_workspace is FileBackedWorkspace fileBacked)
+        {
+            fileBacked.TakeOut(doc.Id);
+            return;
+        }
+        var projectFiles = await SnapshotProjectFilesAsync(_workspace.CurrentSolution, ct);
+        _workspace.TryApplyChanges(_workspace.CurrentSolution.RemoveDocument(doc.Id));
+        await RestoreProjectFilesAsync(projectFiles, ct);
     }
 
     private static SourceText ReadFromDisk(string path)
@@ -1046,6 +1119,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         {
             return await LoggedAsync("SaveView", async () =>
             {
+                await CatchUpWithDiskAsync(ct);
                 var oldSolution = _workspace.CurrentSolution;
                 Solution newSolution;
                 if (await FindViewDocumentAsync(view.Id, ct) is { } found)
@@ -1079,6 +1153,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         {
             return await LoggedAsync("RemoveView", async () =>
             {
+                await CatchUpWithDiskAsync(ct);
                 if (await FindViewDocumentAsync(viewId, ct) is not { } found)
                     return new OperationFailed(opId, "ViewNotFound", viewId);
                 var oldSolution = _workspace.CurrentSolution;
@@ -1100,6 +1175,35 @@ public sealed class StemmaEngine : IAsyncDisposable
         else
             EngineLog.OperationApplied(_log, operation, elapsedMs, 0);
         return result;
+    }
+
+    /// <summary>
+    /// Bring the workspace's set of files into line with the disk now, rather than when the watcher
+    /// next polls. A view is found by the id its file declares, so one pulled in half a second ago is
+    /// not found, and saving it wrote a second file declaring the same view (B-015).
+    /// </summary>
+    private async Task CatchUpWithDiskAsync(CancellationToken ct)
+    {
+        var held = _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents)
+            .Where(d => !string.IsNullOrEmpty(d.FilePath))
+            .ToList();
+        var heldPaths = new HashSet<string>(held.Select(d => d.FilePath!), StringComparer.OrdinalIgnoreCase);
+        var changed = new List<string>();
+        foreach (var doc in held.Where(d => !File.Exists(d.FilePath)))
+        {
+            await TakeOutAsync(doc, ct);
+            changed.Add(doc.FilePath!);
+        }
+        foreach (var path in Directory.EnumerateFiles(_model.RootPath, "*.cs", SearchOption.AllDirectories))
+        {
+            if (heldPaths.Contains(path) || ProjectFor(path) is not { } project) continue;
+            await TakeInAddedAsync(project, path, ReadFromDisk(path), ct);
+            changed.Add(path);
+        }
+        if (changed.Count == 0) return;
+        await ReloadAsync(ct);
+        _undo.OnExternalChange();
+        foreach (var path in changed) ExternalChange?.Invoke(path);
     }
 
     private async Task<(Document Document, SyntaxNode Root)?> FindViewDocumentAsync(string viewId, CancellationToken ct)

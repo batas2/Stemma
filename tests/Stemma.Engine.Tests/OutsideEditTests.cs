@@ -104,6 +104,161 @@ public sealed class OutsideEditTests
         await An_outside_edit_is_taken_in_once_and_left_alone(ws.RootPath, ws.ArchPath, writesBack: true);
     }
 
+    private const string PulledView = """
+        using Stemma.Model;
+
+        namespace Scratch;
+
+        public static class Pulled
+        {
+            public static View Define() => new(
+                Id: "view_pulled",
+                Name: "Pulled",
+                BaseView: "all",
+                ElementIds: new[] { "ctx_001" });
+        }
+        """;
+
+    private static bool Holds(StemmaEngine engine, string path) =>
+        engine.Solution.Projects.SelectMany(p => p.Documents)
+            .Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+
+    private static async Task<bool> EventuallyAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return true;
+            await Task.Delay(100);
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// A pull adds files and deletes them, not only edits them. A view that arrived while the canvas
+    /// was open was saved into a second file declaring the same id, because the engine never saw the
+    /// first; a deleted file stayed in the engine, and when it came back with the same text it was
+    /// taken for the echo of Stemma's own write.
+    /// </summary>
+    private static async Task Files_added_and_deleted_outside_are_taken_in(string root)
+    {
+        await using var engine = await StemmaEngine.OpenAsync(root);
+        engine.StartWatching();
+        var broadcasts = 0;
+        engine.ExternalChange += _ => Interlocked.Increment(ref broadcasts);
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        var views = Path.Combine(root, "Views");
+        Directory.CreateDirectory(views);
+        var pulled = Path.Combine(views, "Pulled.cs");
+
+        await File.WriteAllTextAsync(pulled, PulledView);
+        (await EventuallyAsync(() => Holds(engine, pulled))).Should().BeTrue("a file added outside is part of the model");
+        (await File.ReadAllTextAsync(pulled)).Should().Be(PulledView, "taking a file in does not change it");
+
+        var saved = await engine.SaveViewAsync("op", new ArchView("view_pulled", "Pulled", "all", ["ctx_001", "ctx_002"]));
+        saved.Should().BeOfType<OperationApplied>();
+        Directory.GetFiles(views).Select(Path.GetFileName).Should().Equal(["Pulled.cs"], "the view is edited where it is, not written again");
+        var edited = await File.ReadAllTextAsync(pulled);
+        edited.Should().Be(PulledView.Replace("new[] { \"ctx_001\" }", "new[] { \"ctx_001\", \"ctx_002\" }"));
+
+        var before = broadcasts;
+        File.Delete(pulled);
+        (await EventuallyAsync(() => !Holds(engine, pulled))).Should().BeTrue("a file deleted outside leaves the model");
+        (await EventuallyAsync(() => broadcasts > before)).Should().BeTrue("and the canvas is told");
+        File.Exists(pulled).Should().BeFalse("nothing writes it back");
+
+        // Back with exactly the text the engine last held: still a change, not an echo.
+        before = broadcasts;
+        await File.WriteAllTextAsync(pulled, edited);
+        (await EventuallyAsync(() => Holds(engine, pulled))).Should().BeTrue("a file that comes back is part of the model again");
+        (await EventuallyAsync(() => broadcasts > before)).Should().BeTrue("and the canvas is told");
+    }
+
+    [Fact]
+    public async Task Files_added_and_deleted_outside_a_model_only_workspace_are_taken_in()
+    {
+        var (root, _) = await CreateModelOnlyAsync();
+        try { await Files_added_and_deleted_outside_are_taken_in(root); }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Files_added_and_deleted_outside_a_project_workspace_are_taken_in()
+    {
+        var modelProj = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Stemma.Model", "Stemma.Model.csproj"));
+        var csproj = $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <Nullable>enable</Nullable>
+              </PropertyGroup>
+              <ItemGroup>
+                <ProjectReference Include="{modelProj}" />
+              </ItemGroup>
+            </Project>
+            """;
+        await using var ws = await TestArchWorkspace.CreateAsync(csproj, Source);
+        var projectFile = Directory.GetFiles(ws.RootPath, "*.csproj").Single();
+        var projectBytes = await File.ReadAllBytesAsync(projectFile);
+
+        await Files_added_and_deleted_outside_are_taken_in(ws.RootPath);
+
+        (await File.ReadAllBytesAsync(projectFile)).Should().Equal(projectBytes, "the project globs its sources; it gains no Compile item");
+    }
+
+    [Fact]
+    public async Task A_view_written_a_moment_ago_is_edited_where_it_is_before_the_watcher_has_seen_it()
+    {
+        // No watcher: this is the half second between a pull and the poll that would notice it, which
+        // is all it takes to reload the canvas and drag a box into the new view.
+        var (root, _) = await CreateModelOnlyAsync();
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            var views = Path.Combine(root, "Views");
+            Directory.CreateDirectory(views);
+            var pulled = Path.Combine(views, "Pulled.cs");
+            await File.WriteAllTextAsync(pulled, PulledView);
+
+            var saved = await engine.SaveViewAsync("op", new ArchView("view_pulled", "Pulled", "all", ["ctx_001", "ctx_002"]));
+
+            saved.Should().BeOfType<OperationApplied>();
+            Directory.GetFiles(views).Select(Path.GetFileName).Should().Equal(["Pulled.cs"]);
+            (await File.ReadAllTextAsync(pulled)).Should()
+                .Be(PulledView.Replace("new[] { \"ctx_001\" }", "new[] { \"ctx_001\", \"ctx_002\" }"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Several_files_changed_at_once_are_all_taken_in()
+    {
+        var (root, file) = await CreateModelOnlyAsync();
+        var first = Path.Combine(root, "Views", "Pulled.cs");
+        var second = Path.Combine(root, "Views", "Second.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(first)!);
+        await File.WriteAllTextAsync(first, PulledView);
+        await File.WriteAllTextAsync(second, PulledView.Replace("Pulled", "Second").Replace("view_pulled", "view_second"));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            engine.StartWatching();
+            await Task.Delay(TimeSpan.FromSeconds(1));
+
+            // One pull, three files, well inside one debounce. Only the last path of each burst used
+            // to be taken in.
+            await File.WriteAllTextAsync(file, Source.Replace("\"Ordering\"", "\"Sales\""));
+            await File.WriteAllTextAsync(first, PulledView.Replace("Name: \"Pulled\"", "Name: \"Pulled twice\""));
+            await File.WriteAllTextAsync(second, PulledView.Replace("Pulled", "Second").Replace("view_pulled", "view_second")
+                .Replace("Name: \"Second\"", "Name: \"Second twice\""));
+
+            (await EngineHasSeenAsync(engine, file, "\"Sales\"")).Should().BeTrue();
+            (await EngineHasSeenAsync(engine, first, "\"Pulled twice\"")).Should().BeTrue();
+            (await EngineHasSeenAsync(engine, second, "\"Second twice\"")).Should().BeTrue();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public async Task An_edit_never_writes_over_a_version_of_the_file_it_has_not_seen()
     {

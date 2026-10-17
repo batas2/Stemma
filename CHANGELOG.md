@@ -58,6 +58,11 @@ down, for the first time, in the [operations catalog](./.doc/architecture/engine
   replaced `stemma.layout.json` with the modes alone. The browser's copy is now a cache: it is drawn
   until the repository has been read and then replaced, never merged. Views are read from the code
   on every refresh, and a refused view save is put back and said, not only logged.
+- **[B-015](./.doc/bugs/B-015-outside-changes-to-the-set-of-files-are-missed.md) — a pull that added
+  or deleted files was not taken in.** A view pulled in while the canvas was open was saved into a
+  second file with the same id. A deleted file went on being part of the model, and when it came
+  back it was taken for an echo. Of several files changed at once, only the last was read. The
+  engine's set of files now follows the disk.
 - **[B-013](./.doc/bugs/B-013-append-to-a-crowded-line-starts-a-new-one.md) — an id added to a view
   laid out several ids to a line** went on a line of its own, at column 0. It now goes at the end of
   the last line.

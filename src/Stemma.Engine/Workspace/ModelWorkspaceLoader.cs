@@ -117,7 +117,7 @@ public static class ModelWorkspaceLoader
         return (workspace, model);
     }
 
-    private static bool IsExcluded(string rootPath, string filePath)
+    internal static bool IsExcluded(string rootPath, string filePath)
     {
         var relative = Path.GetRelativePath(rootPath, filePath);
         var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -199,6 +199,12 @@ public sealed class FileBackedWorkspace()
     /// how their next save gets overwritten (B-008).
     /// </summary>
     public void TakeIn(DocumentId id, SourceText text) => OnDocumentTextChanged(id, text, PreservationMode.PreserveValue);
+
+    /// <summary>Take in a file a pull or an IDE has just added, without writing it.</summary>
+    public void TakeIn(DocumentInfo document) => OnDocumentAdded(document);
+
+    /// <summary>Let go of a file that is no longer on disk, without trying to delete it.</summary>
+    public void TakeOut(DocumentId id) => OnDocumentRemoved(id);
 
     protected override void ApplyDocumentTextChanged(DocumentId id, SourceText text)
     {
