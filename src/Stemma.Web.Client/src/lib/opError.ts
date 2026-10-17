@@ -19,6 +19,8 @@ const FRIENDLY: Record<string, string> = {
   TypeNotFound: 'That type is no longer in the model.',
   AlreadyPresent: "That's already there.",
   RewriteFailed: 'Nothing changed.',
+  ChangedOnDisk: 'The file was just changed outside Stemma. The new version is loaded — try that again.',
+  UndoConflict: "The file has changed since that edit, so it can't be undone exactly.",
   UnknownOp: "Stemma doesn't know how to do that.",
 };
 

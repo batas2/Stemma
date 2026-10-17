@@ -193,6 +193,13 @@ public sealed class FileBackedWorkspace()
         or ApplyChangesKind.AddDocument
         or ApplyChangesKind.RemoveDocument;
 
+    /// <summary>
+    /// Take in text that is already on disk — an outside edit — without writing it back.
+    /// <c>TryApplyChanges</c> would persist it, and persisting a file someone else has just saved is
+    /// how their next save gets overwritten (B-008).
+    /// </summary>
+    public void TakeIn(DocumentId id, SourceText text) => OnDocumentTextChanged(id, text, PreservationMode.PreserveValue);
+
     protected override void ApplyDocumentTextChanged(DocumentId id, SourceText text)
     {
         var path = CurrentSolution.GetDocument(id)?.FilePath;

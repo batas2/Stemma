@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Rename;
+using Microsoft.CodeAnalysis.Text;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Models;
 using Microsoft.Extensions.Logging;
@@ -75,23 +76,62 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync();
         try
         {
-            var contents = File.Exists(path) ? await File.ReadAllTextAsync(path) : null;
-            // Try to update the existing document; otherwise reload solution.
-            var doc = _workspace.CurrentSolution.Projects
-                .SelectMany(p => p.Documents)
-                .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
-            if (doc is not null && contents is not null)
-            {
-                var newSol = doc.WithText(Microsoft.CodeAnalysis.Text.SourceText.From(contents)).Project.Solution;
-                _workspace.TryApplyChanges(newSol);
-            }
+            // An echo that arrives after the window, or a save that changed nothing, is not a change.
+            if (!await TakeInFromDiskAsync(path, CancellationToken.None)) return;
             await ReloadAsync();
             _undo.OnExternalChange();
             ExternalChange?.Invoke(path);
         }
-        catch { /* engine swallows; client gets the broadcast eventually via reload */ }
+        catch (Exception e)
+        {
+            // async void: an exception here would take the process down. The canvas is stale until
+            // the next change, which is the failure the record names.
+            EngineLog.ExternalChangeFailed(_log, e);
+        }
         finally { _gate.Release(); }
     }
+
+    /// <summary>
+    /// Bring the workspace's copy of <paramref name="path"/> into line with the disk, and say whether
+    /// it differed. Read through <see cref="SourceText"/> so the encoding and BOM are detected rather
+    /// than assumed, which is what makes a later edit write them back unchanged.
+    /// </summary>
+    private async Task<bool> TakeInFromDiskAsync(string path, CancellationToken ct)
+    {
+        var doc = _workspace.CurrentSolution.Projects
+            .SelectMany(p => p.Documents)
+            .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        // A file the workspace does not hold, or one that has gone: the model is rebuilt from what
+        // the workspace has, as before.
+        if (doc is null || !File.Exists(path)) return true;
+
+        var disk = ReadFromDisk(path);
+        var current = await doc.GetTextAsync(ct);
+        if (current.ContentEquals(disk) && SamePreamble(current.Encoding, disk.Encoding)) return false;
+
+        if (_workspace is FileBackedWorkspace fileBacked)
+        {
+            fileBacked.TakeIn(doc.Id, disk);
+        }
+        else
+        {
+            // MSBuildWorkspace has no way to update a document without persisting it, so this writes
+            // the bytes it just read straight back — identical, encoding included. Marked as our own
+            // write so its echo is not taken for another outside edit.
+            lock (_lastSelfWriteAt) _lastSelfWriteAt[path] = DateTime.UtcNow;
+            _workspace.TryApplyChanges(doc.WithText(disk).Project.Solution);
+        }
+        return true;
+    }
+
+    private static SourceText ReadFromDisk(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return SourceText.From(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    }
+
+    private static bool SamePreamble(System.Text.Encoding? a, System.Text.Encoding? b) =>
+        (a?.GetPreamble() ?? []).AsSpan().SequenceEqual(b?.GetPreamble() ?? []);
 
     public static async Task<StemmaEngine> OpenAsync(string rootPath, CancellationToken ct = default, ILogger<StemmaEngine>? log = null)
     {
@@ -326,6 +366,27 @@ public sealed class StemmaEngine : IAsyncDisposable
         {
             var now = DateTime.UtcNow;
             foreach (var path in touchedPaths) _lastSelfWriteAt[path] = now;
+        }
+
+        // Never write over a version of a file this edit was not computed from. Between someone's
+        // save and the watcher noticing it there is a window of a second or so, and an edit applied
+        // in it would put the old text back with the new change on top (B-008).
+        foreach (var projectChange in changes.GetProjectChanges())
+        {
+            foreach (var docId in projectChange.GetChangedDocuments())
+            {
+                var before = oldSolution.GetDocument(docId);
+                if (before?.FilePath is not { } path || !File.Exists(path)) continue;
+                var seen = await before.GetTextAsync(ct);
+                if (seen.ContentEquals(ReadFromDisk(path))) continue;
+
+                await TakeInFromDiskAsync(path, ct);
+                await ReloadAsync(ct);
+                _undo.OnExternalChange();
+                ExternalChange?.Invoke(path);
+                return new OperationFailed(opId, "ChangedOnDisk",
+                    $"{Path.GetFileName(path)} changed outside Stemma since it was last read. The new version is loaded; try again.");
+            }
         }
 
         // Capture the errors that already exist BEFORE the edit. The compile gate must only
