@@ -21,6 +21,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-004](./B-004-bad-constraint-shape-kills-or-silently-changes-a-render.md) | A constraint field of the wrong shape either kills the render with an unreadable error or silently redraws the picture | S2 major | layout | Fixed |
 | [B-005](./B-005-cors-policy-refuses-the-page-the-host-is-serving.md) | The CORS allow-list names the dev server, so the host refuses the page it is serving and floods the log | S3 minor | web | Fixed |
 | [B-006](./B-006-model-only-edit-adds-a-byte-order-mark.md) | The first edit to a model-only workspace gives the file a byte-order mark it never had | S2 major | engine | Fixed |
+| [B-007](./B-007-undo-rebuilds-instead-of-restoring.md) | Undo rebuilds what an edit removed instead of putting it back | S2 major | engine | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 

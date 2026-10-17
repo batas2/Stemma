@@ -23,6 +23,7 @@ public sealed class StemmaEngine : IAsyncDisposable
     private readonly UndoStack _undo = new();
     private ExternalWatcher? _watcher;
     private ArchModel.ArchModel? _archBeforeOp;
+    private IReadOnlyList<DocumentWrite> _lastWrites = [];
     private readonly Dictionary<string, DateTime> _lastSelfWriteAt = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan SelfWriteEchoWindow = TimeSpan.FromSeconds(1.5);
 
@@ -158,6 +159,9 @@ public sealed class StemmaEngine : IAsyncDisposable
         var startedAt = Stopwatch.GetTimestamp();
         // Named on the write records below. Safe as a field because `_gate` serialises operations.
         _currentOpType = op.GetType().Name;
+        // Filled by CommitAsync; cleared first so an op that commits nothing cannot inherit the
+        // previous op's writes as its undo.
+        _lastWrites = [];
         // Capture the arch model state BEFORE the op so we can build inverse ops.
         if (recordUndo)
         {
@@ -197,6 +201,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             SetOwnershipOp x => await SetOwnershipAsync(x, ct),
             RestoreElementOp x => await RestoreArchElementAsync(x, ct),
             RestoreLinkOp x => await RestoreArchLinkAsync(x, ct),
+            RestoreDocumentsOp x => await RestoreDocumentsAsync(x, ct),
             SetElementContextOp x => await SetElementContextAsync(x, ct),
             SetElementAttributeOp x => await SetElementAttributeAsync(x, ct),
             _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
@@ -204,39 +209,12 @@ public sealed class StemmaEngine : IAsyncDisposable
 
         if (recordUndo && result is OperationApplied)
         {
-            var inverse = UndoStack.BuildInverse(op, _archBeforeOp);
-            if (inverse is not null)
-            {
-                _undo.Push(op, inverse, DescribeOp(op));
-            }
-            else
-            {
-                // For Add* ops we defer the inverse until we know the new id.
-                if (op is AddElementOp addEl)
-                {
-                    var fresh = await ReadArchModelAsync(ct);
-                    var added = fresh?.Elements
-                        .Where(e => e.Kind == addEl.ElementKind && e.Name == addEl.Name)
-                        .OrderByDescending(e => e.Id)
-                        .FirstOrDefault();
-                    if (added is not null)
-                    {
-                        _undo.Push(op, new RemoveElementOp($"undo_{Guid.NewGuid():N}", added.Id), DescribeOp(op));
-                    }
-                }
-                else if (op is AddLinkOp addLink)
-                {
-                    var fresh = await ReadArchModelAsync(ct);
-                    var added = fresh?.Links
-                        .Where(l => l.Kind == addLink.LinkKind && l.FromId == addLink.FromId && l.ToId == addLink.ToId)
-                        .OrderByDescending(l => l.Id)
-                        .FirstOrDefault();
-                    if (added is not null)
-                    {
-                        _undo.Push(op, new RemoveLinkOp($"undo_{Guid.NewGuid():N}", added.Id), DescribeOp(op));
-                    }
-                }
-            }
+            // What the edit wrote is the undo; the inverse operation is only the fallback for when
+            // the file has changed since (see RestoreDocumentsOp).
+            var writes = _lastWrites;
+            var fallback = UndoStack.BuildInverse(op, _archBeforeOp) ?? await InverseOfAddAsync(op, ct);
+            if (writes.Count > 0 || fallback is not null)
+                _undo.Push(op, new RestoreDocumentsOp($"undo_{Guid.NewGuid():N}", writes, fallback), DescribeOp(op));
         }
         // AC1 — exactly one record per operation, whatever happened. The elapsed time is here rather
         // than on each branch so no path can complete without one.
@@ -380,9 +358,74 @@ public sealed class StemmaEngine : IAsyncDisposable
         }
 
         await VerifyWritesAsync(newSolution, backups, ct);
+        _lastWrites = await DescribeWritesAsync(changes, oldSolution, newSolution, ct);
 
         await ReloadAsync(ct);
         return buildSuccessResult();
+    }
+
+    /// <summary>The tree each changed or added document had before this commit, and the text it has now.</summary>
+    private static async Task<IReadOnlyList<DocumentWrite>> DescribeWritesAsync(
+        SolutionChanges changes, Solution oldSolution, Solution newSolution, CancellationToken ct)
+    {
+        var writes = new List<DocumentWrite>();
+        foreach (var projectChange in changes.GetProjectChanges())
+        {
+            foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetAddedDocuments()))
+            {
+                var after = newSolution.GetDocument(docId);
+                if (after?.FilePath is null) continue;
+                var before = oldSolution.GetDocument(docId);
+                var beforeRoot = before is null ? null : await before.GetSyntaxRootAsync(ct);
+                writes.Add(new DocumentWrite(after.FilePath, beforeRoot, (await after.GetTextAsync(ct)).ToString()));
+            }
+        }
+        return writes;
+    }
+
+    private async Task<OperationResult> RestoreDocumentsAsync(RestoreDocumentsOp op, CancellationToken ct)
+    {
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = oldSolution;
+        foreach (var write in op.Writes)
+        {
+            var doc = newSolution.Projects.SelectMany(p => p.Documents)
+                .FirstOrDefault(d => string.Equals(d.FilePath, write.FilePath, StringComparison.OrdinalIgnoreCase));
+            var current = doc is null ? null : (await doc.GetTextAsync(ct)).ToString();
+            if (doc is null || current != write.After)
+            {
+                // Someone else has written to this file since. Its old bytes would erase their change.
+                if (op.Fallback is not null)
+                    return await ApplyInternalAsync(op.Fallback with { OpId = op.OpId }, recordUndo: false, ct);
+                return new OperationFailed(op.OpId, "UndoConflict",
+                    $"{Path.GetFileName(write.FilePath)} has changed since this edit, so it cannot be undone exactly.");
+            }
+            newSolution = write.Before is null
+                ? newSolution.RemoveDocument(doc.Id)
+                : newSolution.WithDocumentSyntaxRoot(doc.Id, write.Before);
+        }
+        return await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    private async Task<OperationBase?> InverseOfAddAsync(OperationBase op, CancellationToken ct)
+    {
+        // An add's inverse needs the id the engine generated, which only the model after it knows.
+        if (op is not (AddElementOp or AddLinkOp)) return null;
+        var fresh = await ReadArchModelAsync(ct);
+        return op switch
+        {
+            AddElementOp add => fresh?.Elements
+                .Where(e => e.Kind == add.ElementKind && e.Name == add.Name)
+                .OrderByDescending(e => e.Id)
+                .Select(e => new RemoveElementOp($"undo_{Guid.NewGuid():N}", e.Id))
+                .FirstOrDefault(),
+            AddLinkOp add => fresh?.Links
+                .Where(l => l.Kind == add.LinkKind && l.FromId == add.FromId && l.ToId == add.ToId)
+                .OrderByDescending(l => l.Id)
+                .Select(l => new RemoveLinkOp($"undo_{Guid.NewGuid():N}", l.Id))
+                .FirstOrDefault(),
+            _ => null,
+        };
     }
 
     /// <summary>
@@ -1156,6 +1199,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.SystemId is not null) attrs["systemId"] = op.SystemId;
         if (op.ContainerKind is not null) attrs["kind"] = op.ContainerKind;
         if (op.Role is not null) attrs["role"] = op.Role;
+        if (op.AboutId is not null) attrs["aboutId"] = op.AboutId;
         var element = new ArchModel.ArchElement(op.ElementId, op.Name, op.ElementKind, attrs);
         var newRoot = DslWriter.AddElement(root, element);
         var oldSolution = _workspace.CurrentSolution;
@@ -1175,6 +1219,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.Payload is not null) attrs["payload"] = op.Payload;
         if (op.Direction is not null) attrs["direction"] = op.Direction;
         if (op.DependencyKind is not null) attrs["kind"] = op.DependencyKind;
+        if (op.Label is not null) attrs["label"] = op.Label;
         var link = new ArchModel.ArchLink(op.LinkId, op.FromId, op.ToId, op.LinkKind, attrs);
         var newRoot = DslWriter.AddLink(root, link);
         var oldSolution = _workspace.CurrentSolution;

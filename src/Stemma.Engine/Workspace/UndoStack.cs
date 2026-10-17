@@ -1,10 +1,13 @@
+using Microsoft.CodeAnalysis;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Operations;
 
 namespace Stemma.Engine.Workspace;
 
 /// <summary>
-/// Engine-side undo/redo stack. Each entry is a pair of (forward op, inverse op).
+/// Engine-side undo/redo stack. Each entry is a pair of (forward op, inverse op), and the inverse
+/// the engine records is a <see cref="RestoreDocumentsOp"/>: put back exactly what the edit
+/// changed, or — if the file has changed since — fall back to the inverse operation built here.
 /// Capped at 100 entries (decision #36). Layout-only ops are NOT stored — they live
 /// client-side and are out of scope for the model history.
 ///
@@ -60,6 +63,9 @@ public sealed class UndoStack
     /// <summary>
     /// Build the inverse of the given op against the model state captured *before* the op was
     /// applied. Returns null when the op is layout-only or otherwise non-reversible.
+    ///
+    /// This is the fallback, not the undo: it is used only when the file no longer matches what the
+    /// edit wrote, so it has to re-create what was there without depending on where it was.
     /// </summary>
     public static OperationBase? BuildInverse(OperationBase op, ArchModel.ArchModel? archBefore)
     {
@@ -83,11 +89,12 @@ public sealed class UndoStack
                 prior.Attributes.TryGetValue("systemId", out var sys);
                 prior.Attributes.TryGetValue("kind", out var ckind);
                 prior.Attributes.TryGetValue("role", out var role);
+                prior.Attributes.TryGetValue("aboutId", out var about);
                 // The inverse re-adds the element; engine handles the regenerated ID gracefully
                 // because new elements get a fresh id. To preserve the original id we use a
                 // dedicated RestoreElementOp that bypasses id generation (declared below).
                 return new RestoreElementOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.Name, prior.Kind,
-                    ctx, sys, ckind, role);
+                    ctx, sys, ckind, role, about);
             }
 
             case AddLinkOp:
@@ -100,8 +107,9 @@ public sealed class UndoStack
                 prior.Attributes.TryGetValue("payload", out var payload);
                 prior.Attributes.TryGetValue("direction", out var direction);
                 prior.Attributes.TryGetValue("kind", out var kind);
+                prior.Attributes.TryGetValue("label", out var label);
                 return new RestoreLinkOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.FromId, prior.ToId, prior.Kind,
-                    payload, direction, kind);
+                    payload, direction, kind, label);
             }
 
             case SetLinkAttributeOp set when archBefore is not null:
@@ -146,26 +154,6 @@ public sealed class UndoStack
                 return null;
         }
     }
-
-    /// <summary>
-    /// Augments the just-recorded undo entry with an enriched inverse for AddElement/AddLink
-    /// once the engine has the post-apply state with the generated id.
-    /// </summary>
-    public void EnrichLastInverseAfterAdd(string newElementId, OperationBase forward)
-    {
-        if (_undo.Last is null) return;
-        var entry = _undo.Last.Value;
-        if (forward is AddElementOp)
-        {
-            _undo.RemoveLast();
-            _undo.AddLast(new Entry(forward, new RemoveElementOp($"undo_{Guid.NewGuid():N}", newElementId), entry.Description));
-        }
-        else if (forward is AddLinkOp)
-        {
-            _undo.RemoveLast();
-            _undo.AddLast(new Entry(forward, new RemoveLinkOp($"undo_{Guid.NewGuid():N}", newElementId), entry.Description));
-        }
-    }
 }
 
 /// <summary>
@@ -180,7 +168,8 @@ public sealed record RestoreElementOp(
     string? ContextId = null,
     string? SystemId = null,
     string? ContainerKind = null,
-    string? Role = null) : OperationBase(OpId);
+    string? Role = null,
+    string? AboutId = null) : OperationBase(OpId);
 
 /// <summary>
 /// Internal op used by the undo stack to restore a removed link with its original id.
@@ -193,4 +182,31 @@ public sealed record RestoreLinkOp(
     ArchLinkKind LinkKind,
     string? Payload = null,
     string? Direction = null,
-    string? DependencyKind = null) : OperationBase(OpId);
+    string? DependencyKind = null,
+    string? Label = null) : OperationBase(OpId);
+
+/// <summary>What one write did to one file: its syntax tree before, and the exact text it left.</summary>
+/// <param name="Before">Null when the write created the file.</param>
+public sealed record DocumentWrite(string FilePath, SyntaxNode? Before, string After);
+
+/// <summary>
+/// The inverse the engine records for every edit: put each file it wrote back exactly as it was —
+/// provided the file is still exactly as the edit left it.
+///
+/// Rebuilding the old state from the model cannot do this. A removed declaration comes back at the
+/// end of the method, without the comment above it, with the arguments the model knows about and
+/// none of the formatting; that is a second edit rather than the reversal of the first. Holding the
+/// tree the edit replaced makes undo the edit's own diff, reversed, and nothing else. It is a
+/// targeted replacement in the only sense that matters: the result differs from the file on disk in
+/// exactly the region the edit changed, because the file is checked to be byte-for-byte what the
+/// edit wrote before anything is put back.
+///
+/// When that check fails — the file was edited outside Stemma in between — restoring the old bytes
+/// would erase someone else's change, so the engine applies <paramref name="Fallback"/> instead, or
+/// refuses when there is none. Never registered for JSON: it carries syntax trees, and only the
+/// engine constructs it.
+/// </summary>
+public sealed record RestoreDocumentsOp(
+    string OpId,
+    IReadOnlyList<DocumentWrite> Writes,
+    OperationBase? Fallback) : OperationBase(OpId);
