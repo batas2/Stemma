@@ -48,6 +48,15 @@ take outside changes in. The sidecar needs the same contract.
    nothing until it can be read. Until now it was read as empty, and the next edit replaced it.
 5. **`GET` returns the file as it is,** not the C# type's reading of it, so the client sees what the
    file says, unknown keys included.
+6. **The comments sidecar follows the same rules** (*added 2026-10-17,
+   [B-018](../../bugs/B-018-comments-written-whole-and-read-as-empty.md)*). `comments.stemma.json`
+   was written whole from the panel's copy and read a file it could not parse as empty. Comments are
+   a list, so its changes name a comment by its id rather than by a path of keys: add one, reply to
+   one, resolve one, remove one (`PATCH /api/workspace/comments`, `CommentsPatch`). Adding what is
+   there and removing what is gone change nothing, so a change sent twice, or a comment pack
+   imported twice, is harmless. Decisions 2–5 apply unchanged: the change is made to the text on
+   disk, the engine watches the file and announces a change it did not make (`CommentsChanged`),
+   an unreadable file is refused by `GET` and `PATCH`, and `GET` returns the file as it is.
 
 ## Consequences
 
@@ -63,7 +72,10 @@ take outside changes in. The sidecar needs the same contract.
     would be a change nobody asked for. A sidecar Stemma creates still starts with it.
   - Two writers changing the same value at once: the last write wins, as it does in any editor.
 - **Neutral:** `LayoutSidecar` remains the typed reader for the render path and the CLI, and its
-  `Write` for creating a file from nothing.
+  `Write` for creating a file from nothing. The comments have no typed reader any more; nothing
+  but the canvas and the report reads them.
+- **Neutral:** both editors share one span reader and layout (`JsonText`). A file that escapes
+  characters keeps escaping them; one that holds them raw, or has never had one, gets them raw.
 
 ## Alternatives considered
 
@@ -88,4 +100,7 @@ it did.
 - `src/Stemma.Engine/Workspace/SidecarPatch.cs`, `src/Stemma.Engine/Workspace/StemmaEngine.cs`
   (`PatchSidecarAsync`)
 - `src/Stemma.Web.Client/src/lib/layout.ts` (`sidecarChanges`, `rereadLayoutSidecar`)
+- [B-018](../../bugs/B-018-comments-written-whole-and-read-as-empty.md);
+  `src/Stemma.Engine/Workspace/CommentsPatch.cs`, `JsonText.cs`, `SidecarFile.cs`;
+  `src/Stemma.Web.Client/src/lib/comments.ts`
 - [`../data-flow-and-sync.md`](../data-flow-and-sync.md), rules 2, 4 and 6

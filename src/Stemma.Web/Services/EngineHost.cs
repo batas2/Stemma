@@ -58,6 +58,18 @@ public sealed class EngineHost : IAsyncDisposable
                     WebLog.BroadcastFailed(_log, "SidecarChanged", e);
                 }
             };
+            _engine.CommentsChanged += async () =>
+            {
+                if (_hub is null) return;
+                try
+                {
+                    await _hub.Clients.All.SendAsync("CommentsChanged");
+                }
+                catch (Exception e)
+                {
+                    WebLog.BroadcastFailed(_log, "CommentsChanged", e);
+                }
+            };
             _engine.StartWatching();
             RecentWorkspaces.Touch(rootPath);
             return _engine.Model;

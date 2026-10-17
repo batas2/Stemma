@@ -36,10 +36,11 @@ public sealed class StemmaEngine : IAsyncDisposable
     /// <summary>Raised when stemma.layout.json changes on disk by any hand but this engine's (ADR-0021).</summary>
     public event Action? SidecarChanged;
 
-    private readonly SemaphoreSlim _sidecarGate = new(1, 1);
-    // The sidecar as this engine last wrote or announced it. A watcher event that finds the same text
-    // is the echo of that, not news — told apart by content, never by the clock (B-008).
-    private string? _sidecarSeen;
+    /// <summary>Raised when comments.stemma.json changes on disk by any hand but this engine's (B-018).</summary>
+    public event Action? CommentsChanged;
+
+    private readonly SidecarFile _layout;
+    private readonly SidecarFile _comments;
 
     /// <summary>
     /// Diagnostics only. Defaults to <see cref="NullLogger{T}.Instance"/> so the engine stays
@@ -53,11 +54,14 @@ public sealed class StemmaEngine : IAsyncDisposable
         _workspace = workspace;
         _model = model;
         _log = log ?? NullLogger<StemmaEngine>.Instance;
+        _layout = new SidecarFile(LayoutSidecar.PathFor(model.RootPath), NewSidecar);
+        _comments = new SidecarFile(CommentsSidecar.PathFor(model.RootPath), CommentsSidecar.Empty);
     }
 
     public void StartWatching()
     {
-        _sidecarSeen = ReadSidecarText();
+        _layout.Remember();
+        _comments.Remember();
         _watcher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _watcher = new ExternalWatcher(_model.RootPath, ShouldWatch, _log);
         _watcher.Changed += OnExternalChange;
@@ -65,7 +69,7 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private bool ShouldWatch(string path)
     {
-        if (IsSidecar(path)) return true;
+        if (_layout.Is(path) || _comments.Is(path)) return true;
         // Watch Architecture/, every file the workspace holds, and every file it would hold if it
         // were opened now — which is what a file added by a pull is.
         if (path.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) return true;
@@ -100,9 +104,14 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async void OnExternalChange(string path)
     {
-        if (IsSidecar(path))
+        if (_layout.Is(path))
         {
-            await TakeInSidecarAsync();
+            await TakeInAsync(_layout, () => SidecarChanged?.Invoke());
+            return;
+        }
+        if (_comments.Is(path))
+        {
+            await TakeInAsync(_comments, () => CommentsChanged?.Invoke());
             return;
         }
         await _gate.WaitAsync();
@@ -206,36 +215,14 @@ public sealed class StemmaEngine : IAsyncDisposable
         await RestoreProjectFilesAsync(projectFiles, ct);
     }
 
-    private bool IsSidecar(string path) =>
-        string.Equals(Path.GetFullPath(path), Path.GetFullPath(LayoutSidecar.PathFor(_model.RootPath)), StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>The sidecar's text without its byte-order mark; <c>null</c> when there is no file.</summary>
-    private string? ReadSidecarText()
-    {
-        var path = LayoutSidecar.PathFor(_model.RootPath);
-        if (!File.Exists(path)) return null;
-        var bytes = File.ReadAllBytes(path);
-        return Encoding.UTF8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes);
-    }
-
-    private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
-
     /// <summary>What a sidecar Stemma creates starts as: the schema it is written against, and a version.</summary>
     private static readonly string NewSidecar = $"{{\n  \"$schema\": \"{LayoutSidecar.SchemaUrl}\",\n  \"version\": 1\n}}\n";
 
-    private async Task TakeInSidecarAsync()
+    private async Task TakeInAsync(SidecarFile file, Action announce)
     {
         try
         {
-            await _sidecarGate.WaitAsync();
-            try
-            {
-                var text = ReadSidecarText();
-                if (text == _sidecarSeen) return;
-                _sidecarSeen = text;
-            }
-            finally { _sidecarGate.Release(); }
-            SidecarChanged?.Invoke();
+            if (await file.TakeInAsync()) announce();
         }
         catch (Exception e)
         {
@@ -250,31 +237,17 @@ public sealed class StemmaEngine : IAsyncDisposable
     /// including what someone else changed since the canvas read the file — stays (ADR-0021, B-014).
     /// A file that does not parse is refused, never replaced.
     /// </summary>
-    public async Task<OperationResult> PatchSidecarAsync(string opId, IReadOnlyList<SidecarChange> changes, CancellationToken ct = default)
-    {
-        await _sidecarGate.WaitAsync(ct);
-        try
-        {
-            return await LoggedAsync("PatchSidecar", async () =>
-            {
-                var path = LayoutSidecar.PathFor(_model.RootPath);
-                var exists = File.Exists(path);
-                var bytes = exists ? await File.ReadAllBytesAsync(path, ct) : [];
-                var bom = bytes.AsSpan().StartsWith(Utf8Bom);
-                var text = exists ? Encoding.UTF8.GetString(bom ? bytes[Utf8Bom.Length..] : bytes) : NewSidecar;
+    public Task<OperationResult> PatchSidecarAsync(string opId, IReadOnlyList<SidecarChange> changes, CancellationToken ct = default) =>
+        LoggedAsync("PatchSidecar", () => _layout.PatchAsync(opId, text => SidecarPatch.Apply(text, changes), ct));
 
-                string patched;
-                try { patched = SidecarPatch.Apply(text, changes); }
-                catch (SidecarPatchRefusedException e) { return new OperationFailed(opId, e.Reason, e.Message); }
-                if (exists && patched == text) return new OperationApplied(opId, []);
-
-                _sidecarSeen = patched;
-                await File.WriteAllBytesAsync(path, [.. (bom ? Utf8Bom : []), .. Encoding.UTF8.GetBytes(patched)], ct);
-                return new OperationApplied(opId, []);
-            });
-        }
-        finally { _sidecarGate.Release(); }
-    }
+    /// <summary>
+    /// Apply <paramref name="changes"/> to comments.stemma.json as it is on disk now, through
+    /// <see cref="CommentsPatch"/>: a comment added, answered, resolved or removed is that one change,
+    /// and a comment someone else wrote since the panel read the file stays (B-018). A file that does
+    /// not parse is refused, never replaced.
+    /// </summary>
+    public Task<OperationResult> PatchCommentsAsync(string opId, IReadOnlyList<CommentChange> changes, CancellationToken ct = default) =>
+        LoggedAsync("PatchComments", () => _comments.PatchAsync(opId, text => CommentsPatch.Apply(text, changes), ct));
 
     private static SourceText ReadFromDisk(string path)
     {

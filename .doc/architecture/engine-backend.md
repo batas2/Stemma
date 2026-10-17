@@ -133,6 +133,25 @@ a merge conflict is never read as empty and written back), `NotAnObject`, `Empty
 without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.
 Not on the undo stack; layout undo lives in the client.
 
+### The comments (`comments.stemma.json`)
+
+Written through `PATCH /api/workspace/comments`, which calls `StemmaEngine.PatchCommentsAsync` with
+a list of changes, each naming a comment by its id ([ADR-0021](./decisions/0021-sidecar-written-as-changes.md)
+decision 6, [B-018](../bugs/B-018-comments-written-whole-and-read-as-empty.md)). `CommentsPatch`
+applies each to the file's text with the span reader and layout it shares with `SidecarPatch`
+(`JsonText`):
+
+| Change | Edits exactly | Refuses / changes nothing |
+|---|---|---|
+| `add` | a new item after the last comment, laid out like it; `[]` opened onto lines; a `comments` list created if there is none | refuses `NotAComment` (no id, target or body); nothing if the id is there |
+| `reply` | a new item after the last reply in that comment's thread; a `thread` created if there is none | refuses `NoSuchComment`; nothing if the same author, time and body are there |
+| `resolve` | the `resolved` value, or the key added | refuses `NoSuchComment`; nothing if it is already so |
+| `remove` | the comment, its lines and one comma; the last one out leaves `[]` | nothing if it is gone |
+
+A file that does not parse, or whose `comments` is not a list, is refused `UnreadableSidecar` with
+the line to look at. The BOM survives; a workspace without the file gets one only when a change
+changes something. `GET` returns the file as it is, and `PATCH` answers with it.
+
 ### Layout: what "only the target" means
 
 - **New code** takes its indentation from the line it is placed beside and its line ending from the

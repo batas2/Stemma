@@ -20,7 +20,7 @@ removed).
 | 0007 | **Discovery as cache** (`discovered.stemma.json` regenerable). | 🗄️ Historical — discovery subsystem removed. |
 | 0008 | **LLM via the Web layer** — engine stays pure; LLM calls live in `Stemma.Web`. | ✅ Current — engine purity boundary. |
 | 0009 | **Canvas shapes in the layout sidecar** — free-form shapes are presentation. | ✅ Current. |
-| 0010 | **Comments as a Git sidecar.** | 🟡 Partial — revisit if comments are reintroduced. |
+| 0010 | **Comments as a Git sidecar.** | 🟡 Partial — comments live in `comments.stemma.json`, changed by id as [ADR-0021](./0021-sidecar-written-as-changes.md) decision 6 sets out ([B-018](../../bugs/B-018-comments-written-whole-and-read-as-empty.md)). |
 | 0011 | **YAML adapter shape.** | 🗄️ Historical — YAML adapter removed. |
 | 0012 | **View Books governance concept.** | 🟡 Directional — see [`../../product/roadmap.md`](../../product/roadmap.md). |
 | 0013 | **Cross-adapter references.** | 🗄️ Historical — single adapter now. |
@@ -31,7 +31,7 @@ removed).
 | [0018](./0018-concept-element-kind.md) | **A `Concept` element kind** — a box that asserts nothing, so a figure need not pretend to be a `Module`. | ✅ Current — see [F-010](../../features/F-010-concept-element-kind.md). |
 | [0019](./0019-relation-link-kind.md) | **A `Relation` link kind** — an arrow that asserts nothing, the same escape for links. | ✅ Current. |
 | [0020](./0020-diagnostics-contract.md) | **The diagnostics contract** — levels, categories, and no network sink. | ✅ Current — see [F-011](../../features/F-011-diagnostics-and-logging.md). |
-| [0021](./0021-sidecar-written-as-changes.md) | **The sidecar is written as changes** to the file as it is, and re-read when someone else changes it. | 🟡 Proposed — see [B-014](../../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md). |
+| [0021](./0021-sidecar-written-as-changes.md) | **The sidecars are written as changes** to the file as it is, and re-read when someone else changes them — the layout and, since B-018, the comments. | 🟡 Proposed — see [B-014](../../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md), [B-018](../../bugs/B-018-comments-written-whole-and-read-as-empty.md). |
 
 ## Legend
 

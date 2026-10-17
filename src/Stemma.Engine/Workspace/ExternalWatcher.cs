@@ -48,6 +48,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
         };
         _watcher.Filters.Add("*.cs");
         _watcher.Filters.Add(Path.GetFileName(LayoutSidecar.PathFor(rootPath)));
+        _watcher.Filters.Add(CommentsSidecar.FileName);
         _watcher.Changed += OnFsEvent;
         _watcher.Created += OnFsEvent;
         _watcher.Deleted += OnFsEvent;
@@ -90,8 +91,8 @@ public sealed class ExternalWatcher : IAsyncDisposable
     private IEnumerable<string> EnumerateWatched()
     {
         if (!Directory.Exists(_root)) yield break;
-        var sidecar = LayoutSidecar.PathFor(_root);
-        if (File.Exists(sidecar) && _shouldWatch(sidecar)) yield return sidecar;
+        foreach (var sidecar in new[] { LayoutSidecar.PathFor(_root), CommentsSidecar.PathFor(_root) })
+            if (File.Exists(sidecar) && _shouldWatch(sidecar)) yield return sidecar;
         foreach (var path in Directory.EnumerateFiles(_root, "*.cs", SearchOption.AllDirectories))
         {
             if (path.Contains("/bin/", StringComparison.OrdinalIgnoreCase) || path.Contains("/obj/", StringComparison.OrdinalIgnoreCase) || path.Contains(".g.cs", StringComparison.OrdinalIgnoreCase))

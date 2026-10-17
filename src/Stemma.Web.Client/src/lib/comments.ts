@@ -1,5 +1,7 @@
 // Epic 07 Track D — comments substrate.
-// Sidecar lives in `comments.stemma.json` at the workspace root, written via the engine API.
+// Sidecar lives in `comments.stemma.json` at the workspace root. The engine changes it: the canvas
+// sends changes naming each comment by id and shows the file the engine answers with, never a copy
+// of its own written back whole (B-018).
 
 export interface CommentReply { author: string; createdAt: string; body: string; }
 
@@ -16,19 +18,61 @@ export interface CommentEntry {
 
 export interface CommentsSidecar { version: number; comments: CommentEntry[]; }
 
-export async function fetchComments(): Promise<CommentsSidecar> {
-  const r = await fetch('/api/workspace/comments');
-  if (!r.ok) return { version: 1, comments: [] };
-  return r.json();
+/** One change to the comments, naming its comment by id. Adding what is there and removing what
+ *  is gone change nothing, so a change sent twice is harmless. */
+export type CommentChange =
+  | { op: 'add'; comment: CommentEntry }
+  | { op: 'reply'; id: string; reply: CommentReply }
+  | { op: 'resolve'; id: string; resolved: boolean }
+  | { op: 'remove'; id: string };
+
+/** The engine declined: the file does not parse (`UnreadableSidecar`), or the comment is gone (`NoSuchComment`). */
+export class CommentsRefused extends Error {
+  constructor(readonly reason: string, message: string) {
+    super(message);
+    this.name = 'CommentsRefused';
+  }
 }
 
-export async function saveComments(sidecar: CommentsSidecar): Promise<void> {
+/** The file as it is. One that cannot be read is a refusal, never an empty list: the next comment
+ *  posted onto an empty list was written over every comment the file held. */
+export async function fetchComments(): Promise<CommentsSidecar> {
+  const r = await fetch('/api/workspace/comments');
+  if (r.status === 409) throw await refused(r);
+  if (!r.ok) throw new Error(`Loading comments failed: ${r.status}`);
+  return normalised(await r.json());
+}
+
+/** Apply `changes` to the file as it is on disk; resolves to the file as it now is, comments
+ *  someone else wrote meanwhile included. */
+export async function patchComments(changes: CommentChange[]): Promise<CommentsSidecar> {
   const r = await fetch('/api/workspace/comments', {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(sidecar),
+    body: JSON.stringify({ changes }),
   });
-  if (!r.ok) throw new Error(`Comments save failed: ${r.status}`);
+  if (r.status === 409) throw await refused(r);
+  if (!r.ok) throw new Error(`Saving comments failed: ${r.status}`);
+  return normalised(await r.json());
+}
+
+async function refused(r: Response): Promise<CommentsRefused> {
+  const body = await r.json().catch(() => ({})) as { reason?: string; message?: string };
+  return new CommentsRefused(body.reason ?? 'Refused', body.message ?? `The comments could not be changed (${r.status}).`);
+}
+
+/** A hand-written or agent-written comment may leave out what the panel relies on. */
+function normalised(raw: { version?: number; comments?: Partial<CommentEntry>[] }): CommentsSidecar {
+  return {
+    version: raw.version ?? 1,
+    comments: (raw.comments ?? []).map((c) => ({
+      ...c,
+      targetKind: c.targetKind ?? 'element',
+      author: c.author ?? 'anonymous',
+      resolved: c.resolved ?? false,
+      thread: c.thread ?? [],
+    }) as CommentEntry),
+  };
 }
 
 export async function fetchAuthor(): Promise<string> {
@@ -89,6 +133,23 @@ export function parseCommentPack(raw: string): CommentPack {
     if (!c.id || !c.targetId || typeof c.body !== 'string') throw new Error('Malformed comment in pack');
   }
   return p;
+}
+
+/** A pack as the changes that bring it into the comments: each comment it has that they do not,
+ *  and each reply not yet in a thread. Empty when it was imported already. */
+export function packChanges(sidecar: CommentsSidecar, pack: CommentPack): {
+  changes: CommentChange[]; added: number; repliesAdded: number;
+} {
+  const { merged, added, repliesAdded } = mergeCommentPack(sidecar, pack);
+  const before = new Map(sidecar.comments.map((c) => [c.id, c]));
+  const changes: CommentChange[] = [];
+  for (const c of merged.comments) {
+    const was = before.get(c.id);
+    if (!was) changes.push({ op: 'add', comment: c });
+    // The merge appends replies after the ones already there.
+    else for (const reply of c.thread.slice(was.thread.length)) changes.push({ op: 'reply', id: c.id, reply });
+  }
+  return { changes, added, repliesAdded };
 }
 
 /** Merge a pack into the sidecar. Idempotent: comments merge by id; for an id that already

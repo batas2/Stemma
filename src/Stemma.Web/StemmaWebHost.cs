@@ -459,15 +459,9 @@ public static class StemmaWebHost
             var path = LayoutSidecar.PathFor(engine.RootPath);
             if (!File.Exists(path)) return Results.Text("{\n  \"version\": 1,\n  \"views\": {}\n}\n", "application/json");
             var text = File.ReadAllText(path);
-            try
-            {
-                using var doc = JsonDocument.Parse(text);
-                if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException("not an object");
-            }
-            catch (JsonException e)
-            {
-                return Results.Conflict(new { reason = "UnreadableSidecar", message = $"stemma.layout.json cannot be read: {e.Message}" });
-            }
+            // Read by the same reader that writes it, so the two cannot disagree about what is readable.
+            try { SidecarPatch.Apply(text, []); }
+            catch (SidecarPatchRefusedException e) { return Results.Conflict(new { reason = e.Reason, message = e.Message }); }
             return Results.Text(text, "application/json");
         });
 
@@ -496,22 +490,57 @@ public static class StemmaWebHost
             }
         });
 
-        // ---------------- Comments substrate ----------------
+        // ---------------- Comments ----------------
+        // The file as it is, like the layout's: the panel shows what the file says. One that does not
+        // parse is refused rather than read as no comments, which the next one posted was then written
+        // over (B-018).
 
         workspaceApi.MapGet("/comments", (EngineHost host) =>
         {
             var engine = host.Engine;
             if (engine is null) return Results.NotFound();
-            return Results.Ok(CommentsSidecar.Read(engine.RootPath));
+            var path = CommentsSidecar.PathFor(engine.RootPath);
+            if (!File.Exists(path)) return Results.Text(CommentsSidecar.Empty, "application/json");
+            var text = File.ReadAllText(path);
+            try { CommentsPatch.Apply(text, []); }
+            catch (SidecarPatchRefusedException e) { return Results.Conflict(new { reason = e.Reason, message = e.Message }); }
+            return Results.Text(text, "application/json");
         });
 
-        workspaceApi.MapPut("/comments", async (CommentsSidecar sidecar, EngineHost host) =>
+        // Changes, each naming its comment by id, applied to the file as it is on disk — never the
+        // panel's copy of the whole file, which wrote over every comment that arrived after it was
+        // read. The answer is the file as it now is, so the panel shows the others' comments too.
+        workspaceApi.MapPatch("/comments", async (CommentChanges request, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
         {
             var engine = host.Engine;
             if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
-            sidecar.Write(engine.RootPath);
-            await Task.CompletedTask;
-            return Results.NoContent();
+            var changes = new List<CommentChange>();
+            foreach (var c in request.Changes)
+            {
+                CommentChange? change = c.Op switch
+                {
+                    "add" when c.Comment is { } comment => new CommentChange.Add(comment),
+                    "reply" when c.Id is { Length: > 0 } id && c.Reply is { } reply => new CommentChange.AddReply(id, reply),
+                    "resolve" when c.Id is { Length: > 0 } id && c.Resolved is { } resolved => new CommentChange.SetResolved(id, resolved),
+                    "remove" when c.Id is { Length: > 0 } id => new CommentChange.Remove(id),
+                    _ => null,
+                };
+                if (change is null)
+                    return Results.BadRequest(new { error = "each change is add with a comment, reply with an id and a reply, resolve with an id and resolved, or remove with an id" });
+                changes.Add(change);
+            }
+            try
+            {
+                var result = await engine.PatchCommentsAsync($"comments_{Guid.NewGuid():N}", changes, ct);
+                if (result is OperationFailed f) return Results.Conflict(new { reason = f.Reason, message = f.Message });
+                var path = CommentsSidecar.PathFor(engine.RootPath);
+                return Results.Text(File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : CommentsSidecar.Empty, "application/json");
+            }
+            catch (IOException e)
+            {
+                WebLog.SidecarWriteFailed(logs.CreateLogger("Stemma.Web.Api"), e);
+                return Results.Problem("The comments could not be saved.");
+            }
         });
 
         workspaceApi.MapGet("/author", () =>
@@ -617,4 +646,13 @@ public static class StemmaWebHost
 internal sealed record LayoutPatch(List<LayoutPatch.Change> Changes)
 {
     internal sealed record Change(string[] Path, JsonElement? Value, bool Remove);
+}
+
+/// <summary>
+/// The body of <c>PATCH /api/workspace/comments</c>: each change adds a comment, replies to one,
+/// resolves one or removes one, naming it by id.
+/// </summary>
+internal sealed record CommentChanges(List<CommentChanges.Change> Changes)
+{
+    internal sealed record Change(string? Op, string? Id, JsonElement? Comment, JsonElement? Reply, bool? Resolved);
 }

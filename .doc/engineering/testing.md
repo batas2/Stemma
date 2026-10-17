@@ -107,7 +107,8 @@ scripts/package/smoke-test.sh --tool dist/tool --version 0.1.0
   holds; that nothing is written before the sidecar has been read; and that an entry the sidecar no
   longer has is not brought back from `localStorage` (`browserCache.test.ts`). A change to how the
   file is *written* is a `SidecarPatchTests` case: the whole file against hand-written edits, on a
-  Stemma-written fixture and a hand-formatted one.
+  Stemma-written fixture and a hand-formatted one. The comments are tested the same way, in
+  `CommentsPatchTests`.
 - **Bug fix** → a regression test that fails before the fix and passes after (link it from the bug
   record in [`../bugs/`](../bugs/)).
 

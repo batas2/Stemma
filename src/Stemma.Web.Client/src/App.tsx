@@ -12,7 +12,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, undoOperation, redoOperation, applyOperation } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, undoOperation, redoOperation, applyOperation } from './lib/signalr';
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
 import { removeShape, saveShapes } from './lib/shapes';
@@ -88,7 +88,9 @@ export default function App() {
       const root = useApp.getState().workspace?.rootPath;
       if (root) rereadLayoutSidecar(root).catch(reportFailure('Sidecar', ClientEvent.RequestFailed, 'Reading the changed layout sidecar'));
     });
-    return () => { offOp(); offExt(); offSidecar(); };
+    // The comments changed outside: whichever panel is open reads them again.
+    const offComments = onCommentsChanged(() => window.dispatchEvent(new Event('stemma:comments-changed')));
+    return () => { offOp(); offExt(); offSidecar(); offComments(); };
   }, [setWs, setArch, setViolations, setBooks]);
 
   // Load the active workspace's model + presentation whenever the workspace changes — on the

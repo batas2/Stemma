@@ -6,6 +6,7 @@ let connection: signalR.HubConnection | null = null;
 const opListeners = new Set<(r: OperationResult) => void>();
 const externalListeners = new Set<() => void>();
 const sidecarListeners = new Set<() => void>();
+const commentsListeners = new Set<() => void>();
 
 export async function ensureConnection(): Promise<signalR.HubConnection> {
   if (connection?.state === signalR.HubConnectionState.Connected) return connection;
@@ -20,6 +21,7 @@ export async function ensureConnection(): Promise<signalR.HubConnection> {
   connection.on('OperationApplied', (r: OperationResult) => opListeners.forEach(l => l(r)));
   connection.on('ExternalChange', () => externalListeners.forEach(l => l()));
   connection.on('SidecarChanged', () => sidecarListeners.forEach(l => l()));
+  connection.on('CommentsChanged', () => commentsListeners.forEach(l => l()));
   await connection.start();
   return connection;
 }
@@ -38,6 +40,12 @@ export function onExternalChange(cb: () => void) {
 export function onSidecarChanged(cb: () => void) {
   sidecarListeners.add(cb);
   return () => sidecarListeners.delete(cb);
+}
+
+/** comments.stemma.json changed by a hand other than this engine's — a pull, a teammate, an agent (B-018). */
+export function onCommentsChanged(cb: () => void) {
+  commentsListeners.add(cb);
+  return () => commentsListeners.delete(cb);
 }
 
 /**

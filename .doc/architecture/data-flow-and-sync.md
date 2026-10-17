@@ -77,6 +77,19 @@ Frontend rules that keep it correct:
    whatever anyone else changed since stays with it. A file that does not parse is refused, never
    read as empty and written back.
 
+## Comments (`comments.stemma.json`)
+
+Review conversation about the model — threads on elements, shapes and views — kept in Git beside it
+([ADR-0010](./decisions/README.md)). It is neither model nor presentation, and it is written by the
+same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-changes.md), decision 6):
+
+1. **Changes, by id.** The panel sends what it did — add, reply, resolve, remove — never its copy of
+   the file, and shows the file the engine answers with.
+2. **Taken in.** A change made outside (`CommentsChanged`) makes an open panel read the file again.
+3. **Refused, never read as empty.** A file that does not parse is said to be, in the panel and in a
+   report export, and nothing is written to it until it parses. Reading it as empty is how a merge
+   conflict lost every comment ([B-018](../bugs/B-018-comments-written-whole-and-read-as-empty.md)).
+
 ## The read path & live sync
 
 - On open: REST returns the model snapshot + the engine primes the sidecar; the client hydrates

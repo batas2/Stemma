@@ -107,7 +107,9 @@ export function buildReportBundle(i: ReportInputs): ReportBundle {
 export async function collectReportBundle(rootPath: string): Promise<ReportBundle> {
   const [model, sidecar] = await Promise.all([
     archModel(),
-    fetchComments().catch(() => ({ version: 1, comments: [] })),
+    // A file that cannot be read fails the export rather than shipping a report with no comments
+    // in it that looks like one nobody commented on (B-018).
+    fetchComments(),
   ]);
   if (!model) throw new Error('No architecture model loaded');
   const notes: Record<string, string> = {};

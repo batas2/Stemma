@@ -182,3 +182,74 @@ test('a change made to the sidecar outside survives the next edit (B-014)', asyn
   expect(after).toContain('Changed by a pull.');
   expect(onlyAdds(pulled, after)).toBe(true);
 });
+
+/** A teammate's comments, written by hand: four spaces, raw Polish, a key Stemma does not know. */
+const TEAMMATE = `{
+    "version": 1,
+    "comments": [
+        {
+            "id": "cmt_teammate",
+            "targetKind": "element",
+            "targetId": "cnt_cli",
+            "author": "Ewa",
+            "createdAt": "2026-10-16T09:00:00Z",
+            "body": "Czy CLI potrzebuje własnego hosta?",
+            "resolved": false,
+            "labels": ["pytanie"],
+            "thread": []
+        }
+    ]
+}
+`;
+
+async function openComments(page: Page, element: string) {
+  await page.locator('.react-flow__node', { hasText: element }).first().click();
+  await page.getByRole('button', { name: 'Comments', exact: true }).click();
+}
+
+test('a comment posted is that comment, and one pulled in meanwhile survives it (B-018)', async ({ page }) => {
+  const file = join(root, 'comments.stemma.json');
+  await writeFile(file, TEAMMATE);
+  await openComments(page, 'stemma CLI');
+  await expect(page.getByText('Czy CLI potrzebuje własnego hosta?')).toBeVisible();
+
+  // A pull lands while the panel is open: a second comment on the same element.
+  const pulled = TEAMMATE.replace('\n    ]\n}', [
+    ',',
+    '        {',
+    '            "id": "cmt_pulled",',
+    '            "targetKind": "element",',
+    '            "targetId": "cnt_cli",',
+    '            "author": "Ada",',
+    '            "createdAt": "2026-10-17T08:00:00Z",',
+    '            "body": "Przyszło z pulla.",',
+    '            "resolved": false,',
+    '            "thread": []',
+    '        }',
+    '    ]',
+    '}',
+  ].join('\n'));
+  await writeFile(file, pulled);
+  // The engine announces it, and the open panel reads the file again.
+  await expect(page.getByText('Przyszło z pulla.')).toBeVisible({ timeout: 20_000 });
+
+  await page.getByLabel('New comment').fill('Tak, na czas renderu.');
+  await page.getByLabel('New comment').press('Enter');
+
+  await expect.poll(() => read('comments.stemma.json')).toContain('Tak, na czas renderu.');
+  const after = await read('comments.stemma.json');
+  expect(onlyAdds(pulled, after)).toBe(true);
+  expect(after).toContain('"body": "Tak, na czas renderu."');
+});
+
+test('comments that cannot be read are said to be, and nothing is written over them (B-018)', async ({ page }) => {
+  const file = join(root, 'comments.stemma.json');
+  const conflicted = TEAMMATE.replace('    "version": 1,\n', '<<<<<<< HEAD\n    "version": 1,\n=======\n    "version": 2,\n>>>>>>> theirs\n');
+  await writeFile(file, conflicted);
+  await openComments(page, 'stemma CLI');
+
+  await expect(page.getByRole('alert').filter({ hasText: 'comments.stemma.json' })).toBeVisible();
+  await expect(page.getByLabel('New comment')).toBeDisabled();
+  await page.waitForTimeout(1_000);
+  expect(await read('comments.stemma.json')).toBe(conflicted);
+});

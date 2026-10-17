@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { reportFailure, ClientEvent } from '@/lib/log';
-import { Check, MessageSquare, Send, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, Check, MessageSquare, Send, Trash2, Upload, X } from 'lucide-react';
 import {
-  type CommentEntry, type CommentsSidecar,
-  addComment, appendReply, commentsForTarget, fetchAuthor, fetchComments,
-  mergeCommentPack, newCommentId, parseCommentPack, removeComment, saveComments, updateComment,
+  type CommentChange, type CommentEntry, type CommentsSidecar,
+  CommentsRefused, addComment, appendReply, commentsForTarget, fetchAuthor, fetchComments,
+  newCommentId, packChanges, parseCommentPack, patchComments, removeComment, updateComment,
 } from '@/lib/comments';
 import { useApp } from '@/lib/store';
 
@@ -20,23 +20,50 @@ interface Props {
 /**
  * Side panel that surfaces every comment on a single target. Used by the inspector
  * and (later) the canvas glyph click. Round-trips through `comments.stemma.json`.
+ *
+ * Each action is sent as the one change it is, and the panel then shows the file the engine answers
+ * with — so a comment that arrived in a pull meanwhile is shown, never written over (B-018). The
+ * engine announces a change made outside, and the panel reads the file again.
  */
 export function CommentsPanel({ targetKind, targetId, title }: Props) {
   const [sidecar, setSidecar] = useState<CommentsSidecar>({ version: 1, comments: [] });
+  // Why the file cannot be read, when it cannot. Nothing is sent until it can.
+  const [unreadable, setUnreadable] = useState<string | null>(null);
   const [author, setAuthor] = useState('anonymous');
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const load = useCallback(() => fetchComments()
+    .then((s) => { setSidecar(s); setUnreadable(null); })
+    .catch((e) => {
+      // What was shown is no longer what the file says, so it is not shown; it comes back when the
+      // file can be read.
+      if (e instanceof CommentsRefused) { setSidecar({ version: 1, comments: [] }); setUnreadable(e.message); }
+      else reportFailure('Api', ClientEvent.RequestFailed, 'Loading comments')(e);
+    }), []);
+
   useEffect(() => { fetchAuthor().then(setAuthor); }, []);
-  useEffect(() => { fetchComments().then(setSidecar).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading comments')); }, [targetKind, targetId]);
+  useEffect(() => { load(); }, [targetKind, targetId, load]);
+  useEffect(() => {
+    window.addEventListener('stemma:comments-changed', load);
+    return () => window.removeEventListener('stemma:comments-changed', load);
+  }, [load]);
 
   const items = useMemo(() => commentsForTarget(sidecar, targetKind, targetId), [sidecar, targetKind, targetId]);
 
-  async function persist(next: CommentsSidecar) {
-    setSidecar(next);
+  /** Show `shown` at once, send `changes`, then show what the file says. */
+  async function change(shown: CommentsSidecar, changes: CommentChange[]) {
+    setSidecar(shown);
     setBusy(true);
-    try { await saveComments(next); }
-    finally { setBusy(false); }
+    try {
+      setSidecar(await patchComments(changes));
+    } catch (e) {
+      // The edit did not land: say why, and show the file rather than an edit that is not in it.
+      useApp.getState().setToast({ kind: 'error', text: (e as Error).message });
+      await load();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onPostNew() {
@@ -49,7 +76,7 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
       body, resolved: false, thread: [],
     };
     setDraft('');
-    await persist(addComment(sidecar, c));
+    await change(addComment(sidecar, c), [{ op: 'add', comment: c }]);
   }
 
   // F-001: merge a comment pack exported from an architecture report (.comments.stemma.json).
@@ -58,11 +85,9 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
     const setToast = useApp.getState().setToast;
     try {
       const pack = parseCommentPack(await file.text());
-      const fresh = await fetchComments();
-      const { merged, added, repliesAdded } = mergeCommentPack(fresh, pack);
-      if (!added && !repliesAdded) { setToast({ kind: 'info', text: 'Pack already imported — nothing new.' }); return; }
-      await saveComments(merged);
-      setSidecar(merged);
+      const { changes, added, repliesAdded } = packChanges(await fetchComments(), pack);
+      if (changes.length === 0) { setToast({ kind: 'info', text: 'Pack already imported — nothing new.' }); return; }
+      setSidecar(await patchComments(changes));
       setToast({ kind: 'success', text: `Imported ${added} comment${added === 1 ? '' : 's'}${repliesAdded ? ` + ${repliesAdded} repl${repliesAdded === 1 ? 'y' : 'ies'}` : ''} from ${pack.author ?? 'pack'}` });
     } catch (e) {
       setToast({ kind: 'error', text: `Pack import failed: ${(e as Error).message}` });
@@ -80,6 +105,7 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
         <span className="ml-auto text-[10px] text-faint">{items.length}</span>
         <button
           onClick={() => fileRef.current?.click()}
+          disabled={unreadable !== null}
           title="Import a comment pack exported from an architecture report"
           className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
         >
@@ -93,18 +119,30 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportPack(f); e.target.value = ''; }}
         />
       </div>
+      {unreadable !== null && (
+        <div role="alert" className="mx-3 mb-2 flex gap-1.5 rounded border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 px-2 py-1.5 text-[11px] text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+          <span>
+            {unreadable} Nothing is written to it until it can be read again — a merge may have left
+            its markers in. The comments come back here as soon as the file is fixed.
+          </span>
+        </div>
+      )}
       <div className="px-3 space-y-2">
         {items.map((c) => (
           <CommentCard
             key={c.id}
             entry={c}
             author={author}
-            onResolve={() => persist(updateComment(sidecar, c.id, { resolved: !c.resolved }))}
-            onRemove={() => persist(removeComment(sidecar, c.id))}
-            onReply={(body) => persist(appendReply(sidecar, c.id, { author, createdAt: new Date().toISOString(), body }))}
+            onResolve={() => change(updateComment(sidecar, c.id, { resolved: !c.resolved }), [{ op: 'resolve', id: c.id, resolved: !c.resolved }])}
+            onRemove={() => change(removeComment(sidecar, c.id), [{ op: 'remove', id: c.id }])}
+            onReply={(body) => {
+              const reply = { author, createdAt: new Date().toISOString(), body };
+              change(appendReply(sidecar, c.id, reply), [{ op: 'reply', id: c.id, reply }]);
+            }}
           />
         ))}
-        {items.length === 0 && (
+        {items.length === 0 && unreadable === null && (
           <p className="text-[10px] text-faint italic">No comments yet.</p>
         )}
       </div>
@@ -116,11 +154,11 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
           placeholder="Add a comment…"
           aria-label="New comment"
           className="input-base flex-1 text-xs"
-          disabled={busy}
+          disabled={busy || unreadable !== null}
         />
         <button
           onClick={onPostNew}
-          disabled={busy || draft.trim() === ''}
+          disabled={busy || unreadable !== null || draft.trim() === ''}
           aria-label="Post comment"
           className="btn btn-sm btn-primary"
         >

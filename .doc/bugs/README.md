@@ -32,6 +32,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-015](./B-015-outside-changes-to-the-set-of-files-are-missed.md) | A file added or deleted outside Stemma, or several changed at once, was not taken in | S2 major | engine | Fixed |
 | [B-016](./B-016-tarball-render-needs-the-dotnet-it-ships-without.md) | `stemma render` from the tarball needs the `dotnet` the tarball is built to do without | S2 major | cli | Fixed |
 | [B-017](./B-017-new-model-left-uncommitted-where-git-knows-nobody.md) | A new model is left uncommitted where git has not been told who the user is | S3 minor | web | Fixed |
+| [B-018](./B-018-comments-written-whole-and-read-as-empty.md) | Comments are written whole from the panel's copy, and a file that does not parse reads as none | S2 major | sidecar | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 
@@ -84,7 +85,10 @@ Before deep-diving, rule these out — they cause a recurring class of canvas bu
 - **A shared file written whole from a copy read once** → every write re-serializes the file
   (a diff of all of it for a one-line change) and puts back what anyone else changed since the read.
   Write the change, onto the file as it is now. See
-  [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md).
+  [B-014](./B-014-the-sidecar-is-written-whole-from-a-stale-copy.md), and
+  [B-018](./B-018-comments-written-whole-and-read-as-empty.md) for the same in the comments, where a
+  file that did not parse also read as empty. A `catch` that returns an empty value is a write
+  waiting to happen.
 - **A closed C# type inside a pass-through format** → members the client writes are silently dropped
   on bind, before anything is written. The round-trip test still passes, because it only asserts what
   the type declares. Any nested type in `LayoutSidecar` needs `[JsonExtensionData]` — see
