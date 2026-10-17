@@ -85,9 +85,11 @@ public static class ModelWorkspaceLoader
         var documents = sources.Select(path =>
         {
             // Read through SourceText so the encoding and BOM travel with the document; the writer
-            // hands them straight back on save, which is what keeps the diff clean.
+            // hands them straight back on save, which is what keeps the diff clean. The default is
+            // what a file *without* a BOM is taken to be, so it must not emit one: Encoding.UTF8
+            // does, and gave every BOM-less file a BOM on its first edit (B-006).
             using var stream = File.OpenRead(path);
-            var text = SourceText.From(stream, Encoding.UTF8, canBeEmbedded: true);
+            var text = SourceText.From(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), canBeEmbedded: true);
             return DocumentInfo.Create(
                 DocumentId.CreateNewId(projectId, path),
                 Path.GetFileName(path),

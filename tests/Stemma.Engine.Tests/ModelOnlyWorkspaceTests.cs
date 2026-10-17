@@ -154,6 +154,28 @@ public sealed class ModelOnlyWorkspaceTests
     }
 
     [Fact]
+    public async Task A_file_without_a_bom_does_not_gain_one()
+    {
+        // The other half of the test above, and the common case: no editor on Linux or macOS writes
+        // a BOM. Gaining one turns the user's first edit into a diff of line 1 as well.
+        var root = await CreateModelOnlyWorkspaceAsync();
+        var file = Path.Combine(root, "Architecture", "Architecture.cs");
+        try
+        {
+            await using (var engine = await StemmaEngine.OpenAsync(root))
+            {
+                var result = await engine.ApplyAsync(
+                    new AddElementOp($"op_{Guid.NewGuid():N}", ArchElementKind.Module, "Pricing", ContextId: "ctx_001"));
+                result.Should().BeOfType<OperationApplied>();
+            }
+
+            var bytes = await File.ReadAllBytesAsync(file);
+            bytes.Take(3).Should().NotEqual(new byte[] { 0xEF, 0xBB, 0xBF }, "a file saved without a byte-order mark must stay without one");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task Renaming_an_element_works_without_a_project_system()
     {
         // Rename is the one operation that needs a Compilation, so it is the one that proves the

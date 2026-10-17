@@ -83,6 +83,20 @@ public class ArchModelTests
     }
 
     [Fact]
+    public async Task An_edit_through_a_project_workspace_does_not_add_a_byte_order_mark()
+    {
+        await using var ws = await CreateAsync("""
+            var ctx = new BoundedContext("ctx_001", "Buyer");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        var result = await engine.ApplyAsync(new AddElementOp("op1", ArchElementKind.Module, "Onboarding", ContextId: "ctx_001"));
+        result.Should().BeOfType<Operations.OperationApplied>();
+
+        var bytes = await File.ReadAllBytesAsync(ws.ArchPath);
+        bytes.Take(3).Should().NotEqual(new byte[] { 0xEF, 0xBB, 0xBF });
+    }
+
+    [Fact]
     public async Task SetElementContext_moves_module_to_another_context()
     {
         await using var ws = await CreateAsync("""
