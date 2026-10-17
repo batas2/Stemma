@@ -67,6 +67,11 @@ adds the commit), the tarball's README. Never write a version anywhere else.
    pushes the tool packages — platform package first, pointer second — and verifies them against
    `SHA256SUMS` before it does. A package on nuget.org can be unlisted but never deleted, which is
    why this waits for a person rather than following the tag.
+7. **Record the demo**, if the release changes what it shows: `npm run demo:record` in
+   `src/Stemma.Web.Client` films the app renaming a box, the `git diff` that made, and the report it
+   exports, into `dist/demo/stemma-demo.mp4` and `.webm`. It is the real app on a scratch copy of
+   AuroraRail and asserts the diff it shows, so it cannot claim more than the release does. It needs
+   ffmpeg on `PATH`.
 
 ## nuget.org
 

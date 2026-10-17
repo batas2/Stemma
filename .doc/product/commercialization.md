@@ -100,6 +100,9 @@ D bundles into A/B. E enabled passively. F only if a client shows up by themselv
 5. **Landing page + demo.** One page: 60-second screen capture (canvas edit → `git diff` → HTML
    report), the one-liner ("the diagram is your code — and it round-trips"), email capture.
    Host on Cloudflare Pages (free).
+   **The capture exists, 2026-10-17:** `npm run demo:record` films exactly that sequence from the
+   real app, in about 45 seconds, and can be re-recorded for every release
+   ([`releasing.md`](../engineering/releasing.md)). Putting it on the page is still to do.
 6. **Report watermark.** Footer link "Made with <name>" in every exported report (already trivially
    addable in `template.ts`) — each shared report is an ad. Paid tiers can remove it later.
    **Done 2026-10-17:** "Made with Stemma" at the foot of the report's rail and on its logo, and a
@@ -116,7 +119,7 @@ D bundles into A/B. E enabled passively. F only if a client shows up by themselv
 page live.
 *2026-10-17:* the licence is committed, and the tool is installable in one command once 0.1.0 is
 published. The name is not owned yet (domain, NuGet id, org), and the project page at
-[bfrackowiak.pl/stemma](https://bfrackowiak.pl/stemma/) has no 60-second capture yet.
+[bfrackowiak.pl/stemma](https://bfrackowiak.pl/stemma/) does not show the recorded demo yet.
 
 ### Phase 1 — Audience (4–8 weeks, parallel with normal life)
 
