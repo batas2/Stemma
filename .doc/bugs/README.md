@@ -25,6 +25,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-008](./B-008-outside-edit-is-written-back-forever.md) | An edit made outside Stemma is written back to disk, again and again, without its BOM | S2 major | engine | Fixed |
 | [B-009](./B-009-edits-rebuild-the-declaration.md) | Setting an attribute or a tag rewrote the whole declaration, and removing one took the lines above it | S2 major | engine | Fixed |
 | [B-010](./B-010-saving-a-view-rewrites-its-file.md) | Saving a view from the canvas regenerated its file, and deleting one removed any file that quoted its id | S2 major | web | Fixed |
+| [B-011](./B-011-type-operations-ignore-layout.md) | The type operations wrote members with no layout and removed them by the wrong rules | S3 minor | engine | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 

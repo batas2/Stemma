@@ -591,7 +591,9 @@ public sealed class StemmaEngine : IAsyncDisposable
         Solution newSolution;
         if (existingDoc is null)
         {
-            var content = $"namespace {op.Namespace};{Environment.NewLine}{Environment.NewLine}{visibilityKw} {typeKindKw} {op.Name}{Environment.NewLine}{{{Environment.NewLine}}}{Environment.NewLine}";
+            // LF whatever the OS: with Environment.NewLine the same operation wrote a CRLF file on
+            // Windows, so what a model gained depended on whose machine added the type.
+            var content = $"namespace {op.Namespace};\n\n{visibilityKw} {typeKindKw} {op.Name}\n{{\n}}\n";
             var project = oldSolution.Projects
                 .OrderByDescending(p => op.FilePath.StartsWith(Path.GetDirectoryName(p.FilePath ?? "") ?? "", StringComparison.OrdinalIgnoreCase))
                 .FirstOrDefault();
@@ -603,18 +605,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         {
             var root = await existingDoc.GetSyntaxRootAsync(ct);
             if (root is not CompilationUnitSyntax cu) return new OperationFailed(op.OpId, "ParseError", "Could not parse target file");
-            var newType = SyntaxFactory.ParseMemberDeclaration($"{visibilityKw} {typeKindKw} {op.Name}{Environment.NewLine}{{{Environment.NewLine}}}");
-            if (newType is null) return new OperationFailed(op.OpId, "ParseError", "Could not synthesize new type");
-
-            SyntaxNode newRoot;
-            var ns = cu.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>()
-                .FirstOrDefault(n => n.Name.ToString() == op.Namespace);
-            if (ns is FileScopedNamespaceDeclarationSyntax fsns)
-                newRoot = cu.ReplaceNode(fsns, fsns.AddMembers((MemberDeclarationSyntax)newType));
-            else if (ns is NamespaceDeclarationSyntax nds)
-                newRoot = cu.ReplaceNode(nds, nds.AddMembers((MemberDeclarationSyntax)newType));
-            else
-                newRoot = cu.AddMembers((MemberDeclarationSyntax)newType);
+            var newRoot = TypeWriter.AddType(cu, op.Namespace, $"{visibilityKw} {typeKindKw} {op.Name}");
             newSolution = existingDoc.WithSyntaxRoot(newRoot).Project.Solution;
         }
 
@@ -660,8 +651,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             .FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
         if (typeNode is null) return new OperationFailed(op.OpId, "TypeNodeNotFound", op.TypeId);
 
-        var newRoot = root.RemoveNode(typeNode, SyntaxRemoveOptions.KeepLeadingTrivia);
-        if (newRoot is null) return new OperationFailed(op.OpId, "RemoveFailed", "RemoveNode returned null");
+        var newRoot = TypeWriter.RemoveMember(root, typeNode);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
@@ -688,8 +678,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var prop = SyntaxFactory.ParseMemberDeclaration($"{visibilityKw} {op.TypeName} {op.Name} {{{accessors} }}");
         if (prop is null) return new OperationFailed(op.OpId, "ParseError", "Could not synthesize property");
 
-        var newType = typeDecl.AddMembers((MemberDeclarationSyntax)prop);
-        var newRoot = root.ReplaceNode(typeDecl, newType);
+        var newRoot = root.ReplaceNode(typeDecl, TypeWriter.AddMember(typeDecl, prop));
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
 
@@ -734,8 +723,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var prop = typeDecl?.Members.OfType<PropertyDeclarationSyntax>().FirstOrDefault(p => p.Identifier.Text == op.PropertyName);
         if (prop is null) return new OperationFailed(op.OpId, "PropertyNotFound", op.PropertyName);
 
-        var newRoot = root.RemoveNode(prop, SyntaxRemoveOptions.KeepLeadingTrivia);
-        if (newRoot is null) return new OperationFailed(op.OpId, "RemoveFailed", "RemoveNode null");
+        var newRoot = TypeWriter.RemoveMember(root, prop);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
 
@@ -763,8 +751,13 @@ public sealed class StemmaEngine : IAsyncDisposable
         var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
         if (typeDecl?.BaseList is null || typeDecl.BaseList.Types.Count == 0)
             return new OperationFailed(op.OpId, "NoBaseList", "Type has no base list");
+        // A base class is always first in the list, but the first entry is not always a base class:
+        // in `class Invoice : IPriced` it is an interface, and removing it by position would remove that.
+        var symbol = (await doc.Project.GetCompilationAsync(ct))?.GetTypeByMetadataName(op.TypeId);
+        if (symbol?.BaseType is null or { SpecialType: SpecialType.System_Object or SpecialType.System_ValueType })
+            return new OperationFailed(op.OpId, "NoBaseClass", $"{typeModel.Name} implements interfaces but inherits from no class.");
 
-        var newType = RemoveAtFromBaseList(typeDecl, 0);
+        var newType = TypeWriter.RemoveBase(typeDecl, 0);
         var newRoot = root.ReplaceNode(typeDecl, newType);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
@@ -791,7 +784,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var match = typeDecl.BaseList.Types.FirstOrDefault(b => b.Type.ToString() == ifaceModel.Name || b.Type.ToString() == ifaceModel.Id);
         if (match is null) return new OperationFailed(op.OpId, "InterfaceNotImplemented", op.InterfaceTypeId);
         var idx = typeDecl.BaseList.Types.IndexOf(match);
-        var newType = RemoveAtFromBaseList(typeDecl, idx);
+        var newType = TypeWriter.RemoveBase(typeDecl, idx);
         var newRoot = root.ReplaceNode(typeDecl, newType);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
@@ -815,30 +808,10 @@ public sealed class StemmaEngine : IAsyncDisposable
         var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
         if (typeDecl is null) return new OperationFailed(opId, "TypeNodeNotFound", typeId);
 
+        if (typeDecl.BaseList?.Types.Any(b => b.Type.ToString() == addedModel.Name) == true)
+            return new OperationFailed(opId, "AlreadyPresent", addedTypeId);
         var baseTypeSyntax = SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName(addedModel.Name));
-        TypeDeclarationSyntax newType;
-        if (typeDecl.BaseList is null)
-        {
-            // Move identifier's trailing trivia to the end of the base type so things like
-            // "class Dog\n{" become "class Dog : Animal\n{" rather than collapsing whitespace.
-            var origIdentifierTrailing = typeDecl.Identifier.TrailingTrivia;
-            var typedBase = baseTypeSyntax.WithTrailingTrivia(origIdentifierTrailing);
-            var newBaseList = SyntaxFactory.BaseList(SyntaxFactory.SingletonSeparatedList<BaseTypeSyntax>(typedBase))
-                .WithColonToken(SyntaxFactory.Token(SyntaxKind.ColonToken)
-                    .WithTrailingTrivia(SyntaxFactory.Space));
-            newType = typeDecl
-                .WithIdentifier(typeDecl.Identifier.WithTrailingTrivia(SyntaxFactory.Space))
-                .WithBaseList(newBaseList);
-        }
-        else
-        {
-            if (typeDecl.BaseList.Types.Any(b => b.Type.ToString() == addedModel.Name))
-                return new OperationFailed(opId, "AlreadyPresent", addedTypeId);
-            var newBaseList = addAtFront
-                ? typeDecl.BaseList.WithTypes(typeDecl.BaseList.Types.Insert(0, baseTypeSyntax))
-                : typeDecl.BaseList.WithTypes(typeDecl.BaseList.Types.Add(baseTypeSyntax));
-            newType = typeDecl.WithBaseList(newBaseList);
-        }
+        var newType = TypeWriter.AddBase(typeDecl, baseTypeSyntax, first: addAtFront);
         var newRoot = root.ReplaceNode(typeDecl, newType);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
@@ -847,22 +820,6 @@ public sealed class StemmaEngine : IAsyncDisposable
             var refreshed = _model.FindType(typeId);
             return new OperationApplied(opId, refreshed is null ? [] : [new TypeUpdated(refreshed)]);
         }, ct);
-    }
-
-    private static TypeDeclarationSyntax RemoveAtFromBaseList(TypeDeclarationSyntax typeDecl, int index)
-    {
-        var bl = typeDecl.BaseList!;
-        var newTypes = bl.Types.RemoveAt(index);
-        if (newTypes.Count == 0)
-        {
-            // Move base list trailing trivia back to the identifier so things like
-            // "class Dog : Animal\n{" become "class Dog\n{" cleanly.
-            var origTrailing = bl.GetTrailingTrivia();
-            return typeDecl
-                .WithBaseList(null)
-                .WithIdentifier(typeDecl.Identifier.WithTrailingTrivia(origTrailing));
-        }
-        return typeDecl.WithBaseList(bl.WithTypes(newTypes));
     }
 
     private static async Task WriteFileAtomicAsync(string path, string contents, CancellationToken ct)

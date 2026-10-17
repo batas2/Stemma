@@ -2,9 +2,10 @@
 # whole-file diff and fail the fidelity suite on Windows. Normalise on commit, check out LF.
 * text=auto eol=lf
 
-# The pathological fidelity fixture mixes CRLF and LF on purpose. Normalising it would delete the
+# The pathological fidelity fixtures mix CRLF and LF on purpose. Normalising one would delete the
 # case it exists to cover, and the suite would go on passing.
 tests/Stemma.Engine.Tests/Fixtures/arch/pathological.cs -text
+tests/Stemma.Engine.Tests/Fixtures/types/pathological.cs -text
 
 # Except the formats that genuinely require CRLF to run.
 *.bat text eol=crlf

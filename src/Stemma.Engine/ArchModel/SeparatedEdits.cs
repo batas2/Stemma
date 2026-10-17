@@ -140,6 +140,43 @@ internal static class Trivia
         return last < 0 ? SyntaxTriviaList.Empty : SyntaxFactory.TriviaList(leading.Take(last + 1));
     }
 
+    /// <summary>
+    /// What stays of a removed node's leading trivia: the whole lines above it that are not its own.
+    /// A documentation comment is the node's own and goes with it. Lines that are only blank go too,
+    /// since the next node keeps its own blank line and two would be left; and before a closing
+    /// brace or the end of the file, trailing blank lines go, so a block does not end on one.
+    /// Comments and directives stay: Stemma cannot tell a note about the node from the header of the
+    /// section it sits in, and removing someone's prose cannot be taken back.
+    /// </summary>
+    public static SyntaxTriviaList KeptAbove(SyntaxTriviaList leading, bool beforeClosing)
+    {
+        var kept = new List<SyntaxTrivia>();
+        foreach (var t in Above(leading))
+        {
+            if (t.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia) || t.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+            {
+                if (kept.Count > 0 && kept[^1].IsKind(SyntaxKind.WhitespaceTrivia)) kept.RemoveAt(kept.Count - 1);
+                continue;
+            }
+            kept.Add(t);
+        }
+        if (!kept.Any(t => t.IsDirective || t.IsKind(SyntaxKind.DisabledTextTrivia)
+                           || t.IsKind(SyntaxKind.SingleLineCommentTrivia) || t.IsKind(SyntaxKind.MultiLineCommentTrivia)))
+            return SyntaxTriviaList.Empty;
+        if (beforeClosing)
+        {
+            // A trailing line ending is a blank line when the line it ends had nothing on it.
+            while (kept.Count > 0 && kept[^1].IsKind(SyntaxKind.EndOfLineTrivia)
+                   && kept.Take(kept.Count - 1).LastOrDefault(x => !x.IsKind(SyntaxKind.WhitespaceTrivia)) is var before
+                   && (before == default || IsLineEnd(before)))
+            {
+                kept.RemoveAt(kept.Count - 1);
+                while (kept.Count > 0 && kept[^1].IsKind(SyntaxKind.WhitespaceTrivia)) kept.RemoveAt(kept.Count - 1);
+            }
+        }
+        return SyntaxFactory.TriviaList(kept);
+    }
+
     /// <summary>The whitespace at the start of the node's own line, without anything else on it.</summary>
     public static SyntaxTriviaList Indentation(SyntaxTriviaList leading)
     {

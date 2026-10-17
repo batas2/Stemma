@@ -130,6 +130,22 @@ public sealed class DslWriterContractTests
     }
 
     [Fact]
+    public async Task Removing_a_declaration_between_blank_lines_leaves_one_blank_line()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var a = new Module("mod_a", "A");
+
+                    var b = new Module("mod_b", "B");
+
+                    var c = new Module("mod_c", "C");
+                    return Model.Of(a, b, c);
+            """, new RemoveElementOp("op", "mod_b"));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().Contain("        var a = new Module(\"mod_a\", \"A\");\n\n        var c = new Module(\"mod_c\", \"C\");\n");
+    }
+
+    [Fact]
     public async Task Renaming_onto_a_variable_that_is_taken_keeps_the_old_variable()
     {
         var (result, source) = await ApplyAsync("""

@@ -28,8 +28,32 @@ internal sealed class FixtureWorkspace : IAsyncDisposable
         return Task.FromResult(new FixtureWorkspace(root, archPath));
     }
 
-    public static string FixturePath(string fixture) =>
-        Path.Combine(AppContext.BaseDirectory, "Fixtures", "arch", fixture + ".cs");
+    /// <summary>
+    /// A type fixture as <c>Domain/Ordering.cs</c>, beside the smallest model that makes the folder a
+    /// workspace. <see cref="ArchPath"/> is then the domain file, since that is what is under test.
+    /// </summary>
+    public static async Task<FixtureWorkspace> CreateForTypesAsync(string fixture)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"stemma-fidelity-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "Architecture"));
+        Directory.CreateDirectory(Path.Combine(root, "Domain"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"), """
+            using Stemma.Model;
+
+            namespace Fixture;
+
+            public static class Architecture
+            {
+                public static Model Build() => Model.Of();
+            }
+            """);
+        var domainPath = Path.Combine(root, "Domain", "Ordering.cs");
+        File.Copy(FixturePath(fixture, "types"), domainPath);
+        return new FixtureWorkspace(root, domainPath);
+    }
+
+    public static string FixturePath(string fixture, string kind = "arch") =>
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", kind, fixture + ".cs");
 
     public string ReadArch() => Fidelity.Decode(File.ReadAllBytes(ArchPath));
 
@@ -49,8 +73,6 @@ internal static class Fidelity
     /// rather than something the comparison quietly forgives.
     /// </summary>
     public static string Decode(byte[] bytes) => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetString(bytes);
-
-    public static string ReadFixture(string fixture) => Decode(File.ReadAllBytes(FixtureWorkspace.FixturePath(fixture)));
 
     /// <summary>
     /// The text with exactly these edits made, each to a span that occurs once. Every expectation in

@@ -292,15 +292,14 @@ public static class DslWriter
 
     /// <summary>
     /// Remove a statement and its own line — its indentation, a comment on the same line, its line
-    /// ending — and nothing above it. Blank lines, comments and directives above a declaration may
-    /// be about it or may head the section it sits in; Stemma cannot tell which, and deleting
-    /// someone's prose is the choice that cannot be taken back, so they move to the next line.
+    /// ending — and none of the comments or directives above it, which move to the next line
+    /// (<see cref="Trivia.KeptAbove"/> says why).
     /// </summary>
     private static SyntaxNode RemoveStatement(SyntaxNode root, StatementSyntax stmt)
     {
         var body = (BlockSyntax)stmt.Parent!;
-        var above = Trivia.Above(stmt.GetLeadingTrivia());
         var index = body.Statements.IndexOf(stmt);
+        var above = Trivia.KeptAbove(stmt.GetLeadingTrivia(), beforeClosing: index == body.Statements.Count - 1);
         var statements = body.Statements.RemoveAt(index);
         BlockSyntax edited;
         if (index < statements.Count)
