@@ -9,7 +9,7 @@ product's load-bearing wall.
 |---|---|---|
 | **Unit** | Operation handlers, DSL read/write, sidecar, model transforms — xUnit + FluentAssertions | Pure logic: `autoLayout`, `markdownDom`, `edgeDock`, `layout` sidecar, store reducers — vitest |
 | **Integration** | Round-trip fidelity against real source files; workspace load/apply/snapshot | Component/dom behavior where it carries logic (happy-dom) |
-| **End-to-end** | Full edit → rewrite → delta flows | Manual + sample-workspace smoke (see `samples/`) |
+| **End-to-end** | Full edit → rewrite → delta flows | Journeys in `tests/journey/` (Playwright, the production server, installed Chrome) |
 
 The base of the pyramid is wide and fast; meaningful assertions only — no trivial "it renders" tests.
 
@@ -45,6 +45,24 @@ To add an operation: add its row to the [catalog](../architecture/engine-backend
 then one case per fixture in `FidelityCases.cs` (or `TypeFidelityCases.cs`), then implement until
 they pass. Refusals and edge cases the fixtures do not reach go in `DslWriterContractTests.cs`.
 
+### And driven through the app
+
+The suite proves what an operation writes. It cannot see the path to it: the inspector that sends
+it, the browser's copy of the workspace, the watcher, two reads racing on open. Each of those broke
+the contract while the suite was green:
+- opening a workspace wrote its sidecar ([B-012](../bugs/B-012-the-browser-outranks-the-repository.md));
+- a view pulled in mid-session was saved into a second file
+  ([B-015](../bugs/B-015-outside-changes-to-the-set-of-files-are-missed.md)).
+
+`tests/journey/fidelity.spec.ts` drives the same checks through the UI, on a scratch copy of
+`samples/StemmaArchitecture`:
+- opening writes nothing;
+- an inspector edit changes its own argument, and undo puts every byte back;
+- an outside edit is shown and not written back;
+- a pulled view is edited where it is.
+
+Journeys run one at a time (`workers: 1`), because the backend holds one workspace per process.
+
 ## Commands
 
 ```bash
@@ -56,6 +74,8 @@ npx tsc --noEmit -p tsconfig.json             # typecheck (must be clean)
 npx vite build                                # build (must succeed)
 npx vitest run                                # unit/integration (must be green)
 npx vitest run src/lib/autoLayout.test.ts     # a single file
+npm run test:journey                          # journeys: builds, starts the server, drives Chrome
+STEMMA_BASE_URL=http://127.0.0.1:5050 npm run test:journey   # against a server already running
 ```
 
 ## What to test (by area)
@@ -67,7 +87,8 @@ npx vitest run src/lib/autoLayout.test.ts     # a single file
   its target; connected nodes end closer than disconnected; no overlaps).
 - **Markdown bridge change** → a round-trip test (`md → DOM → md` is stable) for the new element.
 - **Sidecar change** → that edits survive a re-prime (no clobber) and the model/presentation split
-  holds.
+  holds; that nothing is written before the sidecar has been read; and that an entry the sidecar no
+  longer has is not brought back from `localStorage` (`browserCache.test.ts`).
 - **Bug fix** → a regression test that fails before the fix and passes after (link it from the bug
   record in [`../bugs/`](../bugs/)).
 

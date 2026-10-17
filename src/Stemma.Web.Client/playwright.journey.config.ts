@@ -19,6 +19,9 @@ export default defineConfig({
   testDir: './tests/journey',
   // The first run builds the front end and restores the backend; neither is quick.
   timeout: 120_000,
+  // The backend holds one workspace per process, and every journey opens its own. Two at once open
+  // over each other, and each one's edits land in the other's workspace.
+  workers: 1,
   use: {
     baseURL: external ?? `http://127.0.0.1:${PORT}`,
     trace: 'on-first-retry',

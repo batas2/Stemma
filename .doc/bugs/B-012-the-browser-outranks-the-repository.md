@@ -114,7 +114,8 @@ implemented as *the committed copy wins where both have an entry*. Old line numb
 
 ## 7. Regression test (required)
 
-- [x] **Test location:** `src/Stemma.Web.Client/src/lib/browserCache.test.ts`
+- [x] **Test location:** `src/Stemma.Web.Client/src/lib/browserCache.test.ts`; and, through the app,
+      `tests/journey/fidelity.spec.ts`, *opening a workspace writes nothing*
 - **What it asserts:**
   - **Sections:** for each of notes, node styles, edge styles and custom properties, an entry the
     sidecar does not have is not drawn and is dropped from the cache. Before the read, the cache is

@@ -82,7 +82,7 @@ file it held. Everything else about a pull still went wrong:
     new one, and the poller reports a file it has not seen before.
   - **Saving or removing a view:** the engine first brings its set of files up to date itself. A view
     is found by the id its file declares, and the watcher only notices a new file within a second.
-    A reload and a drag fit inside that second.
+    A reload and a drag fit inside that second, which the journey below showed.
 - **Affected files:**
   - `src/Stemma.Engine/Workspace/StemmaEngine.cs`
   - `src/Stemma.Engine/Workspace/ExternalWatcher.cs`
@@ -98,6 +98,8 @@ file it held. Everything else about a pull still went wrong:
   - `…_a_project_workspace_are_taken_in`
   - `Several_files_changed_at_once_are_all_taken_in`
   - `A_view_written_a_moment_ago_is_edited_where_it_is_before_the_watcher_has_seen_it`
+  - `src/Stemma.Web.Client/tests/journey/fidelity.spec.ts`, *a view pulled in while the canvas is
+    open is edited where it is*
 - **What it asserts:**
   - A view written outside becomes part of the workspace, unchanged.
   - Saving it edits that file and writes no other.
