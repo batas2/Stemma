@@ -6,6 +6,50 @@
     <!-- Playwright's generated API surface is large and not ours to annotate. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <!-- The tool package (F-012): `dotnet tool install -g Stemma` installs everything the tarball
+       holds except the runtime, which whoever runs `dotnet tool` already has. One package per
+       platform, because Playwright's driver alone is a Node build per platform; linux-x64 is the
+       one platform it is built and tested for. -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>stemma</ToolCommandName>
+    <PackageId>Stemma</PackageId>
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+    <ToolPackageRuntimeIdentifiers>linux-x64</ToolPackageRuntimeIdentifiers>
+    <Description>Your architecture, written in your C# source: a modeling tool whose canvas edits are Roslyn rewrites of a compiling Architecture.cs.</Description>
+    <PackageTags>architecture;modeling;diagrams;roslyn;c4;adr</PackageTags>
+    <!-- PolyForm Noncommercial is not a licence nuget.org accepts as an expression, so the text
+         travels as a file. -->
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>PackageReadme.md</PackageReadmeFile>
+    <!-- Playwright's driver carries PowerShell helpers for installing browsers on Windows. NuGet
+         warns that it will not run them, which is right: nothing should run them here. -->
+    <NoWarn>$(NoWarn);NU5111</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="" Visible="false" />
+    <None Include="PackageReadme.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <!-- The CLI alone is the headless half. The package needs the rest beside it, in the layout
+       `HostLocation` and `stemma open` look for: the shell, the host it carries, and the built front
+       end. A separate `dotnet publish` rather than an MSBuild call, so the platform this package
+       is for does not leak into how the projects it shares with the CLI are restored. -->
+  <Target Name="BundleTheApp" BeforeTargets="PackTool" Condition="'$(RuntimeIdentifier)' != ''">
+    <PropertyGroup>
+      <_StemmaWwwroot>$(MSBuildThisFileDirectory)../Stemma.Web/wwwroot</_StemmaWwwroot>
+    </PropertyGroup>
+    <!-- Without it the host starts, serves the API and 404s the page. -->
+    <Error Condition="!Exists('$(_StemmaWwwroot)/index.html')"
+           Text="The front end is not built, so the package would have no page to serve. Run `npm ci &amp;&amp; npm run build` in src/Stemma.Web.Client first." />
+    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)../Stemma.Desktop&quot; -c $(Configuration) -r $(RuntimeIdentifier) --self-contained false -p:DebugType=none -o &quot;$(PublishDir)&quot; --nologo -v q" />
+    <ItemGroup>
+      <_StemmaFrontEnd Include="$(_StemmaWwwroot)/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_StemmaFrontEnd)" DestinationFiles="@(_StemmaFrontEnd->'$(PublishDir)wwwroot/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\Stemma.Engine\Stemma.Engine.csproj" />
     <PackageReference Include="Microsoft.Playwright" Version="1.61.0" />
