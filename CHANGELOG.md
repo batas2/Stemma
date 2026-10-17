@@ -2,10 +2,51 @@
 
 Notable changes to Stemma. Grouped by what a user would notice, not by commit.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) loosely; Stemma is not
-versioned yet, so entries are dated and the top section is what is in `main` but unreleased.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) loosely, and versions
+follow [Semantic Versioning](https://semver.org/). A version's section is also its release notes;
+within one, entries are dated. How a release is cut:
+[`.doc/engineering/releasing.md`](./.doc/engineering/releasing.md).
 
 ## Unreleased
+
+## 0.1.0 — 2026-10-17
+
+The first release: everything below, as one version you can install in one command. It is the
+first point at which the promise Stemma is built on — the `git diff` of an edit is that edit — is
+held by tests for both of its stores, the code and the presentation sidecar.
+
+```bash
+dotnet tool install -g Stemma                # with the .NET 10 SDK
+
+# or, with no .NET at all:
+mkdir -p ~/.local/share && curl -fsSL https://github.com/batas2/Stemma/releases/latest/download/stemma-linux-x64.tar.gz | tar -xz -C ~/.local/share && ~/.local/share/stemma/install.sh
+```
+
+Linux x64 only, for now: it is the one platform this release is built and tested for.
+
+### Installable — 2026-10-17
+
+**Added**
+
+- **`dotnet tool install -g Stemma`.** One package holds what the tarball holds except the runtime:
+  `stemma render` and `stemma validate`, and `stemma open` for the window.
+- **A version.** `stemma --version` and `stemma-desktop --version` say which Stemma this is, the
+  host reports it at `/api/diagnostics`, and the diagnostics bundle — the thing you paste into an
+  issue — carries the commit it was built from as well. It is written down in one place,
+  `Directory.Build.props`.
+- **Releases.** A tag builds, tests and packages its commit, tries the tarball and the tool package
+  the way you would — the tarball with no .NET on the machine, the tool installed from its package
+  alone — and drafts a release with both attached and their SHA-256 sums.
+- **A credit in every exported report.** "Made with Stemma", linking to the project page, at the foot
+  of the rail; a printed report carries it as a line of text.
+
+**Fixed**
+
+- **[B-016](./.doc/bugs/B-016-tarball-render-needs-the-dotnet-it-ships-without.md) — `stemma render`
+  from the tarball needed the `dotnet` the tarball is built to do without.** On a machine with no
+  .NET every render failed before it began. The CLI now starts the host and the window the way it
+  was itself shipped: on the runtime it is running on, or from their own executables when it
+  carries its runtime with it. The tarball's README says what `render` does need: Google Chrome.
 
 ### Fidelity, enforced — 2026-10-17
 

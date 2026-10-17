@@ -228,8 +228,8 @@ public static class Architecture
 
         Tag.For(cntWeb, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Web"));
         Tag.For(cntClient, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Frontend", Domain: "Canvas"));
-        Tag.For(cntCli, lifecycle: new Lifecycle(Status: "current", Phase: "shipped 2026-08"), ownership: new Ownership(Squad: "Core", Domain: "Headless"));
-        Tag.For(cntDesktop, lifecycle: new Lifecycle(Status: "current", Phase: "Photino, Linux tarball"), ownership: new Ownership(Squad: "Core", Domain: "Shell"));
+        Tag.For(cntCli, lifecycle: new Lifecycle(Status: "current", Phase: "0.1.0, dotnet tool"), ownership: new Ownership(Squad: "Core", Domain: "Headless"));
+        Tag.For(cntDesktop, lifecycle: new Lifecycle(Status: "current", Phase: "Photino; tarball and dotnet tool"), ownership: new Ownership(Squad: "Core", Domain: "Shell"));
 
         Tag.For(modEngine, lifecycle: new Lifecycle(Status: "current"), ownership: new Ownership(Squad: "Core", Domain: "Engine"));
         Tag.For(modRender, lifecycle: new Lifecycle(Status: "current", Phase: "one process per render"), ownership: new Ownership(Squad: "Core", Domain: "Headless"));

@@ -1,6 +1,7 @@
 # Commercialization — Stemma as a side income
 
-> Status: **working plan, not yet executed**. Written 2026-06-10. Owner: Bartosz.
+> Status: **Phase 0 under way.** Written 2026-06-10; 0.1.0 made ready to release on 2026-10-17 (see
+> Phase 0 items 4, 6 and 7). Owner: Bartosz.
 > Framing: a solo side project run on evenings/weekends from Poland (EU), targeting meaningful
 > side income — **not** a venture-scale startup. Every choice below optimizes for low ops burden,
 > low legal risk, and reversibility.
@@ -86,16 +87,36 @@ D bundles into A/B. E enabled passively. F only if a client shows up by themselv
    > JDG registration / which PIT form; 1 hour with a księgowa, before first sale, not after.
 4. **Distribution.** `dotnet tool install -g <name>` + a Docker one-liner; `--prod` build already
    exists (`run.sh`). Add a first-run "open browser" and a version-check ping (opt-in).
+   **Done 2026-10-17** ([F-012](../features/F-012-first-release.md)), differently in two places:
+   - **Shipped:** `dotnet tool install -g Stemma`, and a one-line install of the self-contained
+     tarball for machines with no .NET. Both are Linux x64, both are cut from a tag, and both are
+     tried as shipped before a release is drafted ([`releasing.md`](../engineering/releasing.md)).
+   - **No "open browser":** `stemma open` opens Stemma's own window (F-002), which is what a browser
+     tab was standing in for.
+   - **No Docker:** a container is the wrong shape for a local-first desktop tool. It has no window;
+     the paths inside it are not the user's; and a workspace that is a repository needs the whole
+     SDK in the image. CI, the one place a container would help, already has `dotnet tool`.
+   - **The version check** is a network call, so it goes with item 7.
 5. **Landing page + demo.** One page: 60-second screen capture (canvas edit → `git diff` → HTML
    report), the one-liner ("the diagram is your code — and it round-trips"), email capture.
    Host on Cloudflare Pages (free).
 6. **Report watermark.** Footer link "Made with <name>" in every exported report (already trivially
    addable in `template.ts`) — each shared report is an ad. Paid tiers can remove it later.
+   **Done 2026-10-17:** "Made with Stemma" at the foot of the report's rail and on its logo, and a
+   line of text in print ([F-001](../features/F-001-architecture-report-export.md) AC10).
 7. **Telemetry, opt-in.** Anonymous counters only (exports, views used). You cannot price what you
    cannot see being used.
+   **Deferred 2026-10-17.** [ADR-0020](../architecture/decisions/0020-diagnostics-contract.md) rules
+   out a network sink until an ADR brings one back, and there is nowhere to send counters before the
+   domain exists. Until then the signal costs nothing: release downloads on GitHub and install
+   counts on nuget.org. Revisit with the Publish backend (Phase 2b), where use is visible on the
+   server without the tool reporting anything.
 
 **Exit criteria:** name owned, license file committed, tool installable in one command, landing
 page live.
+*2026-10-17:* the licence is committed, and the tool is installable in one command once 0.1.0 is
+published. The name is not owned yet (domain, NuGet id, org), and the project page at
+[bfrackowiak.pl/stemma](https://bfrackowiak.pl/stemma/) has no 60-second capture yet.
 
 ### Phase 1 — Audience (4–8 weeks, parallel with normal life)
 
@@ -188,9 +209,11 @@ page live.
 
 1. Buy `stemma.dev`; reserve the `Stemma` NuGet id and the `stemmahq` GitHub org. The repository
    itself is published from a personal account first: <https://github.com/batas2/Stemma>.
+   The NuGet id is claimed by the first push of the tool, which the release workflow makes when
+   0.1.0 is published, once the repository has a `NUGET_API_KEY` secret.
 2. Pricing-line decision (the licence itself is settled — PolyForm Noncommercial 1.0.0).
 3. Accountant call (MoR + JDG question).
-4. Add report footer link + opt-in telemetry (two small PRs).
+4. ~~Add report footer link~~ (done 2026-10-17) + opt-in telemetry (deferred; Phase 0 item 7).
 5. Landing page + demo GIF → soft-launch to 10 architects you know personally.
 
 ---

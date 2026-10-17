@@ -34,6 +34,25 @@ loop is trustworthy. See [`.doc/product/value-proposition.md`](./.doc/product/va
 The argument in full, and why a diagram that *can* drift always does:
 **[The Diagram That Cannot Lie](https://bfrackowiak.pl/blog/the-diagram-that-cannot-lie/)**.
 
+## Install
+
+Linux x64, for now — the one platform this release is built and tested for.
+
+```bash
+dotnet tool install -g Stemma          # if you have the .NET 10 SDK
+stemma open                            # the window; or `stemma open <folder>`
+```
+
+Or with no .NET at all, from the [latest release](https://github.com/batas2/Stemma/releases/latest):
+
+```bash
+mkdir -p ~/.local/share && curl -fsSL https://github.com/batas2/Stemma/releases/latest/download/stemma-linux-x64.tar.gz | tar -xz -C ~/.local/share && ~/.local/share/stemma/install.sh
+```
+
+That puts Stemma on the menu and `stemma` and `stemma-desktop` on `PATH`, without root. Either way
+the window needs WebKitGTK 4.1, which current desktops already have, and `stemma render` draws with
+the Google Chrome on the machine. `stemma --version` says which one you have.
+
 ## What ships today
 
 - **Canvas modeling** — Module Map, Dependencies, and saved custom views; bounded-context grouping;
@@ -139,7 +158,8 @@ rather than asserted.
 scripts/package/package-linux.sh             # → dist/stemma-linux-x64.tar.gz, self-contained
 ```
 
-Unpack and run, or `./install.sh` to put Stemma on the menu and on `PATH` without root. Combined with
+It is what every [release](https://github.com/batas2/Stemma/releases) attaches. Unpack and run, or
+`./install.sh` to put Stemma on the menu and on `PATH` without root. Combined with
 the SDK-free load path ([ADR-0016](./.doc/architecture/decisions/0016-sdk-free-model-only-workspaces.md)),
 that tarball creates and opens a model on a machine with **no .NET and no Node installed at all** —
 only WebKitGTK 4.1, which current desktops already have. A workspace that is a real repository still
@@ -175,11 +195,12 @@ stemma/
 │   ├── Stemma.Web.Client/ — React 19 + Vite + @xyflow/react + zustand + Tailwind
 │   ├── Stemma.Cli/        — `stemma` — render, validate, open
 │   └── Stemma.Desktop/    — `stemma-desktop` — the window (Photino over the OS webview)
-├── scripts/package/      — the Linux tarball and its .desktop entry
+├── scripts/package/      — the Linux tarball, its .desktop entry, and the smoke test for both distributions
+├── scripts/release/      — a version's release notes, cut from the changelog
 └── samples/              — demo workspaces (AuroraRail, StemmaArchitecture, DemoSolution)
 ```
 
-## Quick start
+## Run from source
 
 Needs the **.NET 10 SDK** and **Node 24+**. Nothing else — no database, no container.
 
@@ -244,6 +265,16 @@ npm run test:journey                        # the first-ten-minutes path, end to
 `test:journey` builds the client, starts the real backend, and drives launch → model → first named
 element in a browser. It is local-only, like the visual regression suite: CI runs neither, because
 neither has a browser.
+
+```bash
+scripts/package/package-linux.sh --out dist          # the tarball
+dotnet pack src/Stemma.Cli -c Release -o dist/tool    # the tool package (needs the front end built)
+scripts/package/smoke-test.sh dist/stemma-linux-x64.tar.gz      # tried with no .NET on PATH
+scripts/package/smoke-test.sh --tool dist/tool                  # installed from its package alone
+```
+
+A tag `vX.Y.Z` does all of that in CI and drafts the release; the procedure is
+[`.doc/engineering/releasing.md`](./.doc/engineering/releasing.md).
 
 ## The thinking behind it
 

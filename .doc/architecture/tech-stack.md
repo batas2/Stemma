@@ -24,6 +24,15 @@ behind a native window; `stemma` (`src/Stemma.Cli`) runs it as a short-lived chi
 CLI deliberately does **not** reference the shell — the render path must stay headless — so
 `stemma open` launches the shell as a process instead.
 
+**Two ways it ships** ([F-012](../features/F-012-first-release.md)), both linux-x64 and both laid out
+the same — the CLI, the shell, the host and `wwwroot` side by side in one folder, which is what
+`HostLocation` and `stemma open` look for. The **tarball** is self-contained, so it carries the
+runtime and needs no .NET; the **tool package** (`dotnet tool install -g Stemma`) is
+framework-dependent, because whoever installs a tool has the SDK. The CLI starts the host and the
+shell through `SiblingProgram`, which follows suit: on a shared runtime it runs their dlls on the
+runtime it is itself running on, and self-contained it starts their own executables. Asking PATH
+for `dotnet` is what broke the tarball ([B-016](../bugs/B-016-tarball-render-needs-the-dotnet-it-ships-without.md)).
+
 The host binds `127.0.0.1:0` unless told otherwise and reports the assigned address off
 `IServerAddressesFeature`; `--port-file <path>` writes it out for a launcher that is not in the same
 process. `run.sh --dev` is the one thing that still pins a port (5050), because the Vite proxy has to
@@ -58,6 +67,10 @@ Green tests are required per change — see [`../engineering/testing.md`](../eng
   naming, and idiom.
 
 ## Versioning & history
+
+Stemma's own version is `VersionPrefix` in `Directory.Build.props`, read back from the assembly by
+everything that reports one; releases are cut from tags by the workflow in
+[`../engineering/releasing.md`](../engineering/releasing.md).
 
 The model's history *is* Git history. Branches are work-in-progress; tags mark model snapshots; PRs
 are how architecture changes are reviewed (the diff shows in both code and canvas). There is no
