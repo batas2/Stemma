@@ -33,6 +33,7 @@ removed).
 | [0020](./0020-diagnostics-contract.md) | **The diagnostics contract** — levels, categories, and no network sink. | ✅ Current — see [F-011](../../features/F-011-diagnostics-and-logging.md). |
 | [0021](./0021-sidecar-written-as-changes.md) | **The sidecars are written as changes** to the file as it is, and re-read when someone else changes them — the layout and, since B-018, the comments. | 🟡 Proposed — see [B-014](../../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md), [B-018](../../bugs/B-018-comments-written-whole-and-read-as-empty.md). |
 | [0022](./0022-books-in-the-layout-sidecar.md) | **Books live in the layout sidecar** — presentation, keyed pages with an `order`, references by id, presenting writes nothing. | 🟡 Proposed — see [F-013](../../features/F-013-books.md). |
+| [0023](./0023-view-headers-in-the-layout-sidecar.md) | **A view's header lives with the view in the layout sidecar** — title, message, context and a legend computed from what is drawn; drawn in screen space; part of the slide, not of the figure. | 🟡 Proposed — see [F-014](../../features/F-014-self-explaining-views.md). |
 
 ## Legend
 

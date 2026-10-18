@@ -29,6 +29,7 @@ Living feature records — one Markdown file per feature, created from
 | [F-011](./F-011-diagnostics-and-logging.md) | Diagnostics & logging — a leveled, structured record of what the engine did | Shipped (v1, no UI panel) | Next | Bartosz |
 | [F-012](./F-012-first-release.md) | The first release — a version, a way to cut one, and a one-command install | Shipped | Now | Bartosz |
 | [F-013](./F-013-books.md) | Books — tell the architecture as a story, and present it ([ADR-0022](../architecture/decisions/0022-books-in-the-layout-sidecar.md)) | In progress | Next | Bartosz |
+| [F-014](./F-014-self-explaining-views.md) | Self-explaining views — a header with the point, a legend, and cards you can read ([ADR-0023](../architecture/decisions/0023-view-headers-in-the-layout-sidecar.md)) | In progress | Next | Bartosz |
 
 F-011 **blocked F-002** — the desktop shell's "backend failed to start" state needs a log file to
 point at, and now names `~/.stemma/logs/` in that surface.
