@@ -165,8 +165,19 @@ internal static partial class JsonText
     {
         using var current = JsonDocument.Parse(bytes.AsMemory(member.ValueStart, member.ValueEnd - member.ValueStart));
         if (JsonElement.DeepEquals(current.RootElement, value)) return bytes;
-        return Splice(bytes, member.ValueStart, member.ValueEnd, Render(value, layout, IndentOf(bytes, member.NameStart)));
+        // A list or object the file wrote on one line, like `"order": ["a","b"]`, stays on that line:
+        // a reorder is a one-line diff, not the list spread over several.
+        var indent = WrittenOnOneLine(bytes, member) ? null : IndentOf(bytes, member.NameStart);
+        return Splice(bytes, member.ValueStart, member.ValueEnd, Render(value, layout, indent));
     }
+
+    /// <summary>
+    /// Whether the value of <paramref name="member"/> is a list or object with something in it, written
+    /// on one line. An empty one says nothing about how its contents are laid out, so it does not count.
+    /// </summary>
+    private static bool WrittenOnOneLine(byte[] bytes, Member member) =>
+        (member.Array is { Items.Count: > 0 } || member.Object is { Members.Count: > 0 })
+        && bytes.AsSpan(member.ValueStart, member.ValueEnd - member.ValueStart).IndexOfAny((byte)'\n', (byte)'\r') < 0;
 
     /// <summary>A list holding <paramref name="value"/>, for a member that does not exist yet.</summary>
     internal static JsonElement ListOf(JsonElement value)

@@ -25,8 +25,8 @@ public sealed class SidecarPatchRefusedException(string reason, string message) 
 /// Re-serializing the file to change part of it rewrote all of it: a box dragged into one view was a
 /// hundred-line diff, and whatever anyone else had changed since the canvas read the file went with
 /// it (B-014). New text is laid out like its neighbours — their indentation, the file's line ending
-/// and indent unit, raw or escaped characters as the file has them — and an object written on one
-/// line keeps to its line.
+/// and indent unit, raw or escaped characters as the file has them — and an object or a list written
+/// on one line keeps to its line.
 /// </summary>
 public static class SidecarPatch
 {

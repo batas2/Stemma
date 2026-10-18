@@ -280,4 +280,331 @@ public sealed class SidecarPatchTests
         var refuse = () => SidecarPatch.Apply(Written, [Set("1", "notes", "cnt_web", "x")]);
         refuse.Should().Throw<SidecarPatchRefusedException>().Which.Reason.Should().Be("NotAnObject");
     }
+
+    // ---- books (F-013, ADR-0022) --------------------------------------------------------------
+    //
+    // Books are the part of the sidecar that is mostly prose, and the part most likely to be written
+    // by hand beside text Stemma writes. The promise is F-013's AC2: one page's narrative is one
+    // value of the diff, a reorder is the book's `order` and nothing else, and every other byte stays.
+
+    /// <summary>The least a book can be: a name and one page, with no `order`.</summary>
+    private const string MinimalBook = """
+        {
+          "version": 1,
+          "books": {
+            "book_a": {
+              "name": "A walk",
+              "pages": {
+                "p1": {
+                  "title": "The whole",
+                  "view": "moduleMap",
+                  "narrative": "Start wide."
+                }
+              }
+            }
+          }
+        }
+
+        """;
+
+    /// <summary>Books as the canvas writes them, beside the views they walk through: two spaces, LF, a final newline.</summary>
+    private const string RealisticBooks = """
+        {
+          "$schema": "https://raw.githubusercontent.com/batas2/Stemma/main/schema/stemma.layout.schema.json",
+          "version": 1,
+          "views": {
+            "moduleMap": {
+              "nodes": {
+                "mod_gate": {
+                  "x": 40,
+                  "y": 120
+                },
+                "mod_payment": {
+                  "x": 360,
+                  "y": 120
+                }
+              }
+            },
+            "custom:view_buy": {
+              "layout": {
+                "kind": "row",
+                "ids": [
+                  "mod_gate",
+                  "mod_payment",
+                  "ext_psp"
+                ],
+                "gap": 80
+              },
+              "edges": {}
+            }
+          },
+          "nodeStyles": {
+            "ext_psp": {
+              "fillColor": "#f5f5f4",
+              "borderStyle": "dashed"
+            }
+          },
+          "books": {
+            "book_onboarding": {
+              "name": "Your first week",
+              "pages": {
+                "start": {
+                  "title": "Start here",
+                  "view": "dependencyGraph"
+                }
+              }
+            },
+            "book_ticket_sold": {
+              "name": "How a Ticket Is Sold",
+              "audience": "engineering",
+              "order": [
+                "context",
+                "path",
+                "money"
+              ],
+              "pages": {
+                "context": {
+                  "title": "Where the sale sits",
+                  "view": "moduleMap",
+                  "narrative": "Everything a buyer touches, and the one module that takes the money.",
+                  "frame": "view"
+                },
+                "path": {
+                  "title": "The path a purchase takes",
+                  "view": "view_buy",
+                  "narrative": "Follow the arrows from the gate to the provider."
+                },
+                "money": {
+                  "title": "Where the money moves",
+                  "view": "view_buy",
+                  "narrative": "Payment Orchestration is the only module allowed to call the provider.",
+                  "focus": [
+                    "mod_payment",
+                    "ext_psp"
+                  ],
+                  "frame": "focus",
+                  "others": "dim"
+                }
+              }
+            }
+          }
+        }
+
+        """;
+
+    /// <summary>
+    /// A book a person wrote: tabs, CRLF, no final newline; keys in their own order; the order as a
+    /// compact one-line list; one page on one line; a key Stemma does not know inside a page and
+    /// another inside the book; numbers spelled oddly; an escaped é and paragraph breaks in prose.
+    /// No raw non-ASCII anywhere, so the file escapes and new text must too.
+    /// </summary>
+    private static readonly string HandwrittenBooks = string.Join("\r\n",
+        "{",
+        "\t\"version\": 1,",
+        "\t\"views\": { \"moduleMap\": { \"nodes\": { \"mod_payment\": { \"x\": 1.0, \"y\": -2e1 } } } },",
+        "\t\"books\": {",
+        "\t\t\"book_x\": {",
+        "\t\t\t\"order\": [\"a\",\"b\"],",
+        "\t\t\t\"name\": \"Checkout\",",
+        "\t\t\t\"x-owner\": \"squad-pay\",",
+        "\t\t\t\"pages\": {",
+        "\t\t\t\t\"a\": { \"title\": \"Context\", \"view\": \"moduleMap\", \"narrative\": \"\" },",
+        "\t\t\t\t\"b\": {",
+        "\t\t\t\t\t\"title\": \"The money\",",
+        "\t\t\t\t\t\"view\": \"view_buy\",",
+        "\t\t\t\t\t\"narrative\": \"Pay at the caf\\u00e9.\\n\\nThen \\\"leave\\\".\",",
+        "\t\t\t\t\t\"x-speaker\": { \"who\": \"Bartosz\", \"minutes\": 2.50 },",
+        "\t\t\t\t\t\"focus\": [\"mod_payment\"],",
+        "\t\t\t\t\t\"frame\": \"focus\"",
+        "\t\t\t\t}",
+        "\t\t\t}",
+        "\t\t},",
+        "\t\t\"book_y\": { \"name\": \"Empty\", \"pages\": {} }",
+        "\t}",
+        "}");
+
+    [Fact]
+    public void Editing_a_page_narrative_changes_that_one_value()
+    {
+        SidecarPatch.Apply(MinimalBook, [Set(""" "Start wide, then narrow." """, "books", "book_a", "pages", "p1", "narrative")])
+            .Should().Be("""
+                {
+                  "version": 1,
+                  "books": {
+                    "book_a": {
+                      "name": "A walk",
+                      "pages": {
+                        "p1": {
+                          "title": "The whole",
+                          "view": "moduleMap",
+                          "narrative": "Start wide, then narrow."
+                        }
+                      }
+                    }
+                  }
+                }
+
+                """);
+
+        // Prose as people write it — a dash, quotes, a paragraph break — stays readable in a file
+        // that has never escaped anything.
+        SidecarPatch.Apply(RealisticBooks, [Set(""" "Only Payment Orchestration calls the provider — the gate never \"sees\" a card.\n\nAsk why." """,
+                "books", "book_ticket_sold", "pages", "money", "narrative")])
+            .Should().Be(Expect(RealisticBooks, (
+                """Payment Orchestration is the only module allowed to call the provider.""",
+                """Only Payment Orchestration calls the provider — the gate never \"sees\" a card.\n\nAsk why.""")));
+
+        // A file that escapes gets its new prose escaped; the tabs, CRLF and missing final newline stay.
+        SidecarPatch.Apply(HandwrittenBooks, [Set(""" "Pay at the café — by card.\n\nThen leave." """,
+                "books", "book_x", "pages", "b", "narrative")])
+            .Should().Be(Expect(HandwrittenBooks, (
+                """caf\u00e9.\n\nThen \"leave\".""",
+                """caf\u00E9 \u2014 by card.\n\nThen leave.""")));
+
+        // A page written on one line keeps to its line.
+        SidecarPatch.Apply(HandwrittenBooks, [Set(""" "Where it sits." """, "books", "book_x", "pages", "a", "narrative")])
+            .Should().Be(Expect(HandwrittenBooks, ("\"narrative\": \"\" }", "\"narrative\": \"Where it sits.\" }")));
+    }
+
+    [Fact]
+    public void Reordering_a_book_changes_only_its_order()
+    {
+        // A book that never had an order gains one, as its last member.
+        SidecarPatch.Apply(MinimalBook, [Set("""["p1"]""", "books", "book_a", "order")])
+            .Should().Be("""
+                {
+                  "version": 1,
+                  "books": {
+                    "book_a": {
+                      "name": "A walk",
+                      "pages": {
+                        "p1": {
+                          "title": "The whole",
+                          "view": "moduleMap",
+                          "narrative": "Start wide."
+                        }
+                      },
+                      "order": [
+                        "p1"
+                      ]
+                    }
+                  }
+                }
+
+                """);
+
+        SidecarPatch.Apply(RealisticBooks, [Set("""["context","money","path"]""", "books", "book_ticket_sold", "order")])
+            .Should().Be(Expect(RealisticBooks, (
+                """
+                        "path",
+                        "money"
+                """,
+                """
+                        "money",
+                        "path"
+                """)));
+
+        // An order written on one line is still one line: the reorder is a one-line diff.
+        SidecarPatch.Apply(HandwrittenBooks, [Set("""["b","a"]""", "books", "book_x", "order")])
+            .Should().Be(Expect(HandwrittenBooks, ("\"order\": [\"a\",\"b\"]", "\"order\": [\"b\",\"a\"]")));
+    }
+
+    [Fact]
+    public void Adding_a_page_inserts_only_that_page_laid_out_like_the_pages_before_it()
+    {
+        SidecarPatch.Apply(MinimalBook, [Set("""{"title":"Closer","view":"dependencyGraph","focus":["mod_a"]}""", "books", "book_a", "pages", "p2")])
+            .Should().Be("""
+                {
+                  "version": 1,
+                  "books": {
+                    "book_a": {
+                      "name": "A walk",
+                      "pages": {
+                        "p1": {
+                          "title": "The whole",
+                          "view": "moduleMap",
+                          "narrative": "Start wide."
+                        },
+                        "p2": {
+                          "title": "Closer",
+                          "view": "dependencyGraph",
+                          "focus": [
+                            "mod_a"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+
+                """);
+
+        SidecarPatch.Apply(RealisticBooks, [Set("""{"title":"What breaks first","view":"view_buy","narrative":"If the provider is down, the gate still sells.","focus":["ext_psp"],"others":"hide"}""",
+                "books", "book_ticket_sold", "pages", "risk")])
+            .Should().Be(Expect(RealisticBooks, (
+                """
+                          "others": "dim"
+                        }
+                """,
+                """
+                          "others": "dim"
+                        },
+                        "risk": {
+                          "title": "What breaks first",
+                          "view": "view_buy",
+                          "narrative": "If the provider is down, the gate still sells.",
+                          "focus": [
+                            "ext_psp"
+                          ],
+                          "others": "hide"
+                        }
+                """)));
+
+        SidecarPatch.Apply(HandwrittenBooks, [Set("""{"title":"Leaving","view":"dependencyGraph","narrative":"Le café ferme."}""", "books", "book_x", "pages", "c")])
+            .Should().Be(Expect(HandwrittenBooks, (
+                "\t\t\t\t\t\"frame\": \"focus\"\r\n\t\t\t\t}\r\n",
+                "\t\t\t\t\t\"frame\": \"focus\"\r\n\t\t\t\t},\r\n" +
+                "\t\t\t\t\"c\": {\r\n" +
+                "\t\t\t\t\t\"title\": \"Leaving\",\r\n" +
+                "\t\t\t\t\t\"view\": \"dependencyGraph\",\r\n" +
+                "\t\t\t\t\t\"narrative\": \"Le caf\\u00E9 ferme.\"\r\n" +
+                "\t\t\t\t}\r\n")));
+    }
+
+    [Fact]
+    public void Removing_a_book_takes_only_that_book()
+    {
+        // The only book: the section stays, empty.
+        SidecarPatch.Apply(MinimalBook, [Remove("books", "book_a")])
+            .Should().Be("""
+                {
+                  "version": 1,
+                  "books": {}
+                }
+
+                """);
+
+        // Not the last: it, its comma and its line.
+        SidecarPatch.Apply(RealisticBooks, [Remove("books", "book_onboarding")])
+            .Should().Be(Expect(RealisticBooks, (
+                """
+                    "book_onboarding": {
+                      "name": "Your first week",
+                      "pages": {
+                        "start": {
+                          "title": "Start here",
+                          "view": "dependencyGraph"
+                        }
+                      }
+                    },
+                    "book_ticket_sold": {
+                """,
+                """
+                    "book_ticket_sold": {
+                """)));
+
+        // The last, written on one line: the comma before it, and it.
+        SidecarPatch.Apply(HandwrittenBooks, [Remove("books", "book_y")])
+            .Should().Be(Expect(HandwrittenBooks, (",\r\n\t\t\"book_y\": { \"name\": \"Empty\", \"pages\": {} }", "")));
+    }
 }
