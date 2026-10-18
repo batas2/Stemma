@@ -41,7 +41,8 @@ function scheduleSidecarWrite(rootPath: string): void {
  * The changes that turn `from` into `to`, down to the smallest value that differs: a key whose
  * value changed is set, one that went is removed, and an object present in both is compared key by
  * key. Arrays are values. An empty object that `from` does not have is nothing — it is how an empty
- * section looks in memory, not something anyone wrote.
+ * section looks in memory, not something anyone wrote — except a view's header, whose being there is
+ * the point: an empty header still says the view has one (F-014).
  */
 export function sidecarChanges(from: unknown, to: unknown, path: string[] = [], out: SidecarChange[] = []): SidecarChange[] {
   if (isPlainObject(from) && isPlainObject(to)) {
@@ -52,7 +53,8 @@ export function sidecarChanges(from: unknown, to: unknown, path: string[] = [], 
       const value = to[key];
       if (value === undefined) continue;
       if (from[key] === undefined) {
-        if (!(isPlainObject(value) && Object.keys(value).length === 0)) out.push({ path: [...path, key], value });
+        const header = key === 'header' && path.length === 2 && path[0] === 'views';
+        if (header || !(isPlainObject(value) && Object.keys(value).length === 0)) out.push({ path: [...path, key], value });
       } else {
         sidecarChanges(from[key], value, [...path, key], out);
       }
@@ -212,17 +214,30 @@ export function loadViewEntries(rootPath: string): Record<string, unknown> {
 }
 
 /**
- * Set or remove a view's header (F-014, ADR-0023) and schedule the write; the change list carries
- * only the fields that changed (ADR-0021). Refused — false, nothing changed — until the sidecar has
- * been read: a header written over a copy that has not been read could replace one already there.
+ * Edit a view's header (F-014, ADR-0023) as the file holds it, and schedule the write. `edit` gets
+ * the stored header — every key in it, the ones the app does not read included — or null when the
+ * view has none, and returns the header to keep, or null to remove it. Only what changed is sent
+ * (ADR-0021), so editing the message leaves a hand-written legend exactly as it was.
+ *
+ * Refused — false, nothing changed — until the sidecar has been read, and when what is stored under
+ * `header` is not an object: replacing what a hand edit left there would delete it.
  */
-export function saveViewHeader(rootPath: string, viewKey: string, header: Record<string, unknown> | null): boolean {
+export function editViewHeader(
+  rootPath: string,
+  viewKey: string,
+  edit: (header: Record<string, unknown> | null) => Record<string, unknown> | null,
+): boolean {
   if (typeof window === 'undefined' || !isSidecarPrimed(rootPath)) return false;
   const s = sidecarCache!.sidecar;
+  const stored = s.views?.[viewKey]?.header;
+  if (stored !== undefined && !isPlainObject(stored)) return false;
+  const next = edit(stored ? structuredClone(stored) : null);
   s.views = s.views ?? {};
   const view: Record<string, unknown> = { ...s.views[viewKey] };
-  if (header) view.header = header; else delete view.header;
-  s.views[viewKey] = view;
+  if (next) view.header = next; else delete view.header;
+  // A view entry that held nothing but the header goes with it, rather than staying behind empty.
+  if (Object.keys(view).length === 0) delete s.views[viewKey];
+  else s.views[viewKey] = view;
   scheduleSidecarWrite(rootPath);
   return true;
 }

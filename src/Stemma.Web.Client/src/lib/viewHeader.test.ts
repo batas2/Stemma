@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchElement, ArchLink, ArchTagInfo } from './types';
 import {
-  headerTitle, legendItems, readViewHeader, readViewHeaders, unknownLegendStatuses, withHeaderField,
+  headerTitle, legendItems, readViewHeader, readViewHeaders, unknownLegendStatuses,
   type DrawnView,
 } from './viewHeader';
 
@@ -67,11 +67,9 @@ describe('reading a header', () => {
       .toEqual({ moduleMap: { message: 'M' } });
   });
 
-  it('falls back to the view’s name for its title, and drops a field cleared to blank', () => {
+  it('falls back to the view’s name for its title', () => {
     expect(headerTitle({}, 'Module Map')).toBe('Module Map');
     expect(headerTitle({ title: 'Mine' }, 'Module Map')).toBe('Mine');
-    expect(withHeaderField({ message: 'old', context: 'c' }, 'message', '  ')).toEqual({ context: 'c' });
-    expect(withHeaderField({}, 'context', 'new')).toEqual({ context: 'new' });
   });
 });
 
@@ -81,7 +79,7 @@ describe('the legend', () => {
       { kind: 'swatch', label: 'reuse', fill: '#d5e8d4', border: '#82b366', style: 'solid' },
       { kind: 'swatch', label: 'build', fill: '#cce5ff', border: '#3d85c6', style: 'dashed' },
       // No style of its own: as the built-in status draws it.
-      { kind: 'swatch', label: 'target', fill: '#eef2ff', border: '#6366f1', style: 'solid' },
+      { kind: 'swatch', label: 'target', fill: 'rgba(99,102,241,0.10)', border: '#6366f1', style: 'solid' },
     ]);
   });
 
@@ -113,6 +111,15 @@ describe('the legend', () => {
     ]);
   });
 
+  it('takes from the status what a card’s own style leaves unset, as the card does', () => {
+    const items = legendItems({}, drawn({
+      elements: [el('a')],
+      tags: [tag('a', 'to-be-created')],
+      nodeStyles: { a: { fillColor: '#fef3c7' } },
+    }));
+    expect(items).toEqual([{ kind: 'swatch', label: 'to-be-created', fill: '#fef3c7', border: '#f59e0b', style: 'dashed' }]);
+  });
+
   it('is not drawn at all when written empty', () => {
     expect(legendItems({ legend: [] }, drawn())).toEqual([]);
   });
@@ -137,38 +144,54 @@ describe('editing through the sidecar', () => {
     const layout = await import('./layout');
     return { api, layout };
   }
+  const sent = (api: Awaited<ReturnType<typeof session>>['api']) => api.patchLayoutSidecar.mock.calls.map((c) => c[0]);
+  const setField = (field: string, value: string) => (h: Record<string, unknown> | null) => ({ ...(h ?? {}), [field]: value });
 
   it('is refused until the sidecar has been read', async () => {
     const { api, layout } = await session({ version: 1, views: {} });
-    expect(layout.saveViewHeader(ROOT, 'moduleMap', { message: 'M' })).toBe(false);
+    expect(layout.editViewHeader(ROOT, 'moduleMap', () => ({ message: 'M' }))).toBe(false);
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.patchLayoutSidecar).not.toHaveBeenCalled();
   });
 
-  it('sends one change for one field, and leaves the view’s positions alone', async () => {
-    const onDisk = {
-      version: 1,
-      views: { 'custom:v': { nodes: { a: { x: 1, y: 2 } }, header: { title: 'T', message: 'old' } } },
+  it('sends one change for one field, and leaves the rest of a hand-written header as it is', async () => {
+    const header = {
+      $comment: 'written by hand',
+      title: 'T',
+      message: 'old',
+      legend: [{ label: 'zone', swatch: { fill: '#fff' } }, { swatch: { fill: '#000' } }],
     };
-    const { api, layout } = await session(onDisk);
+    const { api, layout } = await session({ version: 1, views: { 'custom:v': { nodes: { a: { x: 1, y: 2 } }, header } } });
     await layout.primeLayoutSidecar(ROOT);
-    const header = readViewHeaders(layout.loadViewEntries(ROOT))['custom:v'];
-    expect(layout.saveViewHeader(ROOT, 'custom:v', { ...withHeaderField(header, 'message', 'new') })).toBe(true);
+    expect(layout.editViewHeader(ROOT, 'custom:v', setField('message', 'new'))).toBe(true);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(api.patchLayoutSidecar.mock.calls.flatMap((c) => c[0])).toEqual([
-      { path: ['views', 'custom:v', 'header', 'message'], value: 'new' },
-    ]);
+    expect(sent(api)).toEqual([[{ path: ['views', 'custom:v', 'header', 'message'], value: 'new' }]]);
   });
 
-  it('adds a header to a view the file has no entry for, and removes it again', async () => {
+  it('adds an empty header to a view that already has positions, and it is written', async () => {
+    const { api, layout } = await session({ version: 1, views: { moduleMap: { nodes: { a: { x: 1, y: 2 } } } } });
+    await layout.primeLayoutSidecar(ROOT);
+    layout.editViewHeader(ROOT, 'moduleMap', (h) => h ?? {});
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sent(api)).toEqual([[{ path: ['views', 'moduleMap', 'header'], value: {} }]]);
+  });
+
+  it('adds a header to a view the file has no entry for, and removing it leaves no empty entry', async () => {
     const { api, layout } = await session({ version: 1, views: {} });
     await layout.primeLayoutSidecar(ROOT);
-    layout.saveViewHeader(ROOT, 'moduleMap', {});
+    layout.editViewHeader(ROOT, 'moduleMap', (h) => h ?? {});
     await vi.advanceTimersByTimeAsync(1000);
-    layout.saveViewHeader(ROOT, 'moduleMap', null);
+    layout.editViewHeader(ROOT, 'moduleMap', () => null);
     await vi.advanceTimersByTimeAsync(1000);
-    const sent = api.patchLayoutSidecar.mock.calls.map((c) => c[0]);
-    expect(sent[0]).toEqual([{ path: ['views', 'moduleMap'], value: { header: {} } }]);
-    expect(sent[1]).toEqual([{ path: ['views', 'moduleMap', 'header'], remove: true }]);
+    expect(sent(api)[0]).toEqual([{ path: ['views', 'moduleMap'], value: { header: {} } }]);
+    expect(sent(api)[1]).toEqual([{ path: ['views', 'moduleMap'], remove: true }]);
+  });
+
+  it('will not replace a header that is not an object', async () => {
+    const { api, layout } = await session({ version: 1, views: { moduleMap: { header: 'a hand edit' } } });
+    await layout.primeLayoutSidecar(ROOT);
+    expect(layout.editViewHeader(ROOT, 'moduleMap', setField('message', 'M'))).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.patchLayoutSidecar).not.toHaveBeenCalled();
   });
 });

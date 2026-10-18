@@ -539,6 +539,7 @@ function CanvasInner() {
       data: {
         waypoints,
         routing: userStyle.routing,
+        labelSize: userStyle.labelSize,
         onAddWaypoint: handleAddWaypoint,
         onRemoveWaypoint: handleRemoveWaypoint,
         editing: l.id === editingEdgeId,
@@ -937,20 +938,45 @@ function CanvasInner() {
     const start = setTimeout(() => {
       const present = new Set(getNodes().filter((n) => !n.hidden).map((n) => n.id));
       const targets = page.frame === 'focus' ? page.focus.filter((id) => present.has(id)) : [];
-      // Presenting, the narrative card sits over the bottom of the picture, so the frame ends above
-      // it; the view's header sits over the top, so the frame starts below it (F-014).
+      // The view's header sits over the top of the canvas, so the frame starts below it (F-014).
+      // Presenting, the narrative card sits in the bottom-left corner: the picture is framed either
+      // above it or beside it, whichever draws it larger — a wide view goes above, a tall one beside.
+      const rfEl = wrapperRef.current?.querySelector('.react-flow') as HTMLElement | null;
       const card = presenting ? document.querySelector<HTMLElement>('[data-book-narrative]') : null;
       const header = viewHeaderHeight();
       const top: `${number}px` | `${number}%` = header > 0 ? `${header + 28}px` : '5%';
-      const padding: NonNullable<FitViewOptions['padding']> = card
-        ? { top, left: '4%', right: '4%', bottom: `${Math.round(card.getBoundingClientRect().height + 36)}px` }
-        : header > 0
-          ? { top, left: '5%', right: '5%', bottom: presenting || capturing ? '6%' : '10%' }
-          : presenting || capturing ? 0.08 : 0.24;
       // Close enough to read, not so close that the boxes stop looking like a diagram.
       const maxZoom = 1.15;
-      if (targets.length > 0) fitView({ padding, duration, maxZoom, nodes: targets.map((id) => ({ id })) });
-      else fitWholeView(padding, duration, maxZoom);
+      const nodes = getNodes().filter((n) => !n.hidden && (targets.length === 0 || targets.includes(n.id)));
+      const rects: Rect[] = nodes.length && nodes.every((n) => n.measured?.width) ? [getNodesBounds(nodes)] : [];
+      if (targets.length === 0 && !(page.others === 'hide' && page.focus.length > 0)) {
+        for (const sh of (useApp.getState().shapes[layoutKey] ?? [])) {
+          const b = shapeBoundsRect(sh);
+          if (b) rects.push(b);
+        }
+      }
+      if (!rfEl || rects.length === 0) {
+        const fallback = card ? { top, left: '4%', right: '4%', bottom: '30%' } as const : (presenting || capturing ? 0.08 : 0.24);
+        if (targets.length > 0) fitView({ padding: fallback, duration, maxZoom, nodes: targets.map((id) => ({ id })) });
+        else fitView({ padding: fallback, duration, maxZoom });
+      } else {
+        const bounds = unionRects(rects);
+        const w = rfEl.clientWidth, h = rfEl.clientHeight;
+        const candidates: NonNullable<FitViewOptions['padding']>[] = [];
+        if (card) {
+          const area = rfEl.getBoundingClientRect(), c = card.getBoundingClientRect();
+          candidates.push({ top, left: '4%', right: '4%', bottom: `${Math.round(area.bottom - c.top + 20)}px` });
+          candidates.push({ top, left: `${Math.round(c.right - area.left + 28)}px`, right: '4%', bottom: '5%' });
+        } else if (header > 0) {
+          candidates.push({ top, left: '5%', right: '5%', bottom: presenting || capturing ? '6%' : '10%' });
+        } else {
+          candidates.push(presenting || capturing ? 0.08 : 0.24);
+        }
+        const best = candidates
+          .map((padding) => getViewportForBounds(bounds, w, h, 0.05, maxZoom, padding))
+          .reduce((a, b) => (b.zoom > a.zoom ? b : a));
+        setViewport(best, { duration });
+      }
       settle = setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => {
         window.dispatchEvent(new CustomEvent('stemma:book-framed', { detail: { pageId: page.id } }));
       })), duration + 40);
@@ -1006,7 +1032,8 @@ function CanvasInner() {
         setViewport(vp);
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         const { toPng, toSvg } = await import('html-to-image');
-        const filter = notCanvasChrome;
+        // A single image is a figure; its caption belongs to the document it goes into (ADR-0023).
+        const filter = (node: HTMLElement) => notCanvasChrome(node) && !(node as Element).hasAttribute?.('data-view-header');
         // `backgroundColor: undefined` is how html-to-image is told to leave the backdrop alone —
         // passing a colour of any kind, including 'transparent', paints one.
         const opts = { backgroundColor: ex.backgroundColor, pixelRatio: ex.pixelRatio, filter };

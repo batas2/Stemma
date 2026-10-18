@@ -39,7 +39,8 @@ const HANDLE_CURSORS: Record<ResizeHandle, string> = {
  * viewport transform, so shapes pan + zoom with the model nodes. Pointer events partition:
  *   - Outer SVG: `pointer-events: none` — empty regions pass through to React Flow.
  *   - Per-shape `<g>`: `pointer-events: auto` — selectable + draggable.
- *   - A backdrop's outline, in the overlay: selects and moves it where no card covers it.
+ *   - A backdrop's outline, drawn with it beneath the cards: selects and moves it where no card
+ *     covers it, and never takes a click meant for a card.
  *   - Hit-test backdrop in shape-draw mode: `pointer-events: all` for click-to-draw.
  *   - Dock dots and resize handles: explicit `pointer-events: all`.
  */
@@ -273,19 +274,24 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
         <div data-shape-backdrop="true" className="absolute left-0 top-0" style={{ zIndex: -1, pointerEvents: 'none' }}>
           <svg width={1} height={1} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
             {backdrops.map((s) => (
-              <ShapeRenderer
-                key={s.id}
-                shape={s}
-                selected={false}
-                interactive={false}
-                readOnly
-                nodeBounds={nodeBounds}
-                allShapes={shapes}
-                props={customPropsAll[s.id]}
-                onPointerDown={() => {}}
-                onResizePointerDown={() => {}}
-                onDockPointerDown={() => {}}
-              />
+              <g key={s.id}>
+                <ShapeRenderer
+                  shape={s}
+                  selected={false}
+                  interactive={false}
+                  readOnly
+                  nodeBounds={nodeBounds}
+                  allShapes={shapes}
+                  props={customPropsAll[s.id]}
+                  onPointerDown={() => {}}
+                  onResizePointerDown={() => {}}
+                  onDockPointerDown={() => {}}
+                />
+                {!readOnly && canvasMode.kind === 'select' && (
+                  <BackdropGrip shape={s} zoom={viewport.zoom} nodeBounds={nodeBounds} allShapes={shapes}
+                    onPointerDown={(e) => onShapePointerDown(e, s)} />
+                )}
+              </g>
             ))}
           </svg>
         </div>
@@ -318,16 +324,10 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
           cursor: shapeMode ? 'crosshair' : (drag?.mode === 'connect' ? 'crosshair' : 'default'),
         }}
       >
-        {!readOnly && backdrops.map((s) => (
-          <BackdropHandle
+        {!readOnly && canvasMode.kind === 'select' && backdrops.filter((s) => s.id === selectedShapeId).map((s) => (
+          <BackdropSelection
             key={s.id}
             shape={s}
-            zoom={viewport.zoom}
-            selected={s.id === selectedShapeId}
-            interactive={canvasMode.kind === 'select'}
-            nodeBounds={nodeBounds}
-            allShapes={shapes}
-            onPointerDown={(e) => onShapePointerDown(e, s)}
             onResizePointerDown={(e, handle) => onResizeHandlePointerDown(e, s, handle)}
             onDockPointerDown={onDockPointerDown}
           />
@@ -377,41 +377,52 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
 }
 
 /**
- * What a backdrop leaves in the overlay: an invisible band along its outline that selects and moves
- * it, and its selection frame. The band is a fixed width on screen at any zoom. The inside is left
- * alone, so the cards drawn over the backdrop keep every click.
+ * The part of a backdrop that takes the pointer: an invisible band along its own outline — the
+ * rectangle's edge, the ellipse's curve, the triangle's sides — a fixed width on screen at any zoom.
+ * It is drawn with the backdrop, beneath the cards, so a card on the edge of a zone keeps its clicks;
+ * and its inside is left to the pane. Thin shapes (a label, an arrow) are all handle.
  */
-function BackdropHandle({ shape, zoom, selected, interactive, nodeBounds, allShapes, onPointerDown, onResizePointerDown, onDockPointerDown }: {
+function BackdropGrip({ shape, zoom, nodeBounds, allShapes, onPointerDown }: {
   shape: Shape;
   zoom: number;
-  selected: boolean;
-  interactive: boolean;
   nodeBounds: Map<string, { x: number; y: number; w: number; h: number }>;
   allShapes: readonly Shape[];
   onPointerDown: (e: React.PointerEvent<SVGGElement>) => void;
-  onResizePointerDown: (e: React.PointerEvent, handle: ResizeHandle) => void;
-  onDockPointerDown: (e: React.PointerEvent, anchor: ArrowAnchor, fromX: number, fromY: number) => void;
 }) {
   if (shape.kind === 'label' || shape.kind === 'arrow') {
-    // Thin to begin with: the whole of it is the handle, as in the overlay.
     return (
-      <g style={{ opacity: 0 }}>
-        <ShapeRenderer shape={shape} selected={false} interactive={interactive} nodeBounds={nodeBounds} allShapes={allShapes}
-          onPointerDown={onPointerDown} onResizePointerDown={onResizePointerDown} onDockPointerDown={onDockPointerDown} />
+      <g className="nopan nodrag" style={{ opacity: 0 }}>
+        <ShapeRenderer shape={shape} selected={false} interactive nodeBounds={nodeBounds} allShapes={allShapes}
+          onPointerDown={onPointerDown} onResizePointerDown={() => {}} onDockPointerDown={() => {}} />
       </g>
     );
   }
   const b = shape as ShapeRect | ShapeEllipse | ShapeTriangle | ShapeImage;
   const band = 12 / Math.max(zoom, 0.05);
+  const common = { fill: 'none', stroke: 'transparent', strokeWidth: band, style: { pointerEvents: 'stroke' as const, cursor: 'move' } };
   return (
-    <g style={{ cursor: interactive ? 'move' : 'default' }}>
-      <g onPointerDown={interactive ? onPointerDown : undefined}>
-        <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={6}
-          fill="none" stroke="transparent" strokeWidth={band}
-          style={{ pointerEvents: interactive ? 'stroke' : 'none' }} />
-      </g>
-      {selected && interactive && <SelectionFrame x={b.x} y={b.y} w={b.w} h={b.h} onResize={onResizePointerDown} />}
-      {selected && interactive && shape.kind !== 'triangle' && <ShapeDocks shape={b as ShapeRect} onDockPointerDown={onDockPointerDown} />}
+    <g className="nopan nodrag" onPointerDown={onPointerDown}>
+      {shape.kind === 'ellipse'
+        ? <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} {...common} />
+        : shape.kind === 'triangle'
+          ? <polygon points={`${b.x + b.w / 2},${b.y} ${b.x},${b.y + b.h} ${b.x + b.w},${b.y + b.h}`} {...common} />
+          : <rect x={b.x} y={b.y} width={b.w} height={b.h} {...common} />}
+    </g>
+  );
+}
+
+/** A selected backdrop's frame and handles, over the cards so they can be grabbed. */
+function BackdropSelection({ shape, onResizePointerDown, onDockPointerDown }: {
+  shape: Shape;
+  onResizePointerDown: (e: React.PointerEvent, handle: ResizeHandle) => void;
+  onDockPointerDown: (e: React.PointerEvent, anchor: ArrowAnchor, fromX: number, fromY: number) => void;
+}) {
+  if (shape.kind === 'label' || shape.kind === 'arrow') return null;
+  const b = shape as ShapeRect | ShapeEllipse | ShapeTriangle | ShapeImage;
+  return (
+    <g>
+      <SelectionFrame x={b.x} y={b.y} w={b.w} h={b.h} onResize={onResizePointerDown} />
+      {shape.kind !== 'triangle' && <ShapeDocks shape={b as ShapeRect} onDockPointerDown={onDockPointerDown} />}
     </g>
   );
 }
@@ -836,7 +847,8 @@ function DragPreview({ drag }: { drag: DraftDrag }) {
  *  foreignObject so the body wraps and respects font/colour, unlike a flat SVG <text>. */
 function BoxText({ s, centered, props }: { s: ShapeBoxText & { x: number; y: number; w: number; h: number }; centered?: boolean; props?: Record<string, string> }) {
   const propEntries = props ? Object.entries(props) : [];
-  if (!s.label && !s.text && propEntries.length === 0) return null;
+  // What a hand or an agent wrote into `text` may be a number or worse; only text is drawn as text.
+  if (!s.label && !(typeof s.text === 'string' && s.text) && propEntries.length === 0) return null;
   return (
     <foreignObject x={s.x} y={s.y} width={Math.max(0, s.w)} height={Math.max(0, s.h)} style={{ pointerEvents: 'none', overflow: 'hidden' }}>
       <div
@@ -850,7 +862,9 @@ function BoxText({ s, centered, props }: { s: ShapeBoxText & { x: number; y: num
       >
         {s.label ? <div style={{ fontWeight: 600 }}>{s.label}</div> : null}
         {/* Markdown, through the renderer that escapes first: annotation text is never markup (F-014 AC8). */}
-        {s.text ? <div className="stemma-shape-text" style={{ opacity: 0.92 }} dangerouslySetInnerHTML={{ __html: renderNotes(s.text) }} /> : null}
+        {typeof s.text === 'string' && s.text
+          ? <div className="stemma-shape-text" style={{ opacity: 0.92 }} dangerouslySetInnerHTML={{ __html: renderNotes(s.text) }} />
+          : null}
         {propEntries.length > 0 ? (
           <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', gap: 1, fontSize: '0.85em', opacity: 0.85 }}>
             {propEntries.map(([k, v]) => <div key={k}><span style={{ opacity: 0.65 }}>{k}:</span> {v}</div>)}

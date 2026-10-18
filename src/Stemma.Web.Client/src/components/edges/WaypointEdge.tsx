@@ -6,12 +6,13 @@ import {
 import { ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import type { SavedPosition } from '@/lib/layout';
-import { DEFAULT_EDGE_ROUTING, type EdgeRouting } from '@/lib/edgeStyles';
+import { DEFAULT_EDGE_ROUTING, type EdgeLabelSize, type EdgeRouting } from '@/lib/edgeStyles';
 import { RELATIONSHIP_TYPES, type RelationshipType } from '@/lib/relationshipTypes';
 
 export interface WaypointEdgeData extends Record<string, unknown> {
   waypoints?: SavedPosition[];
   routing?: EdgeRouting;
+  labelSize?: EdgeLabelSize;
   onAddWaypoint?: (edgeId: string, point: SavedPosition) => void;
   onRemoveWaypoint?: (edgeId: string, index: number) => void;
   // Inline label editing — when `editing` is true the label renders as an input. The draft value
@@ -84,6 +85,9 @@ export function buildEdgePath(
 }
 
 const SELECT_COLOR = 'rgb(99 102 241)';
+
+/** An edge label's size in pixels, by `EdgeStyle.labelSize`. */
+const LABEL_PX: Record<EdgeLabelSize, number> = { sm: 9, base: 10, lg: 13, xl: 16 };
 
 export function WaypointEdge({
   id,
@@ -257,7 +261,7 @@ export function WaypointEdge({
               position: 'absolute', transform: `translate(-50%, -50%) translate(${labelMid.x}px, ${labelMid.y}px)`,
               pointerEvents: data?.onEditStart ? 'all' : 'none',
               cursor: data?.onEditStart ? 'text' : undefined,
-              fontSize: 10, padding: '1px 4px',
+              fontSize: LABEL_PX[data?.labelSize ?? 'base'] ?? 10, padding: '1px 4px',
               background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.85)',
               border: `1px solid ${selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
               color: selected ? SELECT_COLOR : undefined, fontWeight: selected ? 600 : undefined,

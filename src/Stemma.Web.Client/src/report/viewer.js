@@ -568,8 +568,15 @@
   }
 
   var STATUS_GLYPH = { current: '●', target: '◆', 'to-adapt': '◇', 'to-be-created': '○', deprecated: '━', proposed: '◌' };
-  function statusBadgeEl(status) {
+  var BUILT_IN_STATUS = { current: 1, target: 1, 'to-be-created': 1, 'to-adapt': 1, deprecated: 1, proposed: 1 };
+  function statusBadgeEl(status, tint) {
     var b = h('span', { class: 'vrn-badge st-' + status });
+    // A status of the author's own takes the card's colour, as on the canvas.
+    if (!BUILT_IN_STATUS[status] && tint) {
+      b.style.color = 'color-mix(in srgb, ' + tint + ' 72%, black)';
+      b.style.borderColor = 'color-mix(in srgb, ' + tint + ' 55%, transparent)';
+      b.style.background = 'color-mix(in srgb, ' + tint + ' 14%, transparent)';
+    }
     b.appendChild(h('span', { text: (STATUS_GLYPH[status] || '') + ' ' }));
     b.appendChild(document.createTextNode(status));
     return b;
@@ -793,13 +800,13 @@
     if (isPerson) {
       card.appendChild(kindIcon('person', 13));
       card.appendChild(nameEl());
-      if (state.layers.status && status) card.appendChild(statusBadgeEl(status));
+      if (state.layers.status && status) card.appendChild(statusBadgeEl(status, st.accentColor || st.borderColor));
     } else {
       var head = h('div', { class: 'vrn-head' });
       head.appendChild(kindIcon(e.kind, 13));
       head.appendChild(h('span', { class: 'vrn-kind', text: KIND_LABEL[e.kind] || e.kind }));
       if (isExternal) head.appendChild(h('span', { class: 'vrn-ext', text: 'external' }));
-      if (state.layers.status && status) head.appendChild(statusBadgeEl(status));
+      if (state.layers.status && status) head.appendChild(statusBadgeEl(status, st.accentColor || st.borderColor));
       card.appendChild(head);
 
       var body = h('div', { class: 'vrn-body' });

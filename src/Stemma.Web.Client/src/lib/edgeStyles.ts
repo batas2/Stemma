@@ -6,6 +6,8 @@ export type EdgeArrow = 'none' | 'closed' | 'open' | 'circle' | 'diamond' | 'pip
 export type EdgeAnimSpeed = 'slow' | 'normal' | 'fast';
 /** How the line between two boxes is drawn (draw.io-style). `bezier` is the default bend. */
 export type EdgeRouting = 'bezier' | 'smoothstep' | 'step' | 'straight';
+/** How large an edge's label is drawn — larger for a room than for a screen (F-014). */
+export type EdgeLabelSize = 'sm' | 'base' | 'lg' | 'xl';
 
 /** Routing used when an edge has no explicit `routing` — a gentle curve, matching the
  *  connection line shown while dragging a new relationship. */
@@ -21,6 +23,7 @@ export interface EdgeStyle {
   arrow?: EdgeArrow;       // legacy alias for the target-end marker (migrated to `arrowEnd`)
   arrowStart?: EdgeArrow;  // marker at the source end
   arrowEnd?: EdgeArrow;    // marker at the target end
+  labelSize?: EdgeLabelSize;
 }
 
 /** SVG marker id (in EdgeMarkerDefs) for an endpoint style — undefined = no marker. */

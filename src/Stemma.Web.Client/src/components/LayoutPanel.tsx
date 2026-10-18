@@ -271,14 +271,15 @@ function Apply({ label, onClick }: { label: string; onClick: () => void }) {
  */
 function HeaderToggle({ layoutKey }: { layoutKey: string }) {
   const header = useApp((s) => s.viewHeaders[layoutKey]);
-  const setViewHeader = useApp((s) => s.setViewHeader);
+  const addViewHeader = useApp((s) => s.addViewHeader);
+  const removeViewHeader = useApp((s) => s.removeViewHeader);
   const setToast = useApp((s) => s.setToast);
   async function toggle() {
     if (header) {
       const said = !!(header.message || header.context || header.title || header.legend);
       if (said && !(await confirmAction({ title: 'Remove this view’s header?', body: 'Its title, message, context and legend are taken out of stemma.layout.json.', confirmLabel: 'Remove header', destructive: true }))) return;
-      setViewHeader(layoutKey, null);
-    } else if (!setViewHeader(layoutKey, {})) {
+      removeViewHeader(layoutKey);
+    } else if (!addViewHeader(layoutKey)) {
       setToast({ kind: 'error', text: "The header couldn't be added: the layout file hasn't been read yet." });
     }
   }

@@ -116,17 +116,6 @@ export function readViewHeaders(views: Record<string, unknown> | undefined): Rec
   return out;
 }
 
-/**
- * The header with one field set. Blank text removes the field, so a cleared message leaves no empty
- * string behind in the file, and a cleared title falls back to the view's name.
- */
-export function withHeaderField(header: ViewHeaderSpec, field: HeaderField, value: string): ViewHeaderSpec {
-  const next = { ...header };
-  if (value.trim() === '') delete next[field];
-  else next[field] = value;
-  return next;
-}
-
 /** The title a header shows: its own, or the view's name. */
 export function headerTitle(header: ViewHeaderSpec, viewName: string): string {
   return header.title ?? viewName;
@@ -150,13 +139,16 @@ function mostCommon<T>(values: T[], key: (v: T) => string): T | undefined {
   return best?.value;
 }
 
-/** How the built-in statuses colour a card that has no style of its own (ArchNodeView). */
+/**
+ * How the built-in statuses colour a card that has no style of its own (ArchNodeView). The fills are
+ * translucent, as the cards' are, so a swatch matches its cards on a light canvas and a dark one.
+ */
 const BUILT_IN_STATUS: Record<string, { fill: string; border: string; style: LegendLineStyle }> = {
-  target: { fill: '#eef2ff', border: '#6366f1', style: 'solid' },
-  'to-be-created': { fill: '#fffbeb', border: '#f59e0b', style: 'dashed' },
-  'to-adapt': { fill: '#fffbeb', border: '#f59e0b', style: 'solid' },
-  deprecated: { fill: '#f4f4f5', border: '#d4d4d8', style: 'solid' },
-  proposed: { fill: '#f0f9ff', border: '#0ea5e9', style: 'dotted' },
+  target: { fill: 'rgba(99,102,241,0.10)', border: '#6366f1', style: 'solid' },
+  'to-be-created': { fill: 'rgba(245,158,11,0.08)', border: '#f59e0b', style: 'dashed' },
+  'to-adapt': { fill: 'rgba(245,158,11,0.06)', border: '#f59e0b', style: 'solid' },
+  deprecated: { fill: 'rgba(161,161,170,0.15)', border: '#d4d4d8', style: 'solid' },
+  proposed: { fill: 'rgba(14,165,233,0.08)', border: '#0ea5e9', style: 'dotted' },
 };
 
 function statusOf(tags: Map<string, ArchTagInfo>, id: string): string | null {
@@ -168,13 +160,14 @@ function statusSwatch(status: string, drawn: DrawnView, tags: Map<string, ArchTa
   const styles = drawn.elements
     .filter((e) => statusOf(tags, e.id) === status)
     .map((e) => drawn.nodeStyles[e.id] ?? {});
-  const styled = styles.filter((s) => s.fillColor || s.borderColor || s.borderStyle);
-  const common = mostCommon(styled, (s) => `${s.fillColor ?? ''}|${s.borderColor ?? ''}|${s.borderStyle ?? ''}`);
-  if (common) {
-    return { fill: common.fillColor ?? null, border: common.borderColor ?? null, style: lineStyle(common.borderStyle) ?? 'solid' };
-  }
+  // Property by property, as the card does: whatever its own style leaves unset is the status's look.
+  const common = mostCommon(styles, (s) => `${s.fillColor ?? ''}|${s.borderColor ?? ''}|${s.borderStyle ?? ''}`) ?? {};
   const builtIn = BUILT_IN_STATUS[status];
-  return builtIn ? { ...builtIn } : { fill: null, border: null, style: 'solid' };
+  return {
+    fill: common.fillColor ?? builtIn?.fill ?? null,
+    border: common.borderColor ?? builtIn?.border ?? null,
+    style: lineStyle(common.borderStyle) ?? builtIn?.style ?? 'solid',
+  };
 }
 
 function linkLine(l: ArchLink, edgeStyles: DrawnView['edgeStyles']): { color: string | null; style: LegendLineStyle } {

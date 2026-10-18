@@ -42,7 +42,7 @@ export type ArchNodeData = {
     accentSide?: 'none' | 'left' | 'top';
     accentColor?: string;
     textColor?: string;
-    textSize?: 'sm' | 'base' | 'lg';
+    textSize?: 'sm' | 'base' | 'lg' | 'xl';
     textAlign?: 'left' | 'center';
     // visibleFields is a list of string keys: built-in NodeFieldKey values
     // OR custom property names (anything in customProps). The renderer tries
@@ -235,6 +235,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   if (nodeStyle?.textColor) titleStyle.color = nodeStyle.textColor;
   if (nodeStyle?.textAlign) titleStyle.textAlign = nodeStyle.textAlign;
   const scale = TEXT_SCALE[nodeStyle?.textSize ?? 'base'] ?? TEXT_SCALE.base;
+  // A status of the author's own has no colour of its own; it takes the card's, so a verdict reads in
+  // the colour the card is drawn in rather than in grey.
+  const badgeTint = nodeStyle?.accentColor ?? nodeStyle?.borderColor;
   const titleSize = scale.title;
   // Motion. Marching uses an overlay; the rest animate the inner box (a class + duration var) —
   // independent of React Flow's wrapper transform, so positioning is unaffected.
@@ -380,11 +383,13 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     onDoubleClick={(ev) => { ev.stopPropagation(); data.onStartRename?.(id); }}
                   >{e.name}</span>
             )}
-            {showField('status') && status && <StatusBadge status={status} size={scale.badge} />}
+            {showField('status') && status && <StatusBadge status={status} size={scale.badge} tint={badgeTint} />}
           </div>
         ) : (
           <>
-            {(showField('kind') || (showField('status') && status)) && (
+            {/* Without the kind, the status needs no row of its own: it sits beside the name, which is
+                the compact card a page made for a room wants (F-014). */}
+            {showField('kind') && (
               <div className={clsx('stemma-node-header border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0', scale.pad)}>
                 <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
                 {showField('kind') && (
@@ -397,25 +402,28 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     external
                   </span>
                 )}
-                {showField('status') && status && <StatusBadge status={status} size={scale.badge} />}
+                {showField('status') && status && <StatusBadge status={status} size={scale.badge} tint={badgeTint} />}
               </div>
             )}
             <div className={clsx('flex-1 min-h-0 flex flex-col', scale.pad)}>
               {showField('name') && (
                 data.editing
                   ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
-                  : <div
+                  : <div className="flex items-start gap-2 shrink-0">
+                    <div
                       // The title wraps rather than clipping: for an argument diagram the box label
                       // *is* a sentence, and `truncate` silently ate it at roughly thirty
                       // characters, which pushed authors into shortening their prose to fit the
                       // node. `break-words` covers the one case wrapping cannot — a single
                       // unbroken token longer than the box. Width is still bounded by
                       // `max-w-[260px]`, or by `nodeStyle.width` when one is set.
-                      className={clsx('font-medium text-zinc-900 dark:text-zinc-100 break-words cursor-text shrink-0', titleSize)}
+                      className={clsx('font-medium text-zinc-900 dark:text-zinc-100 break-words cursor-text min-w-0 flex-1', titleSize)}
                       style={titleStyle}
                       title="Double-click to rename · double-click the box to write text"
                       onDoubleClick={(ev) => { ev.stopPropagation(); data.onStartRename?.(id); }}
                     >{e.name}</div>
+                    {!showField('kind') && showField('status') && status && <span className="mt-0.5 ml-auto shrink-0"><StatusBadge status={status} size={scale.badge} tint={badgeTint} /></span>}
+                  </div>
               )}
               {data.notesEditing ? (
                 <RichTextEditor
@@ -490,6 +498,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   );
 }
 
+/** A context frame's header chip, sized with the frame's `textSize` so it can be read from a room. */
+const BC_CHIP_TEXT: Record<string, string> = { sm: 'text-[10px]', base: 'text-[10px]', lg: 'text-[13px]', xl: 'text-[16px]' };
+
 function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel }: {
   id: string;
   name: string;
@@ -551,7 +562,9 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
         style={{ pointerEvents: 'auto', ...(border ? { background: border, borderColor: border, color: '#fff' } : {}) }}
         title={`Bounded Context: ${name}`}
         className={clsx(
-          'absolute -top-3 left-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] border cursor-pointer',
+          'absolute left-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded border cursor-pointer',
+          BC_CHIP_TEXT[nodeStyle?.textSize ?? 'base'] ?? 'text-[10px]',
+          nodeStyle?.textSize === 'xl' ? '-top-4' : nodeStyle?.textSize === 'lg' ? '-top-3.5' : '-top-3',
           !border && 'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30',
         )}
       >
@@ -632,7 +645,7 @@ function NameEditor({ id, initial, onCommit, onCancel }: {
   );
 }
 
-function StatusBadge({ status, size = 'text-[9px]' }: { status: string; size?: string }) {
+function StatusBadge({ status, size = 'text-[9px]', tint }: { status: string; size?: string; tint?: string }) {
   const colors: Record<string, string> = {
     'current': 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
     'target': 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30',
@@ -641,10 +654,14 @@ function StatusBadge({ status, size = 'text-[9px]' }: { status: string; size?: s
     'deprecated': 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 border-zinc-500/30',
     'proposed': 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
   };
-  const cls = colors[status] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/30';
+  const builtIn = colors[status];
+  const cls = builtIn ?? (tint ? '' : 'bg-zinc-500/15 text-zinc-600 border-zinc-500/30');
+  const style = !builtIn && tint
+    ? { color: `color-mix(in srgb, ${tint} 72%, black)`, borderColor: `color-mix(in srgb, ${tint} 55%, transparent)`, background: `color-mix(in srgb, ${tint} 14%, transparent)` }
+    : undefined;
   const glyph = STATUS_GLYPH[status];
   return (
-    <span className={clsx('stemma-status-badge ml-auto px-1.5 py-0.5 rounded uppercase tracking-wider border font-medium flex items-center gap-1', size, cls)}>
+    <span style={style} className={clsx('stemma-status-badge ml-auto px-1.5 py-0.5 rounded uppercase tracking-wider border font-medium flex items-center gap-1', size, cls)}>
       {glyph && <span aria-hidden="true">{glyph}</span>}
       {status}
     </span>

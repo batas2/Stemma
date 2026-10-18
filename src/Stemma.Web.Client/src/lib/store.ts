@@ -9,8 +9,8 @@ import {
   renameCustomProp as renameCP, type CustomProps,
 } from './customProps';
 import { saveServerView, deleteServerView, listServerViews, type ServerView } from './api';
-import { editBooksSection, isSidecarPrimed, loadBooksSection, loadViewEntries, loadViewLayoutModes, saveViewHeader, saveViewLayoutMode } from './layout';
-import { readViewHeaders, type ViewHeaderSpec } from './viewHeader';
+import { editBooksSection, editViewHeader, isSidecarPrimed, loadBooksSection, loadViewEntries, loadViewLayoutModes, saveViewLayoutMode } from './layout';
+import { readViewHeaders, type HeaderField, type ViewHeaderSpec } from './viewHeader';
 import {
   addBook as addBookTo, addPage, duplicatePage, movePage, newBookId, newPageId, readBooks,
   removeBook as removeBookFrom, removePage, renameBook as renameBookIn, setBookAudience as setAudienceIn,
@@ -182,8 +182,12 @@ interface AppState {
   viewHeaders: Record<string, ViewHeaderSpec>;
   setWorkspace: (ws: WorkspaceModel | null) => void;
   rehydratePresentation: () => void;
-  /** Set or remove a view's header. False, and nothing changed, until the sidecar has been read. */
-  setViewHeader: (viewKey: string, header: ViewHeaderSpec | null) => boolean;
+  /** Give a view a header, if it has none. False, and nothing changed, until the sidecar has been read. */
+  addViewHeader: (viewKey: string) => boolean;
+  /** Take a view's header away. */
+  removeViewHeader: (viewKey: string) => boolean;
+  /** Set one field of a view's header; blank text removes the field. Every other key is left as it is. */
+  setViewHeaderField: (viewKey: string, field: HeaderField, value: string) => boolean;
   /** Re-read the views from Views/*.cs; the list in the browser is only a cache of it (B-012). */
   syncViews: () => Promise<void>;
   setArch: (a: ArchModel | null) => void;
@@ -280,6 +284,19 @@ export function pageViewIds(s: Pick<AppState, 'customViews'>): Set<string> {
  * Edit the sidecar's books and read them back. Refused out loud when the file has not been read or
  * cannot be: an edit that silently went nowhere is the failure books had before (F-013).
  */
+/** Edit a view's header as the file holds it, then read every header back for the canvas to draw. */
+function editHeader(
+  get: () => AppState,
+  set: (partial: Partial<AppState>) => void,
+  viewKey: string,
+  edit: (header: Record<string, unknown> | null) => Record<string, unknown> | null,
+): boolean {
+  const root = get().workspace?.rootPath;
+  if (!root || !editViewHeader(root, viewKey, edit)) return false;
+  set({ viewHeaders: readViewHeaders(loadViewEntries(root)) });
+  return true;
+}
+
 function editBooks(get: () => AppState, edit: (books: BooksSection) => void): boolean {
   const root = get().workspace?.rootPath;
   if (!root || !editBooksSection(root, edit)) {
@@ -420,16 +437,13 @@ export const useApp = create<AppState>((set, get) => ({
       viewHeaders: readViewHeaders(loadViewEntries(ws.rootPath)),
     });
   },
-  setViewHeader: (viewKey, header) => {
-    const root = get().workspace?.rootPath;
-    if (!root || !saveViewHeader(root, viewKey, header as Record<string, unknown> | null)) return false;
-    set((s) => {
-      const next = { ...s.viewHeaders };
-      if (header) next[viewKey] = header; else delete next[viewKey];
-      return { viewHeaders: next };
-    });
-    return true;
-  },
+  addViewHeader: (viewKey) => editHeader(get, set, viewKey, (h) => h ?? {}),
+  removeViewHeader: (viewKey) => editHeader(get, set, viewKey, () => null),
+  setViewHeaderField: (viewKey, field, value) => editHeader(get, set, viewKey, (h) => {
+    const next = { ...(h ?? {}) };
+    if (value.trim() === '') delete next[field]; else next[field] = value;
+    return next;
+  }),
   setArch: (a) => set({ arch: a }),
   // Switch to a built-in view. A custom view keeps `view` at its base (e.g. 'moduleMap') while
   // activeCustomViewId is set, so guarding on `view` alone made clicking "Module Map" a silent

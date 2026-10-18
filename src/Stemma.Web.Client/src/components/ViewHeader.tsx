@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { renderNotes } from '@/lib/notesMarkdown';
-import { headerTitle, legendItems, withHeaderField, type DrawnView, type HeaderField, type LegendItem } from '@/lib/viewHeader';
+import { headerTitle, legendItems, type DrawnView, type HeaderField, type LegendItem } from '@/lib/viewHeader';
 
 /**
  * The top of a view's page (F-014): what the picture is, the one sentence it should leave in the
@@ -23,7 +23,7 @@ export function ViewHeader({ viewKey, viewName, drawn, readOnly, presenting }: {
   presenting: boolean;
 }) {
   const header = useApp((s) => s.viewHeaders[viewKey]);
-  const setViewHeader = useApp((s) => s.setViewHeader);
+  const setViewHeaderField = useApp((s) => s.setViewHeaderField);
   const root = useApp((s) => s.workspace?.rootPath ?? '');
   const [collapsed, setCollapsed] = useCollapsed(root, viewKey);
   const items = useMemo(() => (header ? legendItems(header, drawn) : []), [header, drawn]);
@@ -35,7 +35,7 @@ export function ViewHeader({ viewKey, viewName, drawn, readOnly, presenting }: {
   function commit(field: HeaderField, value: string) {
     const current = useApp.getState().viewHeaders[viewKey];
     if (!current || (current[field] ?? '') === value) return;
-    if (!setViewHeader(viewKey, withHeaderField(current, field, value))) {
+    if (!setViewHeaderField(viewKey, field, value)) {
       useApp.getState().setToast({ kind: 'error', text: "The header couldn't be saved: the layout file hasn't been read yet." });
     }
   }
@@ -47,7 +47,7 @@ export function ViewHeader({ viewKey, viewName, drawn, readOnly, presenting }: {
       className={clsx(
         'stemma-view-header absolute top-0 inset-x-0 z-[7] border-b border-zinc-200/90 dark:border-zinc-800',
         'bg-white/[0.93] dark:bg-zinc-950/[0.9] backdrop-blur-sm shadow-[0_1px_10px_rgba(15,23,42,0.06)]',
-        presenting ? 'px-10 pt-6 pb-5' : 'px-5 pt-3 pb-3',
+        presenting ? 'px-10 pt-5 pb-4' : 'px-5 pt-3 pb-3',
       )}
       // Clicks on the header are the header's, not the canvas's: no pan, no deselect.
       onPointerDown={(e) => e.stopPropagation()}
@@ -62,7 +62,7 @@ export function ViewHeader({ viewKey, viewName, drawn, readOnly, presenting }: {
             readOnly={readOnly}
             onCommit={(v) => commit('title', v)}
             label="Title"
-            className={clsx('font-semibold tracking-tight text-zinc-900 dark:text-zinc-50', presenting ? 'text-[30px] leading-tight' : 'text-[19px] leading-snug')}
+            className={clsx('font-semibold tracking-tight text-zinc-900 dark:text-zinc-50', presenting ? 'text-[27px] leading-tight' : 'text-[19px] leading-snug')}
           />
           {!folded && (
             <>
@@ -72,17 +72,19 @@ export function ViewHeader({ viewKey, viewName, drawn, readOnly, presenting }: {
                 readOnly={readOnly}
                 onCommit={(v) => commit('message', v)}
                 label="Message"
-                className={clsx('font-medium text-zinc-800 dark:text-zinc-100', presenting ? 'text-[22px] leading-snug mt-2' : 'text-[15px] leading-snug mt-1')}
+                className={clsx('font-medium text-zinc-700 dark:text-zinc-200', presenting ? 'text-[20px] leading-snug mt-1.5' : 'text-[15px] leading-snug mt-1')}
               />
-              <EditableText
+              {/* Presented, the context is said rather than shown: the slide keeps its title, its point
+                  and its key, and the picture gets the room. The editor and the report show it. */}
+              {!readOnly && <EditableText
                 value={header.context ?? ''}
                 placeholder="Add context — what this shows, and how to read it"
                 readOnly={readOnly}
                 multiline
                 onCommit={(v) => commit('context', v)}
                 label="Context"
-                className={clsx('stemma-view-header-context text-zinc-600 dark:text-zinc-300', presenting ? 'text-[16px] leading-relaxed mt-2.5 max-w-[78ch]' : 'text-[12.5px] leading-relaxed mt-1.5 max-w-[96ch]')}
-              />
+                className="stemma-view-header-context text-zinc-600 dark:text-zinc-300 text-[12.5px] leading-relaxed mt-1.5 max-w-[96ch]"
+              />}
             </>
           )}
         </div>
@@ -184,7 +186,8 @@ function EditableText({ value, shown, placeholder, readOnly, multiline, onCommit
   }
 
   if (draft !== null) {
-    const done = () => { onCommit(draft.trim()); setDraft(null); };
+    // Leaving a field untouched writes nothing — not even the same words trimmed.
+    const done = () => { if (draft !== value) onCommit(draft.trim()); setDraft(null); };
     const props = {
       ref,
       'aria-label': label,
