@@ -1232,5 +1232,163 @@
       "exit": "2027-06"
     }
   },
-  "annotations": {}
+  "annotations": {},
+  "books": {
+    "book_ticket_sold": {
+      "name": "How a Ticket Is Sold",
+      "audience": "engineering",
+      "order": [
+        "path",
+        "money",
+        "issuing",
+        "shape",
+        "orientation"
+      ],
+      "pages": {
+        "path": {
+          "title": "The path a purchase takes",
+          "view": "view_buy",
+          "narrative": "Follow the arrows left to right. The app talks to one place — the Booking API — and\neverything after that is internal. Journey Planner produces an itinerary, Price Quote\nprices it against the published fare tables and any railcard, Basket holds it, and\nCheckout turns it into an order. Nothing is issued yet: Checkout only publishes\nOrderPlaced onto the event bus.",
+          "focus": [
+            "cnt_app",
+            "cnt_api",
+            "mod_planner",
+            "mod_quote",
+            "mod_basket",
+            "mod_checkout",
+            "cnt_bus"
+          ],
+          "frame": "view"
+        },
+        "money": {
+          "title": "Where the money actually moves",
+          "view": "view_buy",
+          "narrative": "Payment Orchestration is the only module allowed to talk to the payment gateway, and it\ndoes so synchronously (`twoway`) because the passenger is watching a spinner. If\nauthorisation fails, no OrderPlaced event is published and no ticket exists — the failure\nmode is \"nothing happened\", which is the one we can explain at 23:50 on a Friday.",
+          "focus": [
+            "mod_payments",
+            "sys_payments"
+          ]
+        },
+        "issuing": {
+          "title": "Issuing, signing, delivering",
+          "view": "view_buy",
+          "narrative": "Ticket Issuing consumes OrderPlaced, Barcode Signing produces the signed payload, Wallet\nDelivery pushes it to the phone and asks the notification provider for the email copy.\nThree modules, one direction, no callbacks. If you are adding a new ticket type, this is\nthe chain you extend — and `mod_barcode` is the one place with a security review attached.",
+          "focus": [
+            "cnt_bus",
+            "mod_issuing",
+            "mod_barcode",
+            "mod_wallet",
+            "sys_notify"
+          ]
+        },
+        "shape": {
+          "title": "The dependency shape we are defending",
+          "view": "view_deps",
+          "narrative": "Sales depends on Fares. Fulfilment depends on Sales. Revenue depends on Sales. Nothing\ndepends on Care — Delay Repay and Refunds read orders, and nobody reads them back. Keep\nit that way: a dependency from Fares into Sales is the first step towards a monolith, and\nthis lens will show it as a new upward edge on your PR.",
+          "focus": [
+            "mod_delay_repay",
+            "mod_refunds",
+            "mod_orders"
+          ],
+          "frame": "view"
+        },
+        "orientation": {
+          "title": "Everything, once, for orientation",
+          "view": "moduleMap",
+          "narrative": "The full model with every context expanded. Useful exactly twice: on your first day, and\nwhen you are looking for where something *should* live. Six contexts, twenty-one modules;\nif what you are building does not fit one of them, that is a design conversation, not a\nnew folder."
+        }
+      }
+    },
+    "book_reserva_exit": {
+      "name": "Retiring RESERVA",
+      "audience": "leadership",
+      "order": [
+        "mainframe",
+        "replacement",
+        "risks",
+        "decision"
+      ],
+      "pages": {
+        "mainframe": {
+          "title": "What is still on the mainframe",
+          "view": "view_strangler",
+          "narrative": "Two things, and only two: the seat reservation hold taken at checkout, and the nightly\ngateline entitlement batch. Everything else has already moved. The remaining surface is\nsmall enough to name in a sentence, which is why the retirement date is now credible.",
+          "focus": [
+            "sys_reserva",
+            "mod_checkout",
+            "mod_gateline"
+          ],
+          "frame": "view"
+        },
+        "replacement": {
+          "title": "What replaces it",
+          "view": "view_strangler",
+          "narrative": "Revenue Apportionment and Operator Settlement — both `to-be-created`. Today RESERVA\napportions revenue between operators as a side effect of holding the reservation. When it\ngoes, that calculation needs a home. This is the funded work; the rest of the exit is\ndeletion.",
+          "focus": [
+            "mod_apportion",
+            "mod_settlement"
+          ]
+        },
+        "risks": {
+          "title": "The two risks that decide the date",
+          "view": "view_concerns",
+          "narrative": "Fare drift: while both systems price tickets, they can disagree, and a disagreement is a\nregulatory finding rather than a bug. Batch window: RESERVA accepts our entitlement batch\nonly between 02:00 and 04:00, so any incident in that window costs a full day. Both close\nthe moment the last write path is gone.",
+          "focus": [
+            "risk_fare_drift",
+            "mod_fare_rules",
+            "risk_batch_window",
+            "sys_reserva"
+          ],
+          "frame": "view"
+        },
+        "decision": {
+          "title": "The decision we are asking for",
+          "view": "view_concerns",
+          "narrative": "One open question blocks the plan: who owns apportionment afterwards. Insight has the\nskills and no capacity; Sell has capacity and no domain knowledge. Until that is\nanswered, `mod_apportion` stays in design and the retirement date stays provisional.",
+          "focus": [
+            "q_apportion_owner",
+            "mod_apportion"
+          ]
+        }
+      }
+    },
+    "book_disruption_day": {
+      "name": "Disruption Day",
+      "audience": "operations",
+      "order": [
+        "passenger",
+        "breaks",
+        "call"
+      ],
+      "pages": {
+        "passenger": {
+          "title": "What the passenger sees",
+          "view": "view_buy",
+          "narrative": "Nothing changes in the buying path during disruption — tickets keep selling. That is\ndeliberate: we would rather sell a ticket and refund it automatically than take the shop\noffline and lose the day's revenue along with the trust."
+        },
+        "breaks": {
+          "title": "What breaks first",
+          "view": "view_concerns",
+          "narrative": "Refunds. A strike day is twenty times a normal day's volume, and the Refund Engine is the\nonly module in the model with a load risk on it. The disruption feed triggers auto-refunds\nwithout a human in the loop, so the queue depth is the number to watch on the wallboard.",
+          "focus": [
+            "mod_refunds",
+            "risk_strike_load",
+            "mod_disruption"
+          ]
+        },
+        "call": {
+          "title": "Who to call",
+          "view": "moduleMap",
+          "narrative": "Ownership badges are on every module. Care owns Delay Repay and Refunds, Fulfil owns the\ngateline bridge, Platform owns the mainframe. During an incident, open this view, click\nthe module that is red, and the squad name is on the card.",
+          "focus": [
+            "mod_delay_repay",
+            "mod_refunds",
+            "mod_gateline",
+            "sys_reserva"
+          ],
+          "frame": "view"
+        }
+      }
+    }
+  }
 }

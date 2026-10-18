@@ -28,8 +28,7 @@ that migration legible on a canvas.
 | `Views/*.cs` | Four saved views, each a named subset with a base lens. |
 | `Concepts/data-model.stemma.yaml` | Aggregates, entities and value objects, with `owner:` pointing back at the modules that own them. |
 | `Concepts/resources.stemma.yaml` | The Booking API resource tree with read/write actions. |
-| `Concepts/view-book.stemma.yaml` | Three **books** — the same model narrated for three audiences. |
-| `stemma.layout.json` | Positions, colours, notes and custom properties. Presentation only; safe to diff. |
+| `stemma.layout.json` | Positions, colours, notes, custom properties, and three **books** — the same model narrated for three audiences. Presentation only; safe to diff. |
 
 ## The four views
 
@@ -43,7 +42,9 @@ that migration legible on a canvas.
 ## The three books
 
 Books are the "explain this to someone" surface: an ordered set of pages, each pairing a view with a
-narrative. The same model, told three ways.
+narrative. The same model, told three ways. They live in the `books` section of `stemma.layout.json`,
+because a book is presentation: each page names a view, the elements to point at and whether to zoom
+to them, and the words to say while it is on screen.
 
 - **How a Ticket Is Sold** *(engineering)* — five pages walking a new joiner from the purchase path
   to the dependency shape the team defends in review.

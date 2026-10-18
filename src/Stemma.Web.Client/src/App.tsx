@@ -16,7 +16,7 @@ import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChange
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
 import { removeShape, saveShapes } from './lib/shapes';
-import { archModel, books as fetchBooks, listViolations, snapshot } from './lib/api';
+import { archModel, listViolations, snapshot } from './lib/api';
 import { primeLayoutSidecar, rereadLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
 import { layoutUndo } from './lib/layoutUndo';
 import type { ViewKind } from './lib/types';
@@ -24,6 +24,7 @@ import { RenderShell } from './components/RenderShell';
 import { currentRenderParams } from './lib/renderMode';
 import { ViolationsPanel } from './components/ViolationsPanel';
 import { BookFooter } from './components/BookFooter';
+import { BookPresenter } from './components/BookPresenter';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { PromptDialog } from './components/PromptDialog';
 import { ToastQueue } from './components/ToastQueue';
@@ -56,7 +57,6 @@ export default function App() {
   const setArch = useApp((s) => s.setArch);
   const setView = useApp((s) => s.setView);
   const setViolations = useApp((s) => s.setViolations);
-  const setBooks = useApp((s) => s.setBooks);
 
   useEffect(() => {
     ensureConnection().catch(reportFailure('Signalr', ClientEvent.ConnectionLost, 'Opening the live connection'));
@@ -65,11 +65,10 @@ export default function App() {
     // so refresh() can preserve the prior in-memory model on a 404 / network blip.
     const PRESERVE = Symbol('preserve');
     async function refresh() {
-      const [s, a, v, b] = await Promise.all([
+      const [s, a, v] = await Promise.all([
         snapshot(),
         archModel().catch(() => PRESERVE as unknown as null),
         listViolations().catch(() => []),
-        fetchBooks().catch(() => null),
       ]);
       if (s) {
         setWs(s);
@@ -79,7 +78,6 @@ export default function App() {
       }
       if ((a as unknown) !== PRESERVE) setArch(a);
       setViolations(v);
-      if (b) setBooks(b);
     }
     const offOp = onOperationApplied(refresh);
     const offExt = onExternalChange(refresh);
@@ -91,7 +89,7 @@ export default function App() {
     // The comments changed outside: whichever panel is open reads them again.
     const offComments = onCommentsChanged(() => window.dispatchEvent(new Event('stemma:comments-changed')));
     return () => { offOp(); offExt(); offSidecar(); offComments(); };
-  }, [setWs, setArch, setViolations, setBooks]);
+  }, [setWs, setArch, setViolations]);
 
   // Load the active workspace's model + presentation whenever the workspace changes — on the
   // initial snapshot, but also when one is opened from Recents / by path / via Init. Previously
@@ -102,9 +100,8 @@ export default function App() {
     if (!wsRoot) { setArch(null); return; }
     primeLayoutSidecar(wsRoot).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
     archModel().then((a) => setArch(a)).catch(() => setArch(null));
-    fetchBooks().then((b) => { if (b) setBooks(b); }).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading books'));
     listViolations().then((v) => setViolations(v)).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading violations'));
-  }, [wsRoot, setArch, setBooks, setViolations]);
+  }, [wsRoot, setArch, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
   const rehydratePresentation = useApp((s) => s.rehydratePresentation);
@@ -113,6 +110,8 @@ export default function App() {
   useEffect(() => {
     function onPrimed() {
       rehydratePresentation();
+      // Books live in the sidecar (ADR-0022): read on open, and again whenever it changed outside.
+      useApp.getState().reloadBooks();
       window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: 'all' } }));
       window.dispatchEvent(new CustomEvent('stemma:notes-changed'));
     }
@@ -120,19 +119,11 @@ export default function App() {
     return () => window.removeEventListener('stemma:sidecar-primed', onPrimed);
   }, [rehydratePresentation]);
 
-  // Book mode: when the active page changes, drive `view` to follow.
-  const activeBookId = useApp((s) => s.activeBookId);
-  const activeBookPageIndex = useApp((s) => s.activeBookPageIndex);
-  const books = useApp((s) => s.books);
-  useEffect(() => {
-    if (!activeBookId) return;
-    const book = books.find((b) => b.id === activeBookId);
-    if (!book || book.pages.length === 0) return;
-    const target = book.pages[activeBookPageIndex];
-    if (target && (target.viewId === 'moduleMap' || target.viewId === 'dependencyGraph')) {
-      setView(target.viewId as ViewKind);
-    }
-  }, [activeBookId, activeBookPageIndex, books, setView]);
+  const presenting = useApp((s) => s.presenting);
+  // The PDF export takes its pictures with the chrome out of the way too, so a page is as large as
+  // it is when presented rather than squeezed above the editor.
+  const capturing = useApp((s) => s.capturing);
+  const bare = presenting || capturing;
 
   function applyLayoutEntry(entry: { workspaceRoot: string; viewKey: string; positions: Record<string, { x: number; y: number }> }) {
     const current = loadLayout(entry.workspaceRoot, entry.viewKey as ViewKind);
@@ -300,26 +291,28 @@ export default function App() {
     <div className="h-screen flex flex-col">
       <a href="#stemma-canvas" className="skip-link">Skip to canvas</a>
       <TopProgressBar />
-      <Topbar />
+      {/* Presenting, the diagram is the whole window: everything meant for editing steps aside. */}
+      {!bare && <Topbar />}
       <div className="flex-1 flex min-h-0">
         {ws ? (
           <>
-            <Sidebar />
+            {!bare && <Sidebar />}
             <main id="stemma-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
               <div className="flex-1 min-h-0 relative">
                 {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
+                {presenting && <BookPresenter />}
               </div>
             </main>
-            <ArchOrShapeInspector />
+            {!bare && <ArchOrShapeInspector />}
           </>
         ) : (
           <EmptyState />
         )}
       </div>
-      {ws && <ViewTabs />}
-      <BookFooter />
-      <ViolationsPanel />
-      <StatusBar />
+      {ws && !bare && <ViewTabs />}
+      {!bare && <BookFooter />}
+      {!bare && <ViolationsPanel />}
+      {!bare && <StatusBar />}
       <CommandPalette />
       <Suspense fallback={null}>
         <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />

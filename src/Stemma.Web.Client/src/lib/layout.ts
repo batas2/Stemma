@@ -13,6 +13,7 @@ interface SidecarShape {
   notes?: Record<string, string>;
   customProps?: Record<string, Record<string, string>>;
   annotations?: Record<string, unknown[]>;
+  books?: Record<string, unknown>;
 }
 
 /** Top-level pass-through sections of the committed sidecar that the client owns the schema of. */
@@ -95,7 +96,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 async function flushSidecar(rootPath: string): Promise<void> {
   if (!isSidecarPrimed(rootPath) || sidecarBase?.rootPath !== rootPath) return;
   if (flushing) { flushAgain = true; return; }
-  const changes = sidecarChanges(sidecarBase.sidecar, sidecarCache!.sidecar);
+  // A copy, not references into the live sidecar: an edit made while this request is in flight
+  // mutates those objects, and recording the request as written would then record the later edit as
+  // written too — when it was never sent.
+  const changes = structuredClone(sidecarChanges(sidecarBase.sidecar, sidecarCache!.sidecar));
   if (changes.length === 0) return;
   flushing = true;
   try {
@@ -172,6 +176,33 @@ export function sidecarSet(rootPath: string, section: SidecarSection, key: strin
   else map[key] = value;
   (s as Record<string, unknown>)[section] = map;
   scheduleSidecarWrite(rootPath);
+}
+
+/**
+ * The committed `books` section (F-013), or undefined until the sidecar has been read — before then
+ * there is no way to tell a workspace with no books from one whose books have not arrived.
+ */
+export function loadBooksSection(rootPath: string): Record<string, unknown> | undefined {
+  if (!isSidecarPrimed(rootPath)) return undefined;
+  const books = sidecarCache!.sidecar.books;
+  return isPlainObject(books) ? books : {};
+}
+
+/**
+ * Edit the `books` section in place and schedule the write; the change list carries only what the
+ * edit touched (ADR-0021). Refused — false, nothing changed — until the sidecar has been read, and
+ * when `books` is something other than an object: replacing what a hand edit left there would
+ * delete it, and an edit nobody could see land is worse than one refused out loud.
+ */
+export function editBooksSection(rootPath: string, edit: (books: Record<string, unknown>) => void): boolean {
+  if (typeof window === 'undefined' || !isSidecarPrimed(rootPath)) return false;
+  const sidecar = sidecarCache!.sidecar;
+  if (sidecar.books !== undefined && !isPlainObject(sidecar.books)) return false;
+  const books = sidecar.books ?? {};
+  edit(books);
+  sidecar.books = books;
+  scheduleSidecarWrite(rootPath);
+  return true;
 }
 
 /** Per-view free-form canvas shapes (annotations), persisted under views.<key>.shapes. */
@@ -302,7 +333,10 @@ function mergeSidecar(server: SidecarShape, local: SidecarShape): SidecarShape {
     for (const k of Object.keys(b)) out[k] = { ...a[k], ...b[k] };
     return out;
   };
+  // Starts from the file, so a section this client has no merge rule for — `$schema`, a key added
+  // by hand — is kept; leaving it out of the copy would send its removal with the next edit.
   return {
+    ...server,
     version: local.version ?? server.version ?? 1,
     views: mergeViews(server.views, local.views),
     nodeStyles: { ...server.nodeStyles, ...local.nodeStyles },
@@ -310,6 +344,7 @@ function mergeSidecar(server: SidecarShape, local: SidecarShape): SidecarShape {
     notes: { ...server.notes, ...local.notes },
     customProps: { ...server.customProps, ...local.customProps },
     annotations: { ...server.annotations, ...local.annotations },
+    ...(server.books || local.books ? { books: { ...server.books, ...local.books } } : {}),
   };
 }
 

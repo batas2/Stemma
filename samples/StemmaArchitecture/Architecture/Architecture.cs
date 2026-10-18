@@ -13,8 +13,8 @@ namespace StemmaArchitecture;
 /// It doubles as the feature tour. Between this file, <c>Views/</c>, <c>Concepts/</c> and the
 /// committed <c>stemma.layout.json</c>, every part of the vocabulary is exercised at least once:
 /// all eleven element kinds, all three link kinds, lifecycle and ownership including RAPID roles,
-/// six saved views over one model, three narrative books for three audiences, the YAML data and
-/// resource layers, and the presentation sidecar with styles, notes, shapes and a layout constraint.
+/// six saved views over one model, the YAML data and resource layers, and the presentation sidecar
+/// with styles, notes, shapes, a layout constraint and three narrative books for three audiences.
 ///
 /// The shape in one paragraph. A canvas gesture becomes an operation, the operation travels over
 /// SignalR to the host, the host hands it to the engine, and the engine rewrites the C# on disk
@@ -158,7 +158,6 @@ public static class Architecture
 
         var depRestEngine = new Dependency("dep_rest_engine", "mod_rest", "mod_engine", "calls");
         var depScaffoldEngine = new Dependency("dep_scaffold_engine", "mod_scaffold", "mod_engine", "calls");
-        var depPdfYaml = new Dependency("dep_pdf_yaml", "mod_pdf", "mod_yaml", "reads");
         var depLlmEngine = new Dependency("dep_llm_engine", "mod_llm", "mod_engine", "calls");
 
         var depCanvasStore = new Dependency("dep_canvas_store", "mod_canvas", "mod_store", "uses");
@@ -166,6 +165,7 @@ public static class Architecture
         var depCanvasAuto = new Dependency("dep_canvas_auto", "mod_canvas", "mod_autolayout", "uses");
         var depInspectorStore = new Dependency("dep_inspector_store", "mod_inspector", "mod_store", "uses");
         var depBooksStore = new Dependency("dep_books_store", "mod_books", "mod_store", "uses");
+        var depBooksLayout = new Dependency("dep_books_layout", "mod_books", "mod_layoutcache", "uses");
 
         var depRenderShellCanvas = new Dependency("dep_rendershell_canvas", "mod_rendershell", "mod_canvas", "uses");
         var depRenderChromium = new Dependency("dep_render_chromium", "mod_render", "sys_chromium", "drives");
@@ -272,8 +272,8 @@ public static class Architecture
             depEngineRules, depEngineExport,
             depReaderRoslyn, depReaderConcepts, depWriterConcepts,
             depModelOfConcepts, depRulesConcepts, depSidecarGit, depYamlGit,
-            depRestEngine, depScaffoldEngine, depPdfYaml, depLlmEngine,
-            depCanvasStore, depCanvasLayout, depCanvasAuto, depInspectorStore, depBooksStore,
+            depRestEngine, depScaffoldEngine, depLlmEngine,
+            depCanvasStore, depCanvasLayout, depCanvasAuto, depInspectorStore, depBooksStore, depBooksLayout,
             depRenderShellCanvas, depRenderChromium, depRenderShellDep, depManifestRender, depCheckRules,
             depFidelityWriter, depFidelityOps,
             depWebHostsEngine, depClientBundles, depCliRender, depDesktopWeb,

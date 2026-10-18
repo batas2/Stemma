@@ -21,6 +21,7 @@ import {
   MarkerType,
   getNodesBounds,
   getViewportForBounds,
+  type FitViewOptions,
 } from '@xyflow/react';
 import { ArchNodeView } from './nodes/ArchNodeView';
 import { WaypointEdge } from './edges/WaypointEdge';
@@ -64,7 +65,9 @@ import { confirmAction } from './ConfirmDialog';
 import { promptText, pickFromList } from './PromptDialog';
 import { suggestElementName } from '@/lib/naming';
 import { revealNewElement, revealToast } from '@/lib/canvasReveal';
-import { useApp } from '@/lib/store';
+import { useApp, activePage } from '@/lib/store';
+import { viewKeyOf } from '@/lib/books';
+import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
 import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
@@ -198,6 +201,12 @@ function bcBoxes(nodes: Node[], excludeId?: string): Map<string, Box> {
   return out;
 }
 
+/** What an exported picture of the canvas leaves out: its controls, not its content. */
+function notCanvasChrome(node: HTMLElement): boolean {
+  const cl = (node as Element).classList;
+  return !(cl && (cl.contains('react-flow__controls') || cl.contains('react-flow__minimap') || cl.contains('react-flow__attribution') || cl.contains('react-flow__panel')));
+}
+
 /** The id of the BC whose box contains point `p`, or null. */
 function bcAtPoint(boxes: Map<string, Box>, p: { x: number; y: number }): string | null {
   for (const [id, b] of boxes) {
@@ -228,6 +237,26 @@ function CanvasInner() {
 
   const activeCustomView = customViews.find((v) => v.id === activeId) ?? null;
   const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : view;
+
+  // Books (F-013). A page lights and frames the canvas only on the view it is about: open another
+  // view while editing a book and the canvas is that view, untouched.
+  const presenting = useApp((s) => s.presenting);
+  const capturing = useApp((s) => s.capturing);
+  const activeBookId = useApp((s) => s.activeBookId);
+  const openPage = useApp(activePage);
+  const bookPage = openPage && viewKeyOf(openPage.view) === layoutKey ? openPage : null;
+  // Keyed on what lights the page, not on the page: typing its narrative makes a new page object on
+  // every keystroke, and re-lighting the whole canvas for each one is work for nothing.
+  const focusKey = bookPage ? bookPage.focus.join('\u0000') : null;
+  const pageLit = useMemo(
+    () => (bookPage && arch ? pageLighting(bookPage, arch.elements) : null),
+    [focusKey, arch], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const pageHides = bookPage?.others === 'hide';
+  const readOnly = presenting || capturing;
+  // Read by the ordinary fit-on-open, which must not fight the page's own framing.
+  const bookPageApplies = useRef(false);
+  bookPageApplies.current = bookPage !== null;
   // Free-form annotations (frames / text / shapes) are available on every view now — they live in
   // the committed sidecar keyed by view, so they travel with the repo and never touch the model.
   const shapesEnabled = !!workspace;
@@ -856,10 +885,86 @@ function CanvasInner() {
 
   useEffect(() => {
     if (nodes.length > 0) {
-      const id = setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 80);
+      const id = setTimeout(() => { if (!bookPageApplies.current) fitView({ padding: 0.2, duration: 400 }); }, 80);
       return () => clearTimeout(id);
     }
   }, [view, activeId, arch?.filePath, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A book page frames its view: the whole of it, or only what it points at. Moving between pages
+  // of one view is a camera move, which is what turns "first the context, then the detail" from a
+  // cut into a zoom. Says when it has settled, so the PDF export knows when to take the picture.
+  const nodesReady = nodes.length > 0;
+  // The presenter asks again when its narrative is shown or hidden, since that changes the room left.
+  // So does the canvas changing size while presenting: going full screen lands after the first
+  // frame, and a frame computed for the editor's smaller canvas is off-centre on the big one.
+  const [reframes, setReframes] = useState(0);
+  useEffect(() => {
+    const bump = () => setReframes((n) => n + 1);
+    window.addEventListener('stemma:book-reframe', bump);
+    return () => window.removeEventListener('stemma:book-reframe', bump);
+  }, []);
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!readOnly || !el || typeof ResizeObserver === 'undefined') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let first = true;
+    const observer = new ResizeObserver(() => {
+      // The observer reports the size it starts with; only a change is a reason to frame again.
+      if (first) { first = false; return; }
+      clearTimeout(timer);
+      timer = setTimeout(() => setReframes((n) => n + 1), 150);
+    });
+    observer.observe(el);
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [readOnly]);
+  const frameKey = bookPage
+    ? `${activeBookId}|${bookPage.id}|${layoutKey}|${bookPage.frame}|${bookPage.others}|${bookPage.focus.join(',')}|${presenting}|${capturing}`
+    : null;
+  useEffect(() => {
+    if (!frameKey || !nodesReady || !bookPage) return;
+    const page = bookPage;
+    const duration = frameDuration(prefersReducedMotion(), capturing);
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    // After the view's nodes for this page are in place: a page on another view arrives with it.
+    const start = setTimeout(() => {
+      const present = new Set(getNodes().filter((n) => !n.hidden).map((n) => n.id));
+      const targets = page.frame === 'focus' ? page.focus.filter((id) => present.has(id)) : [];
+      // Presenting, the narrative card sits over the bottom of the picture, so the frame ends above it.
+      const card = presenting ? document.querySelector<HTMLElement>('[data-book-narrative]') : null;
+      const padding: NonNullable<FitViewOptions['padding']> = card
+        ? { top: '10%', left: '6%', right: '6%', bottom: `${Math.round(card.getBoundingClientRect().height + 48)}px` }
+        : presenting || capturing ? 0.08 : 0.24;
+      // Close enough to read, not so close that the boxes stop looking like a diagram.
+      const options = { padding, duration, maxZoom: 1.15 };
+      if (targets.length > 0) fitView({ ...options, nodes: targets.map((id) => ({ id })) });
+      else fitView(options);
+      settle = setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent('stemma:book-framed', { detail: { pageId: page.id } }));
+      })), duration + 40);
+    }, capturing ? 250 : 120);
+    return () => { clearTimeout(start); if (settle) clearTimeout(settle); };
+  }, [frameKey, nodesReady, reframes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The PDF export's picture of a page: the viewport exactly as framed, without the chrome.
+  useEffect(() => {
+    async function onCapture(ev: Event) {
+      const resolve = (ev as CustomEvent).detail?.resolve as ((dataUrl: string | null) => void) | undefined;
+      if (!resolve) return;
+      const rfEl = document.querySelector('.react-flow') as HTMLElement | null;
+      if (!rfEl) { resolve(null); return; }
+      try {
+        const { toPng } = await import('html-to-image');
+        // Sharp on paper without making a deck of window-sized bitmaps: the long edge stops at 2400 px.
+        const pixelRatio = Math.min(2, 2400 / Math.max(rfEl.clientWidth, rfEl.clientHeight, 1));
+        resolve(await toPng(rfEl, { backgroundColor: getComputedStyle(document.body).backgroundColor, pixelRatio, filter: notCanvasChrome }));
+      } catch (error) {
+        reportFailure('Canvas', ClientEvent.RequestFailed, 'Capturing a book page')(error);
+        resolve(null);
+      }
+    }
+    window.addEventListener('stemma:capture-viewport', onCapture);
+    return () => window.removeEventListener('stemma:capture-viewport', onCapture);
+  }, []);
 
   // Export the WHOLE canvas — every node AND every free-form shape — by fitting their combined
   // bounds into view, snapshotting the .react-flow element (which holds the shape overlay too),
@@ -888,10 +993,7 @@ function CanvasInner() {
         setViewport(vp);
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         const { toPng, toSvg } = await import('html-to-image');
-        const filter = (node: HTMLElement) => {
-          const cl = (node as Element).classList;
-          return !(cl && (cl.contains('react-flow__controls') || cl.contains('react-flow__minimap') || cl.contains('react-flow__attribution') || cl.contains('react-flow__panel')));
-        };
+        const filter = notCanvasChrome;
         // `backgroundColor: undefined` is how html-to-image is told to leave the backdrop alone —
         // passing a colour of any kind, including 'transparent', paints one.
         const opts = { backgroundColor: ex.backgroundColor, pixelRatio: ex.pixelRatio, filter };
@@ -1767,7 +1869,7 @@ function CanvasInner() {
   // + size are derived from the children's bounding box, it is drawn first (below the modules)
   // so they stay clickable on top, and it is not directly draggable — moving its modules
   // reshapes it. Elements without children pass through unchanged.
-  const renderedNodes = useMemo<Node[]>(() => {
+  const nestedNodes = useMemo<Node[]>(() => {
     const nestable = view === 'moduleMap' || view === 'dependencyGraph' || activeCustomView !== null;
     if (!nestable) return nodes;
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -1786,7 +1888,8 @@ function CanvasInner() {
     for (const n of nodes) {
       const el = (n.data as { element?: ArchElement }).element;
       if (el?.kind === 'boundedContext') {
-        const kids = childrenByCtx.get(el.id);
+        // On a page that hides the rest, a box wraps only what is left in it, or it frames empty space.
+        const kids = childrenByCtx.get(el.id)?.filter((k) => !(pageHides && pageLit && !pageLit.has(k.id)));
         if (kids && kids.length > 0) {
           const collapsed = collapsedBcs.has(el.id);
           const box = boundingBox(kids);
@@ -1807,7 +1910,57 @@ function CanvasInner() {
     }
     // Containers first so the contained modules paint (and receive clicks) on top of them.
     return [...containers, ...rest];
-  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed]);
+  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, pageLit, pageHides]);
+
+  // A book page points: what it focuses stays lit and the rest fades, or goes, when the page says
+  // `hide`. Applied on the wrapper's opacity so a bounded-context box fades the same way a card does.
+  //
+  // Presenting, and while the PDF export takes its pictures, the canvas is looked at and not edited.
+  // A node's own `draggable` outranks the canvas-wide switch in React Flow, so the switch alone left
+  // every box draggable — and a drop onto another bounded context rewrites Architecture.cs. Every way
+  // in is taken off the nodes and edges themselves: drag, select, resize, rename, notes, label edits,
+  // waypoints, arrowheads.
+  const renderedNodes = useMemo<Node[]>(() => {
+    if (!pageLit && !readOnly) return nestedNodes;
+    return nestedNodes.map((n) => {
+      let out = n;
+      if (readOnly) {
+        out = {
+          ...out, draggable: false, selectable: false, selected: false,
+          data: {
+            ...out.data, resizable: false, editing: false, notesEditing: false,
+            onStartRename: undefined, onCommitName: undefined, onCancelEdit: undefined, onResize: undefined,
+            onChangeNotes: undefined, onCommitNotes: undefined, onCloseNotes: undefined,
+          },
+        };
+      }
+      if (pageLit && !pageLit.has(n.id)) {
+        out = pageHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.2 } };
+      }
+      return out;
+    });
+  }, [nestedNodes, pageLit, pageHides, readOnly]);
+
+  const renderedEdges = useMemo<Edge[]>(() => {
+    if (!pageLit && !readOnly) return allEdges;
+    return allEdges.map((e) => {
+      let out = e;
+      if (readOnly) {
+        out = {
+          ...out, selectable: false, selected: false, reconnectable: false,
+          data: {
+            ...out.data, editing: false,
+            onAddWaypoint: undefined, onRemoveWaypoint: undefined, onEditStart: undefined,
+            onToggleArrow: undefined, onSetType: undefined,
+          },
+        };
+      }
+      if (pageLit && !(pageLit.has(e.source) && pageLit.has(e.target))) {
+        out = pageHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.15 } };
+      }
+      return out;
+    });
+  }, [allEdges, pageLit, pageHides, readOnly]);
 
   const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected).map((n) => n.id), [nodes]);
   const selectedCount = selectedNodeIds.length;
@@ -1826,7 +1979,9 @@ function CanvasInner() {
       if (st.inspectorTab === 'layout') st.setInspectorTab(tabBeforeLayoutJump.current);
       tabBeforeLayoutJump.current = undefined;
     }
-  }, [selectedCount]);
+    // The ids, not only the count: clicking one box after another is a new selection of one, and a
+    // book page that takes the selection as its focus must get the second box.
+  }, [selectedCount, selectedNodeIds.join('\u0000')]); // eslint-disable-line react-hooks/exhaustive-deps
   const isDark = theme === 'dark';
   const bgColor = isDark ? 'rgb(9 9 11)' : 'rgb(248 250 252)';
   const dotColor = isDark ? 'rgb(45 45 50)' : 'rgb(212 217 224)';
@@ -1866,14 +2021,14 @@ function CanvasInner() {
       // The surface the canvas paints on. Named so the publication profile can clear it: this is an
       // inline style, and the profile's `!important` rule needs a selector that reaches the element
       // (B-003 — the export was transparent everywhere except here, so every PNG shipped opaque).
-      className={clsx('stemma-canvas-surface h-full w-full relative', animatingLayout && 'stemma-anim-layout')}
+      className={clsx('stemma-canvas-surface h-full w-full relative', animatingLayout && 'stemma-anim-layout', bookPage && !capturing && 'stemma-book-page')}
       style={{ background: bgColor }}
       ref={wrapperRef}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
       {/* Canvas toolbar removed — arrange / align / snap now live in the right-hand Layout panel. */}
-      {shapesEnabled && stencilOpen && workspace && (
+      {shapesEnabled && stencilOpen && workspace && !presenting && (
         <StencilDrawer
           viewKey={layoutKey}
           workspaceRoot={workspace.rootPath}
@@ -1883,13 +2038,14 @@ function CanvasInner() {
       <EdgeMarkerDefs markers={customMarkers} />
       <ReactFlow
         nodes={renderedNodes}
-        edges={allEdges}
+        edges={renderedEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         connectionMode={ConnectionMode.Loose}
-        nodesDraggable
-        nodesConnectable
-        elementsSelectable
+        // Presenting is looking, not editing: nothing moves, connects or selects, and nothing is written.
+        nodesDraggable={!presenting}
+        nodesConnectable={!presenting}
+        elementsSelectable={!presenting}
         // Allow zooming far out so elements dragged a long way off can always be found.
         minZoom={0.05}
         maxZoom={2.5}
@@ -1904,34 +2060,34 @@ function CanvasInner() {
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
-        onNodeClick={onNodeClick}
-        onNodeDoubleClick={onNodeDoubleClick}
-        onEdgeClick={onEdgeClick}
-        onEdgeDoubleClick={onEdgeDoubleClick}
-        onPaneClick={onPaneClick}
+        onNodeClick={presenting ? undefined : onNodeClick}
+        onNodeDoubleClick={presenting ? undefined : onNodeDoubleClick}
+        onEdgeClick={presenting ? undefined : onEdgeClick}
+        onEdgeDoubleClick={presenting ? undefined : onEdgeDoubleClick}
+        onPaneClick={presenting ? undefined : onPaneClick}
         onMove={onCanvasMove}
-        onNodeContextMenu={onNodeContextMenu}
-        onEdgeContextMenu={onEdgeContextMenu}
-        onPaneContextMenu={onPaneContextMenu}
-        onConnect={onConnect}
-        onReconnect={onReconnect}
+        onNodeContextMenu={presenting ? undefined : onNodeContextMenu}
+        onEdgeContextMenu={presenting ? undefined : onEdgeContextMenu}
+        onPaneContextMenu={presenting ? undefined : onPaneContextMenu}
+        onConnect={presenting ? undefined : onConnect}
+        onReconnect={presenting ? undefined : onReconnect}
         // Deletion is owned by the global Delete/Backspace shortcut (App), which routes through
         // model operations with confirmation — React Flow's local delete would desync the model.
         deleteKeyCode={null}
         proOptions={{ hideAttribution: true }}
         colorMode={isDark ? 'dark' : 'light'}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={dotColor} />
-        <Controls />
-        <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />
+        {!presenting && !capturing && <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={dotColor} />}
+        {!presenting && !capturing && <Controls />}
+        {!presenting && !capturing && <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />}
         {shapesEnabled && workspace && (
-          <ShapeLayer viewKey={layoutKey} workspaceRoot={workspace.rootPath} enabled />
+          <ShapeLayer viewKey={layoutKey} workspaceRoot={workspace.rootPath} enabled={!presenting} />
         )}
       </ReactFlow>
-      {modelIsEmpty && (
+      {modelIsEmpty && !presenting && (
         <EmptyCanvasGuide onAdd={(kind) => addElementAt(kind, centreOfCanvas())} />
       )}
-      {firstSource && <FirstElementStrip source={firstSource} onDismiss={dismissFirstSource} />}
+      {firstSource && !presenting && <FirstElementStrip source={firstSource} onDismiss={dismissFirstSource} />}
       <ContextMenu state={menu} onClose={() => setMenu(null)} />
     </div>
   );

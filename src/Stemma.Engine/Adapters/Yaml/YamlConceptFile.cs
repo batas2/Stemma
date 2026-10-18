@@ -13,7 +13,6 @@ public sealed class YamlConceptFile
     public string LineEnding { get; internal set; } = "\n";
     public List<YamlConceptEntry> Concepts { get; } = new();
     public List<YamlRelationEntry> Relations { get; } = new();
-    public List<YamlBookEntry> Books { get; } = new();
 
     /// <summary>Header bytes (everything before the first list-section, or whole file when empty).</summary>
     public string Header { get; internal set; } = string.Empty;
@@ -35,9 +34,6 @@ public sealed class YamlConceptFile
 
     public YamlRelationEntry? FindRelation(string id) =>
         Relations.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.Ordinal));
-
-    public YamlBookEntry? FindBook(string id) =>
-        Books.FirstOrDefault(b => string.Equals(b.Id, id, StringComparison.Ordinal));
 }
 
 public sealed class YamlConceptEntry
@@ -69,22 +65,4 @@ public sealed class YamlRelationEntry
     public string OriginalBlock { get; internal set; } = string.Empty;
     public bool IsNew { get; internal set; }
     public bool Dirty { get; internal set; }
-}
-
-public sealed class YamlBookEntry
-{
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string? Audience { get; set; }
-    public List<YamlBookPage> Pages { get; } = new();
-    public string OriginalBlock { get; internal set; } = string.Empty;
-    public bool IsNew { get; internal set; }
-    public bool Dirty { get; internal set; }
-}
-
-public sealed class YamlBookPage
-{
-    public string ViewId { get; set; } = string.Empty;
-    public string Title { get; set; } = string.Empty;
-    public string Narrative { get; set; } = string.Empty;
 }

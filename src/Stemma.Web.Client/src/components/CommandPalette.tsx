@@ -31,7 +31,8 @@ export function CommandPalette() {
   const setView = useApp((s) => s.setView);
   const books = useApp((s) => s.books);
   const activeBookId = useApp((s) => s.activeBookId);
-  const setActiveBook = useApp((s) => s.setActiveBook);
+  const openBook = useApp((s) => s.openBook);
+  const startPresenting = useApp((s) => s.startPresenting);
   const setToast = useApp((s) => s.setToast);
   const select = useApp((s) => s.selectElement);
 
@@ -111,24 +112,33 @@ export function CommandPalette() {
 
             {books.length > 0 && (
               <Command.Group heading="Books" className="text-[10px] uppercase tracking-wider text-zinc-500 px-3 pt-3 pb-1">
-                {books.map((b) => (
+                {books.flatMap((b) => [
                   <Command.Item
-                    key={b.id}
+                    key={`present:${b.id}`}
                     value={`present book ${b.name} ${b.audience ?? ''}`}
-                    onSelect={() => { setActiveBook(b.id); setOpen(false); }}
-                    className="px-3 py-2 mx-2 rounded text-sm cursor-pointer aria-selected:bg-amber-500/20 aria-selected:text-amber-700 dark:aria-selected:text-amber-200 flex justify-between gap-2"
+                    disabled={b.pages.length === 0}
+                    onSelect={() => { setOpen(false); startPresenting(b.id); }}
+                    className="px-3 py-2 mx-2 rounded text-sm cursor-pointer aria-selected:bg-amber-500/20 aria-selected:text-amber-700 dark:aria-selected:text-amber-200 data-[disabled=true]:opacity-40 flex justify-between gap-2"
                   >
                     <span>Present: {b.name}</span>
                     <span className="text-[10px] font-mono text-zinc-500">{b.audience ?? 'general'} · {b.pages.length}p</span>
-                  </Command.Item>
-                ))}
-                {activeBookId && (
+                  </Command.Item>,
                   <Command.Item
-                    value="exit book mode present"
-                    onSelect={() => { setActiveBook(null); setOpen(false); }}
+                    key={`open:${b.id}`}
+                    value={`open edit book ${b.name}`}
+                    onSelect={() => { openBook(b.id); setOpen(false); }}
                     className="px-3 py-2 mx-2 rounded text-sm cursor-pointer aria-selected:bg-amber-500/20 aria-selected:text-amber-700 dark:aria-selected:text-amber-200"
                   >
-                    Exit book mode
+                    Edit book: {b.name}
+                  </Command.Item>,
+                ])}
+                {activeBookId && (
+                  <Command.Item
+                    value="close book"
+                    onSelect={() => { openBook(null); setOpen(false); }}
+                    className="px-3 py-2 mx-2 rounded text-sm cursor-pointer aria-selected:bg-amber-500/20 aria-selected:text-amber-700 dark:aria-selected:text-amber-200"
+                  >
+                    Close book
                   </Command.Item>
                 )}
               </Command.Group>

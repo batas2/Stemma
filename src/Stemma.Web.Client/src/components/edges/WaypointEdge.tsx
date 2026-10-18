@@ -261,6 +261,8 @@ export function WaypointEdge({
               background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.85)',
               border: `1px solid ${selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
               color: selected ? SELECT_COLOR : undefined, fontWeight: selected ? 600 : undefined,
+              // A faded edge fades its label with it; a label left at full strength reads as lit.
+              opacity: style?.opacity,
             }}
             className="stemma-edge-label dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700"
             title={data?.onEditStart ? 'Double-click to edit' : undefined}
@@ -269,7 +271,8 @@ export function WaypointEdge({
             {label}
           </div>
         ) : null}
-        {waypoints.map((w, i) => (
+        {/* Handles only where they can be used: a read-only canvas shows the route, not its dots. */}
+        {data?.onRemoveWaypoint && waypoints.map((w, i) => (
           <button
             key={i}
             onClick={(ev) => { ev.stopPropagation(); data?.onRemoveWaypoint?.(id, i); }}

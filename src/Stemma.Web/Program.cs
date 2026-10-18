@@ -11,9 +11,6 @@ public sealed record InitWorkspaceRequest(string RootPath, string? Name);
 public sealed record BookPdfPageRequest(string ViewId, string Title, string Narrative, string? CapturePngBase64);
 public sealed record BookPdfRequest(string Name, string? Audience, IReadOnlyList<BookPdfPageRequest> Pages);
 
-public sealed record YamlBookPageDto(string ViewId, string Title, string Narrative);
-public sealed record YamlBookDto(string Id, string Name, string? Audience, IReadOnlyList<YamlBookPageDto> Pages);
-
 public partial class Program;
 
 /// <summary>Body of the runtime level change (AC2).</summary>

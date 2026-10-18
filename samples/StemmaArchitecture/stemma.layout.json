@@ -410,5 +410,103 @@
     "mod_hub": "**SignalR hub**\n\nThe operation stream in, the delta broadcast out. Modelled as one `twoway` flow rather than two arrows because it is one round trip.",
     "con_fidelity": "The rule that outranks every other argument in this repository.\n\nIt is not a policy document. It is `DslWriter` plus minimal, realistic and deliberately pathological fixtures per operation."
   },
-  "customProps": {}
+  "customProps": {},
+  "books": {
+    "book_tour": {
+      "name": "Stemma in ten minutes",
+      "audience": "engineering",
+      "order": [
+        "ships",
+        "diff",
+        "engine"
+      ],
+      "pages": {
+        "ships": {
+          "title": "Four things ship",
+          "view": "view_shape",
+          "narrative": "Start here. A web host, a canvas in the browser, a command-line tool and a desktop\nwindow that wraps the first two. Underneath sit the only two things Stemma cannot do\nwithout: Roslyn, which reads and rewrites the C#, and a Git working tree, which is\nwhere the model lives. There is no database on this picture because there is no\ndatabase anywhere."
+        },
+        "diff": {
+          "title": "A gesture becomes a diff",
+          "view": "view_write",
+          "narrative": "Follow the top row left to right, then drop down and come back along the bottom. You\nrename a box on the canvas, the canvas sends one operation over SignalR, the hub hands\nit to the engine, the engine goes through DslWriter, DslWriter asks Roslyn for a\ntargeted edit, and Roslyn writes Architecture.cs. Seven hops, and the last one is a\nline in `git diff`. The dashed arrow going back to Roslyn is the read path: the same\nfile, parsed, is where the model came from in the first place."
+        },
+        "engine": {
+          "title": "What the engine is allowed to know",
+          "view": "view_deps",
+          "narrative": "The facade on the left, its leaves on the right, and nothing pointing back. The engine\nreferences Roslyn and the record vocabulary and nothing else \u2014 not the web layer, not\nthe client, not an HTTP type. That constraint is why the fidelity suite can test the\nwhole write path without starting a server, and it is the first thing to check when a\nnew feature wants to reach for a convenience.",
+          "focus": [
+            "mod_engine",
+            "mod_concepts"
+          ],
+          "frame": "view"
+        }
+      }
+    },
+    "book_review": {
+      "name": "Why the diff is worth trusting",
+      "audience": "leadership",
+      "order": [
+        "rules",
+        "guarantee",
+        "unsure"
+      ],
+      "pages": {
+        "rules": {
+          "title": "Three rules that win arguments",
+          "view": "view_principles",
+          "narrative": "These are not aspirations. Each one has something on the right that enforces it, and\nwhen a rule and a feature disagree, the rule wins and the feature gets redesigned.\nThe middle row is the one people push back on hardest: everything that is not the C#\nmodel lives in one committed sidecar, and a third store has been proposed and refused\nmore than once.",
+          "focus": [
+            "con_onestore",
+            "sys_git"
+          ],
+          "frame": "view"
+        },
+        "guarantee": {
+          "title": "Where the guarantee actually lives",
+          "view": "view_write",
+          "narrative": "The guarantee is not a policy, it is DslWriter plus the fixtures behind it. A rename\nrewrites the declaration and the references Roslyn can see, and touches nothing else:\nno reordering, no reformatting, no lost comment. Every operation carries minimal,\nrealistic and deliberately pathological round-trip fixtures, and when they fail the\nimplementation is wrong, not the test.",
+          "focus": [
+            "mod_writer",
+            "sys_roslyn"
+          ]
+        },
+        "unsure": {
+          "title": "What I am not sure about",
+          "view": "view_concerns",
+          "narrative": "The honest slide. A risk, an open question and a standing assumption, each anchored to\nthe thing it concerns rather than filed in a wiki nobody opens. The assumption at the\nbottom is the one everything else rests on: if the source on disk stops being the\nmodel, none of the rest of this argument survives.",
+          "focus": [
+            "asm_sourceismodel",
+            "mod_concepts"
+          ],
+          "frame": "view"
+        }
+      }
+    },
+    "book_agent": {
+      "name": "Drawing without a mouse",
+      "audience": "engineering",
+      "order": [
+        "command",
+        "manifest"
+      ],
+      "pages": {
+        "command": {
+          "title": "One command, no browser",
+          "view": "view_headless",
+          "narrative": "This is the half with no person in it. An agent writes three text files by hand,\nruns `stemma render`, and the CLI starts a short-lived host of its own, drives a bare\ncanvas through Chromium, and writes a PNG next to a manifest. The short-lived host is\nthe reason two renders never fight over one workspace."
+        },
+        "manifest": {
+          "title": "The manifest is the point",
+          "view": "view_headless",
+          "narrative": "The image is the boring output. The manifest beside it fingerprints the model, the\nview, the layout and the profile it was drawn from, so `stemma render --check` can\ntell a build that a committed picture has stopped matching its source. That is the\n\"cannot drift\" claim extended past the app window, and it is the thing a drawing tool\nstructurally cannot offer.",
+          "focus": [
+            "mod_manifest",
+            "cnt_cli",
+            "sys_git"
+          ]
+        }
+      }
+    }
+  }
 }

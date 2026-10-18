@@ -10,7 +10,6 @@ public static class YamlSchema
     public const string VersionKey = "version";
     public const string ConceptsKey = "concepts";
     public const string RelationsKey = "relations";
-    public const string BooksKey = "books";
 
     /// <summary>Recognised top-level files under <c>Concepts/</c>.</summary>
     public static readonly IReadOnlyList<string> KnownFiles = new[]
@@ -18,7 +17,6 @@ public static class YamlSchema
         "data-model.stemma.yaml",
         "resources.stemma.yaml",
         "governance.stemma.yaml",
-        "view-book.stemma.yaml",
         "capabilities.stemma.yaml",
     };
 }

@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
-using Stemma.Engine.Adapters.Yaml;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Diagnostics;
 using Stemma.Engine.Operations;
@@ -302,8 +301,6 @@ public static class StemmaWebHost
             return arch is null ? Results.NotFound() : Results.Ok(arch);
         });
 
-        // View Books live in `Concepts/view-book.stemma.yaml`. The Books panel + book-mode footer
-        // read this surface; each book page references a built-in view by id.
         // What an edit actually wrote. The canvas shows this after someone's first element, which is
         // the cheapest possible demonstration of the whole premise — the box you drew is four lines
         // of C# you can read (F-003 AC7). Served as the file's own text, never as a rendering of the
@@ -314,17 +311,6 @@ public static class StemmaWebHost
             if (engine is null) return Results.NotFound();
             var declaration = await engine.ReadDeclarationAsync(id, ct);
             return declaration is null ? Results.NotFound() : Results.Ok(declaration);
-        });
-
-        workspaceApi.MapGet("/books", (EngineHost host) =>
-        {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
-            var adapter = YamlAdapter.Load(engine.RootPath);
-            var books = adapter.AllBooks.Select(b => new YamlBookDto(
-                b.Id, b.Name, b.Audience,
-                b.Pages.Select(p => new YamlBookPageDto(p.ViewId, p.Title, p.Narrative)).ToArray())).ToArray();
-            return Results.Ok(books);
         });
 
         workspaceApi.MapGet("/export/mermaid", async (string view, EngineHost host, CancellationToken ct) =>

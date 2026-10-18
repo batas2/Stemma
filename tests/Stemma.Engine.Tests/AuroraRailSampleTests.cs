@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.CodeAnalysis.CSharp;
@@ -147,8 +148,7 @@ public sealed class AuroraRailSampleTests
     public void Concept_files_load_and_cross_reference_the_model()
     {
         var yaml = YamlAdapter.Load(SampleRoot());
-        yaml.Files.Keys.Should().BeEquivalentTo(
-            "data-model.stemma.yaml", "resources.stemma.yaml", "view-book.stemma.yaml");
+        yaml.Files.Keys.Should().BeEquivalentTo("data-model.stemma.yaml", "resources.stemma.yaml");
 
         var data = yaml.Files["data-model.stemma.yaml"];
         data.Concepts.Select(c => c.Id).Should().Contain(new[] { "agg_order", "agg_ticket", "vo_money", "vo_barcode" });
@@ -167,27 +167,67 @@ public sealed class AuroraRailSampleTests
     }
 
     [Fact]
-    public void Books_tell_three_stories_over_views_that_exist()
+    public void Books_tell_three_stories_over_views_and_elements_that_exist()
     {
-        var yaml = YamlAdapter.Load(SampleRoot());
-        var declared = LoadViews().Select(v => v.Id).ToHashSet(StringComparer.Ordinal);
-        var builtIn = new[] { "moduleMap", "dependencyGraph", "concerns" };
+        // Books are presentation and live in the sidecar (ADR-0022). Read as JSON rather than through
+        // `LayoutSidecar`: the client owns the section's shape, and the engine stores it unread.
+        var elements = LoadArch().Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
+        var views = LoadViews().ToDictionary(v => v.Id, StringComparer.Ordinal);
+        var builtIn = new[] { "moduleMap", "dependencyGraph" };
 
-        var books = yaml.AllBooks.ToList();
-        books.Select(b => b.Id).Should().BeEquivalentTo(
+        using var sidecar = JsonDocument.Parse(File.ReadAllText(Path.Combine(SampleRoot(), "stemma.layout.json")));
+        var books = sidecar.RootElement.GetProperty("books").EnumerateObject().ToList();
+
+        books.Select(b => b.Name).Should().BeEquivalentTo(
             "book_ticket_sold", "book_reserva_exit", "book_disruption_day");
-        books.Select(b => b.Audience).Should().BeEquivalentTo("engineering", "leadership", "operations");
-        books.Should().OnlyContain(b => b.Pages.Count >= 3);
-        books.SelectMany(b => b.Pages).Should().OnlyContain(p => p.Title.Length > 0 && p.Narrative.Length > 0);
-        books.SelectMany(b => b.Pages).Select(p => p.ViewId)
-            .Where(v => !declared.Contains(v) && !builtIn.Contains(v))
-            .Should().BeEmpty("a page pointing at a deleted view is a broken slide in a live presentation");
+        books.Select(b => Text(b.Value, "audience")).Should().BeEquivalentTo("engineering", "leadership", "operations");
+
+        foreach (var book in books)
+        {
+            var pages = book.Value.GetProperty("pages").EnumerateObject().ToList();
+            pages.Should().HaveCountGreaterThanOrEqualTo(3, $"`{book.Name}` tells a story, not a slide");
+            Text(book.Value, "name").Should().NotBeEmpty();
+
+            var order = book.Value.GetProperty("order").EnumerateArray().Select(o => o.GetString()).ToList();
+            order.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(
+                pages.Select(p => p.Name), $"`{book.Name}`'s order must list every page, and nothing else");
+
+            foreach (var page in pages)
+            {
+                var where = $"{book.Name}/{page.Name}";
+                Text(page.Value, "title").Should().NotBeEmpty(where);
+                Text(page.Value, "narrative").Should().NotBeEmpty(where);
+
+                var view = Text(page.Value, "view");
+                (builtIn.Contains(view) || views.ContainsKey(view)).Should().BeTrue(
+                    $"{where} shows `{view}`, and a page pointing at a deleted view is a broken slide in a live presentation");
+
+                var focus = Focus(page.Value);
+                focus.Where(id => !elements.Contains(id)).Should().BeEmpty(
+                    $"{where} points at elements, and an element that is gone cannot be pointed at");
+                if (views.TryGetValue(view, out var declared))
+                    focus.Except(declared.ElementIds).Should().BeEmpty(
+                        $"{where} can only light what `{view}` draws");
+                if (page.Value.TryGetProperty("frame", out var frame))
+                    frame.GetString().Should().BeOneOf(new[] { "view", "focus" }, where);
+            }
+
+            pages.Select(p => Focus(p.Value).Count).Should().Contain(n => n > 0,
+                $"`{book.Name}` should point at something its narrative talks about, not only show whole views");
+        }
+
+        static string Text(JsonElement obj, string key) =>
+            obj.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : "";
+
+        static List<string> Focus(JsonElement page) =>
+            page.TryGetProperty("focus", out var focus)
+                ? focus.EnumerateArray().Select(f => f.GetString()!).ToList()
+                : [];
     }
 
     [Theory]
     [InlineData("data-model.stemma.yaml")]
     [InlineData("resources.stemma.yaml")]
-    [InlineData("view-book.stemma.yaml")]
     public void Concept_files_round_trip_byte_identical(string fileName)
     {
         var path = Path.Combine(SampleRoot(), "Concepts", fileName);

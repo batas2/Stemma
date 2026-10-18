@@ -52,16 +52,12 @@ public sealed class YamlAdapter : IStorageAdapter
 
     public IEnumerable<YamlConceptEntry> AllConcepts => Files.Values.SelectMany(f => f.Concepts);
     public IEnumerable<YamlRelationEntry> AllRelations => Files.Values.SelectMany(f => f.Relations);
-    public IEnumerable<YamlBookEntry> AllBooks => Files.Values.SelectMany(f => f.Books);
 
     public YamlConceptEntry? FindConcept(string id) =>
         AllConcepts.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
 
     public YamlRelationEntry? FindRelation(string id) =>
         AllRelations.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.Ordinal));
-
-    public YamlBookEntry? FindBook(string id) =>
-        AllBooks.FirstOrDefault(b => string.Equals(b.Id, id, StringComparison.Ordinal));
 }
 
 public sealed class YamlSchemaException : Exception

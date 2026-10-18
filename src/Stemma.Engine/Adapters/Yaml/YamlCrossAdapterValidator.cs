@@ -23,7 +23,6 @@ public static class YamlCrossAdapterValidator
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var c in yaml.AllConcepts) ids.Add(c.Id);
-        foreach (var b in yaml.AllBooks) ids.Add(b.Id);
         if (arch is not null)
         {
             foreach (var e in arch.Elements) ids.Add(e.Id);

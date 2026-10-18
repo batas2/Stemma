@@ -22,7 +22,7 @@ is wrong, `grep` will tell you.
 | Links | All three: `DataFlow` with payloads and direction, `Dependency` with a kind, `Relation` for arrows that claim nothing |
 | Tags | Lifecycle (`current`, `target`, `to-adapt`) and ownership, including RAPID roles on the two decisions that actually get argued about |
 | Views | Six, each answering one question, each at or under seven boxes |
-| Books | Three, for three audiences, in `Concepts/view-book.stemma.yaml` |
+| Books | Three, for three audiences, in the `books` section of `stemma.layout.json` |
 | Data layer | Aggregates, entities and value objects in `Concepts/data-model.stemma.yaml` |
 | Resource layer | The HTTP surface as a tree, in `Concepts/resources.stemma.yaml` |
 | Presentation | Layout constraints, edge docking, per-edge routing and line style, markdown notes, and free-form ink — all in the sidecar, none of it in the model |

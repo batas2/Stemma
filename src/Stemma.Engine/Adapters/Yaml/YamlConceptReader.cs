@@ -36,7 +36,7 @@ public static class YamlConceptReader
             var m = Regex.Match(l, @"^(\w[\w-]*)\s*:\s*$");
             if (!m.Success) continue;
             var key = m.Groups[1].Value;
-            if (key is YamlSchema.ConceptsKey or YamlSchema.RelationsKey or YamlSchema.BooksKey)
+            if (key is YamlSchema.ConceptsKey or YamlSchema.RelationsKey)
                 sections.Add((key, i));
         }
 
@@ -72,7 +72,6 @@ public static class YamlConceptReader
                 {
                     case YamlSchema.ConceptsKey: file.Concepts.Add(ParseConcept(entryLines, block)); break;
                     case YamlSchema.RelationsKey: file.Relations.Add(ParseRelation(entryLines, block)); break;
-                    case YamlSchema.BooksKey: file.Books.Add(ParseBook(entryLines, block)); break;
                 }
             }
             // Trailing trivia inside this section (lines after last entry but before next section).
@@ -164,46 +163,6 @@ public static class YamlConceptReader
                     break;
             }
         });
-        return entry;
-    }
-
-    private static YamlBookEntry ParseBook(List<string> lines, string block)
-    {
-        var entry = new YamlBookEntry { OriginalBlock = block };
-        ParseMapping(lines, (k, v) =>
-        {
-            switch (k)
-            {
-                case "id": entry.Id = v; break;
-                case "name": entry.Name = v; break;
-                case "audience": entry.Audience = v; break;
-            }
-        });
-        var inPages = false;
-        YamlBookPage? cur = null;
-        foreach (var raw in lines)
-        {
-            var l = raw.TrimEnd('\r');
-            if (Regex.IsMatch(l, @"^    pages\s*:\s*$")) { inPages = true; continue; }
-            if (!inPages) continue;
-            var pm = Regex.Match(l, @"^      -\s+viewId\s*:\s*(.*)$");
-            if (pm.Success)
-            {
-                cur = new YamlBookPage { ViewId = Unquote(pm.Groups[1].Value.Trim()) };
-                entry.Pages.Add(cur);
-                continue;
-            }
-            if (cur is null) continue;
-            var fm = Regex.Match(l, @"^        ([\w-]+)\s*:\s*(.*)$");
-            if (fm.Success)
-            {
-                var k2 = fm.Groups[1].Value;
-                var v2 = Unquote(fm.Groups[2].Value.Trim());
-                if (k2 == "title") cur.Title = v2;
-                else if (k2 == "narrative") cur.Narrative = v2;
-                else if (k2 == "viewId") cur.ViewId = v2;
-            }
-        }
         return entry;
     }
 

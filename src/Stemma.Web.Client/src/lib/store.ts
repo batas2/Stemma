@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { reportFailure, ClientEvent } from './log';
-import type { ArchModel, Book, BookPage, CustomView, ViewKind, Violation, WorkspaceModel } from './types';
+import type { ArchModel, CustomView, ViewKind, Violation, WorkspaceModel } from './types';
 import { loadViews, saveViews, loadActiveView, saveActiveView, loadOpenViews, saveOpenViews } from './views';
 import { loadEdgeStyles, setEdgeStyle, type EdgeStyle } from './edgeStyles';
 import { loadNodeStyles, setNodeStyle, type NodeStyle } from './nodeStyles';
@@ -9,7 +9,12 @@ import {
   renameCustomProp as renameCP, type CustomProps,
 } from './customProps';
 import { saveServerView, deleteServerView, listServerViews, type ServerView } from './api';
-import { isSidecarPrimed, loadViewLayoutModes, saveViewLayoutMode } from './layout';
+import { editBooksSection, isSidecarPrimed, loadBooksSection, loadViewLayoutModes, saveViewLayoutMode } from './layout';
+import {
+  addBook as addBookTo, addPage, duplicatePage, movePage, newBookId, newPageId, readBooks,
+  removeBook as removeBookFrom, removePage, renameBook as renameBookIn, setBookAudience as setAudienceIn,
+  updatePage, type Book, type BookPage, type BooksSection, type PagePatch,
+} from './books';
 import { friendlyOpError } from './opError';
 import type { Shape, ShapeKind } from './shapes';
 
@@ -163,10 +168,15 @@ interface AppState {
   depDepth: number;                      // 1 = direct deps; 2 = transitive 2-hop; etc.
   // Collapsed Bounded Contexts (session-only): their child modules are hidden on the canvas.
   collapsedBcs: Set<string>;
-  // View Books — a presentation surface over the built-in views.
+  // Books (F-013) — read from the sidecar's `books` section, and edited back into it.
   books: Book[];
+  /** The book open in the editor, or being presented. */
   activeBookId: string | null;
-  activeBookPageIndex: number;
+  activePageId: string | null;
+  /** A book is on screen with no chrome around it, the canvas read-only, and keys turning pages. */
+  presenting: boolean;
+  /** Pages are framed at once rather than animated: the PDF export is walking through them. */
+  capturing: boolean;
   setWorkspace: (ws: WorkspaceModel | null) => void;
   rehydratePresentation: () => void;
   /** Re-read the views from Views/*.cs; the list in the browser is only a cache of it (B-012). */
@@ -214,18 +224,70 @@ interface AppState {
   setDepKindFilter: (k: Set<string> | null) => void;
   setDepDepth: (n: number) => void;
   toggleBcCollapsed: (id: string) => void;
-  setBooks: (b: Book[]) => void;
-  addBook: (b: Book) => void;
-  removeBook: (id: string) => void;
-  renameBook: (id: string, newName: string) => void;
-  addBookPage: (bookId: string, page: BookPage) => void;
-  removeBookPage: (bookId: string, pageIndex: number) => void;
-  reorderBookPages: (bookId: string, newOrder: number[]) => void;
-  setBookPageNarrative: (bookId: string, pageIndex: number, narrative: string) => void;
-  setActiveBook: (id: string | null) => void;
-  setActiveBookPageIndex: (i: number) => void;
-  nextBookPage: () => void;
-  prevBookPage: () => void;
+  /** Read the books again from the sidecar — on open, and after anyone else changed the file. */
+  reloadBooks: () => void;
+  /** Create a book and open it; null when the sidecar cannot be written. */
+  createBook: (name: string) => string | null;
+  renameBook: (id: string, name: string) => void;
+  setBookAudience: (id: string, audience: string | null) => void;
+  deleteBook: (id: string) => void;
+  /** Add a page showing the current view, pointing at the current selection; returns its id. */
+  addPageFromCanvas: (bookId: string) => string | null;
+  updateBookPage: (bookId: string, pageId: string, patch: PagePatch) => void;
+  removeBookPage: (bookId: string, pageId: string) => void;
+  moveBookPage: (bookId: string, from: number, to: number) => void;
+  duplicateBookPage: (bookId: string, pageId: string) => void;
+  openBook: (id: string | null) => void;
+  /** Make a page of the open book the current one, and put its view on the canvas. */
+  showPage: (pageId: string) => void;
+  stepPage: (delta: 1 | -1) => void;
+  edgePage: (which: 'first' | 'last') => void;
+  startPresenting: (bookId: string, pageId?: string) => void;
+  stopPresenting: () => void;
+  setCapturing: (b: boolean) => void;
+}
+
+/** The book open in the editor or the presenter, if any. */
+export function activeBook(s: Pick<AppState, 'books' | 'activeBookId'>): Book | null {
+  return s.books.find((b) => b.id === s.activeBookId) ?? null;
+}
+
+/** The page on screen, if a book is open and has one. */
+export function activePage(s: Pick<AppState, 'books' | 'activeBookId' | 'activePageId'>): BookPage | null {
+  return activeBook(s)?.pages.find((p) => p.id === s.activePageId) ?? null;
+}
+
+/**
+ * The id a page would name for what the canvas shows now: the open view from `Views/`, or the
+ * built-in canvas. Null on Concerns, which is a summary rather than a diagram, so has nothing to frame.
+ */
+export function currentViewId(s: Pick<AppState, 'view' | 'activeCustomViewId'>): string | null {
+  if (s.view === 'concerns') return null;
+  return s.activeCustomViewId ?? s.view;
+}
+
+/** The view ids a page may name: the two built-in canvases and every view in `Views/`. */
+export function pageViewIds(s: Pick<AppState, 'customViews'>): Set<string> {
+  return new Set(['moduleMap', 'dependencyGraph', ...s.customViews.map((v) => v.id)]);
+}
+
+/**
+ * Edit the sidecar's books and read them back. Refused out loud when the file has not been read or
+ * cannot be: an edit that silently went nowhere is the failure books had before (F-013).
+ */
+function editBooks(get: () => AppState, edit: (books: BooksSection) => void): boolean {
+  const root = get().workspace?.rootPath;
+  if (!root || !editBooksSection(root, edit)) {
+    get().setToast({
+      kind: 'error',
+      text: root && isSidecarPrimed(root)
+        ? "Books can't be changed: `books` in stemma.layout.json is not an object. Fix it by hand, then try again."
+        : "Books can't be changed until stemma.layout.json has been read.",
+    });
+    return false;
+  }
+  get().reloadBooks();
+  return true;
 }
 
 /**
@@ -292,7 +354,9 @@ export const useApp = create<AppState>((set, get) => ({
   collapsedBcs: new Set<string>(),
   books: [],
   activeBookId: null,
-  activeBookPageIndex: 0,
+  activePageId: null,
+  presenting: false,
+  capturing: false,
   setWorkspace: (ws) => {
     // Hydrate from localStorage only on first open of a given rootPath. Subsequent refresh()s
     // during the same session should NOT reset activeCustomViewId / selection — the user's
@@ -300,10 +364,12 @@ export const useApp = create<AppState>((set, get) => ({
     const previous = get().workspace;
     set({ workspace: ws });
     if (!ws) {
-      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {} });
+      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false });
       return;
     }
     if (previous?.rootPath === ws.rootPath) return;
+    // Another workspace's books are not this one's; they arrive with its sidecar (`reloadBooks`).
+    set({ books: [], activeBookId: null, activePageId: null, presenting: false });
     const views = loadViews(ws.rootPath);
     const active = loadActiveView(ws.rootPath);
     const persistedOpen = loadOpenViews(ws.rootPath);
@@ -548,58 +614,116 @@ export const useApp = create<AppState>((set, get) => ({
     if (next.has(id)) next.delete(id); else next.add(id);
     return { collapsedBcs: next };
   }),
-  setBooks: (b) => set({ books: b }),
-  addBook: (b) => set((s) => ({ books: [...s.books, b] })),
-  removeBook: (id) => set((s) => {
-    const next = s.books.filter((b) => b.id !== id);
-    const stillActive = s.activeBookId && next.some((b) => b.id === s.activeBookId);
-    return { books: next, activeBookId: stillActive ? s.activeBookId : null, activeBookPageIndex: stillActive ? s.activeBookPageIndex : 0 };
-  }),
-  renameBook: (id, newName) => set((s) => ({
-    books: s.books.map((b) => b.id === id ? { ...b, name: newName } : b),
-  })),
-  addBookPage: (bookId, page) => set((s) => ({
-    books: s.books.map((b) => b.id === bookId ? { ...b, pages: [...b.pages, page] } : b),
-  })),
-  removeBookPage: (bookId, pageIndex) => set((s) => ({
-    books: s.books.map((b) => {
-      if (b.id !== bookId) return b;
-      if (pageIndex < 0 || pageIndex >= b.pages.length) return b;
-      return { ...b, pages: b.pages.filter((_, i) => i !== pageIndex) };
-    }),
-    activeBookPageIndex: s.activeBookId === bookId && s.activeBookPageIndex >= pageIndex && s.activeBookPageIndex > 0
-      ? s.activeBookPageIndex - 1 : s.activeBookPageIndex,
-  })),
-  reorderBookPages: (bookId, newOrder) => set((s) => ({
-    books: s.books.map((b) => {
-      if (b.id !== bookId) return b;
-      if (newOrder.length !== b.pages.length) return b;
-      if (new Set(newOrder).size !== newOrder.length) return b;
-      return { ...b, pages: newOrder.map((i) => b.pages[i]) };
-    }),
-  })),
-  setBookPageNarrative: (bookId, pageIndex, narrative) => set((s) => ({
-    books: s.books.map((b) => {
-      if (b.id !== bookId) return b;
-      if (pageIndex < 0 || pageIndex >= b.pages.length) return b;
-      return { ...b, pages: b.pages.map((p, i) => i === pageIndex ? { ...p, narrative } : p) };
-    }),
-  })),
-  setActiveBook: (id) => set({ activeBookId: id, activeBookPageIndex: 0 }),
-  setActiveBookPageIndex: (i) => {
-    const book = get().books.find((b) => b.id === get().activeBookId);
-    if (!book) return;
-    const clamped = Math.max(0, Math.min(book.pages.length - 1, i));
-    set({ activeBookPageIndex: clamped });
-  },
-  nextBookPage: () => {
+  reloadBooks: () => {
     const s = get();
-    const book = s.books.find((b) => b.id === s.activeBookId);
-    if (!book) return;
-    if (s.activeBookPageIndex < book.pages.length - 1) set({ activeBookPageIndex: s.activeBookPageIndex + 1 });
+    const root = s.workspace?.rootPath;
+    const books = root ? readBooks(loadBooksSection(root)) : [];
+    const book = books.find((b) => b.id === s.activeBookId) ?? null;
+    // A pull can take away the book or the page on screen. The book closes; a page falls back to
+    // the first one rather than leaving the presenter on nothing.
+    const pageId = book?.pages.some((p) => p.id === s.activePageId) ? s.activePageId : book?.pages[0]?.id ?? null;
+    set({
+      books,
+      activeBookId: book?.id ?? null,
+      activePageId: pageId,
+      presenting: s.presenting && !!book && book.pages.length > 0,
+    });
+    if (pageId && pageId !== s.activePageId) get().showPage(pageId);
   },
-  prevBookPage: () => {
+  createBook: (name) => {
+    const id = newBookId(get().books.map((b) => b.id));
+    if (!editBooks(get, (books) => addBookTo(books, id, name))) return null;
+    get().openBook(id);
+    return id;
+  },
+  renameBook: (id, name) => { editBooks(get, (books) => renameBookIn(books, id, name)); },
+  setBookAudience: (id, audience) => { editBooks(get, (books) => setAudienceIn(books, id, audience)); },
+  deleteBook: (id) => {
+    if (get().activeBookId === id) set({ activeBookId: null, activePageId: null, presenting: false });
+    editBooks(get, (books) => removeBookFrom(books, id));
+  },
+  addPageFromCanvas: (bookId) => {
     const s = get();
-    if (s.activeBookPageIndex > 0) set({ activeBookPageIndex: s.activeBookPageIndex - 1 });
+    const book = s.books.find((b) => b.id === bookId);
+    const view = currentViewId(s);
+    if (!book || !view) return null;
+    const focus = s.canvasSelectedIds.length > 0 ? s.canvasSelectedIds : s.selectedElementId ? [s.selectedElementId] : [];
+    const id = newPageId(book.pages.map((p) => p.id));
+    const name = s.customViews.find((v) => v.id === view)?.name
+      ?? (view === 'dependencyGraph' ? 'Dependencies' : 'Module Map');
+    // After the page on screen, which is where a person building a walk expects the next step.
+    const after = s.activeBookId === bookId && s.activePageId ? s.activePageId : undefined;
+    if (!editBooks(get, (books) => addPage(books, bookId, { id, title: name, view, focus }, after))) return null;
+    set({ activeBookId: bookId, activePageId: id });
+    return id;
   },
+  updateBookPage: (bookId, pageId, patch) => { editBooks(get, (books) => updatePage(books, bookId, pageId, patch)); },
+  removeBookPage: (bookId, pageId) => {
+    const book = get().books.find((b) => b.id === bookId);
+    if (!book) return;
+    const index = book.pages.findIndex((p) => p.id === pageId);
+    const neighbour = book.pages[index + 1] ?? book.pages[index - 1] ?? null;
+    const onScreen = get().activePageId === pageId;
+    // Before the edit: reading the books back would otherwise fall back to the first page.
+    if (onScreen) set({ activePageId: neighbour?.id ?? null });
+    if (!editBooks(get, (books) => removePage(books, bookId, pageId))) {
+      if (onScreen) set({ activePageId: pageId });
+      return;
+    }
+    if (onScreen && neighbour) get().showPage(neighbour.id);
+  },
+  moveBookPage: (bookId, from, to) => {
+    const pages = get().books.find((b) => b.id === bookId)?.pages ?? [];
+    const [page, target] = [pages[from], pages[to]];
+    if (page && target) editBooks(get, (books) => movePage(books, bookId, page.id, target.id));
+  },
+  duplicateBookPage: (bookId, pageId) => {
+    const book = get().books.find((b) => b.id === bookId);
+    if (!book) return;
+    const id = newPageId(book.pages.map((p) => p.id));
+    if (editBooks(get, (books) => duplicatePage(books, bookId, pageId, id))) get().showPage(id);
+  },
+  openBook: (id) => {
+    const book = get().books.find((b) => b.id === id) ?? null;
+    set({ activeBookId: book?.id ?? null, activePageId: null, presenting: false });
+    if (book?.pages[0]) get().showPage(book.pages[0].id);
+  },
+  showPage: (pageId) => {
+    const s = get();
+    const page = activeBook(s)?.pages.find((p) => p.id === pageId);
+    if (!page) return;
+    set({ activePageId: pageId });
+    if (page.view === 'moduleMap' || page.view === 'dependencyGraph') {
+      if (s.view !== page.view || s.activeCustomViewId !== null) get().setView(page.view);
+    } else if (s.customViews.some((v) => v.id === page.view)) {
+      // Concerns is not a canvas, so a view from Views/ cannot be drawn over it.
+      if (s.view === 'concerns') set({ view: 'moduleMap' });
+      if (s.activeCustomViewId !== page.view) get().setActiveCustomView(page.view);
+    }
+    // A view that no longer exists: the canvas stays where it is, and the page says why.
+  },
+  stepPage: (delta) => {
+    const s = get();
+    const pages = activeBook(s)?.pages ?? [];
+    const index = pages.findIndex((p) => p.id === s.activePageId);
+    const next = pages[Math.max(0, Math.min(pages.length - 1, index + delta))];
+    if (next && next.id !== s.activePageId) get().showPage(next.id);
+  },
+  edgePage: (which) => {
+    const pages = activeBook(get())?.pages ?? [];
+    const page = which === 'first' ? pages[0] : pages[pages.length - 1];
+    if (page) get().showPage(page.id);
+  },
+  startPresenting: (bookId, pageId) => {
+    const book = get().books.find((b) => b.id === bookId);
+    if (!book || book.pages.length === 0) {
+      get().setToast({ kind: 'info', text: 'Add a page before presenting this book.' });
+      return;
+    }
+    const start = book.pages.find((p) => p.id === pageId) ?? book.pages[0];
+    set({ activeBookId: bookId, presenting: true, selectedElementId: null, selectedLinkId: null });
+    get().showPage(start.id);
+  },
+  stopPresenting: () => set({ presenting: false }),
+  setCapturing: (b) => set({ capturing: b }),
 }));

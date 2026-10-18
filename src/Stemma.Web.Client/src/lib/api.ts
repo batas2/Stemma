@@ -1,4 +1,4 @@
-import type { ArchModel, Book, OperationFailed, RecentEntry, Violation, WorkspaceModel } from './types';
+import type { ArchModel, OperationFailed, RecentEntry, Violation, WorkspaceModel } from './types';
 
 const BASE = '';
 
@@ -67,13 +67,6 @@ export async function elementSource(id: string): Promise<DeclarationSource | nul
   return r.json();
 }
 
-export async function books(): Promise<Book[] | null> {
-  const r = await request(`${BASE}/api/workspace/books`);
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`Books fetch failed: ${r.status}`);
-  return r.json();
-}
-
 export async function exportMermaid(view: 'moduleMap' | 'dependencyGraph'): Promise<string> {
   const r = await request(`${BASE}/api/workspace/export/mermaid?view=${view}`);
   if (!r.ok) throw new Error(`Mermaid export failed: ${r.status}`);
@@ -130,7 +123,7 @@ export async function exportDrawio(): Promise<string> {
   return r.text();
 }
 
-export interface BookPdfPagePayload { viewId: string; title: string; narrative: string; capturePngBase64?: string; }
+export interface BookPdfPagePayload { title: string; narrative: string; capturePngBase64?: string; }
 export interface BookPdfPayload { name: string; audience: string | null; pages: BookPdfPagePayload[]; }
 
 export async function exportBookPdf(book: BookPdfPayload): Promise<Blob> {

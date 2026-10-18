@@ -91,6 +91,17 @@
 
 .react-flow__node { font-size: 13px; }
 
+/* Book pages (F-013): what a page points at stays lit and the rest fades. The fade eases, so moving
+   from one page to the next reads as attention moving rather than as the picture blinking. */
+.stemma-book-page .react-flow__node,
+.stemma-book-page .react-flow__edge {
+  transition: opacity 350ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stemma-book-page .react-flow__node,
+  .stemma-book-page .react-flow__edge { transition: none; }
+}
+
 /* Layout-animation hook. The canvas wrapper toggles `stemma-anim-layout` for ~600 ms
    after a relayout commits; during that window every React Flow node tweens its
    transform to its new position. We target the wrapper-level class so a single rule

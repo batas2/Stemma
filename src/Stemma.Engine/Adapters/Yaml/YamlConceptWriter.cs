@@ -35,11 +35,6 @@ public static class YamlConceptWriter
             foreach (var r in file.Relations)
                 sb.Append(RenderRelation(r));
         });
-        WriteSection(sb, file, YamlSchema.BooksKey, file.Books.Count > 0, () =>
-        {
-            foreach (var b in file.Books)
-                sb.Append(RenderBook(b));
-        });
 
         var text = sb.ToString();
         // Honour the input file's line ending if it differed from LF.
@@ -80,13 +75,6 @@ public static class YamlConceptWriter
         return EnsureTrailingNewline(EmitFreshRelation(r));
     }
 
-    private static string RenderBook(YamlBookEntry b)
-    {
-        if (!b.IsNew && !string.IsNullOrEmpty(b.OriginalBlock) && !b.Dirty)
-            return b.OriginalBlock;
-        return EnsureTrailingNewline(EmitFreshBook(b));
-    }
-
     private static string EnsureTrailingNewline(string s) => s.EndsWith('\n') ? s : s + "\n";
 
     private static string EmitFreshConcept(YamlConceptEntry c)
@@ -110,22 +98,6 @@ public static class YamlConceptWriter
         sb.Append("    to: ").Append(r.To).Append('\n');
         foreach (var p in r.Properties)
             sb.Append("    ").Append(p.Key).Append(": ").Append(EmitScalar(p.Value)).Append('\n');
-        return sb.ToString();
-    }
-
-    private static string EmitFreshBook(YamlBookEntry b)
-    {
-        var sb = new StringBuilder();
-        sb.Append("  - id: ").Append(b.Id).Append('\n');
-        sb.Append("    name: ").Append(EmitScalar(b.Name)).Append('\n');
-        if (!string.IsNullOrEmpty(b.Audience)) sb.Append("    audience: ").Append(b.Audience).Append('\n');
-        sb.Append("    pages:\n");
-        foreach (var p in b.Pages)
-        {
-            sb.Append("      - viewId: ").Append(p.ViewId).Append('\n');
-            sb.Append("        title: ").Append(EmitScalar(p.Title)).Append('\n');
-            sb.Append("        narrative: ").Append(EmitScalar(p.Narrative)).Append('\n');
-        }
         return sb.ToString();
     }
 
