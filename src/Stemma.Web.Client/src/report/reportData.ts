@@ -10,7 +10,8 @@ import type { EdgeStyle } from '@/lib/edgeStyles';
 import type { CustomProps } from '@/lib/customProps';
 import type { CommentEntry } from '@/lib/comments';
 import { archModel } from '@/lib/api';
-import { loadLayout, loadEdgeWaypoints, loadEdgeHandles } from '@/lib/layout';
+import { loadLayout, loadEdgeWaypoints, loadEdgeHandles, loadBooksSection } from '@/lib/layout';
+import { readBooks, viewKeyOf, type Book, type BookFrame, type BookOthers } from '@/lib/books';
 import { loadNodeStyles } from '@/lib/nodeStyles';
 import { loadEdgeStyles } from '@/lib/edgeStyles';
 import { loadCustomProps } from '@/lib/customProps';
@@ -28,6 +29,23 @@ export interface ReportView {
   baseView: string;            // kind filter applied on top ('all' for none)
 }
 
+/** A book as the report walks it (F-013 AC9): each page names the report view it is drawn on. */
+export interface ReportBook {
+  id: string;
+  name: string;
+  audience: string | null;
+  pages: {
+    id: string;
+    title: string;
+    /** A `ReportView.key` — a view from `Views/` is `custom:<id>`, as everywhere in the report. */
+    viewKey: string;
+    narrative: string;
+    focus: string[];
+    frame: BookFrame;
+    others: BookOthers;
+  }[];
+}
+
 export interface ReportBundle {
   meta: { workspace: string; rootPath: string; exportedAt: string; generator: string };
   model: ArchModel;
@@ -42,6 +60,7 @@ export interface ReportBundle {
   customProps: Record<string, CustomProps>;
   comments: CommentEntry[];
   relationshipTypes: { value: string; hint: string; style: Partial<EdgeStyle> }[];
+  books: ReportBook[];
 }
 
 export interface ReportInputs {
@@ -58,6 +77,7 @@ export interface ReportInputs {
   edgeStyles: Record<string, EdgeStyle>;
   notes: Record<string, string>;
   customProps: Record<string, CustomProps>;
+  books?: Book[];
   now?: Date;
 }
 
@@ -99,6 +119,14 @@ export function buildReportBundle(i: ReportInputs): ReportBundle {
     customProps: i.customProps,
     comments: i.comments,
     relationshipTypes: RELATIONSHIP_TYPES.map((t) => ({ value: t.value, hint: t.hint, style: t.style })),
+    books: (i.books ?? []).map((b) => ({
+      id: b.id,
+      name: b.name,
+      audience: b.audience,
+      pages: b.pages.map((p) => ({
+        id: p.id, title: p.title, viewKey: viewKeyOf(p.view), narrative: p.narrative, focus: [...p.focus], frame: p.frame, others: p.others,
+      })),
+    })),
   };
 }
 
@@ -131,5 +159,7 @@ export async function collectReportBundle(rootPath: string): Promise<ReportBundl
     edgeStyles: loadEdgeStyles(rootPath),
     notes,
     customProps: loadCustomProps(rootPath),
+    // The same walk as the meeting, for whoever missed it.
+    books: readBooks(loadBooksSection(rootPath)),
   });
 }

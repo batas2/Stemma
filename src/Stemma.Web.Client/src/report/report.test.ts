@@ -45,6 +45,33 @@ describe('report bundle', () => {
   });
 });
 
+describe('report books', () => {
+  it('walks each book in its order, drawing a page from Views/ on that view in the report', () => {
+    const b = buildReportBundle({
+      ...inputs(),
+      books: [{
+        id: 'book_a', name: 'A walk', audience: 'engineering',
+        pages: [
+          { id: 'wide', title: 'Everything', view: 'moduleMap', narrative: 'First the context.', focus: [], frame: 'view', others: 'dim' },
+          { id: 'close', title: 'Alpha', view: 'cv1', narrative: 'Then the detail.', focus: ['mod_a'], frame: 'focus', others: 'hide' },
+        ],
+      }],
+    });
+    expect(b.books).toEqual([{
+      id: 'book_a', name: 'A walk', audience: 'engineering',
+      pages: [
+        { id: 'wide', title: 'Everything', viewKey: 'moduleMap', narrative: 'First the context.', focus: [], frame: 'view', others: 'dim' },
+        { id: 'close', title: 'Alpha', viewKey: 'custom:cv1', narrative: 'Then the detail.', focus: ['mod_a'], frame: 'focus', others: 'hide' },
+      ],
+    }]);
+    expect(b.views.some((v) => v.key === b.books[0].pages[1].viewKey)).toBe(true);
+  });
+
+  it('has an empty shelf, not a missing one, when there are no books', () => {
+    expect(buildReportBundle(inputs()).books).toEqual([]);
+  });
+});
+
 describe('report html (single-file invariants)', () => {
   const html = renderReportHtml(buildReportBundle(inputs()), 'console.log("viewer")', '.vr-app{}');
 

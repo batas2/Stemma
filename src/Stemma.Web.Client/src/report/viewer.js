@@ -106,7 +106,8 @@
     layersOpen: false,
     layers: saved.layers || null,   // set by applyMode below when null
     selected: null,                 // { type:'element'|'link', id }
-    panZoom: {},                    // viewKey -> {x,y,scale-ish viewBox}
+    panZoom: {},                    // viewKey (or 'book:<page>') -> {x,y,scale-ish viewBox}
+    bookPage: {},                   // bookId -> index of the page on screen
   };
   var drafts = lsGet(LS.drafts, []);
 
@@ -156,6 +157,80 @@
       if (view.key === 'dependencyGraph' && l.kind !== 'dependency') return false;
       if (!visIds[l.fromId] || !visIds[l.toId]) return false;
       return state.layers.rel[linkTypeOf(l)] !== false;
+    });
+  }
+
+  // ---------- books (F-013) ----------
+  var books = data.books || [];
+  function bookById(id) { for (var i = 0; i < books.length; i++) if (books[i].id === id) return books[i]; return null; }
+  function bookOf(page) { return page && page.indexOf('book:') === 0 ? bookById(page.slice(5)) : null; }
+  function bookIndex(book) { return Math.max(0, Math.min(book.pages.length - 1, state.bookPage[book.id] || 0)); }
+  /** What a page keeps lit: its focus and the bounded contexts holding it; null lights everything. */
+  function litSet(page) {
+    if (!page || !page.focus.length) return null;
+    var lit = {};
+    page.focus.forEach(function (id) {
+      lit[id] = true;
+      var e = elById[id];
+      if (e && e.attributes.contextId) lit[e.attributes.contextId] = true;
+    });
+    return lit;
+  }
+  function stepBook(book, delta) {
+    var next = Math.max(0, Math.min(book.pages.length - 1, bookIndex(book) + delta));
+    if (next === bookIndex(book)) return;
+    state.bookPage[book.id] = next;
+    render();
+  }
+  /** Inline **bold** and `code`, built as elements so no narrative text is ever parsed as HTML. */
+  function inlineNodes(text) {
+    var out = [];
+    text.split(/(\*\*[^*]+\*\*|`[^`]+`)/).forEach(function (part) {
+      if (!part) return;
+      if (/^\*\*[^*]+\*\*$/.test(part)) out.push(h('strong', { text: part.slice(2, -2) }));
+      else if (/^`[^`]+`$/.test(part)) out.push(h('code', { text: part.slice(1, -1) }));
+      else out.push(document.createTextNode(part));
+    });
+    return out;
+  }
+  /**
+   * Paragraphs, lists (numbered or not), headings, quotes and code fences. A line break inside a
+   * paragraph is the editor's wrap, not the author's. Built from elements and text only.
+   */
+  function narrativeNodes(md) {
+    var blocks = [], para = null, list = null, fence = null;
+    md.replace(/\r\n?/g, '\n').split('\n').forEach(function (line) {
+      if (fence) {
+        if (/^\s*```/.test(line)) fence = null; else fence.lines.push(line);
+        return;
+      }
+      if (/^\s*```/.test(line)) { para = null; list = null; fence = { fence: true, lines: [] }; blocks.push(fence); return; }
+      if (!line.trim()) { para = null; list = null; return; }
+      var heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
+      if (heading) { para = null; list = null; blocks.push({ heading: heading[1] }); return; }
+      var quote = /^\s*>\s?(.*)$/.exec(line);
+      if (quote) {
+        list = null;
+        if (para && para.quote) para.text += ' ' + quote[1].trim();
+        else { para = { text: quote[1].trim(), quote: true }; blocks.push(para); }
+        return;
+      }
+      var item = /^\s*(?:([-*+])|\d+[.)])\s+(.*)$/.exec(line);
+      if (item) {
+        para = null;
+        var ordered = !item[1];
+        if (!list || list.ordered !== ordered) { list = { items: [], ordered: ordered }; blocks.push(list); }
+        list.items.push(item[2]);
+        return;
+      }
+      if (list) { list.items[list.items.length - 1] += ' ' + line.trim(); return; }
+      if (!para || para.quote) { para = { text: line.trim() }; blocks.push(para); } else para.text += ' ' + line.trim();
+    });
+    return blocks.map(function (b) {
+      if (b.fence) return h('pre', {}, [h('code', { text: b.lines.join('\n') })]);
+      if (b.heading !== undefined) return h('h3', {}, inlineNodes(b.heading));
+      if (b.items) return h(b.ordered ? 'ol' : 'ul', {}, b.items.map(function (t) { return h('li', {}, inlineNodes(t)); }));
+      return h(b.quote ? 'blockquote' : 'p', {}, inlineNodes(b.text));
     });
   }
 
@@ -408,15 +483,35 @@
     });
     railEl.appendChild(viewsWrap);
 
+    if (books.length) {
+      var booksWrap = h('div', {}, [h('h3', { text: 'Books' })]);
+      books.forEach(function (b) {
+        var key = 'book:' + b.id;
+        booksWrap.appendChild(h('button', { class: 'vr-navitem' + (state.page === key ? ' active' : ''), title: b.audience ? 'For ' + b.audience : '', onclick: function () { navTo(key); } }, [
+          h('span', { text: b.name }),
+          h('span', { class: 'count', text: String(b.pages.length) }),
+        ]));
+      });
+      railEl.appendChild(booksWrap);
+    }
+
     railEl.appendChild(h('div', { class: 'vr-hint', style: 'margin-top:auto;padding:0 6px', text: 'Read-only export. Comments you write here stay local until you export the comment pack.' }));
     railEl.appendChild(credit('vr-credit', 'Made with Stemma'));
   }
 
   // ---------- canvas ----------
   var svgEl = null, currentViewKey = null;
-  function viewBoxFor(view, pos) {
-    if (state.panZoom[view.key]) return state.panZoom[view.key];
+  function viewBoxFor(view, pos, page, zoomKey) {
+    if (state.panZoom[zoomKey]) return state.panZoom[zoomKey];
     var els = visibleElements(view);
+    // A page framed on its focus shows only that, close up; the rest is still drawn around it.
+    if (page && page.frame === 'focus' && page.focus.length) {
+      var focused = els.filter(function (e) { return page.focus.indexOf(e.id) >= 0; });
+      if (focused.length) els = focused;
+    } else if (page && page.others === 'hide' && page.focus.length) {
+      var lit = litSet(page);
+      els = els.filter(function (e) { return lit[e.id]; });
+    }
     if (!els.length) return { x: -100, y: -100, w: 1200, h: 800 };
     var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
     els.forEach(function (e) {
@@ -587,12 +682,17 @@
     return card;
   }
 
-  function renderView(view) {
+  function renderView(view, page) {
     var pos = positionsFor(view);
     var els = visibleElements(view);
     var visIds = {}; els.forEach(function (e) { visIds[e.id] = true; });
     var links = visibleLinks(view, visIds);
-    var vb = viewBoxFor(view, pos);
+    // A book page points: what it focuses stays lit, the rest fades or, on `hide`, is not drawn.
+    var zoomKey = page ? 'book:' + page.id : view.key;
+    var lit = litSet(page);
+    var hideRest = !!(lit && page.others === 'hide');
+    function unlit(id) { return lit && !lit[id]; }
+    var vb = viewBoxFor(view, pos, page, zoomKey);
 
     svgEl = s('svg', { class: 'vr-canvas', viewBox: vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h, role: 'img', 'aria-label': view.name });
     var defs = s('defs');
@@ -606,8 +706,8 @@
 
     // Bounded-context boxes behind everything.
     if (state.layers.bc) {
-      els.filter(function (e) { return e.kind === 'boundedContext'; }).forEach(function (bc) {
-        var members = els.filter(function (e) { return e.attributes.contextId === bc.id; });
+      els.filter(function (e) { return e.kind === 'boundedContext' && !(hideRest && unlit(e.id)); }).forEach(function (bc) {
+        var members = els.filter(function (e) { return e.attributes.contextId === bc.id && !(hideRest && unlit(e.id)); });
         var bx, by, bw, bh;
         if (members.length) {
           var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
@@ -621,7 +721,7 @@
           var p0 = pos[bc.id], s0 = nodeSize(bc);
           bx = p0.x; by = p0.y; bw = s0.w; bh = s0.h;
         }
-        var g = s('g', { class: 'vr-bc' }, [
+        var g = s('g', { class: 'vr-bc' + (unlit(bc.id) ? ' vr-dim' : '') }, [
           s('rect', { x: bx, y: by, width: bw, height: bh }),
         ]);
         // Header chip like the canvas BcContainer (icon + name + member count).
@@ -640,6 +740,8 @@
 
     // Edges under nodes.
     links.forEach(function (l) {
+      var edgeUnlit = unlit(l.fromId) || unlit(l.toId);
+      if (edgeUnlit && hideRest) return;
       var st = data.edgeStyles[l.id] || {};
       var color = st.color || '#94a3b8';
       var thickness = st.thickness || 1.5;
@@ -664,7 +766,7 @@
       if (dash) attrs['stroke-dasharray'] = dash;
       if (aEnd && aEnd !== 'none') attrs['marker-end'] = 'url(#' + markerId(aEnd, color) + ')';
       if (aStart && aStart !== 'none') attrs['marker-start'] = 'url(#' + markerId(aStart, color) + ')';
-      var g = s('g', { class: 'vr-edge' + (sel ? ' sel' : '') }, [
+      var g = s('g', { class: 'vr-edge' + (sel ? ' sel' : '') + (edgeUnlit ? ' vr-dim' : '') }, [
         s('path', attrs),
         s('path', { d: d, class: 'hit' }),
       ]);
@@ -684,18 +786,20 @@
     // Concern "about" links.
     if (state.layers.concerns) {
       els.filter(function (e) { return CONCERN_KINDS[e.kind] && e.attributes.aboutId && visIds[e.attributes.aboutId]; }).forEach(function (c) {
+        var aboutUnlit = unlit(c.id) || unlit(c.attributes.aboutId);
+        if (aboutUnlit && hideRest) return;
         var ends = autoDocks(c, pos[c.id], elById[c.attributes.aboutId], pos[c.attributes.aboutId]);
         svgEl.appendChild(s('path', {
           d: edgePath(ends.s, ends.t, null), fill: 'none', stroke: '#a1a1aa',
-          'stroke-dasharray': '3 4', 'stroke-width': '1.2', opacity: '0.75',
+          'stroke-dasharray': '3 4', 'stroke-width': '1.2', opacity: aboutUnlit ? '0.15' : '0.75',
         }));
       });
     }
 
     // Nodes — HTML cards inside foreignObjects, styled like the canvas ArchNodeView.
-    els.filter(function (e) { return e.kind !== 'boundedContext'; }).forEach(function (e) {
+    els.filter(function (e) { return e.kind !== 'boundedContext' && !(hideRest && unlit(e.id)); }).forEach(function (e) {
       var p = pos[e.id], sz = nodeSize(e);
-      var fo = s('foreignObject', { x: p.x, y: p.y, width: sz.w, height: sz.h });
+      var fo = s('foreignObject', { x: p.x, y: p.y, width: sz.w, height: sz.h, class: unlit(e.id) ? 'vr-dim' : '' });
       fo.appendChild(buildNodeCard(e));
       svgEl.appendChild(fo);
     });
@@ -704,7 +808,7 @@
     var panning = null;
     svgEl.addEventListener('mousedown', function (ev) {
       if (ev.button !== 0) return;
-      panning = { x: ev.clientX, y: ev.clientY, vb: state.panZoom[view.key] || parseVB() };
+      panning = { x: ev.clientX, y: ev.clientY, vb: state.panZoom[zoomKey] || parseVB() };
       svgEl.classList.add('panning');
     });
     window.addEventListener('mousemove', function (ev) {
@@ -715,13 +819,13 @@
       var nx = vb.x - (ev.clientX - panning.x) * k;
       var ny = vb.y - (ev.clientY - panning.y) * k;
       var cur = { x: nx, y: ny, w: vb.w, h: vb.h };
-      state.panZoom[view.key] = cur;
+      state.panZoom[zoomKey] = cur;
       svgEl.setAttribute('viewBox', nx + ' ' + ny + ' ' + vb.w + ' ' + vb.h);
     });
     window.addEventListener('mouseup', function () { panning = null; if (svgEl) svgEl.classList.remove('panning'); });
     svgEl.addEventListener('wheel', function (ev) {
       ev.preventDefault();
-      var vb = state.panZoom[view.key] || parseVB();
+      var vb = state.panZoom[zoomKey] || parseVB();
       var rect = svgEl.getBoundingClientRect();
       var mx = vb.x + (ev.clientX - rect.left) / rect.width * vb.w;
       var my = vb.y + (ev.clientY - rect.top) / rect.height * vb.h;
@@ -729,14 +833,14 @@
       vb.w *= f; vb.h *= f;
       vb.x = mx - (mx - vb.x) * f;
       vb.y = my - (my - vb.y) * f;
-      state.panZoom[view.key] = vb;
+      state.panZoom[zoomKey] = vb;
       svgEl.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h);
     }, { passive: false });
     svgEl.addEventListener('click', function () { select(null); });
 
     var wrap = h('div', { class: 'vr-canvas-wrap' });
     wrap.appendChild(svgEl);
-    wrap.appendChild(h('div', { class: 'vr-viewtitle', text: view.name }));
+    if (!page) wrap.appendChild(h('div', { class: 'vr-viewtitle', text: view.name }));
     var zoomctl = h('div', { class: 'vr-zoomctl' }, [
       h('button', { text: '+', title: 'Zoom in', onclick: function () { zoomBy(1.25); } }),
       h('button', { text: '−', title: 'Zoom out', onclick: function () { zoomBy(0.8); } }),
@@ -1080,6 +1184,41 @@
 
   // ---------- render ----------
   var searchInput = null;
+  /** One page of a book: its view as the page frames it, its words beside it, and the way on. */
+  function renderBookPage(book) {
+    var wrap = h('div', { class: 'vr-book' });
+    if (!book.pages.length) {
+      wrap.appendChild(h('div', { class: 'vr-empty', text: '“' + book.name + '” has no pages yet.' }));
+      return wrap;
+    }
+    var idx = bookIndex(book);
+    var page = book.pages[idx];
+    var view = viewByKey(page.viewKey);
+    if (view) currentViewKey = 'book:' + page.id;
+    var stage = view
+      ? renderView(view, page)
+      : h('div', { class: 'vr-empty vr-book-missing', text: 'This page shows a view that is no longer in the model.' });
+
+    var aside = h('aside', { class: 'vr-book-text' }, [
+      h('div', { class: 'vr-book-kicker', text: book.name + (book.audience ? ' · ' + book.audience : '') }),
+      h('h2', { class: 'vr-book-title', text: page.title || 'Untitled page' }),
+      h('div', { class: 'vr-book-narrative' }, narrativeNodes(page.narrative || '')),
+    ]);
+    var prev = h('button', { class: 'vr-book-step', text: '←', title: 'Previous page (←)', 'aria-label': 'Previous page', onclick: function () { stepBook(book, -1); } });
+    var next = h('button', { class: 'vr-book-step', text: '→', title: 'Next page (→)', 'aria-label': 'Next page', onclick: function () { stepBook(book, 1); } });
+    if (idx === 0) prev.disabled = true;
+    if (idx === book.pages.length - 1) next.disabled = true;
+    var dots = h('ol', { class: 'vr-book-pages', 'aria-label': 'Pages' }, book.pages.map(function (p, i) {
+      var b = h('button', { text: String(i + 1), title: p.title, onclick: function () { state.bookPage[book.id] = i; render(); } });
+      if (i === idx) b.setAttribute('aria-current', 'page');
+      return h('li', {}, [b]);
+    }));
+    aside.appendChild(h('nav', { class: 'vr-book-nav', 'aria-label': 'Book' }, [prev, dots, next]));
+    wrap.appendChild(h('div', { class: 'vr-book-stage' }, [stage]));
+    wrap.appendChild(aside);
+    return wrap;
+  }
+
   function render() {
     buildRail();
     mainEl.textContent = '';
@@ -1087,9 +1226,12 @@
     panelEl = null;
     currentViewKey = null;
     var view = viewByKey(state.page);
+    var book = bookOf(state.page);
     if (view) {
       currentViewKey = view.key;
       mainEl.appendChild(renderView(view));
+    } else if (book) {
+      mainEl.appendChild(renderBookPage(book));
     } else if (state.page === 'summary') {
       mainEl.appendChild(buildSummary());
     } else if (state.page === 'concerns') {
@@ -1111,6 +1253,9 @@
   window.addEventListener('keydown', function (ev) {
     var tgt = ev.target;
     if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) return;
+    var onBook = bookOf(state.page);
+    if (onBook && (ev.key === 'ArrowRight' || ev.key === 'PageDown')) { ev.preventDefault(); stepBook(onBook, 1); return; }
+    if (onBook && (ev.key === 'ArrowLeft' || ev.key === 'PageUp')) { ev.preventDefault(); stepBook(onBook, -1); return; }
     if (ev.key === '/') { ev.preventDefault(); if (searchInput) searchInput.focus(); }
     else if (ev.key === 'Escape') { if (state.selected) select(null); }
     else if (ev.key === '+' || ev.key === '=') zoomBy(1.25);
