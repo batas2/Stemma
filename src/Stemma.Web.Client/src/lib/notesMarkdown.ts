@@ -4,7 +4,22 @@
 // Markdown headings are intentionally NOT supported — `#` is reserved for attribute tags.
 
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Quotes too: the text lands inside attribute values (a link's href), and an unescaped `"` there
+  // ends the attribute and starts one of the author's choosing — an event handler, say. Notes and
+  // book narratives come from the repository, so from pull requests and agents, not only from you.
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/** A link target that is a real http(s) URL, or null. */
+function safeHref(raw: string): string | null {
+  // `raw` is already escaped; parse what the author wrote, then hand back the escaped form.
+  const unescaped = raw.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  try {
+    const url = new URL(unescaped);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 function inline(s: string): string {
@@ -15,7 +30,10 @@ function inline(s: string): string {
   t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   t = t.replace(/`([^`]+)`/g, '<code class="px-1 rounded bg-zinc-200 dark:bg-zinc-800">$1</code>');
-  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a class="text-indigo-500 underline" href="$2" target="_blank" rel="noreferrer">$1</a>');
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (m: string, label: string, href: string) => {
+    const safe = safeHref(href);
+    return safe ? `<a class="text-indigo-500 underline" href="${safe}" target="_blank" rel="noreferrer">${label}</a>` : m;
+  });
   return t;
 }
 
