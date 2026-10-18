@@ -423,3 +423,8 @@ input, textarea { font: inherit; color: var(--vr-text); }
 .vr-shape-label-text { user-select: none; }
 .vrn-name.xl { font-size: 19px; } .vrn-name.wrap { white-space: normal; overflow: visible; text-overflow: clip; }
 .vrn-lg .vrn-notes { font-size: 12.5px; } .vrn-xl .vrn-notes { font-size: 15px; }
+
+/* A card that shows its status but not its kind carries the status beside its name (F-014 AC7). */
+.vrn-titlerow { display: flex; align-items: flex-start; gap: 8px; }
+.vrn-titlerow .vrn-name { flex: 1; min-width: 0; }
+.vrn-titlerow .vrn-badge { margin-left: auto; flex: none; margin-top: 2px; }

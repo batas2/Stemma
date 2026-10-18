@@ -820,17 +820,25 @@
       card.appendChild(nameEl());
       if (state.layers.status && status) card.appendChild(statusBadgeEl(status, st.accentColor || st.borderColor));
     } else {
-      var head = h('div', { class: 'vrn-head' });
-      head.appendChild(kindIcon(e.kind, 13));
-      head.appendChild(h('span', { class: 'vrn-kind', text: KIND_LABEL[e.kind] || e.kind }));
-      if (isExternal) head.appendChild(h('span', { class: 'vrn-ext', text: 'external' }));
-      if (state.layers.status && status) head.appendChild(statusBadgeEl(status, st.accentColor || st.borderColor));
-      card.appendChild(head);
+      // Fields the author chose for this card are what it shows, as on the canvas; otherwise the
+      // report's layers decide. A card sized to its chosen fields would otherwise be cut short.
+      var chosen = st.visibleFields;
+      function shows(field) { return !chosen || chosen.indexOf(field) >= 0; }
+      var badge = state.layers.status && status && shows('status') ? statusBadgeEl(status, st.accentColor || st.borderColor) : null;
+      if (shows('kind')) {
+        var head = h('div', { class: 'vrn-head' });
+        head.appendChild(kindIcon(e.kind, 13));
+        head.appendChild(h('span', { class: 'vrn-kind', text: KIND_LABEL[e.kind] || e.kind }));
+        if (isExternal) head.appendChild(h('span', { class: 'vrn-ext', text: 'external' }));
+        if (badge) head.appendChild(badge);
+        card.appendChild(head);
+      }
 
       var body = h('div', { class: 'vrn-body' });
-      body.appendChild(nameEl());
-      if (state.layers.ids) body.appendChild(h('div', { class: 'vrn-sub mono', text: e.id }));
-      var ctx = e.attributes.contextId && elById[e.attributes.contextId];
+      if (!shows('kind') && badge) body.appendChild(h('div', { class: 'vrn-titlerow' }, [nameEl(), badge]));
+      else body.appendChild(nameEl());
+      if (state.layers.ids && (!chosen || shows('id'))) body.appendChild(h('div', { class: 'vrn-sub mono', text: e.id }));
+      var ctx = shows('contextId') && e.attributes.contextId && elById[e.attributes.contextId];
       if (ctx) {
         var ctxRow = h('div', { class: 'vrn-sub' });
         ctxRow.appendChild(document.createTextNode('in '));
@@ -842,7 +850,7 @@
         Object.keys(props).slice(0, 2).forEach(function (k) {
           body.appendChild(h('div', { class: 'vrn-sub', text: k + ': ' + props[k] }));
         });
-        var sq = squadOf(e.id);
+        var sq = shows('squad') && squadOf(e.id);
         if (sq) body.appendChild(h('div', { class: 'vrn-sub', text: '👥 ' + sq }));
         if (data.notes[e.id]) body.appendChild(h('div', { class: 'vrn-notes' }, narrativeNodes(data.notes[e.id])));
       }

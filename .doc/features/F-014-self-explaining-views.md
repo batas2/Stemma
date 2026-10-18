@@ -38,63 +38,63 @@
 > and what its colours mean,** so that **the room understands the picture while I talk about what
 > matters, and a reader who was not there understands it without me.**
 
-- [ ] **AC1 — A view can carry a header,** under `views.<key>.header` in `stemma.layout.json`:
+- [x] **AC1 — A view can carry a header,** under `views.<key>.header` in `stemma.layout.json`:
   `title`, `message`, `context`, `legend`. Any view: the two built-in lenses and every view in
   `Views/`. It is written as changes ([ADR-0021](../architecture/decisions/0021-sidecar-written-as-changes.md)):
   editing the message changes one line ([ADR-0023](../architecture/decisions/0023-view-headers-in-the-layout-sidecar.md)).
-- [ ] **AC2 — The header is the top of the page:** the title (the view's name unless one is
+- [x] **AC2 — The header is the top of the page:** the title (the view's name unless one is
   given), the message — the one sentence the view should leave in the room — and the context, in
   Markdown (bold, italic, code, lists), rendered as text and never as markup. The diagram is framed
   beneath it, both when a view opens and when a book page is presented.
-- [ ] **AC3 — The legend says what the colours mean, from what is drawn.** Without a `legend`:
+- [x] **AC3 — The legend says what the colours mean, from what is drawn.** Without a `legend`:
   one entry per lifecycle status carried by an element in the view, its swatch drawn the way those
   cards are drawn, then one per kind of link drawn. A `legend` list replaces it: an entry names a
   `status` (its swatch taken from the view), or gives its own `swatch` or `line`, each with a
   `label`. `"legend": []` shows none.
-- [ ] **AC4 — Written in place.** In the app the title, message and context are edited in the header
+- [x] **AC4 — Written in place.** In the app the title, message and context are edited in the header
   itself; Enter (title, message), Ctrl+Enter (context) or leaving the field saves, Esc cancels, and a
   field left as it was writes nothing. An edit changes that one field of the header as the file holds
   it — every other key, the ones the app does not read included, stays as written. The Layout panel
   adds a header to the open view or removes it; removing the last thing a view's entry held removes
   the entry. Collapsing the header belongs to the reader, kept in the browser, not in the file.
-- [ ] **AC5 — Presented and captured.** Presenting shows the header's title, message and legend,
+- [x] **AC5 — Presented and captured.** Presenting shows the header's title, message and legend,
   read-only, and keeps them while the camera frames a focus, so the room keeps the view's point; the
   context is said rather than shown, and the picture gets the room. The PDF deck's picture of a page
   includes the same. A presented page is framed above the narrative card or beside it, whichever
   draws the picture larger. A single-image export does not carry the header. Empty fields are never
   shown outside the editor.
-- [ ] **AC6 — The report explains its views too:** each view's header above its diagram, and the
+- [x] **AC6 — The report explains its views too:** each view's header above its diagram, and the
   view's annotations — box shapes with their text, labels, arrows — drawn in it, backdrops beneath
   the cards. A book page in the report shows its view's header.
-- [ ] **AC7 — Cards readable at presentation size.** `textSize` sizes the card's whole text, title
+- [x] **AC7 — Cards readable at presentation size.** `textSize` sizes the card's whole text, title
   and notes, and gains `xl`; a context frame's chip follows its own `textSize`, and an edge label its
   edge's `labelSize`. At `lg` and `xl` a card without a fixed `height` grows to hold its notes,
   in the app and in the report. A card that shows its status but not its kind carries the status
   beside its name, in the card's own colour, rather than on a row of its own.
-- [ ] **AC8 — Annotation text is Markdown:** a box shape's `text` renders bold, italic, code and
+- [x] **AC8 — Annotation text is Markdown:** a box shape's `text` renders bold, italic, code and
   lists, in the app and in the report, as text and never as markup.
-- [ ] **AC9 — A backdrop stays behind** (fixes B-019). A shape whose `z` is below zero is drawn
+- [x] **AC9 — A backdrop stays behind** (fixes B-019). A shape whose `z` is below zero is drawn
   beneath the cards and the links. It is selected and moved by its own outline — the rectangle's edge,
   the ellipse's curve — drawn beneath the cards too, so a card on a zone's edge keeps its clicks.
-- [ ] **AC10 — The Module Map shows no Concepts** (fixes B-020, as [F-010](./F-010-concept-element-kind.md)
+- [x] **AC10 — The Module Map shows no Concepts** (fixes B-020, as [F-010](./F-010-concept-element-kind.md)
   AC2 always said): a Concept appears only in the views that name it, in the app and in the report.
   Adding one while a built-in lens is open says where it went. Every view is fitted once its cards
   are on the canvas — the Module Map used to open unfitted on a fresh load.
-- [ ] **AC11 — `stemma validate` checks headers:** `header/malformed` for a field of the wrong
+- [x] **AC11 — `stemma validate` checks headers:** `header/malformed` for a field of the wrong
   type, `header/unknown-status` for a legend entry naming a status no element in the view carries.
-- [ ] **AC12 — Authorable as text.** The schema describes `header` and `textSize: "xl"`; the
+- [x] **AC12 — Authorable as text.** The schema describes `header` and `textSize: "xl"`; the
   protocol reference shows a header.
 
 ## 3. Architecture impact
 
-- [ ] **Model or presentation?** Presentation, entirely
+- [x] **Model or presentation?** Presentation, entirely
   ([ADR-0023](../architecture/decisions/0023-view-headers-in-the-layout-sidecar.md)).
-- [ ] **New/changed operations:** none. No source file is touched.
-- [ ] **Fidelity:** the sidecar contract of ADR-0021 applies; header edits go through the same
+- [x] **New/changed operations:** none. No source file is touched.
+- [x] **Fidelity:** the sidecar contract of ADR-0021 applies; header edits go through the same
   change list and the same text patcher as positions, styles and books.
-- [ ] **Engine purity:** the engine stores the member without reading it. The CLI's validate reads
+- [x] **Engine purity:** the engine stores the member without reading it. The CLI's validate reads
   it.
-- [ ] **Sidecar:** a new member of a view's entry, described in the schema:
+- [x] **Sidecar:** a new member of a view's entry, described in the schema:
 
   ```json
   "views": {
@@ -112,8 +112,8 @@
     }
   }
   ```
-- [ ] **ADR needed?** [ADR-0023](../architecture/decisions/0023-view-headers-in-the-layout-sidecar.md).
-- **Affected files/areas:** `src/Stemma.Web.Client/src/lib/viewHeader.ts` (new), `lib/layout.ts`,
+- [x] **ADR needed?** [ADR-0023](../architecture/decisions/0023-view-headers-in-the-layout-sidecar.md).
+- **Affected files/areas:** `src/Stemma.Web.Client/src/lib/viewHeader.ts` and `lib/viewFilter.ts` (new), `lib/layout.ts`,
   `lib/store.ts`, `components/ViewHeader.tsx` (new), `components/ArchCanvas.tsx`,
   `components/ShapeLayer.tsx`, `components/nodes/ArchNodeView.tsx`, `components/LayoutPanel.tsx`,
   `lib/lenses.ts`, `lib/canvasReveal.ts`, `report/reportData.ts`, `report/viewer.js`,
@@ -121,21 +121,21 @@
 
 ## 4. UX impact
 
-- [ ] **Journeys touched:** the canvas (J2), presenting a book (J6c) and the report (J6).
-- [ ] **States:** no header (the Layout panel offers one); a header with empty fields (prompts in
+- [x] **Journeys touched:** the canvas (J2), presenting a book (J6c) and the report (J6).
+- [x] **States:** no header (the Layout panel offers one); a header with empty fields (prompts in
   the editor, nothing outside it); collapsed; presenting; capturing.
-- [ ] **Interactions:** click a field to edit it; the keys in AC4; the collapse toggle; a backdrop
+- [x] **Interactions:** click a field to edit it; the keys in AC4; the collapse toggle; a backdrop
   is selected by its outline.
-- [ ] **Accessibility:** the header is a `banner`-like region named after the view; every field is
+- [x] **Accessibility:** the header is a `banner`-like region named after the view; every field is
   reachable by keyboard; the legend is a list.
 
 ## 5. UI impact
 
-- [ ] **Components:** `ViewHeader` (new): title, message, context on the left, the legend on the
+- [x] **Components:** `ViewHeader` (new): title, message, context on the left, the legend on the
   right, in one band across the top of the canvas.
-- [ ] **Tokens:** the canvas surface and text tokens; the message uses the strong text colour, not
+- [x] **Tokens:** the canvas surface and text tokens; the message uses the strong text colour, not
   an accent, so the view's own colours stay the only colours that mean something.
-- [ ] **Both themes:** yes.
+- [x] **Both themes:** yes.
 
 ## 6. Technical prerequisites & dependencies
 
@@ -153,8 +153,8 @@
 
 ## 8. Definition of Done
 
-- [ ] All ACs ticked, tests green, both themes checked on screen.
-- [ ] Docs: protocol reference, schema, roadmap, this record.
+- [x] All ACs ticked, tests green, both themes checked on screen.
+- [x] Docs: protocol reference, schema, roadmap, this record.
 
 ## 9. Notes / open questions
 

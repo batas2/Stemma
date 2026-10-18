@@ -30,7 +30,10 @@ beforeAll(() => {
     readPositions: () => ({ mod_a: { x: 0, y: 0 }, mod_b: { x: 300, y: 0 }, con_c: { x: 600, y: 0 } }),
     readWaypoints: () => ({}),
     readHandles: () => ({}),
-    nodeStyles: { mod_a: { borderWidth: 1, borderStyle: 'solid', fillColor: '#d5e8d4', borderColor: '#82b366' } },
+    nodeStyles: {
+      mod_a: { borderWidth: 1, borderStyle: 'solid', fillColor: '#d5e8d4', borderColor: '#82b366', visibleFields: ['name', 'status'] },
+      con_c: { borderWidth: 1, borderStyle: 'solid', visibleFields: ['name'] },
+    },
     edgeStyles: {},
     notes: {},
     customProps: {},
@@ -104,5 +107,21 @@ describe('a view with a header and annotations', () => {
     expect(zone).toBeLessThan(firstCard);
     expect(label).toBeGreaterThan(firstCard);
     expect(children[zone].querySelector('.vr-shape-body strong')?.textContent).toBe('read by all');
+  });
+});
+
+describe('a card in the report', () => {
+  it('shows the fields its author chose: no kind row, and the status beside the name', () => {
+    open('The line');
+    const cards = [...document.querySelectorAll('.vrn')];
+    const alpha = cards.find((c) => c.textContent?.includes('Alpha'))!;
+    expect(alpha.querySelector('.vrn-head')).toBeNull();
+    expect(alpha.querySelector('.vrn-titlerow .vrn-badge')?.textContent).toContain('reuse');
+    const gamma = cards.find((c) => c.textContent?.includes('Gamma the concept'))!;
+    expect(gamma.querySelector('.vrn-head')).toBeNull();
+    expect(gamma.querySelector('.vrn-badge')).toBeNull();
+    // A card nobody chose fields for keeps the report's own rows.
+    const beta = cards.find((c) => c.textContent?.includes('Beta'))!;
+    expect(beta.querySelector('.vrn-head')).not.toBeNull();
   });
 });
