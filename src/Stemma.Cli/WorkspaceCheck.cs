@@ -326,8 +326,11 @@ public static class WorkspaceCheck
         else if (viewKey == "dependencyGraph") drawn = model.Elements.Where(e => e.Kind is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability);
         else if (viewKey.StartsWith(CustomViewKey, StringComparison.Ordinal) && codeViews.TryGetValue(viewKey[CustomViewKey.Length..], out var view))
         {
+            // Through the view's base lens, as the canvas draws it: the dependency lens keeps only
+            // modules, contexts and capabilities, whatever else the view names.
             var members = view.ElementIds.ToHashSet(StringComparer.Ordinal);
-            drawn = model.Elements.Where(e => members.Contains(e.Id));
+            drawn = model.Elements.Where(e => members.Contains(e.Id)
+                && (view.BaseView != "dependencyGraph" || e.Kind is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability));
         }
         else return null;
         return drawn.Select(e => statusOf.GetValueOrDefault(e.Id)).OfType<string>().ToHashSet(StringComparer.Ordinal);

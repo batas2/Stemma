@@ -129,7 +129,16 @@ test('a view pulled in while the canvas is open is edited where it is (B-010, B-
 
 /** Drag the box labelled `element` by (dx, dy) on the canvas. */
 async function drag(page: Page, element: string, dx: number, dy: number) {
-  const box = (await page.locator('.react-flow__node', { hasText: element }).first().boundingBox())!;
+  // Where the box has come to rest: a view that has just opened is still being framed.
+  const node = page.locator('.react-flow__node', { hasText: element }).first();
+  let box = (await node.boundingBox())!;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(100);
+    const next = (await node.boundingBox())!;
+    const still = next.x === box.x && next.y === box.y && next.width === box.width;
+    box = next;
+    if (still) break;
+  }
   await page.mouse.move(box.x + box.width / 2, box.y + 12);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + dx, box.y + 12 + dy, { steps: 8 });

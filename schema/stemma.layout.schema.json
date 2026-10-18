@@ -480,6 +480,15 @@
             "dotted"
           ]
         },
+        "labelSize": {
+          "enum": [
+            "sm",
+            "base",
+            "lg",
+            "xl"
+          ],
+          "description": "How large the edge's label is drawn: 9, 10, 13 or 16 px."
+        },
         "routing": {
           "enum": [
             "bezier",

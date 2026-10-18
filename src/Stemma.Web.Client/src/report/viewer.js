@@ -253,11 +253,29 @@
         var props = data.customProps[e.id] || {};
         hgt += Math.min(Object.keys(props).length, 2) * 13;
         if (squadOf(e.id)) hgt += 13;
-        if (data.notes[e.id]) hgt += 42;
+        if (data.notes[e.id]) hgt += notesHeight(data.notes[e.id], st.textSize, w);
+      }
+      // A large title wraps rather than clipping, as on the canvas.
+      if (st.textSize === 'lg' || st.textSize === 'xl') {
+        var tf = st.textSize === 'xl' ? 19 : 15;
+        hgt += (Math.ceil(e.name.length / Math.max(8, Math.floor((w - 24) / (tf * 0.56)))) - 1) * tf * 1.3;
       }
       hgt = Math.max(hgt, 72);
     }
     return { w: w, h: hgt };
+  }
+  /**
+   * How tall a card's notes are. At the presentation sizes the notes are never cut off (F-014 AC7), so
+   * their height follows their length; the default sizes keep the compact preview.
+   */
+  function notesHeight(notes, size, w) {
+    if (size !== 'lg' && size !== 'xl') return 42;
+    var fs = size === 'xl' ? 15 : 12.5, per = Math.max(10, Math.floor((w - 24) / (fs * 0.54))), lines = 0;
+    String(notes).split('\n').forEach(function (line) {
+      var text = line.replace(/^\s*[-*]\s+/, '').replace(/[*`]/g, '');
+      lines += text.trim() ? Math.ceil(text.length / per) : 0.5;
+    });
+    return 10 + lines * fs * 1.5;
   }
   function positionsFor(view) {
     var saved = data.positions[view.key] || {};
@@ -926,13 +944,15 @@
         s('path', attrs),
         s('path', { d: d, class: 'hit' }),
       ]);
-      var label = isFlow ? (l.attributes.payload || '') : (l.attributes.kind || 'uses');
+      var label = isFlow ? (l.attributes.payload || '') : l.kind === 'relation' ? (l.attributes.label || '') : (l.attributes.kind || 'uses');
       if (label) {
         var mid = midOf(ends.s, ends.t, wps);
-        var lw = label.length * 5.9 + 10;
+        // Sized as the canvas sizes it (EdgeStyle.labelSize), for a room as much as a screen.
+        var lf = { sm: 9, base: 10, lg: 13, xl: 16 }[st.labelSize] || 10;
+        var lw = label.length * lf * 0.59 + 10;
         g.appendChild(s('g', { class: 'vr-edgelabel' + (sel ? ' sel' : '') }, [
-          s('rect', { x: mid.x - lw / 2, y: mid.y - 8.5, width: lw, height: 16 }),
-          s('text', { x: mid.x, y: mid.y + 3.5, 'text-anchor': 'middle', text: label }),
+          s('rect', { x: mid.x - lw / 2, y: mid.y - (lf + 6) / 2, width: lw, height: lf + 6 }),
+          s('text', { x: mid.x, y: mid.y + lf * 0.35, 'text-anchor': 'middle', style: 'font-size:' + lf + 'px', text: label }),
         ]));
       }
       g.addEventListener('click', function (ev) { ev.stopPropagation(); select('link', l.id); });

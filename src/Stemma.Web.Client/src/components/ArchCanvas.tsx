@@ -91,7 +91,7 @@ import { viewKeyOf } from '@/lib/books';
 import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
-import { loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
+import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
 import { loadNote, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
@@ -892,12 +892,34 @@ function CanvasInner() {
     });
   }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick]);
 
+  // Fit a view once, when it is first shown with its cards on the canvas and the committed positions
+  // read: a fit taken before them frames where the cards are about to stop being, and a second fit
+  // when they land moves the canvas under a pointer already at work. Keyed on the view rather than
+  // on the cards, so a drag or an edit never re-frames anything; keyed on the cards existing at all,
+  // because the model can arrive after the view is chosen — the Module Map on a fresh load used to
+  // open unfitted, at whatever zoom the canvas started with.
+  const fittedFor = useRef<string | null>(null);
+  const [positionsRead, setPositionsRead] = useState(() => !!workspace && isSidecarPrimed(workspace.rootPath));
   useEffect(() => {
-    if (nodes.length > 0) {
-      const id = setTimeout(() => { if (!bookPageApplies.current) fitWholeView(paddingUnderHeader(0.2), 400); }, 80);
-      return () => clearTimeout(id);
-    }
-  }, [view, activeId, arch?.filePath, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (workspace && isSidecarPrimed(workspace.rootPath)) setPositionsRead(true);
+    function onPrimed() { setPositionsRead(true); }
+    window.addEventListener('stemma:sidecar-primed', onPrimed);
+    return () => window.removeEventListener('stemma:sidecar-primed', onPrimed);
+  }, [workspace?.rootPath]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hasCards = nodes.length > 0;
+  const fitFor = `${layoutKey}|${arch?.filePath ?? ''}`;
+  useEffect(() => {
+    if (!hasCards || fittedFor.current === fitFor) return;
+    // A sidecar that is never read — the server gone, say — must not leave the view unfitted for good.
+    const wait = positionsRead ? 80 : 1500;
+    const id = setTimeout(() => {
+      fittedFor.current = fitFor;
+      // At once rather than animated: a view should open where it is going to stay, and an animated
+      // fit flies out and back in under a pointer that may already be reaching for a card.
+      if (!bookPageApplies.current) fitWholeView(paddingUnderHeader(0.2), 0);
+    }, wait);
+    return () => clearTimeout(id);
+  }, [fitFor, hasCards, positionsRead]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A book page frames its view: the whole of it, or only what it points at. Moving between pages
   // of one view is a camera move, which is what turns "first the context, then the detail" from a

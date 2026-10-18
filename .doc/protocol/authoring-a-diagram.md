@@ -253,7 +253,9 @@ of the wrong type (`header/malformed`) and a legend entry for a status the view 
 `nodeStyles` and `edgeStyles` are keyed by element and link id, workspace-wide. Both are fully
 described in the schema. `textSize` sizes a card's whole text, its title and its notes: `sm`, `base`,
 `lg`, `xl`. At `lg` and `xl` — the sizes for a room — the notes are never cut off and the card grows to
-hold them, unless a `height` is given. Under the `publication` profile most of it is overridden anyway, so reach
+hold them, unless a `height` is given. A card whose `visibleFields` leave out `kind` but keep `status`
+shows its status beside its name. A context's `textSize` sizes its frame's chip, and an edge's
+`labelSize` (`sm`, `base`, `lg`, `xl`) its label. Under the `publication` profile most of it is overridden anyway, so reach
 for them only when the profile is not what you want.
 
 ### Books: the walk through it

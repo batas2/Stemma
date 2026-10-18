@@ -52,25 +52,34 @@
   `status` (its swatch taken from the view), or gives its own `swatch` or `line`, each with a
   `label`. `"legend": []` shows none.
 - [ ] **AC4 — Written in place.** In the app the title, message and context are edited in the header
-  itself; Enter (title, message), Ctrl+Enter (context) or leaving the field saves, Esc cancels. The
-  Layout panel adds a header to the open view or removes it. Collapsing the header belongs to the
-  reader, kept in the browser, not in the file.
-- [ ] **AC5 — Presented and captured.** Presenting shows the header read-only and keeps it while
-  the camera frames a focus, so the room keeps the view's point. The PDF deck's picture of a page
-  includes it. Empty fields are never shown outside the editor.
+  itself; Enter (title, message), Ctrl+Enter (context) or leaving the field saves, Esc cancels, and a
+  field left as it was writes nothing. An edit changes that one field of the header as the file holds
+  it — every other key, the ones the app does not read included, stays as written. The Layout panel
+  adds a header to the open view or removes it; removing the last thing a view's entry held removes
+  the entry. Collapsing the header belongs to the reader, kept in the browser, not in the file.
+- [ ] **AC5 — Presented and captured.** Presenting shows the header's title, message and legend,
+  read-only, and keeps them while the camera frames a focus, so the room keeps the view's point; the
+  context is said rather than shown, and the picture gets the room. The PDF deck's picture of a page
+  includes the same. A presented page is framed above the narrative card or beside it, whichever
+  draws the picture larger. A single-image export does not carry the header. Empty fields are never
+  shown outside the editor.
 - [ ] **AC6 — The report explains its views too:** each view's header above its diagram, and the
   view's annotations — box shapes with their text, labels, arrows — drawn in it, backdrops beneath
   the cards. A book page in the report shows its view's header.
 - [ ] **AC7 — Cards readable at presentation size.** `textSize` sizes the card's whole text, title
-  and notes, and gains `xl`. At `lg` and `xl` a card's notes are never cut off; the card grows to
-  hold them.
+  and notes, and gains `xl`; a context frame's chip follows its own `textSize`, and an edge label its
+  edge's `labelSize`. At `lg` and `xl` a card without a fixed `height` grows to hold its notes,
+  in the app and in the report. A card that shows its status but not its kind carries the status
+  beside its name, in the card's own colour, rather than on a row of its own.
 - [ ] **AC8 — Annotation text is Markdown:** a box shape's `text` renders bold, italic, code and
   lists, in the app and in the report, as text and never as markup.
 - [ ] **AC9 — A backdrop stays behind** (fixes B-019). A shape whose `z` is below zero is drawn
-  beneath the cards and the links. Where no card covers it, it is selected and moved by its outline.
+  beneath the cards and the links. It is selected and moved by its own outline — the rectangle's edge,
+  the ellipse's curve — drawn beneath the cards too, so a card on a zone's edge keeps its clicks.
 - [ ] **AC10 — The Module Map shows no Concepts** (fixes B-020, as [F-010](./F-010-concept-element-kind.md)
   AC2 always said): a Concept appears only in the views that name it, in the app and in the report.
-  Adding one while a built-in lens is open says where it went.
+  Adding one while a built-in lens is open says where it went. Every view is fitted once its cards
+  are on the canvas — the Module Map used to open unfitted on a fresh load.
 - [ ] **AC11 — `stemma validate` checks headers:** `header/malformed` for a field of the wrong
   type, `header/unknown-status` for a legend entry naming a status no element in the view carries.
 - [ ] **AC12 — Authorable as text.** The schema describes `header` and `textSize: "xl"`; the
@@ -140,7 +149,7 @@
 | Unit (`lenses.test.ts`, canvas filter) | The Module Map renders no Concept; a view that names one still does. |
 | Unit (report) | The report draws a view's header, legend and shapes, text as text. |
 | Unit (C#, `WorkspaceCheckTests`) | `header/malformed`, `header/unknown-status`. |
-| Journey (`view-header.spec.ts`) | A header is added, edited and survives a reload; it is shown when presenting; a filled `z: -1` rect under a card leaves the card visible and clickable (B-019). |
+| Journey (`view-header.spec.ts`) | A header is added, edited and survives a reload; it is shown when presenting; a filled `z: -1` rect under a card leaves the card visible and clickable, at its centre and on the zone's edge (B-019). |
 
 ## 8. Definition of Done
 

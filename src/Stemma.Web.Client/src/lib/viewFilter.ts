@@ -32,7 +32,8 @@ export function applyKindFilter(elements: ArchElement[], view: ViewKind): ArchEl
   switch (view) {
     case 'dependencyGraph': return elements.filter((e) => e.kind === 'module' || e.kind === 'boundedContext' || e.kind === 'capability');
     case 'moduleMap':
-    // A view that names a Concept draws it, whatever its base lens: naming it is the point.
+    // A view that names a Concept draws it on the Module Map lens or none: naming it is the point.
+    // The dependency lens above keeps to modules, contexts and capabilities whatever a view names.
     default: return elements;
   }
 }

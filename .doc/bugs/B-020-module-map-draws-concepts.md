@@ -41,10 +41,12 @@ The ADR was applied to the dependency lens only, where Concepts were already exc
 ## 6. Fix
 
 - **Approach:** the built-in Module Map leaves Concepts out, in the canvas and in the report. A view
-  that names a Concept still draws it, whatever its base lens. Adding a Concept while a built-in
+  that names a Concept still draws it, unless its base lens is the dependency lens, which draws
+  modules, contexts and capabilities only. Adding a Concept while a built-in
   lens is open no longer switches to a lens that cannot show it; the toast says where it went.
 - **Affected files:** `components/ArchCanvas.tsx`, `lib/lenses.ts`, `lib/canvasReveal.ts`,
   `report/viewer.js`.
 - [x] Fix implemented
-- [x] Regression test: `lenses.test.ts` — the Module Map does not render a Concept;
-  `report.test.ts` — the report's Module Map leaves Concepts out.
+- [x] Regression test: `lenses.test.ts` and `viewFilter.test.ts` — the Module Map does not render a
+  Concept, a view that names one does; `report/viewHeader.report.test.ts` — the report's Module Map
+  leaves Concepts out.

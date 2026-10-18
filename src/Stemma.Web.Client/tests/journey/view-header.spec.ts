@@ -93,7 +93,8 @@ test('a presented view shows its header, read-only, over the picture', async ({ 
 
   const header = page.locator('[data-view-header]');
   await expect(header).toContainText('Four things ship, and one of them is the model.');
-  await expect(header.locator('strong')).toHaveText('left to right');
+  // Presented, the context is said rather than shown: the picture gets the room.
+  await expect(header).not.toContainText('left to right');
   await expect(header.getByRole('button', { name: /^Edit the/ })).toHaveCount(0);
   // The picture is framed below the header, not under it: once the camera has settled, nothing the
   // page lights starts above the header's lower edge.
@@ -130,4 +131,47 @@ test('a filled backdrop under a card leaves the card on top and clickable (B-019
 
   await page.mouse.click(cx, cy);
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
+});
+
+test('a card on a backdrop’s edge keeps its click, and the backdrop is gripped by its edge (B-019)', async ({ page }) => {
+  // Where the first card sits, in flow coordinates, read from the canvas itself.
+  await openWorkspace(page, 'view_shape');
+  await page.waitForTimeout(1_000);
+  const card = await page.locator('.react-flow__node').first().evaluate((el) => {
+    const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec((el as HTMLElement).style.transform)!;
+    return { id: (el as HTMLElement).dataset.id!, x: +m[1], y: +m[2], w: (el as HTMLElement).offsetWidth, h: (el as HTMLElement).offsetHeight };
+  });
+  // A zone whose top edge runs straight through the middle of that card, and one well clear of
+  // every card, below them.
+  await editSidecar((s) => {
+    s.views['custom:view_shape'].shapes = [
+      { id: 'sh_edge', kind: 'rect', x: card.x - 160, y: card.y + card.h / 2, w: card.w + 320, h: 400, z: -1, fill: '#fde68a', stroke: '#d97706', strokeWidth: 2 },
+      { id: 'sh_clear', kind: 'ellipse', x: card.x, y: card.y + 1600, w: 600, h: 300, z: -1, fill: '#bfdbfe', stroke: '#2563eb', strokeWidth: 2 },
+    ];
+  });
+  await openWorkspace(page, 'view_shape');
+  await page.waitForTimeout(1_000);
+  const node = page.locator(`.react-flow__node[data-id="${card.id}"]`);
+  const box = (await node.boundingBox())!;
+
+  // On the zone's edge, inside the card: the card.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator(`.react-flow__node[data-id="${card.id}"].selected`)).toHaveCount(1);
+
+  // On a backdrop's own outline — the ellipse's curve, not its bounding box — the backdrop, which
+  // shows its selection frame. Its empty middle is left to the pane.
+  const scale = box.width / card.w;
+  const vp = await page.locator('.react-flow__viewport').evaluate((el) => {
+    const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/.exec((el as HTMLElement).style.transform)!;
+    const r = el.parentElement!.getBoundingClientRect();
+    return { x: +m[1] + r.left, y: +m[2] + r.top, zoom: +m[3] };
+  });
+  const toScreen = (fx: number, fy: number) => ({ x: vp.x + fx * vp.zoom, y: vp.y + fy * vp.zoom });
+  const middle = toScreen(card.x + 300, card.y + 1600 + 150);
+  await page.mouse.click(middle.x, middle.y);
+  await expect(page.locator('[data-shape-overlay] rect[stroke-dasharray="4 4"]')).toHaveCount(0);
+  const top = toScreen(card.x + 300, card.y + 1600);
+  await page.mouse.click(top.x, top.y);
+  await expect(page.locator('[data-shape-overlay] rect[stroke-dasharray="4 4"]')).toHaveCount(1);
+  expect(scale).toBeGreaterThan(0);
 });
