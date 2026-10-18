@@ -33,6 +33,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-016](./B-016-tarball-render-needs-the-dotnet-it-ships-without.md) | `stemma render` from the tarball needs the `dotnet` the tarball is built to do without | S2 major | cli | Fixed |
 | [B-017](./B-017-new-model-left-uncommitted-where-git-knows-nobody.md) | A new model is left uncommitted where git has not been told who the user is | S3 minor | web | Fixed |
 | [B-018](./B-018-comments-written-whole-and-read-as-empty.md) | Comments are written whole from the panel's copy, and a file that does not parse reads as none | S2 major | sidecar | Fixed |
+| [B-019](./B-019-shapes-ordered-behind-nodes-are-drawn-over-them.md) | A shape ordered behind the nodes (`z < 0`) is drawn over them | S3 minor | canvas | New |
 
 ## Known failure modes to check first (Stemma-specific)
 
