@@ -1,4 +1,4 @@
-import { useReactFlow, useStore, useViewport, type Node } from '@xyflow/react';
+import { useReactFlow, useStore, useViewport, ViewportPortal, type Node } from '@xyflow/react';
 import { useApp } from '@/lib/store';
 import {
   type ArrowAnchor, type Shape, type ShapeArrow, type ShapeBoxText, type ShapeEllipse, type ShapeImage, type ShapeLabel, type ShapeRect, type ShapeTriangle,
@@ -7,6 +7,7 @@ import {
 } from '@/lib/shapes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyOperation } from '@/lib/signalr';
+import { renderNotes } from '@/lib/notesMarkdown';
 
 interface Props {
   viewKey: string;
@@ -32,10 +33,13 @@ const HANDLE_CURSORS: Record<ResizeHandle, string> = {
 };
 
 /**
- * SVG layer rendered above React Flow's pane for a custom view. Mirrors the React Flow
- * viewport transform so shapes pan + zoom with the model nodes. Pointer events partition:
+ * The shapes of a view, in two layers. Shapes whose `z` is below zero are backdrops: they are drawn
+ * inside React Flow's viewport, beneath the links and the cards (B-019), and take no pointer events
+ * there. Everything else is drawn in an SVG overlay above React Flow's pane that mirrors the
+ * viewport transform, so shapes pan + zoom with the model nodes. Pointer events partition:
  *   - Outer SVG: `pointer-events: none` — empty regions pass through to React Flow.
  *   - Per-shape `<g>`: `pointer-events: auto` — selectable + draggable.
+ *   - A backdrop's outline, in the overlay: selects and moves it where no card covers it.
  *   - Hit-test backdrop in shape-draw mode: `pointer-events: all` for click-to-draw.
  *   - Dock dots and resize handles: explicit `pointer-events: all`.
  */
@@ -224,6 +228,8 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
   // frames, labels and legends are part of the picture — it only stops taking edits to them.
   const readOnly = !enabled;
   const sortedShapes = [...shapes].sort((a, b) => a.z - b.z);
+  const backdrops = sortedShapes.filter((s) => s.z < 0);
+  const overlays = sortedShapes.filter((s) => s.z >= 0);
   const shapeMode = !readOnly && canvasMode.kind === 'shape';
 
   function onBackdropPointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -259,6 +265,32 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
   const showElementDocks = !readOnly && canvasMode.kind === 'shape' && canvasMode.tool === 'arrow';
 
   return (
+    <>
+    {backdrops.length > 0 && (
+      // Inside the viewport, under its links and cards: z-index -1 in the viewport's own stacking
+      // context. Nothing here takes the pointer; the outline drawn in the overlay does.
+      <ViewportPortal>
+        <div data-shape-backdrop="true" className="absolute left-0 top-0" style={{ zIndex: -1, pointerEvents: 'none' }}>
+          <svg width={1} height={1} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
+            {backdrops.map((s) => (
+              <ShapeRenderer
+                key={s.id}
+                shape={s}
+                selected={false}
+                interactive={false}
+                readOnly
+                nodeBounds={nodeBounds}
+                allShapes={shapes}
+                props={customPropsAll[s.id]}
+                onPointerDown={() => {}}
+                onResizePointerDown={() => {}}
+                onDockPointerDown={() => {}}
+              />
+            ))}
+          </svg>
+        </div>
+      </ViewportPortal>
+    )}
     <div
       data-shape-overlay="true"
       className="absolute inset-0 pointer-events-none"
@@ -286,7 +318,21 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
           cursor: shapeMode ? 'crosshair' : (drag?.mode === 'connect' ? 'crosshair' : 'default'),
         }}
       >
-        {sortedShapes.map((s) => (
+        {!readOnly && backdrops.map((s) => (
+          <BackdropHandle
+            key={s.id}
+            shape={s}
+            zoom={viewport.zoom}
+            selected={s.id === selectedShapeId}
+            interactive={canvasMode.kind === 'select'}
+            nodeBounds={nodeBounds}
+            allShapes={shapes}
+            onPointerDown={(e) => onShapePointerDown(e, s)}
+            onResizePointerDown={(e, handle) => onResizeHandlePointerDown(e, s, handle)}
+            onDockPointerDown={onDockPointerDown}
+          />
+        ))}
+        {overlays.map((s) => (
           <ShapeRenderer
             key={s.id}
             shape={s}
@@ -326,6 +372,47 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
         )}
       </svg>
     </div>
+    </>
+  );
+}
+
+/**
+ * What a backdrop leaves in the overlay: an invisible band along its outline that selects and moves
+ * it, and its selection frame. The band is a fixed width on screen at any zoom. The inside is left
+ * alone, so the cards drawn over the backdrop keep every click.
+ */
+function BackdropHandle({ shape, zoom, selected, interactive, nodeBounds, allShapes, onPointerDown, onResizePointerDown, onDockPointerDown }: {
+  shape: Shape;
+  zoom: number;
+  selected: boolean;
+  interactive: boolean;
+  nodeBounds: Map<string, { x: number; y: number; w: number; h: number }>;
+  allShapes: readonly Shape[];
+  onPointerDown: (e: React.PointerEvent<SVGGElement>) => void;
+  onResizePointerDown: (e: React.PointerEvent, handle: ResizeHandle) => void;
+  onDockPointerDown: (e: React.PointerEvent, anchor: ArrowAnchor, fromX: number, fromY: number) => void;
+}) {
+  if (shape.kind === 'label' || shape.kind === 'arrow') {
+    // Thin to begin with: the whole of it is the handle, as in the overlay.
+    return (
+      <g style={{ opacity: 0 }}>
+        <ShapeRenderer shape={shape} selected={false} interactive={interactive} nodeBounds={nodeBounds} allShapes={allShapes}
+          onPointerDown={onPointerDown} onResizePointerDown={onResizePointerDown} onDockPointerDown={onDockPointerDown} />
+      </g>
+    );
+  }
+  const b = shape as ShapeRect | ShapeEllipse | ShapeTriangle | ShapeImage;
+  const band = 12 / Math.max(zoom, 0.05);
+  return (
+    <g style={{ cursor: interactive ? 'move' : 'default' }}>
+      <g onPointerDown={interactive ? onPointerDown : undefined}>
+        <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={6}
+          fill="none" stroke="transparent" strokeWidth={band}
+          style={{ pointerEvents: interactive ? 'stroke' : 'none' }} />
+      </g>
+      {selected && interactive && <SelectionFrame x={b.x} y={b.y} w={b.w} h={b.h} onResize={onResizePointerDown} />}
+      {selected && interactive && shape.kind !== 'triangle' && <ShapeDocks shape={b as ShapeRect} onDockPointerDown={onDockPointerDown} />}
+    </g>
   );
 }
 
@@ -762,7 +849,8 @@ function BoxText({ s, centered, props }: { s: ShapeBoxText & { x: number; y: num
         }}
       >
         {s.label ? <div style={{ fontWeight: 600 }}>{s.label}</div> : null}
-        {s.text ? <div style={{ whiteSpace: 'pre-wrap', opacity: 0.92 }}>{s.text}</div> : null}
+        {/* Markdown, through the renderer that escapes first: annotation text is never markup (F-014 AC8). */}
+        {s.text ? <div className="stemma-shape-text" style={{ opacity: 0.92 }} dangerouslySetInnerHTML={{ __html: renderNotes(s.text) }} /> : null}
         {propEntries.length > 0 ? (
           <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', gap: 1, fontSize: '0.85em', opacity: 0.85 }}>
             {propEntries.map(([k, v]) => <div key={k}><span style={{ opacity: 0.65 }}>{k}:</span> {v}</div>)}

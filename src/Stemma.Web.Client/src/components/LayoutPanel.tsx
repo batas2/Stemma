@@ -2,11 +2,12 @@ import { useMemo, useRef } from 'react';
 import {
   Wand2, Network, LayoutDashboard, Target, Hand, Magnet, Maximize2, Trash2, Check, MousePointerSquareDashed,
   AlignLeft, AlignRight, AlignCenterHorizontal, AlignStartVertical, AlignEndVertical, AlignCenterVertical,
-  StretchHorizontal, StretchVertical, RotateCcw, Crosshair,
+  StretchHorizontal, StretchVertical, RotateCcw, Crosshair, PanelTop,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { LayoutConstraintPanel } from './LayoutConstraintPanel';
+import { confirmAction } from './ConfirmDialog';
 import type { LayoutAlgorithm } from '@/lib/autoLayout';
 
 /** Layout actions the panel asks the canvas to perform. The canvas (ArchCanvas) owns the node
@@ -86,6 +87,9 @@ export function LayoutPanel() {
 
   return (
     <div className="p-3 space-y-4 text-sm">
+      <Group title="Header">
+        <HeaderToggle layoutKey={layoutKey} />
+      </Group>
       <Group title="Constraint">
         <LayoutConstraintPanel layoutKey={layoutKey} />
       </Group>
@@ -258,6 +262,40 @@ function Apply({ label, onClick }: { label: string; onClick: () => void }) {
     <button onClick={onClick} className="w-full mt-1 px-2 py-1.5 rounded-md bg-indigo-500 text-white text-xs font-medium hover:bg-indigo-600">
       {label}
     </button>
+  );
+}
+
+/**
+ * Add a header to the open view, or take it away (F-014). The words are edited in the header itself;
+ * this is only whether the view has one.
+ */
+function HeaderToggle({ layoutKey }: { layoutKey: string }) {
+  const header = useApp((s) => s.viewHeaders[layoutKey]);
+  const setViewHeader = useApp((s) => s.setViewHeader);
+  const setToast = useApp((s) => s.setToast);
+  async function toggle() {
+    if (header) {
+      const said = !!(header.message || header.context || header.title || header.legend);
+      if (said && !(await confirmAction({ title: 'Remove this view’s header?', body: 'Its title, message, context and legend are taken out of stemma.layout.json.', confirmLabel: 'Remove header', destructive: true }))) return;
+      setViewHeader(layoutKey, null);
+    } else if (!setViewHeader(layoutKey, {})) {
+      setToast({ kind: 'error', text: "The header couldn't be added: the layout file hasn't been read yet." });
+    }
+  }
+  return (
+    <>
+      <button
+        onClick={toggle}
+        className={clsx('w-full flex items-center gap-2 px-2 py-1.5 rounded-md border text-xs transition-colors',
+          header ? 'border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300' : 'border-default text-body hover:bg-zinc-100 dark:hover:bg-zinc-800/60')}
+      >
+        <PanelTop className="w-4 h-4" /> {header ? 'Remove the header' : 'Add a header'}
+        <span className="ml-auto text-[10px] text-faint">{header ? 'on' : 'off'}</span>
+      </button>
+      <p className="text-[10px] text-faint leading-snug">
+        The view’s title, the one sentence it should leave in the room, how to read it, and a legend computed from what is drawn.
+      </p>
+    </>
   );
 }
 

@@ -7,7 +7,7 @@ export interface SavedPosition { x: number; y: number; }
 
 interface SidecarShape {
   version?: number;
-  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown>; shapes?: unknown[]; layoutMode?: string; layout?: unknown; offsets?: Record<string, SavedPosition> }>;
+  views?: Record<string, { nodes?: Record<string, SavedPosition>; edges?: Record<string, unknown>; shapes?: unknown[]; layoutMode?: string; layout?: unknown; offsets?: Record<string, SavedPosition>; header?: unknown }>;
   nodeStyles?: Record<string, unknown>;
   edgeStyles?: Record<string, unknown>;
   notes?: Record<string, string>;
@@ -201,6 +201,28 @@ export function editBooksSection(rootPath: string, edit: (books: Record<string, 
   const books = sidecar.books ?? {};
   edit(books);
   sidecar.books = books;
+  scheduleSidecarWrite(rootPath);
+  return true;
+}
+
+/** Every view's entry as the sidecar holds it, for reading the parts the client owns (headers). */
+export function loadViewEntries(rootPath: string): Record<string, unknown> {
+  if (sidecarCache?.rootPath !== rootPath) return {};
+  return { ...(sidecarCache.sidecar.views ?? {}) };
+}
+
+/**
+ * Set or remove a view's header (F-014, ADR-0023) and schedule the write; the change list carries
+ * only the fields that changed (ADR-0021). Refused — false, nothing changed — until the sidecar has
+ * been read: a header written over a copy that has not been read could replace one already there.
+ */
+export function saveViewHeader(rootPath: string, viewKey: string, header: Record<string, unknown> | null): boolean {
+  if (typeof window === 'undefined' || !isSidecarPrimed(rootPath)) return false;
+  const s = sidecarCache!.sidecar;
+  s.views = s.views ?? {};
+  const view: Record<string, unknown> = { ...s.views[viewKey] };
+  if (header) view.header = header; else delete view.header;
+  s.views[viewKey] = view;
   scheduleSidecarWrite(rootPath);
   return true;
 }

@@ -18,7 +18,11 @@ export function firstNewId(prevIds: Set<string>, elements: { id: string }[]): st
   return null;
 }
 
-export interface RevealResult { id: string; name: string; kind: ArchElementKind; view: ViewKind; switched: boolean; }
+export interface RevealResult {
+  id: string; name: string; kind: ArchElementKind; view: ViewKind; switched: boolean;
+  /** Added where no open view draws it: a Concept outside a view that names it. */
+  unseen?: boolean;
+}
 
 /**
  * Poll for the element added since `prevIds`, then guarantee it's visible: if the current view
@@ -49,6 +53,9 @@ export async function revealNewElement(
   if (inCustomView) {
     // The element is added to the active view's membership; it renders there.
     st.addElementToActiveView(newId);
+  } else if (kind === 'concept') {
+    // No built-in lens draws a Concept (ADR-0018): switching would only show a lens without it.
+    return { id: newId, name: el.name, kind, view: finalView, switched, unseen: true };
   } else if (!viewRendersKind(st.view, kind)) {
     // Current lens can't show this kind — switch to the one that can.
     const target = lensForKind(kind);
@@ -83,6 +90,7 @@ export async function revealNewElement(
 
 /** Toast text after a reveal — names the lens when we had to switch so the move isn't surprising. */
 export function revealToast(r: RevealResult): string {
+  if (r.unseen) return `Added ${r.name} — a concept appears only in the views that name it: drag it from Elements onto a view`;
   const label = r.view === 'dependencyGraph' ? 'Dependencies' : 'Module Map';
   return r.switched
     ? `Added ${r.name} · showing in ${label}`

@@ -4,7 +4,7 @@ export type NodeBorderStyle = 'solid' | 'dashed' | 'dotted';
 export type NodeFillStyle = 'solid' | 'gradient' | 'glass' | 'hatch';
 export type NodeShadow = 'none' | 'soft' | 'raised' | 'glow';
 export type NodeAccentSide = 'none' | 'left' | 'top';
-export type NodeTextSize = 'sm' | 'base' | 'lg';
+export type NodeTextSize = 'sm' | 'base' | 'lg' | 'xl';
 export type NodeTextAlign = 'left' | 'center';
 export type NodeAnimation = 'none' | 'marching' | 'pulse' | 'glow' | 'breathe' | 'bounce' | 'shake';
 export type NodeAnimSpeed = 'slow' | 'normal' | 'fast';
@@ -46,7 +46,7 @@ export interface NodeStyle {
   accentSide?: NodeAccentSide; // colored accent bar on a side
   accentColor?: string;
   textColor?: string;          // title color override
-  textSize?: NodeTextSize;     // title size
+  textSize?: NodeTextSize;     // the card's text: title and notes (F-014 AC7)
   textAlign?: NodeTextAlign;   // title alignment
   visibleFields?: string[];
 }

@@ -59,6 +59,7 @@ public static class WorkspaceCheck
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
         findings.AddRange(ConstraintFindings(workspaceRoot, ids));
         findings.AddRange(BookFindings(workspaceRoot, views, ids));
+        findings.AddRange(HeaderFindings(workspaceRoot, views, model));
         findings.AddRange(LegacyBookFindings(workspaceRoot));
 
         return findings;
@@ -235,6 +236,104 @@ public static class WorkspaceCheck
     }
 
     private static CheckFinding MalformedBook(string message) => new(CheckSeverity.Warning, "book/malformed", message);
+
+    /// <summary>
+    /// A view's header (F-014, ADR-0023): its title, message, context and legend, under
+    /// `views.&lt;key&gt;.header`.
+    ///
+    /// The canvas reads a header tolerantly — a field of the wrong type is ignored, a legend entry it
+    /// does not understand is skipped — so a typo there never breaks a view; it quietly leaves the
+    /// words off the slide. This says which. A legend entry naming a status no element in the view
+    /// carries is drawn as a plain swatch, which is a key to nothing.
+    /// </summary>
+    private static IEnumerable<CheckFinding> HeaderFindings(string workspaceRoot, IReadOnlyList<ArchView> views, ArchModel model)
+    {
+        var path = LayoutSidecar.PathFor(workspaceRoot);
+        if (!File.Exists(path)) yield break;
+
+        JsonDocument? doc = null;
+        try { doc = JsonDocument.Parse(File.ReadAllText(path)); }
+        catch (JsonException) { yield break; }   // already reported by ShapeFindings
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) yield break;
+            if (!doc.RootElement.TryGetProperty("views", out var viewEntries) || viewEntries.ValueKind != JsonValueKind.Object) yield break;
+
+            var codeViews = views
+                .GroupBy(v => v.Id, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+            var statusOf = model.Tags
+                .Where(t => t.Lifecycle?.Status is not null)
+                .GroupBy(t => t.TargetId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Lifecycle!.Status!, StringComparer.Ordinal);
+
+            foreach (var entry in viewEntries.EnumerateObject())
+            {
+                if (entry.Value.ValueKind != JsonValueKind.Object) continue;
+                if (!entry.Value.TryGetProperty("header", out var header) || header.ValueKind == JsonValueKind.Null) continue;
+                var where = $"view '{entry.Name}'";
+                if (header.ValueKind != JsonValueKind.Object)
+                {
+                    yield return MalformedHeader($"{where} has a `header` that is not an object, so the canvas shows no header for it");
+                    continue;
+                }
+
+                foreach (var field in new[] { "title", "message", "context" })
+                {
+                    if (header.TryGetProperty(field, out var value) && value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
+                        yield return MalformedHeader($"{where} has a header `{field}` that is not text, so it is left out of the header");
+                }
+
+                if (!header.TryGetProperty("legend", out var legend) || legend.ValueKind == JsonValueKind.Null) continue;
+                if (legend.ValueKind != JsonValueKind.Array)
+                {
+                    yield return MalformedHeader($"{where} has a header `legend` that is not a list, so the legend is computed from the view instead");
+                    continue;
+                }
+
+                var carried = StatusesDrawn(entry.Name, codeViews, model, statusOf);
+                var index = 0;
+                foreach (var item in legend.EnumerateArray())
+                {
+                    index++;
+                    var status = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.String ? st.GetString() : null;
+                    if (status is not null)
+                    {
+                        if (carried is not null && !carried.Contains(status))
+                            yield return new(CheckSeverity.Warning, "header/unknown-status",
+                                $"{where} has a legend entry for status '{status}', which no element in the view carries, so its swatch is drawn plain and keys nothing");
+                        continue;
+                    }
+                    var labelled = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("label", out var label) && label.ValueKind == JsonValueKind.String;
+                    var drawn = item.ValueKind == JsonValueKind.Object
+                        && ((item.TryGetProperty("swatch", out var sw) && sw.ValueKind == JsonValueKind.Object)
+                            || (item.TryGetProperty("line", out var ln) && ln.ValueKind == JsonValueKind.Object));
+                    if (!labelled || !drawn)
+                        yield return MalformedHeader(
+                            $"{where} has legend entry {index} that is none of `{{ status }}`, `{{ swatch, label }}` or `{{ line, label }}`, so the legend leaves it out");
+                }
+            }
+        }
+    }
+
+    /// <summary>The statuses carried by the elements a view draws, or null when the view is not known here.</summary>
+    private static HashSet<string>? StatusesDrawn(
+        string viewKey, Dictionary<string, ArchView> codeViews, ArchModel model, Dictionary<string, string> statusOf)
+    {
+        IEnumerable<ArchElement> drawn;
+        if (viewKey == "moduleMap") drawn = model.Elements.Where(e => e.Kind != ArchElementKind.Concept);
+        else if (viewKey == "dependencyGraph") drawn = model.Elements.Where(e => e.Kind is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability);
+        else if (viewKey.StartsWith(CustomViewKey, StringComparison.Ordinal) && codeViews.TryGetValue(viewKey[CustomViewKey.Length..], out var view))
+        {
+            var members = view.ElementIds.ToHashSet(StringComparer.Ordinal);
+            drawn = model.Elements.Where(e => members.Contains(e.Id));
+        }
+        else return null;
+        return drawn.Select(e => statusOf.GetValueOrDefault(e.Id)).OfType<string>().ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static CheckFinding MalformedHeader(string message) => new(CheckSeverity.Warning, "header/malformed", message);
 
     private static readonly HashSet<string> ConstraintKinds =
         new(StringComparer.Ordinal) { "grid", "row", "column", "stack" };

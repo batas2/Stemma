@@ -399,3 +399,27 @@ input, textarea { font: inherit; color: var(--vr-text); }
 .vrn-notes p, .vr-notes p, .vr-concern .body p { margin: 0 0 4px; }
 .vrn-notes ul, .vrn-notes ol, .vr-notes ul, .vr-notes ol { margin: 0 0 4px; padding-left: 16px; }
 .vrn-notes p:last-child, .vr-notes p:last-child { margin-bottom: 0; }
+
+/* ---------- F-014: a view's header, its legend, and annotations ---------- */
+.vr-canvas-wrap.has-header { display: flex; flex-direction: column; }
+.vr-canvas-wrap.has-header svg.vr-canvas { flex: 1; min-height: 0; height: auto; }
+.vr-viewheader { flex: none; display: flex; gap: 28px; align-items: flex-start; padding: 12px 20px 12px; border-bottom: 1px solid var(--vr-border); background: var(--vr-surface, #fff); }
+.vr-vh-text { min-width: 0; flex: 1; }
+.vr-vh-title { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; color: var(--vr-text); }
+.vr-vh-message { margin: 4px 0 0; font-size: 15px; font-weight: 500; line-height: 1.35; color: var(--vr-text); }
+.vr-vh-context { margin-top: 6px; font-size: 12.5px; line-height: 1.55; color: var(--vr-text-2); max-width: 96ch; }
+.vr-vh-context p { margin: 0 0 4px; } .vr-vh-context ul, .vr-vh-context ol { margin: 0 0 4px; padding-left: 18px; }
+.vr-legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 6px 22px; font-size: 12px; color: var(--vr-text-2); align-self: center; max-width: 44%; }
+.vr-legend.two { grid-template-columns: 1fr 1fr; }
+.vr-legend li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.vr-legend li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vr-legend-mark { flex: none; }
+.vr-shape-fo { overflow: hidden; }
+.vr-shape-text { width: 100%; height: 100%; box-sizing: border-box; padding: 8px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; line-height: 1.3; }
+.vr-shape-text.centered { justify-content: center; text-align: center; }
+.vr-shape-label { font-weight: 600; }
+.vr-shape-body { opacity: .92; }
+.vr-shape-body p { margin: 0 0 3px; } .vr-shape-body ul, .vr-shape-body ol { margin: 0 0 3px; padding-left: 16px; }
+.vr-shape-label-text { user-select: none; }
+.vrn-name.xl { font-size: 19px; } .vrn-name.wrap { white-space: normal; overflow: visible; text-overflow: clip; }
+.vrn-lg .vrn-notes { font-size: 12.5px; } .vrn-xl .vrn-notes { font-size: 15px; }

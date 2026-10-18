@@ -139,6 +139,19 @@ function statusStyle(status: string | null | undefined): { className: string; ou
   }
 }
 
+/**
+ * How large a card's text is drawn (F-014 AC7). The size applies to the whole card — title, notes,
+ * header — because a card that carries an argument is read from the back of a room, and a large
+ * title over 11 px notes is a title nobody can follow up. At the presentation sizes the notes are
+ * never cut off: the card grows to hold them.
+ */
+const TEXT_SCALE = {
+  sm: { title: 'text-xs', notes: 'text-[10px]', kind: 'text-[10px]', badge: 'text-[9px]', pad: 'px-3 py-2', clamp: true },
+  base: { title: 'text-sm', notes: 'text-[11px]', kind: 'text-[11px]', badge: 'text-[9px]', pad: 'px-3 py-2', clamp: true },
+  lg: { title: 'text-[17px] leading-snug', notes: 'text-[13.5px] leading-relaxed', kind: 'text-[12px]', badge: 'text-[10.5px]', pad: 'px-3.5 py-2.5', clamp: false },
+  xl: { title: 'text-[21px] leading-tight', notes: 'text-[16.5px] leading-relaxed', kind: 'text-[13px]', badge: 'text-[12px]', pad: 'px-4 py-3', clamp: false },
+} as const;
+
 const FIELD_LABEL: Record<NodeFieldKey, string> = {
   kind: 'Kind',
   name: 'Name',
@@ -221,7 +234,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
   const titleStyle: React.CSSProperties = {};
   if (nodeStyle?.textColor) titleStyle.color = nodeStyle.textColor;
   if (nodeStyle?.textAlign) titleStyle.textAlign = nodeStyle.textAlign;
-  const titleSize = nodeStyle?.textSize === 'lg' ? 'text-base' : nodeStyle?.textSize === 'sm' ? 'text-xs' : 'text-sm';
+  const scale = TEXT_SCALE[nodeStyle?.textSize ?? 'base'] ?? TEXT_SCALE.base;
+  const titleSize = scale.title;
   // Motion. Marching uses an overlay; the rest animate the inner box (a class + duration var) —
   // independent of React Flow's wrapper transform, so positioning is unaffected.
   const anim = nodeStyle?.animation ?? (nodeStyle?.animated ? 'marching' : 'none');
@@ -366,15 +380,15 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     onDoubleClick={(ev) => { ev.stopPropagation(); data.onStartRename?.(id); }}
                   >{e.name}</span>
             )}
-            {showField('status') && status && <StatusBadge status={status} />}
+            {showField('status') && status && <StatusBadge status={status} size={scale.badge} />}
           </div>
         ) : (
           <>
             {(showField('kind') || (showField('status') && status)) && (
-              <div className="stemma-node-header px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0">
+              <div className={clsx('stemma-node-header border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0', scale.pad)}>
                 <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
                 {showField('kind') && (
-                  <span className="stemma-node-kind text-[11px] uppercase tracking-wider text-zinc-500 font-medium truncate">
+                  <span className={clsx('stemma-node-kind uppercase tracking-wider text-zinc-500 font-medium truncate', scale.kind)}>
                     {labelForKind[e.kind]}
                   </span>
                 )}
@@ -383,10 +397,10 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     external
                   </span>
                 )}
-                {showField('status') && status && <StatusBadge status={status} />}
+                {showField('status') && status && <StatusBadge status={status} size={scale.badge} />}
               </div>
             )}
-            <div className="px-3 py-2 flex-1 min-h-0 flex flex-col">
+            <div className={clsx('flex-1 min-h-0 flex flex-col', scale.pad)}>
               {showField('name') && (
                 data.editing
                   ? <NameEditor id={id} initial={e.name} onCommit={data.onCommitName} onCancel={data.onCancelEdit} />
@@ -453,8 +467,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                   </div>
                   {data.noteFull && (
                     <div
-                      className="archnote text-[11px] text-zinc-600 dark:text-zinc-300 leading-relaxed pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 overflow-auto flex-1 min-h-0 nodrag"
-                      style={nodeStyle?.height ? undefined : { maxHeight: 140 }}
+                      className={clsx('archnote text-zinc-600 dark:text-zinc-300 leading-relaxed pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 overflow-auto flex-1 min-h-0 nodrag', scale.notes)}
+                      style={nodeStyle?.height || !scale.clamp ? undefined : { maxHeight: 140 }}
                       dangerouslySetInnerHTML={{ __html: renderNotes(data.noteFull) }}
                     />
                   )}
@@ -618,7 +632,7 @@ function NameEditor({ id, initial, onCommit, onCancel }: {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, size = 'text-[9px]' }: { status: string; size?: string }) {
   const colors: Record<string, string> = {
     'current': 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
     'target': 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30',
@@ -630,7 +644,7 @@ function StatusBadge({ status }: { status: string }) {
   const cls = colors[status] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/30';
   const glyph = STATUS_GLYPH[status];
   return (
-    <span className={clsx('stemma-status-badge ml-auto px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border font-medium flex items-center gap-1', cls)}>
+    <span className={clsx('stemma-status-badge ml-auto px-1.5 py-0.5 rounded uppercase tracking-wider border font-medium flex items-center gap-1', size, cls)}>
       {glyph && <span aria-hidden="true">{glyph}</span>}
       {status}
     </span>

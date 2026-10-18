@@ -28,6 +28,9 @@ import { WaypointEdge } from './edges/WaypointEdge';
 import { EdgeMarkerDefs, customMarkerId, type CustomMarker } from './edges/EdgeMarkerDefs';
 import { LAYOUT_ACTION_EVENT, type LayoutAction } from './LayoutPanel';
 import { ShapeLayer } from './ShapeLayer';
+import { ViewHeader, viewHeaderHeight } from './ViewHeader';
+import { currentRenderParams } from '@/lib/renderMode';
+import type { DrawnView } from '@/lib/viewHeader';
 import { StencilDrawer } from './StencilDrawer';
 import { loadShapes, primeShapeCache, type Shape } from '@/lib/shapes';
 import { resolveExportOptions, exportFileName, type ExportRequest } from '@/lib/exportImage';
@@ -45,6 +48,24 @@ function shapeBoundsRect(s: Shape): { x: number; y: number; width: number; heigh
     return { x: Math.min(s.fromX, s.toX), y: Math.min(s.fromY, s.toY), width: Math.abs(s.toX - s.fromX) || 1, height: Math.abs(s.toY - s.fromY) || 1 };
   }
   return null;
+}
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+function unionRects(rects: Rect[]): Rect {
+  const minX = Math.min(...rects.map((r) => r.x)), minY = Math.min(...rects.map((r) => r.y));
+  const maxX = Math.max(...rects.map((r) => r.x + r.width)), maxY = Math.max(...rects.map((r) => r.y + r.height));
+  return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+}
+
+/**
+ * Padding for a fit that leaves the view's header free (F-014): the header covers the top of the
+ * canvas, so what is framed starts below it. Without a header, the plain fraction.
+ */
+function paddingUnderHeader(fraction: number): NonNullable<FitViewOptions['padding']> {
+  const header = viewHeaderHeight();
+  if (header === 0) return fraction;
+  return { top: `${header + 24}px`, bottom: fraction, left: fraction, right: fraction };
 }
 
 /** Approximate box rect of a node, for picking dock dots (uses measured size when available). */
@@ -98,55 +119,11 @@ function edgeMarkerSpec(a: EdgeArrow | undefined, color?: string): EdgeMarker | 
     default: return undefined; // 'none' / unset
   }
 }
-import type { ArchElement, ArchElementKind, ArchLink, ArchModel, ViewKind, CustomView } from '@/lib/types';
+import type { ArchElement, ArchElementKind, ViewKind } from '@/lib/types';
+import { filterByView } from '@/lib/viewFilter';
 
 const nodeTypes = { arch: ArchNodeView };
 const edgeTypes = { waypointed: WaypointEdge };
-
-interface FilteredView {
-  elements: ArchElement[];
-  links: ArchLink[];
-}
-
-function filterByView(arch: ArchModel, view: ViewKind, customView: CustomView | null): FilteredView {
-  if (customView) {
-    const inView = arch.elements.filter((e) => customView.elementIds.includes(e.id));
-    let elements = inView;
-    if (customView.baseView !== 'all') {
-      elements = applyKindFilter(inView, customView.baseView as ViewKind);
-    }
-    const ids = new Set(elements.map((e) => e.id));
-    const links = arch.links.filter((l) => ids.has(l.fromId) && ids.has(l.toId));
-    return { elements, links };
-  }
-  return applyBuiltIn(arch, view);
-}
-
-function applyKindFilter(elements: ArchElement[], view: ViewKind): ArchElement[] {
-  switch (view) {
-    case 'dependencyGraph': return elements.filter((e) => e.kind === 'module' || e.kind === 'boundedContext' || e.kind === 'capability');
-    case 'moduleMap':
-    default: return elements; // Module Map is the universal canvas — every kind renders
-  }
-}
-
-function applyBuiltIn(arch: ArchModel, view: ViewKind): FilteredView {
-  if (view === 'dependencyGraph') {
-    // Include Bounded Contexts so we can group modules under their BC backdrops, and capabilities
-    // so dependency arrows targeting a capability still render. Architects expect to see context.
-    const elements = arch.elements.filter((e) =>
-      e.kind === 'module' || e.kind === 'boundedContext' || e.kind === 'capability');
-    const ids = new Set(elements.map((e) => e.id));
-    const links = arch.links.filter((l) => l.kind === 'dependency' && ids.has(l.fromId) && ids.has(l.toId));
-    return { elements, links };
-  }
-  // Module Map (and the fallback) is the universal canvas: every element kind and EVERY
-  // relationship — data flows and dependencies alike. Hiding dependency arrows here made
-  // module-to-module `uses` links invisible on the default view.
-  const ids = new Set(arch.elements.map((e) => e.id));
-  const links = arch.links.filter((l) => ids.has(l.fromId) && ids.has(l.toId));
-  return { elements: arch.elements, links };
-}
 
 function defaultPositions(elements: ArchElement[]): Record<string, SavedPosition> {
   return layoutHierarchical(elements, []);
@@ -260,6 +237,27 @@ function CanvasInner() {
   // Free-form annotations (frames / text / shapes) are available on every view now — they live in
   // the committed sidecar keyed by view, so they travel with the repo and never touch the model.
   const shapesEnabled = !!workspace;
+  // `stemma render` draws a figure, and a figure takes its caption from the document it is placed in.
+  const renderMode = useMemo(() => currentRenderParams() !== null, []);
+
+  /**
+   * Frame the whole view — its cards and its annotations — under its header. A view's frames,
+   * zones and legends are part of the picture, so a fit that saw only the cards cut them off.
+   */
+  const fitWholeView = useCallback((padding: NonNullable<FitViewOptions['padding']>, duration: number, maxZoom = 2.5) => {
+    const rfEl = wrapperRef.current?.querySelector('.react-flow') as HTMLElement | null;
+    const ns = getNodes().filter((n) => !n.hidden);
+    // Before React Flow has measured the cards their bounds are guesses; its own fit waits for them.
+    if (ns.some((n) => !n.measured?.width)) { fitView({ padding, duration, maxZoom }); return; }
+    const rects: Rect[] = ns.length ? [getNodesBounds(ns)] : [];
+    for (const s of (useApp.getState().shapes[layoutKey] ?? [])) {
+      const b = shapeBoundsRect(s);
+      if (b) rects.push(b);
+    }
+    if (!rfEl || rects.length === 0) return;
+    const vp = getViewportForBounds(unionRects(rects), rfEl.clientWidth, rfEl.clientHeight, 0.05, maxZoom, padding);
+    setViewport(vp, { duration });
+  }, [getNodes, setViewport, fitView, layoutKey]);
 
   const depKindFilter = useApp((s) => s.depKindFilter);
   const depFocusMode = useApp((s) => s.depFocusMode);
@@ -297,6 +295,16 @@ function CanvasInner() {
     const links = base.links.filter((l) => l.kind !== 'dependency' || depKindFilter.has(l.attributes.kind ?? 'uses'));
     return { ...base, links };
   }, [arch, view, activeCustomView, depKindFilter]);
+
+  // What the view draws, for its header's legend (F-014): the cards and links on screen, as styled.
+  const drawn = useMemo<DrawnView>(() => ({
+    elements: filtered.elements.filter((e) => !hiddenIds.has(e.id)),
+    links: filtered.links.filter((l) => !hiddenIds.has(l.fromId) && !hiddenIds.has(l.toId)),
+    tags: arch?.tags ?? [],
+    nodeStyles,
+    edgeStyles,
+  }), [filtered, hiddenIds, arch?.tags, nodeStyles, edgeStyles]);
+  const viewName = activeCustomView?.name ?? (view === 'dependencyGraph' ? 'Dependencies' : 'Module Map');
 
   /**
    * Fan-in / fan-out for the dependency view, computed off the *unfiltered* arch so the badge
@@ -678,7 +686,7 @@ function CanvasInner() {
       const dir = ((ev as CustomEvent).detail?.dir as number) ?? 1;
       if (dir > 0) zoomIn({ duration: 150 }); else zoomOut({ duration: 150 });
     }
-    function onFit() { fitView({ padding: 0.2, duration: 300 }); }
+    function onFit() { fitWholeView(paddingUnderHeader(0.2), 300); }
     function onSelectAll() { setNodes((ns) => ns.map((n) => (n.selected ? n : { ...n, selected: true }))); }
     function onClearSelection() {
       setNodes((ns) => ns.some((n) => n.selected) ? ns.map((n) => (n.selected ? { ...n, selected: false } : n)) : ns);
@@ -697,7 +705,7 @@ function CanvasInner() {
       window.removeEventListener('stemma:select-all', onSelectAll);
       window.removeEventListener('stemma:clear-selection', onClearSelection);
     };
-  }, [startEdgeEdit, zoomIn, zoomOut, fitView]);
+  }, [startEdgeEdit, zoomIn, zoomOut, fitView, fitWholeView]);
 
   const handleCommitName = useCallback(async (nodeId: string, next: string) => {
     setEditingNodeId(null);
@@ -885,7 +893,7 @@ function CanvasInner() {
 
   useEffect(() => {
     if (nodes.length > 0) {
-      const id = setTimeout(() => { if (!bookPageApplies.current) fitView({ padding: 0.2, duration: 400 }); }, 80);
+      const id = setTimeout(() => { if (!bookPageApplies.current) fitWholeView(paddingUnderHeader(0.2), 400); }, 80);
       return () => clearTimeout(id);
     }
   }, [view, activeId, arch?.filePath, fitView]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -929,15 +937,20 @@ function CanvasInner() {
     const start = setTimeout(() => {
       const present = new Set(getNodes().filter((n) => !n.hidden).map((n) => n.id));
       const targets = page.frame === 'focus' ? page.focus.filter((id) => present.has(id)) : [];
-      // Presenting, the narrative card sits over the bottom of the picture, so the frame ends above it.
+      // Presenting, the narrative card sits over the bottom of the picture, so the frame ends above
+      // it; the view's header sits over the top, so the frame starts below it (F-014).
       const card = presenting ? document.querySelector<HTMLElement>('[data-book-narrative]') : null;
+      const header = viewHeaderHeight();
+      const top: `${number}px` | `${number}%` = header > 0 ? `${header + 28}px` : '5%';
       const padding: NonNullable<FitViewOptions['padding']> = card
-        ? { top: '5%', left: '4%', right: '4%', bottom: `${Math.round(card.getBoundingClientRect().height + 36)}px` }
-        : presenting || capturing ? 0.08 : 0.24;
+        ? { top, left: '4%', right: '4%', bottom: `${Math.round(card.getBoundingClientRect().height + 36)}px` }
+        : header > 0
+          ? { top, left: '5%', right: '5%', bottom: presenting || capturing ? '6%' : '10%' }
+          : presenting || capturing ? 0.08 : 0.24;
       // Close enough to read, not so close that the boxes stop looking like a diagram.
-      const options = { padding, duration, maxZoom: 1.15 };
-      if (targets.length > 0) fitView({ ...options, nodes: targets.map((id) => ({ id })) });
-      else fitView(options);
+      const maxZoom = 1.15;
+      if (targets.length > 0) fitView({ padding, duration, maxZoom, nodes: targets.map((id) => ({ id })) });
+      else fitWholeView(padding, duration, maxZoom);
       settle = setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => {
         window.dispatchEvent(new CustomEvent('stemma:book-framed', { detail: { pageId: page.id } }));
       })), duration + 40);
@@ -1779,7 +1792,7 @@ function CanvasInner() {
       }
       const next = current.map((n) => ({ ...n, position: fresh[n.id] ?? n.position }));
       persistPositions(next);
-      setTimeout(() => fitView({ padding: 0.2, duration: 600 }), 50);
+      setTimeout(() => fitWholeView(paddingUnderHeader(0.2), 600), 50);
       return next;
     });
     triggerLayoutAnimation();
@@ -1788,7 +1801,7 @@ function CanvasInner() {
       focused: 'focused', byType: 'architectural (by type)',
     };
     setToast({ kind: 'success', text: `Applied ${label[algo]} layout` });
-  }, [filtered, persistPositions, fitView, setToast, triggerLayoutAnimation, nodeBounds]);
+  }, [filtered, persistPositions, fitWholeView, setToast, triggerLayoutAnimation, nodeBounds]);
 
   const handleAlign = useCallback((axis: 'left' | 'right' | 'centerX' | 'top' | 'bottom' | 'centerY') => {
     setNodes((current) => {
@@ -1804,11 +1817,11 @@ function CanvasInner() {
   const handleFitSelection = useCallback(() => {
     const selected = nodes.filter((n) => n.selected);
     if (selected.length === 0) {
-      fitView({ padding: 0.2, duration: 400 });
+      fitWholeView(paddingUnderHeader(0.2), 400);
       return;
     }
-    fitView({ nodes: selected.map((n) => ({ id: n.id })), padding: 0.3, duration: 400 });
-  }, [nodes, fitView]);
+    fitView({ nodes: selected.map((n) => ({ id: n.id })), padding: paddingUnderHeader(0.3), duration: 400 });
+  }, [nodes, fitView, fitWholeView]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -2082,6 +2095,9 @@ function CanvasInner() {
         {!presenting && !capturing && <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />}
         {shapesEnabled && workspace && (
           <ShapeLayer viewKey={layoutKey} workspaceRoot={workspace.rootPath} enabled={!presenting} />
+        )}
+        {!renderMode && workspace && (
+          <ViewHeader viewKey={layoutKey} viewName={viewName} drawn={drawn} readOnly={readOnly} presenting={presenting} />
         )}
       </ReactFlow>
       {modelIsEmpty && !presenting && (

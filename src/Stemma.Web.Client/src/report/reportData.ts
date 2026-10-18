@@ -10,7 +10,9 @@ import type { EdgeStyle } from '@/lib/edgeStyles';
 import type { CustomProps } from '@/lib/customProps';
 import type { CommentEntry } from '@/lib/comments';
 import { archModel } from '@/lib/api';
-import { loadLayout, loadEdgeWaypoints, loadEdgeHandles, loadBooksSection } from '@/lib/layout';
+import { loadLayout, loadEdgeWaypoints, loadEdgeHandles, loadBooksSection, loadViewEntries, loadViewShapes } from '@/lib/layout';
+import { headerTitle, legendItems, readViewHeaders, type LegendItem, type ViewHeaderSpec } from '@/lib/viewHeader';
+import { filterByView } from '@/lib/viewFilter';
 import { readBooks, viewKeyOf, type Book, type BookFrame, type BookOthers } from '@/lib/books';
 import { loadNodeStyles } from '@/lib/nodeStyles';
 import { loadEdgeStyles } from '@/lib/edgeStyles';
@@ -27,6 +29,17 @@ export interface ReportView {
   /** Custom views list their member ids; built-ins show everything their lens allows. */
   elementIds: string[] | null;
   baseView: string;            // kind filter applied on top ('all' for none)
+  /** The view's header (F-014), with its legend computed from what the view draws; null without one. */
+  header: ReportViewHeader | null;
+  /** The view's annotations, as the sidecar holds them; drawn by the viewer in `z` order. */
+  shapes: unknown[];
+}
+
+export interface ReportViewHeader {
+  title: string;
+  message: string | null;
+  context: string | null;
+  legend: LegendItem[];
 }
 
 /** A book as the report walks it (F-013 AC9): each page names the report view it is drawn on. */
@@ -78,19 +91,39 @@ export interface ReportInputs {
   notes: Record<string, string>;
   customProps: Record<string, CustomProps>;
   books?: Book[];
+  /** Each view's header, keyed by view key, as the sidecar holds it. */
+  viewHeaders?: Record<string, ViewHeaderSpec>;
+  /** Reads a view's shapes by view key — injected, like positions. */
+  readShapes?: (viewKey: string) => unknown[];
   now?: Date;
 }
 
 export function buildReportBundle(i: ReportInputs): ReportBundle {
+  // The header's legend is computed here, from the same rule the canvas draws by, so the viewer
+  // only has to draw it.
+  function header(key: string, name: string, custom: CustomView | null): ReportViewHeader | null {
+    const spec = i.viewHeaders?.[key];
+    if (!spec) return null;
+    const drawn = filterByView(i.model, (key === 'dependencyGraph' ? 'dependencyGraph' : 'moduleMap'), custom);
+    return {
+      title: headerTitle(spec, name),
+      message: spec.message ?? null,
+      context: spec.context ?? null,
+      legend: legendItems(spec, { ...drawn, tags: i.model.tags, nodeStyles: i.nodeStyles, edgeStyles: i.edgeStyles }),
+    };
+  }
+  const shapesOf = (key: string) => i.readShapes?.(key) ?? [];
   const views: ReportView[] = [
-    { key: 'moduleMap', name: 'Module Map', kind: 'builtin', elementIds: null, baseView: 'all' },
-    { key: 'dependencyGraph', name: 'Dependencies', kind: 'builtin', elementIds: null, baseView: 'dependencyGraph' },
+    { key: 'moduleMap', name: 'Module Map', kind: 'builtin', elementIds: null, baseView: 'all', header: header('moduleMap', 'Module Map', null), shapes: shapesOf('moduleMap') },
+    { key: 'dependencyGraph', name: 'Dependencies', kind: 'builtin', elementIds: null, baseView: 'dependencyGraph', header: header('dependencyGraph', 'Dependencies', null), shapes: shapesOf('dependencyGraph') },
     ...i.customViews.map((v) => ({
       key: `custom:${v.id}`,
       name: v.name,
       kind: 'custom' as const,
       elementIds: [...v.elementIds],
       baseView: v.baseView ?? 'all',
+      header: header(`custom:${v.id}`, v.name, v),
+      shapes: shapesOf(`custom:${v.id}`),
     })),
   ];
   const positions: ReportBundle['positions'] = {};
@@ -161,5 +194,7 @@ export async function collectReportBundle(rootPath: string): Promise<ReportBundl
     customProps: loadCustomProps(rootPath),
     // The same walk as the meeting, for whoever missed it.
     books: readBooks(loadBooksSection(rootPath)),
+    viewHeaders: readViewHeaders(loadViewEntries(rootPath)),
+    readShapes: (k) => loadViewShapes(rootPath, k),
   });
 }

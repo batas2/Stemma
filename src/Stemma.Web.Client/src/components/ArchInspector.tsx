@@ -515,7 +515,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
                 <Segmented
                   label="Title size"
                   value={userNodeStyle.textSize ?? 'base'}
-                  options={[{ value: 'sm', label: 'S' }, { value: 'base', label: 'M' }, { value: 'lg', label: 'L' }] as { value: NodeTextSize; label: string }[]}
+                  options={[{ value: 'sm', label: 'S' }, { value: 'base', label: 'M' }, { value: 'lg', label: 'L' }, { value: 'xl', label: 'XL' }] as { value: NodeTextSize; label: string }[]}
                   onChange={(v) => setStyle({ textSize: v })}
                 />
                 <Segmented

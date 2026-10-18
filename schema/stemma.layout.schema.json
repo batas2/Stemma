@@ -205,8 +205,118 @@
           "additionalProperties": {
             "$ref": "#/$defs/position"
           }
+        },
+        "header": {
+          "$ref": "#/$defs/viewHeader"
         }
       }
+    },
+    "viewHeader": {
+      "type": "object",
+      "description": "What the view is, the one sentence it should leave in the room, how to read it, and what its colours mean (F-014, ADR-0023). Drawn across the top of the canvas, when presented, in the PDF deck and in the report; not by `stemma render`.",
+      "additionalProperties": true,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Shown instead of the view's name."
+        },
+        "message": {
+          "type": "string",
+          "description": "The one sentence the view should leave in the room."
+        },
+        "context": {
+          "type": "string",
+          "description": "Markdown: what the view shows and how to read it. **bold**, *italic*, `code`, `- ` lists."
+        },
+        "legend": {
+          "type": "array",
+          "description": "Absent: computed from what the view draws — each lifecycle status its elements carry, then each kind of link. Written: replaces the computed one. Empty: no legend.",
+          "items": {
+            "$ref": "#/$defs/legendEntry"
+          }
+        }
+      }
+    },
+    "legendEntry": {
+      "description": "One line of a view's legend.",
+      "oneOf": [
+        {
+          "title": "status",
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "A lifecycle status; its swatch is drawn the way the view's cards with that status are drawn."
+            },
+            "label": {
+              "type": "string",
+              "description": "Defaults to the status."
+            }
+          }
+        },
+        {
+          "title": "swatch",
+          "type": "object",
+          "required": [
+            "swatch",
+            "label"
+          ],
+          "properties": {
+            "swatch": {
+              "type": "object",
+              "properties": {
+                "fill": {
+                  "type": "string"
+                },
+                "border": {
+                  "type": "string"
+                },
+                "style": {
+                  "enum": [
+                    "solid",
+                    "dashed",
+                    "dotted"
+                  ]
+                }
+              }
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "title": "line",
+          "type": "object",
+          "required": [
+            "line",
+            "label"
+          ],
+          "properties": {
+            "line": {
+              "type": "object",
+              "properties": {
+                "color": {
+                  "type": "string"
+                },
+                "style": {
+                  "enum": [
+                    "solid",
+                    "dashed",
+                    "dotted"
+                  ]
+                }
+              }
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        }
+      ]
     },
     "edgeEntry": {
       "type": "object",
@@ -334,7 +444,8 @@
           "enum": [
             "sm",
             "base",
-            "lg"
+            "lg",
+            "xl"
           ]
         },
         "textAlign": {
@@ -436,7 +547,7 @@
         },
         "z": {
           "type": "number",
-          "description": "Stacking order within the shape layer. Default -1, i.e. behind the nodes."
+          "description": "Stacking order. Below zero, the shape is a backdrop, drawn beneath the cards and the links (B-019); zero and above, over them. Ordered by z within each side. New rects and ellipses default to -1."
         }
       }
     },
@@ -448,7 +559,8 @@
           "type": "string"
         },
         "text": {
-          "type": "string"
+          "type": "string",
+          "description": "Markdown body, wrapped inside the box: **bold**, *italic*, `code`, `- ` lists. Rendered as text, never as markup."
         },
         "textColor": {
           "type": "string"

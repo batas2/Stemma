@@ -202,10 +202,58 @@ element or another shape (`{"kind": "element", "id": "..."}`), and then follows 
 does not fail — it detaches to its last coordinates, which looks like carelessness rather than a
 broken reference, so `validate` reports it.
 
+`z` decides which side of the cards a shape is on. **Below zero it is a backdrop**, drawn beneath the
+cards and their links — the tinted panel behind a group, a lane, a zone. Zero and above, it is drawn
+over them — a label, a callout, an arrow. A box shape's `label` is its bold first line and its `text`
+is Markdown (`**bold**`, `*italic*`, `` `code` ``, `- ` lists), wrapped inside the box:
+
+```jsonc
+{ "id": "sh_shared", "kind": "rect", "x": -40, "y": -80, "w": 760, "h": 900, "z": -2,
+  "fill": "#fff8e1", "stroke": "#d6b656", "strokeWidth": 2, "radius": 18,
+  "label": "SHARED — the platform's asset", "text": "one truth about the real world, **read by everyone entitled to it**", "fontSize": 18 }
+```
+
+### The header: what the view is for
+
+A view can say what it is, the one sentence it should leave in the room, how to read it, and what its
+colours mean ([F-014](../features/F-014-self-explaining-views.md)). The header is drawn across the
+top of the canvas, when a book is presented, in the PDF deck and in the report — not by `stemma
+render`, whose figure takes its caption from the document it goes into.
+
+```jsonc
+"views": {
+  "custom:view_target": {
+    "header": {
+      "title": "Target · one shared graph, a private overlay per buyer",
+      "message": "One shared graph of the real world, with a private overlay per buyer.",
+      "context": "Left to right: who uses it, the surfaces, the read models, **the graph**, the engines.",
+      "legend": [
+        { "status": "reuse", "label": "reuse — runs today" },
+        { "status": "build", "label": "build — new" },
+        { "line": { "color": "#64748b", "style": "dashed" }, "label": "projected from" }
+      ]
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `title` | Shown instead of the view's name. |
+| `message` | The one sentence the view should leave in the room. |
+| `context` | Markdown: what it shows and how to read it. |
+| `legend` | Leave it out and the legend is computed: each lifecycle status the view's elements carry, its swatch drawn the way those cards are drawn, then each kind of link. Write it to choose the entries and their words — `{ "status" }` takes its swatch from the view, `{ "swatch", "label" }` and `{ "line", "label" }` draw what they say. `[]` shows none. |
+
+A built-in lens takes a header too, under `moduleMap` or `dependencyGraph`. `validate` reports a field
+of the wrong type (`header/malformed`) and a legend entry for a status the view does not draw
+(`header/unknown-status`).
+
 ### Styles
 
 `nodeStyles` and `edgeStyles` are keyed by element and link id, workspace-wide. Both are fully
-described in the schema. Under the `publication` profile most of it is overridden anyway, so reach
+described in the schema. `textSize` sizes a card's whole text, its title and its notes: `sm`, `base`,
+`lg`, `xl`. At `lg` and `xl` — the sizes for a room — the notes are never cut off and the card grows to
+hold them, unless a `height` is given. Under the `publication` profile most of it is overridden anyway, so reach
 for them only when the profile is not what you want.
 
 ### Books: the walk through it

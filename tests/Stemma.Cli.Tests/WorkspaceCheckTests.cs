@@ -547,6 +547,72 @@ public sealed class WorkspaceCheckTests : IDisposable
             .Which.Should().Match<CheckFinding>(f => f.Rule == "book/malformed" && f.Severity == CheckSeverity.Warning);
     }
 
+    // ---- view headers (F-014) ----
+
+    private void Headers(string views) =>
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), $$"""{ "version": 1, "views": {{views}} }""");
+
+    private IEnumerable<CheckFinding> HeaderRun() => Run().Where(f => f.Rule.StartsWith("header/"));
+
+    private static readonly string TaggedModules = """
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    Tag.For(a, lifecycle: new Lifecycle(Status: "reuse"));
+                    Tag.For(b, lifecycle: new Lifecycle(Status: "build"));
+                    return Model.Of(a, b);
+        """;
+
+    [Fact]
+    public void A_header_whose_legend_names_statuses_the_view_carries_reports_nothing()
+    {
+        Model(TaggedModules);
+        ViewOfA();
+        Headers("""
+            {
+              "moduleMap": { "header": { "message": "Every component.", "legend": [ { "status": "reuse" }, { "status": "build", "label": "new" } ] } },
+              "custom:view_a": { "header": { "title": "Just A", "legend": [ { "status": "reuse" }, { "line": { "style": "dashed" }, "label": "uses" } ] } }
+            }
+            """);
+
+        HeaderRun().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_legend_entry_for_a_status_no_element_in_the_view_carries_is_a_warning()
+    {
+        // mod_b is `build`, but view_a draws only mod_a.
+        Model(TaggedModules);
+        ViewOfA();
+        Headers("""{ "custom:view_a": { "header": { "legend": [ { "status": "build" } ] } } }""");
+
+        var finding = HeaderRun().Should().ContainSingle().Which;
+        finding.Rule.Should().Be("header/unknown-status");
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.Message.Should().Contain("custom:view_a").And.Contain("'build'");
+    }
+
+    [Fact]
+    public void Header_fields_of_the_wrong_type_are_named_rather_than_silently_left_off()
+    {
+        Model(TaggedModules);
+        Headers("""
+            {
+              "moduleMap": { "header": { "message": 7, "legend": "reuse" } },
+              "dependencyGraph": { "header": { "legend": [ { "swatch": { "fill": "#fff" } }, { "label": "nothing to draw" } ] } },
+              "custom:view_x": { "header": "Just a string" }
+            }
+            """);
+
+        var findings = HeaderRun().ToList();
+        findings.Should().OnlyContain(f => f.Rule == "header/malformed" && f.Severity == CheckSeverity.Warning);
+        findings.Select(f => f.Message).Should().Satisfy(
+            m => m.Contains("'moduleMap'") && m.Contains("`message`"),
+            m => m.Contains("'moduleMap'") && m.Contains("`legend` that is not a list"),
+            m => m.Contains("'dependencyGraph'") && m.Contains("entry 1"),
+            m => m.Contains("'dependencyGraph'") && m.Contains("entry 2"),
+            m => m.Contains("'custom:view_x'") && m.Contains("not an object"));
+    }
+
     [Fact]
     public void Books_left_in_the_old_yaml_file_are_said_to_be_unread()
     {

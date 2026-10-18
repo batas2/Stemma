@@ -136,6 +136,8 @@
     if (view.baseView === 'dependencyGraph' || view.key === 'dependencyGraph') {
       return kind === 'module' || kind === 'boundedContext' || kind === 'capability';
     }
+    // A Concept belongs to no built-in lens; it appears only in the views that name it (B-020).
+    if (view.key === 'moduleMap' && kind === 'concept') return false;
     return true;
   }
   function elementsInView(view) {
@@ -185,10 +187,11 @@
   /** Inline **bold** and `code`, built as elements so no narrative text is ever parsed as HTML. */
   function inlineNodes(text) {
     var out = [];
-    text.split(/(\*\*[^*]+\*\*|`[^`]+`)/).forEach(function (part) {
+    text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/).forEach(function (part) {
       if (!part) return;
       if (/^\*\*[^*]+\*\*$/.test(part)) out.push(h('strong', { text: part.slice(2, -2) }));
       else if (/^`[^`]+`$/.test(part)) out.push(h('code', { text: part.slice(1, -1) }));
+      else if (/^\*[^*\n]+\*$/.test(part)) out.push(h('em', { text: part.slice(1, -1) }));
       else out.push(document.createTextNode(part));
     });
     return out;
@@ -512,12 +515,19 @@
       var lit = litSet(page);
       els = els.filter(function (e) { return lit[e.id]; });
     }
-    if (!els.length) return { x: -100, y: -100, w: 1200, h: 800 };
+    var framingFocus = !!(page && page.focus.length && (page.frame === 'focus' || page.others === 'hide'));
+    var boxes = framingFocus ? [] : (view.shapes || []).map(shapeBox).filter(Boolean);
+    if (!els.length && !boxes.length) return { x: -100, y: -100, w: 1200, h: 800 };
     var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
     els.forEach(function (e) {
       var p = pos[e.id], sz = nodeSize(e);
       minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x + sz.w); maxY = Math.max(maxY, p.y + sz.h);
+    });
+    // A view's frames, zones and legends are part of its picture (F-014).
+    boxes.forEach(function (b) {
+      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
     });
     var pad = 80;
     return { x: minX - pad, y: minY - pad, w: Math.max(600, maxX - minX + pad * 2), h: Math.max(400, maxY - minY + pad * 2) };
@@ -574,6 +584,141 @@
   /** A node card mirroring the canvas ArchNodeView: header (icon + kind + status badge), body
    *  (name, id, context, props, squad, notes), custom node styles (fills, borders, shadows,
    *  accent bars), lifecycle looks and motion effects. All text via textContent. */
+  // ---------- annotations (shapes) ----------
+  function shapeBox(sh) {
+    if (!sh || typeof sh !== 'object') return null;
+    if (sh.kind === 'rect' || sh.kind === 'ellipse' || sh.kind === 'triangle' || sh.kind === 'image') return { x: +sh.x, y: +sh.y, w: +sh.w, h: +sh.h };
+    if (sh.kind === 'label') return { x: +sh.x, y: +sh.y - (+sh.fontSize || 14), w: String(sh.text || '').length * (+sh.fontSize || 14) * 0.6, h: (+sh.fontSize || 14) * 1.4 };
+    if (sh.kind === 'arrow') return { x: Math.min(sh.fromX, sh.toX), y: Math.min(sh.fromY, sh.toY), w: Math.abs(sh.toX - sh.fromX) || 1, h: Math.abs(sh.toY - sh.fromY) || 1 };
+    return null;
+  }
+  function dashOf(style) { return style === 'dashed' ? '6 6' : style === 'dotted' ? '1 4' : null; }
+  var SHAPE_SHADOW = { soft: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))', raised: 'drop-shadow(0 5px 9px rgba(0,0,0,0.22))' };
+  /** Label and text inside a box shape, as the canvas draws them: text, never markup. */
+  function shapeText(sh, x, y, w, hgt, centered) {
+    if (!sh.label && !sh.text) return null;
+    var fo = s('foreignObject', { x: x, y: y, width: Math.max(0, w), height: Math.max(0, hgt), class: 'vr-shape-fo' });
+    var box = h('div', { class: 'vr-shape-text' + (centered ? ' centered' : '') });
+    box.style.color = sh.textColor || '#27272a';
+    box.style.fontSize = (+sh.fontSize || 12) + 'px';
+    if (sh.label) box.appendChild(h('div', { class: 'vr-shape-label', text: String(sh.label) }));
+    if (sh.text) box.appendChild(h('div', { class: 'vr-shape-body' }, narrativeNodes(String(sh.text))));
+    fo.appendChild(box);
+    return fo;
+  }
+  function anchorBox(anchor, view, pos) {
+    if (!anchor) return null;
+    if (anchor.kind === 'element' && pos[anchor.id] && elById[anchor.id]) {
+      var sz = nodeSize(elById[anchor.id]);
+      return { x: pos[anchor.id].x, y: pos[anchor.id].y, w: sz.w, h: sz.h };
+    }
+    if (anchor.kind === 'shape') {
+      var other = (view.shapes || []).filter(function (x) { return x && x.id === anchor.id; })[0];
+      return other ? shapeBox(other) : null;
+    }
+    return null;
+  }
+  function toBorder(b, tx, ty) {
+    var cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = tx - cx, dy = ty - cy;
+    if (!dx && !dy) return { x: cx, y: cy };
+    var t = Math.min(dx ? (b.w / 2) / Math.abs(dx) : Infinity, dy ? (b.h / 2) / Math.abs(dy) : Infinity);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
+  function drawShape(sh, view, pos) {
+    var dash = dashOf(sh.strokeStyle);
+    var filter = SHAPE_SHADOW[sh.shadow];
+    function paint(el) {
+      if (dash) el.setAttribute('stroke-dasharray', dash);
+      if (filter) el.style.filter = filter;
+      return el;
+    }
+    if (sh.kind === 'rect') {
+      var r = sh.radius != null ? sh.radius : (sh.rounded ? 12 : 0);
+      return s('g', { class: 'vr-shape' }, [
+        paint(s('rect', { x: sh.x, y: sh.y, width: sh.w, height: sh.h, rx: r, ry: r, fill: sh.fill || 'none', stroke: sh.stroke || 'none', 'stroke-width': sh.strokeWidth || 0 })),
+        shapeText(sh, sh.x, sh.y, sh.w, sh.h, false),
+      ]);
+    }
+    if (sh.kind === 'ellipse') {
+      return s('g', { class: 'vr-shape' }, [
+        paint(s('ellipse', { cx: sh.x + sh.w / 2, cy: sh.y + sh.h / 2, rx: sh.w / 2, ry: sh.h / 2, fill: sh.fill || 'none', stroke: sh.stroke || 'none', 'stroke-width': sh.strokeWidth || 0 })),
+        shapeText(sh, sh.x, sh.y, sh.w, sh.h, true),
+      ]);
+    }
+    if (sh.kind === 'triangle') {
+      var pts = (sh.x + sh.w / 2) + ',' + sh.y + ' ' + sh.x + ',' + (sh.y + sh.h) + ' ' + (sh.x + sh.w) + ',' + (sh.y + sh.h);
+      return s('g', { class: 'vr-shape' }, [
+        paint(s('polygon', { points: pts, fill: sh.fill || 'none', stroke: sh.stroke || 'none', 'stroke-width': sh.strokeWidth || 0, 'stroke-linejoin': 'round' })),
+        shapeText(sh, sh.x, sh.y + sh.h * 0.42, sh.w, sh.h * 0.58, true),
+      ]);
+    }
+    if (sh.kind === 'label') {
+      return s('text', { x: sh.x, y: sh.y, 'font-size': sh.fontSize || 14, fill: sh.color || '#27272a', class: 'vr-shape-label-text', text: String(sh.text || '') });
+    }
+    if (sh.kind === 'arrow') {
+      var from = { x: sh.fromX, y: sh.fromY }, to = { x: sh.toX, y: sh.toY };
+      var fb = anchorBox(sh.fromAnchor, view, pos), tb = anchorBox(sh.toAnchor, view, pos);
+      if (fb) from = { x: fb.x + fb.w / 2, y: fb.y + fb.h / 2 };
+      if (tb) to = { x: tb.x + tb.w / 2, y: tb.y + tb.h / 2 };
+      if (fb) from = toBorder(fb, to.x, to.y);
+      if (tb) to = toBorder(tb, from.x, from.y);
+      var color = sh.stroke || '#3f3f46', sw = +sh.strokeWidth || 2, size = 8 + sw;
+      var ang = Math.atan2(to.y - from.y, to.x - from.x);
+      var bx = to.x - Math.cos(ang) * size, by = to.y - Math.sin(ang) * size;
+      var head = to.x + ',' + to.y + ' ' + (bx + Math.cos(ang + Math.PI / 2) * size / 2) + ',' + (by + Math.sin(ang + Math.PI / 2) * size / 2) + ' ' + (bx - Math.cos(ang + Math.PI / 2) * size / 2) + ',' + (by - Math.sin(ang + Math.PI / 2) * size / 2);
+      var g = s('g', { class: 'vr-shape' }, [
+        s('line', { x1: from.x, y1: from.y, x2: to.x, y2: to.y, stroke: color, 'stroke-width': sw, 'stroke-dasharray': dashOf(sh.strokeStyle) || '' }),
+        s('polygon', { points: head, fill: color }),
+      ]);
+      var label = sh.label || sh.payload || sh.linkSubKind;
+      if (label) g.appendChild(s('text', { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 - 6, 'text-anchor': 'middle', 'font-size': 11, fill: color, text: String(label) }));
+      return g;
+    }
+    if (sh.kind === 'image' && /^data:image\//.test(String(sh.src || ''))) {
+      return s('image', { href: sh.src, x: sh.x, y: sh.y, width: sh.w, height: sh.h });
+    }
+    return null;
+  }
+  /** Shapes on one side of the cards: backdrops (z below zero) beneath them, the rest above. */
+  function drawShapes(view, pos, backdrops) {
+    (view.shapes || [])
+      .filter(function (sh) { return sh && typeof sh === 'object' && ((+sh.z || 0) < 0) === backdrops; })
+      .sort(function (a, b) { return (+a.z || 0) - (+b.z || 0); })
+      .forEach(function (sh) { var el = drawShape(sh, view, pos); if (el) svgEl.appendChild(el); });
+  }
+
+  // ---------- the view's header (F-014) ----------
+  var LEGEND_DASH = { solid: null, dashed: '5 3', dotted: '1.5 3' };
+  function legendMark(item) {
+    var svg = s('svg', { width: 26, height: 15, viewBox: '0 0 26 15', 'aria-hidden': 'true', class: 'vr-legend-mark' });
+    if (item.kind === 'swatch') {
+      var rect = s('rect', { x: 1, y: 1, width: 24, height: 13, rx: 4, 'stroke-width': 1.5, fill: item.fill || 'var(--vr-surface, #fff)', stroke: item.border || '#a1a1aa' });
+      if (LEGEND_DASH[item.style]) rect.setAttribute('stroke-dasharray', LEGEND_DASH[item.style]);
+      svg.appendChild(rect);
+    } else {
+      var color = item.color || '#71717a';
+      var line = s('line', { x1: 1, y1: 7.5, x2: 19, y2: 7.5, stroke: color, 'stroke-width': 1.75 });
+      if (LEGEND_DASH[item.style]) line.setAttribute('stroke-dasharray', LEGEND_DASH[item.style]);
+      svg.appendChild(line);
+      svg.appendChild(s('path', { d: 'M 18 4 L 25 7.5 L 18 11 z', fill: color }));
+    }
+    return svg;
+  }
+  function viewHeaderEl(view) {
+    var hd = view.header;
+    if (!hd) return null;
+    var text = h('div', { class: 'vr-vh-text' }, [h('h2', { class: 'vr-vh-title', text: hd.title })]);
+    if (hd.message) text.appendChild(h('p', { class: 'vr-vh-message', text: hd.message }));
+    if (hd.context) text.appendChild(h('div', { class: 'vr-vh-context' }, narrativeNodes(hd.context)));
+    var el = h('section', { class: 'vr-viewheader', 'aria-label': 'About this view: ' + hd.title }, [text]);
+    if (hd.legend && hd.legend.length) {
+      el.appendChild(h('ul', { class: 'vr-legend' + (hd.legend.length > 4 ? ' two' : ''), 'aria-label': 'Legend' }, hd.legend.map(function (item) {
+        return h('li', {}, [legendMark(item), h('span', { text: item.label })]);
+      })));
+    }
+    return el;
+  }
+
   function buildNodeCard(e) {
     var st = data.nodeStyles[e.id] || {};
     var status = statusOf(e.id);
@@ -636,7 +781,8 @@
     if (cc) card.appendChild(h('span', { class: 'vrn-cdot', text: String(cc) }));
 
     // ---- title typography ----
-    var nameCls = 'vrn-name' + (st.textSize === 'sm' ? ' sm' : st.textSize === 'lg' ? ' lg' : '');
+    var nameCls = 'vrn-name' + (st.textSize === 'sm' ? ' sm' : st.textSize === 'lg' ? ' lg' : st.textSize === 'xl' ? ' xl' : '') + (st.height ? ' wrap' : '');
+    if (st.textSize === 'lg' || st.textSize === 'xl') card.classList.add('vrn-' + st.textSize);
     function nameEl() {
       var n = h('div', { class: nameCls, text: e.name });
       if (st.textColor) n.style.color = st.textColor;
@@ -704,7 +850,10 @@
     defs.appendChild(dotPattern);
     svgEl.appendChild(s('rect', { x: vb.x - 4000, y: vb.y - 4000, width: vb.w + 8000, height: vb.h + 8000, fill: 'url(#vr-dots)', class: 'vr-pane' }));
 
-    // Bounded-context boxes behind everything.
+    // Backdrop shapes (z below zero) behind everything, the bounded contexts included (B-019).
+    drawShapes(view, pos, true);
+
+    // Bounded-context boxes behind everything else.
     if (state.layers.bc) {
       els.filter(function (e) { return e.kind === 'boundedContext' && !(hideRest && unlit(e.id)); }).forEach(function (bc) {
         var members = els.filter(function (e) { return e.attributes.contextId === bc.id && !(hideRest && unlit(e.id)); });
@@ -804,6 +953,9 @@
       svgEl.appendChild(fo);
     });
 
+    // The rest of the annotations, over the cards, as on the canvas.
+    drawShapes(view, pos, false);
+
     // Pan / zoom.
     var panning = null;
     svgEl.addEventListener('mousedown', function (ev) {
@@ -838,9 +990,11 @@
     }, { passive: false });
     svgEl.addEventListener('click', function () { select(null); });
 
-    var wrap = h('div', { class: 'vr-canvas-wrap' });
+    var header = viewHeaderEl(view);
+    var wrap = h('div', { class: 'vr-canvas-wrap' + (header ? ' has-header' : '') });
+    if (header) wrap.appendChild(header);
     wrap.appendChild(svgEl);
-    if (!page) wrap.appendChild(h('div', { class: 'vr-viewtitle', text: view.name }));
+    if (!page && !header) wrap.appendChild(h('div', { class: 'vr-viewtitle', text: view.name }));
     var zoomctl = h('div', { class: 'vr-zoomctl' }, [
       h('button', { text: '+', title: 'Zoom in', onclick: function () { zoomBy(1.25); } }),
       h('button', { text: '−', title: 'Zoom out', onclick: function () { zoomBy(0.8); } }),

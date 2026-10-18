@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-019 |
-| **Status** | `New` |
+| **Status** | `Fixed` |
 | **Severity** | `S3 minor` |
 | **Area** | `canvas` |
 | **Reported by / Date** | Bartosz / 2026-10-18 |
@@ -48,9 +48,14 @@ Flow container, above the node layer, and sorts the shapes by `z` within that ov
 
 ## 6. Fix
 
-- **Approach:** split the layer — shapes with `z < 0` render in a layer below React Flow's nodes
-  (for example through its viewport portal, beneath the node renderer), the rest stay in the overlay.
-  Hit-testing for the lower layer has to stay reachable where no node covers it.
-- **Affected files:** `components/ShapeLayer.tsx`, `components/ArchCanvas.tsx`.
-- [ ] Fix implemented
-- [ ] Regression test: a filled `z: -1` rect under a node leaves the node visible and clickable.
+- **Approach:** the layer is split. Shapes with `z < 0` are drawn through React Flow's viewport
+  portal at `z-index: -1` inside the viewport's stacking context — beneath the links and the cards —
+  and take no pointer events there. In the overlay each one leaves an invisible band along its
+  outline, a fixed width on screen at any zoom, which selects and moves it; its inside is left to the
+  cards. The report draws backdrops before the bounded contexts and the cards, the rest after them
+  ([F-014](../features/F-014-self-explaining-views.md) AC9).
+- **Affected files:** `components/ShapeLayer.tsx`, `report/viewer.js`.
+- [x] Fix implemented
+- [x] Regression test: `tests/journey/view-header.spec.ts` — a filled `z: -1` rect under a card
+  leaves the card visible and clickable; `report/viewHeader.report.test.ts` — the report draws a
+  backdrop before the cards.

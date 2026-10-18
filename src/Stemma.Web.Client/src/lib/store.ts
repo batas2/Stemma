@@ -9,7 +9,8 @@ import {
   renameCustomProp as renameCP, type CustomProps,
 } from './customProps';
 import { saveServerView, deleteServerView, listServerViews, type ServerView } from './api';
-import { editBooksSection, isSidecarPrimed, loadBooksSection, loadViewLayoutModes, saveViewLayoutMode } from './layout';
+import { editBooksSection, isSidecarPrimed, loadBooksSection, loadViewEntries, loadViewLayoutModes, saveViewHeader, saveViewLayoutMode } from './layout';
+import { readViewHeaders, type ViewHeaderSpec } from './viewHeader';
 import {
   addBook as addBookTo, addPage, duplicatePage, movePage, newBookId, newPageId, readBooks,
   removeBook as removeBookFrom, removePage, renameBook as renameBookIn, setBookAudience as setAudienceIn,
@@ -177,8 +178,12 @@ interface AppState {
   presenting: boolean;
   /** Pages are framed at once rather than animated: the PDF export is walking through them. */
   capturing: boolean;
+  /** Each view's header (F-014), keyed by view key; read from the sidecar and edited back into it. */
+  viewHeaders: Record<string, ViewHeaderSpec>;
   setWorkspace: (ws: WorkspaceModel | null) => void;
   rehydratePresentation: () => void;
+  /** Set or remove a view's header. False, and nothing changed, until the sidecar has been read. */
+  setViewHeader: (viewKey: string, header: ViewHeaderSpec | null) => boolean;
   /** Re-read the views from Views/*.cs; the list in the browser is only a cache of it (B-012). */
   syncViews: () => Promise<void>;
   setArch: (a: ArchModel | null) => void;
@@ -357,6 +362,7 @@ export const useApp = create<AppState>((set, get) => ({
   activePageId: null,
   presenting: false,
   capturing: false,
+  viewHeaders: {},
   setWorkspace: (ws) => {
     // Hydrate from localStorage only on first open of a given rootPath. Subsequent refresh()s
     // during the same session should NOT reset activeCustomViewId / selection — the user's
@@ -364,12 +370,12 @@ export const useApp = create<AppState>((set, get) => ({
     const previous = get().workspace;
     set({ workspace: ws });
     if (!ws) {
-      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false });
+      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {} });
       return;
     }
     if (previous?.rootPath === ws.rootPath) return;
-    // Another workspace's books are not this one's; they arrive with its sidecar (`reloadBooks`).
-    set({ books: [], activeBookId: null, activePageId: null, presenting: false });
+    // Another workspace's books and headers are not this one's; they arrive with its sidecar.
+    set({ books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {} });
     const views = loadViews(ws.rootPath);
     const active = loadActiveView(ws.rootPath);
     const persistedOpen = loadOpenViews(ws.rootPath);
@@ -411,7 +417,18 @@ export const useApp = create<AppState>((set, get) => ({
       edgeStyles: loadEdgeStyles(ws.rootPath),
       customProps: loadCustomProps(ws.rootPath),
       viewLayouts: loadViewLayouts(ws.rootPath),
+      viewHeaders: readViewHeaders(loadViewEntries(ws.rootPath)),
     });
+  },
+  setViewHeader: (viewKey, header) => {
+    const root = get().workspace?.rootPath;
+    if (!root || !saveViewHeader(root, viewKey, header as Record<string, unknown> | null)) return false;
+    set((s) => {
+      const next = { ...s.viewHeaders };
+      if (header) next[viewKey] = header; else delete next[viewKey];
+      return { viewHeaders: next };
+    });
+    return true;
   },
   setArch: (a) => set({ arch: a }),
   // Switch to a built-in view. A custom view keeps `view` at its base (e.g. 'moduleMap') while
