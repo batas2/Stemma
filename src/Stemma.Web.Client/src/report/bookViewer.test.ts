@@ -28,7 +28,7 @@ beforeAll(() => {
     readHandles: () => ({}),
     nodeStyles: {},
     edgeStyles: {},
-    notes: {},
+    notes: { mod_a: '**the edge store** · typed `IsSupplierOf`\n- one\n- two' },
     customProps: {},
     books: [{
       id: 'book_a', name: 'A walk', audience: 'engineering',
@@ -50,6 +50,16 @@ beforeAll(() => {
 
 const title = () => document.querySelector('.vr-book-title')?.textContent;
 const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+
+describe('a note in the report', () => {
+  it('shows its bold, code and list, built from text rather than read as markup', () => {
+    const notes = document.querySelector('.vrn-notes')!;
+    expect(notes.querySelector('strong')?.textContent).toBe('the edge store');
+    expect(notes.querySelector('code')?.textContent).toBe('IsSupplierOf');
+    expect([...notes.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['one', 'two']);
+    expect(notes.textContent).not.toContain('**');
+  });
+});
 
 describe('a book in the report', () => {
   it('is on the rail, and opens on its first page with the narrative as paragraphs and a list', () => {

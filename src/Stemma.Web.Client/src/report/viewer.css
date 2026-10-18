@@ -394,3 +394,8 @@ input, textarea { font: inherit; color: var(--vr-text); }
 @media print {
   .vr-book-nav { display: none; }
 }
+
+/* A note is written in the same Markdown as a narrative; in a card it stays compact. */
+.vrn-notes p, .vr-notes p, .vr-concern .body p { margin: 0 0 4px; }
+.vrn-notes ul, .vrn-notes ol, .vr-notes ul, .vr-notes ol { margin: 0 0 4px; padding-left: 16px; }
+.vrn-notes p:last-child, .vr-notes p:last-child { margin-bottom: 0; }

@@ -673,7 +673,7 @@
         });
         var sq = squadOf(e.id);
         if (sq) body.appendChild(h('div', { class: 'vrn-sub', text: '👥 ' + sq }));
-        if (data.notes[e.id]) body.appendChild(h('div', { class: 'vrn-notes', text: data.notes[e.id] }));
+        if (data.notes[e.id]) body.appendChild(h('div', { class: 'vrn-notes' }, narrativeNodes(data.notes[e.id])));
       }
       card.appendChild(body);
     }
@@ -959,7 +959,7 @@
       Object.keys(props).forEach(function (k) { field(k, props[k]); });
       panel.appendChild(fields);
       if (data.notes[e.id]) {
-        panel.appendChild(h('div', {}, [h('h5', { text: 'Notes' }), h('div', { class: 'vr-notes', text: data.notes[e.id] })]));
+        panel.appendChild(h('div', {}, [h('h5', { text: 'Notes' }), h('div', { class: 'vr-notes' }, narrativeNodes(data.notes[e.id]))]));
       }
       var rels = data.model.links.filter(function (l) { return l.fromId === e.id || l.toId === e.id; });
       if (rels.length) {
@@ -1138,7 +1138,7 @@
           ]);
           card.appendChild(about);
         }
-        if (data.notes[e.id]) card.appendChild(h('div', { class: 'body', text: data.notes[e.id] }));
+        if (data.notes[e.id]) card.appendChild(h('div', { class: 'body' }, narrativeNodes(data.notes[e.id])));
         card.appendChild(h('div', { style: 'margin-top:6px' }, [
           h('button', { class: 'vr-btn ghost', text: 'Open on canvas', onclick: function () { jumpToElement(e.id); } }),
         ]));
