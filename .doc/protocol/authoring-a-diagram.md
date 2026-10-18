@@ -208,6 +208,41 @@ broken reference, so `validate` reports it.
 described in the schema. Under the `publication` profile most of it is overridden anyway, so reach
 for them only when the profile is not what you want.
 
+### Books: the walk through it
+
+A book is an ordered walk through the model for one audience, usually from the widest view down to
+the part that matters ([F-013](../features/F-013-books.md)). It lives under `books`, keyed by book
+id; its pages are keyed by page id, and `order` says the order they are shown in.
+
+```jsonc
+"books": {
+  "book_ticket_sold": {
+    "name": "How a Ticket Is Sold",
+    "audience": "engineering",
+    "order": ["path", "money"],
+    "pages": {
+      "path":  { "title": "The path a purchase takes", "view": "view_buy",
+                 "narrative": "Follow the arrows left to right." },
+      "money": { "title": "Where the money moves", "view": "view_buy",
+                 "narrative": "Only Payment Orchestration talks to the gateway.",
+                 "focus": ["mod_payments", "sys_payments"] }
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `view` | The view the page shows: `moduleMap`, `dependencyGraph`, or a view id from `Views/` — the bare id, not `custom:<id>`. |
+| `focus` | Element ids the page points at. They stay lit, with links between them; the rest fades. |
+| `frame` | `focus` (the default when there is a focus) zooms to it; `view` keeps the whole view in frame, the focus lit in its surroundings. |
+| `others` | `dim` (default) or `hide`, for a page that builds a picture up rather than pointing into it. |
+| `narrative` | Markdown: what is said while the page is on screen. `**bold**`, `` `code` ``, `- ` lists. |
+
+Write a book as a zoom: an orientation page with no focus, then pages that point into it, then pages
+on closer views. Two pages on one view with different focus are a camera move when presented, which
+is most of what makes a walk easier to follow than slides. Every id is checked by `validate`.
+
 ---
 
 ## 5. Three worked examples
@@ -371,6 +406,10 @@ What it catches, in rough order of how often it bites:
 | `view/empty` | error | The render will report `empty`; better to know now. |
 | `model/duplicate-id` | error | Which one wins is arbitrary. |
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |
+| `book/missing-view`, `book/dangling-focus` | error | A page that shows a view that is gone, or points at an element that is: a slide that outlived what it was about. |
+| `book/focus-outside-view` | warning | The page points at an element its view does not draw, so nothing lights up. |
+| `book/dangling-order`, `book/malformed` | warning | A hand edit or a merge left the book's order or shape wrong; it presents what it can. |
+| `book/legacy-file` | warning | `Concepts/view-book.stemma.yaml` is no longer read; its books have to move to `books`. |
 | `sidecar/unreadable` | warning | The canvas silently ignores it — every position in it is already lost. |
 | `view/busy` | warning | Past seven boxes a diagram has usually stopped answering one question. |
 | `view/mixed-register` | warning | Half the boxes claim something about a system and half claim nothing. |

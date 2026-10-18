@@ -51,7 +51,7 @@ a render never disturbs the workspace you have open). All three call `StemmaWebH
   the canonical model in memory, applies **operations** as targeted `DocumentEditor` rewrites,
   reads/writes the DSL, manages undo and the layout sidecar. Pure Roslyn — **no web or LLM
   dependencies** (ADR: LLM access is a Web-layer concern).
-- **Web** — REST for workspace load/snapshot, layout PUT, views, violations, books; a SignalR hub
+- **Web** — REST for workspace load/snapshot, layout PATCH, views, violations, the book PDF; a SignalR hub
   for the operation stream and delta broadcast; the only place LLM calls live.
 - **Client** ([`client-frontend.md`](./client-frontend.md)) — renders the active view as nodes and
   edges, captures gestures as operations, and patches the local graph from deltas. Holds no

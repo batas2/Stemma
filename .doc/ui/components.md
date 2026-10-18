@@ -10,7 +10,21 @@ The frontend's building blocks, what they own, and the rules for changing them. 
 - **View tabs** (`ViewTabs.tsx`) — bottom, draw.io-style: built-in views (Module Map · Dependencies ·
   Concerns) + open custom views; click to switch, double-click to rename. (Clicking a built-in view
   must always switch to it, even when a custom view is active.)
-- **Status bar** (`StatusBar.tsx`), **Book footer** (`BookFooter.tsx`).
+- **Status bar** (`StatusBar.tsx`).
+
+## Books ([F-013](../features/F-013-books.md))
+
+- **`BooksPanel.tsx`** — the books in the Views & Books panel: create, rename, delete (confirmed),
+  ▶ present, and a count of pages whose view or focus no longer exists.
+- **`BookFooter.tsx`** — the book editor under the canvas while a book is open: the pages as a
+  draggable strip, *Add page* (the current view, pointing at the current selection), and the page
+  on screen as a form — title, view, focus, frame (whole view / zoom in), the rest (dim / hide),
+  narrative, duplicate, delete. Present and PDF live in its header.
+- **`BookPresenter.tsx`** — the full-screen overlay while presenting: the narrative card, page
+  count and progress, a black screen, and the presenter's keys (`lib/presenterKeys.ts`). App hides
+  every other piece of chrome while it is up, and the canvas is read-only.
+- The canvas applies a page through `lib/bookFrame.ts`: what stays lit, and an animated `fitView`
+  to the page's frame, immediate under `prefers-reduced-motion`.
 
 ## Canvas
 

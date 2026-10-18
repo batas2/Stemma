@@ -90,6 +90,21 @@ deselecting collapses the inspector to the rail.
 4. The architect imports the pack (inspector → Comments → import); threads merge idempotently into
    `comments.stemma.json`, anchored to the elements they concern. Act, re-export, repeat.
 
+## J6c — Present a book ([F-013](../features/F-013-books.md))
+
+1. **Build the walk on the canvas.** *New book*, then for each step: open the view, select what to
+   point at, *Add page*, write what you will say. The first page is usually the widest view with no
+   focus; the next ones point into it, then move to closer views. *Duplicate* makes the next step
+   of a zoom.
+2. **Present.** ▶ in the panel or the editor. The window becomes the diagram: arrows, Space or a
+   clicker turn pages; on one view a page turn is a camera move, so context to detail is a zoom.
+   N hides the narrative when you would rather talk, B blanks the screen, Esc stops.
+3. **Leave it behind.** The HTML report carries every book as a chapter, and *PDF* in the editor
+   makes the deck — one landscape page per page, as presented — for whoever was not there.
+4. **Keep it true.** The book is in `stemma.layout.json`, reviewed with the model. A renamed
+   element is renamed on its slides; a deleted one marks the page broken, and `stemma validate`
+   fails on it.
+
 ## J7 — Onboard via samples (any persona)
 
 1. Open a sample workspace (e.g. `samples/AuroraRail`) to see every feature exercised across four

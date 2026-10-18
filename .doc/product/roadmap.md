@@ -25,6 +25,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 
 ## Next — committed, in flight
 
+- **Books** ([F-013](../features/F-013-books.md), [ADR-0022](../architecture/decisions/0022-books-in-the-layout-sidecar.md)) — walk an audience through the model from the context down to the detail: pages that show a view, point at elements and frame them, authored from the canvas, kept in `stemma.layout.json`, presented full screen with the keyboard or a clicker, and carried into the report and a PDF deck. Until now books were read from a YAML file nothing wrote, and every edit was lost on reload.
 - **Navigation & views clarity** (Epic 13) — faster, more obvious view switching and view management.
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
 - **Release follow-ups** ([F-012](../features/F-012-first-release.md) §9, [B-017](../bugs/B-017-new-model-left-uncommitted-where-git-knows-nobody.md)) — the start screen shows nothing when the new model could not be made a repository (`gitInitialised`/`gitError` are returned and ignored); MSBuild loaded from the SDK (`ExcludeAssets="runtime"`) instead of shipped, which clears the NU1903 advisory; packages for macOS and Windows once someone can try the window there; AppImage only if asked for.

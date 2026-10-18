@@ -229,8 +229,9 @@ double-click, fully offline).
 
 - [x] **A (✅ recommended):** All built-in views (Module Map, Dependencies, Concerns) + all saved
       custom views, each with its persisted layout.
-- [ ] **B:** A + Books rendered as narrative chapters (page narrative + its view) — the "guided
-      tour" for stakeholders.
+- [x] **B:** A + Books rendered as narrative chapters (page narrative + its view) — the "guided
+      tour" for stakeholders. *Added 2026-10-18 with [F-013](./F-013-books.md) AC9: each page draws
+      its view with its focus and frame, beside its narrative.*
 - [ ] **C:** Only the currently open view (minimal v1).
 
 ### Q7 — "How the system changes" for stakeholders
