@@ -932,7 +932,7 @@ function CanvasInner() {
       // Presenting, the narrative card sits over the bottom of the picture, so the frame ends above it.
       const card = presenting ? document.querySelector<HTMLElement>('[data-book-narrative]') : null;
       const padding: NonNullable<FitViewOptions['padding']> = card
-        ? { top: '10%', left: '6%', right: '6%', bottom: `${Math.round(card.getBoundingClientRect().height + 48)}px` }
+        ? { top: '5%', left: '4%', right: '4%', bottom: `${Math.round(card.getBoundingClientRect().height + 36)}px` }
         : presenting || capturing ? 0.08 : 0.24;
       // Close enough to read, not so close that the boxes stop looking like a diagram.
       const options = { padding, duration, maxZoom: 1.15 };
