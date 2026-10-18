@@ -22,7 +22,7 @@ removed).
 | 0009 | **Canvas shapes in the layout sidecar** — free-form shapes are presentation. | ✅ Current. |
 | 0010 | **Comments as a Git sidecar.** | 🟡 Partial — comments live in `comments.stemma.json`, changed by id as [ADR-0021](./0021-sidecar-written-as-changes.md) decision 6 sets out ([B-018](../../bugs/B-018-comments-written-whole-and-read-as-empty.md)). |
 | 0011 | **YAML adapter shape.** | 🗄️ Historical — YAML adapter removed. |
-| 0012 | **View Books governance concept.** | 🟡 Directional — see [`../../product/roadmap.md`](../../product/roadmap.md). |
+| 0012 | **View Books governance concept.** | 🗄️ Historical — superseded by [ADR-0022](./0022-books-in-the-layout-sidecar.md). |
 | 0013 | **Cross-adapter references.** | 🗄️ Historical — single adapter now. |
 | [0014](./0014-architecture-report-rendering-and-comment-pack.md) | **Architecture report** — embedded-JSON standalone renderer + comment-pack round-trip. | ✅ Current — see [F-001](../../features/F-001-architecture-report-export.md). |
 | [0015](./0015-project-name-and-market-positioning.md) | **Name and positioning** — the project is Stemma; the pitch is one source both humans and agents edit. | ✅ Current — see [value-proposition](../../product/value-proposition.md). |
@@ -32,6 +32,7 @@ removed).
 | [0019](./0019-relation-link-kind.md) | **A `Relation` link kind** — an arrow that asserts nothing, the same escape for links. | ✅ Current. |
 | [0020](./0020-diagnostics-contract.md) | **The diagnostics contract** — levels, categories, and no network sink. | ✅ Current — see [F-011](../../features/F-011-diagnostics-and-logging.md). |
 | [0021](./0021-sidecar-written-as-changes.md) | **The sidecars are written as changes** to the file as it is, and re-read when someone else changes them — the layout and, since B-018, the comments. | 🟡 Proposed — see [B-014](../../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md), [B-018](../../bugs/B-018-comments-written-whole-and-read-as-empty.md). |
+| [0022](./0022-books-in-the-layout-sidecar.md) | **Books live in the layout sidecar** — presentation, keyed pages with an `order`, references by id, presenting writes nothing. | 🟡 Proposed — see [F-013](../../features/F-013-books.md). |
 
 ## Legend
 
