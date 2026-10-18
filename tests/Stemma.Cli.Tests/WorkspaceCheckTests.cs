@@ -423,4 +423,153 @@ public sealed class WorkspaceCheckTests : IDisposable
 
         Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
     }
+
+    // ---- books --------------------------------------------------------------------------------
+    //
+    // A page points at a view and at elements by id, in a presentation file the engine stores without
+    // reading. A deck whose slide outlived the element it points at still presents; this is what says
+    // it no longer tells the truth (F-013 AC8).
+
+    private void Books(string books) =>
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), $$"""{ "version": 1, "books": {{books}} }""");
+
+    private void ViewOfA() =>
+        View("JustA", """new(Id: "view_a", Name: "Just A", BaseView: "all", ElementIds: new[] { "mod_a" })""");
+
+    private IEnumerable<CheckFinding> BookRun() => Run().Where(f => f.Rule.StartsWith("book/"));
+
+    [Fact]
+    public void A_book_whose_references_all_hold_reports_nothing()
+    {
+        Model(TwoModules);
+        ViewOfA();
+        Books("""
+            {
+              "book_walk": {
+                "name": "The walk",
+                "audience": "engineering",
+                "x-owner": "squad-pay",
+                "order": ["wide", "close"],
+                "pages": {
+                  "wide": { "title": "Everything", "view": "moduleMap", "narrative": "Start wide.", "focus": ["mod_a", "mod_b"] },
+                  "close": { "title": "Just A", "view": "view_a", "focus": ["mod_a"], "frame": "focus", "others": "hide", "x-speaker": "B" },
+                  "loose": { "title": "Not in the order", "view": "dependencyGraph" }
+                }
+              },
+              "book_empty": { "name": "Not written yet", "pages": {} }
+            }
+            """);
+
+        BookRun().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_page_showing_a_view_that_does_not_exist_is_an_error()
+    {
+        Model(TwoModules);
+        Books("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "view_ghost" } } } }""");
+
+        var finding = BookRun().Should().ContainSingle().Which;
+        finding.Rule.Should().Be("book/missing-view");
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.Message.Should().Contain("book_walk").And.Contain("p1").And.Contain("view_ghost");
+    }
+
+    [Fact]
+    public void A_page_naming_a_view_by_its_layout_key_is_told_the_id_to_write()
+    {
+        // `custom:view_a` is how the same view is keyed under `views`, three screens up the same file.
+        Model(TwoModules);
+        ViewOfA();
+        Books("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "custom:view_a" } } } }""");
+
+        BookRun().Should().ContainSingle(f => f.Rule == "book/missing-view")
+            .Which.Message.Should().Contain("write 'view_a'");
+    }
+
+    [Fact]
+    public void A_page_pointing_at_an_element_that_does_not_exist_is_an_error()
+    {
+        Model(TwoModules);
+        Books("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "moduleMap", "focus": ["mod_a", "mod_ghost"] } } } }""");
+
+        var finding = BookRun().Should().ContainSingle().Which;
+        finding.Rule.Should().Be("book/dangling-focus");
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.ElementId.Should().Be("mod_ghost");
+        finding.Message.Should().Contain("book_walk").And.Contain("p1");
+    }
+
+    [Fact]
+    public void A_page_pointing_at_an_element_its_view_does_not_draw_is_a_warning()
+    {
+        // The element exists, so the page is not broken; the view just has nothing to light up.
+        Model(TwoModules);
+        ViewOfA();
+        Books("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "view_a", "focus": ["mod_a", "mod_b"] } } } }""");
+
+        var finding = BookRun().Should().ContainSingle().Which;
+        finding.Rule.Should().Be("book/focus-outside-view");
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.ElementId.Should().Be("mod_b");
+        finding.Message.Should().Contain("view_a");
+    }
+
+    [Fact]
+    public void An_order_naming_a_page_that_does_not_exist_is_a_warning()
+    {
+        Model(TwoModules);
+        Books("""{ "book_walk": { "name": "W", "order": ["p1", "p_gone"], "pages": { "p1": { "title": "One", "view": "moduleMap" } } } }""");
+
+        var finding = BookRun().Should().ContainSingle().Which;
+        finding.Rule.Should().Be("book/dangling-order");
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.Message.Should().Contain("book_walk").And.Contain("p_gone");
+    }
+
+    [Theory]
+    [InlineData("""[]""")]
+    [InlineData("""{ "book_walk": "W" }""")]
+    [InlineData("""{ "book_walk": { "name": "W" } }""")]
+    [InlineData("""{ "book_walk": { "name": "W", "pages": [] } }""")]
+    [InlineData("""{ "book_walk": { "name": "W", "pages": { "p1": "One" } } }""")]
+    // A page without a string title or view is not checked further, so its dangling focus is not reported twice over.
+    [InlineData("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": 1, "view": "moduleMap", "focus": ["mod_ghost"] } } } }""")]
+    [InlineData("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "focus": ["mod_ghost"] } } } }""")]
+    [InlineData("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "moduleMap", "focus": "mod_a" } } } }""")]
+    [InlineData("""{ "book_walk": { "name": "W", "order": "p1", "pages": { "p1": { "title": "One", "view": "moduleMap" } } } }""")]
+    public void A_book_the_canvas_cannot_read_as_written_is_a_warning_rather_than_a_crash(string books)
+    {
+        Model(TwoModules);
+        Books(books);
+
+        BookRun().Should().ContainSingle()
+            .Which.Should().Match<CheckFinding>(f => f.Rule == "book/malformed" && f.Severity == CheckSeverity.Warning);
+    }
+
+    [Fact]
+    public void Books_left_in_the_old_yaml_file_are_said_to_be_unread()
+    {
+        Model(TwoModules);
+        Directory.CreateDirectory(Path.Combine(_root, "Concepts"));
+        File.WriteAllText(Path.Combine(_root, "Concepts", "view-book.stemma.yaml"), "version: 1\nbooks:\n");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule.StartsWith("book/")).Which;
+        finding.Rule.Should().Be("book/legacy-file");
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.Message.Should().Contain("stemma.layout.json");
+    }
+
+    [Fact]
+    public void A_sidecar_with_no_books_says_nothing_about_books()
+    {
+        Model(TwoModules);
+        Sidecar("""{ "nodes": { "mod_a": { "x": 0, "y": 0 } } }""");
+        BookRun().Should().BeEmpty();
+
+        // Unreadable is already one finding; books do not add a second.
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), """{ "books": { <<<<<<< HEAD""");
+        BookRun().Should().BeEmpty();
+        Run().Should().ContainSingle(f => f.Rule == "sidecar/unreadable");
+    }
 }

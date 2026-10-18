@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/batas2/Stemma/main/schema/stemma.layout.schema.json",
   "title": "stemma.layout.json",
-  "description": "The committed presentation layer for a Stemma workspace: everything about how the architecture is drawn and annotated, without being part of the canonical code model. The model itself lives in Architecture.cs and is not described here.\n\nThis format is deliberately PASS-THROUGH: the web client owns the schema of the rich sections and the engine persists them verbatim. Every object here therefore allows additional properties, and a reader that does not recognise a member must preserve it rather than drop it. Dropping unknown members inside a view is what B-001 was.\n\nThis schema is documentation and editor support, not a gate. It is hand-maintained against the TypeScript types in src/Stemma.Web.Client/src/lib/ (layout.ts, nodeStyles.ts, edgeStyles.ts, shapes.ts) and the C# type in src/Stemma.Engine/Workspace/LayoutSidecar.cs.",
+  "description": "The committed presentation layer for a Stemma workspace: everything about how the architecture is drawn and annotated, without being part of the canonical code model. The model itself lives in Architecture.cs and is not described here.\n\nThis format is deliberately PASS-THROUGH: the web client owns the schema of the rich sections and the engine persists them verbatim. Every object here therefore allows additional properties, and a reader that does not recognise a member must preserve it rather than drop it. Dropping unknown members inside a view is what B-001 was.\n\nThis schema is documentation and editor support, not a gate. It is hand-maintained against the TypeScript types in src/Stemma.Web.Client/src/lib/ (layout.ts, nodeStyles.ts, edgeStyles.ts, shapes.ts, books.ts) and the C# type in src/Stemma.Engine/Workspace/LayoutSidecar.cs.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -52,6 +52,13 @@
         "additionalProperties": true
       }
     },
+    "books": {
+      "type": "object",
+      "description": "Books, keyed by book id: ordered walks through the model for one audience, presented from the canvas and included in the report and the PDF. Pure presentation (ADR-0022): a book asserts nothing about the system, and deleting one leaves the architecture exactly as true as it was. Pages refer to views and elements by id, which `stemma validate` checks, so a page that outlives what it points at is reported rather than quietly showing something else.",
+      "additionalProperties": {
+        "$ref": "#/$defs/book"
+      }
+    },
     "annotations": {
       "type": "object",
       "description": "LEGACY, keyed by view key. Superseded by views.<key>.shapes, which is where the canvas has written free-form annotation since. Still read and preserved so older workspaces keep their content; nothing writes it today. Do not author new content here.",
@@ -60,6 +67,82 @@
     }
   },
   "$defs": {
+    "book": {
+      "type": "object",
+      "description": "One walk through the model. Mirrors what lib/books.ts reads. Pages are an object keyed by page id with their order kept apart in `order`, so that editing one page's narrative is one change to the file rather than a rewrite of every page.",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "pages"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Shown in the books panel and on the cover of the book's PDF."
+        },
+        "audience": {
+          "type": "string",
+          "description": "Who the book is for, as free text, e.g. 'engineering'. Shown, not filtered on."
+        },
+        "order": {
+          "type": "array",
+          "description": "Page ids in the order they are presented. Pages it does not name follow the ones it does, in file order, so a book written by hand without an `order` still presents. An id with no page is skipped.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pages": {
+          "type": "object",
+          "description": "The book's pages, keyed by page id.",
+          "additionalProperties": {
+            "$ref": "#/$defs/bookPage"
+          }
+        }
+      }
+    },
+    "bookPage": {
+      "type": "object",
+      "description": "One page of a book: the view it shows, what to point at in it, how to frame it, and the words to say over it. It refers to the model by id and copies nothing out of it, so a rename in code is a rename on the page.",
+      "additionalProperties": true,
+      "required": [
+        "title",
+        "view"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "view": {
+          "type": "string",
+          "description": "The view the page shows: 'moduleMap', 'dependencyGraph', or the id of a view declared in Views/*.cs. The bare id ('view_buy'), not the 'custom:view_buy' key the same view has under `views`."
+        },
+        "narrative": {
+          "type": "string",
+          "description": "Markdown, said over the diagram. A paragraph break is written \\n\\n."
+        },
+        "focus": {
+          "type": "array",
+          "description": "Element ids the page points at. They, the links between two of them, and a bounded context holding one stay lit; everything else is dimmed or hidden, per `others`. Absent or empty means the page is about the whole view.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "frame": {
+          "enum": [
+            "view",
+            "focus"
+          ],
+          "description": "Frame the whole view, or zoom to the focus. Absent means 'focus' when the page has a focus and 'view' when it does not."
+        },
+        "others": {
+          "enum": [
+            "dim",
+            "hide"
+          ],
+          "description": "What happens to the elements outside the focus. Absent means 'dim'."
+        }
+      }
+    },
     "position": {
       "type": "object",
       "additionalProperties": true,

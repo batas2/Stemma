@@ -9,8 +9,9 @@ public static class ValidateCommand
 
           stemma validate --workspace <path> [--json] [--strict]
 
-        Ids in flows, dependencies, aboutId and views are strings. Nothing verifies them at build
-        time or at run time: a typo produces a missing node or a missing edge, silently.
+        Ids in flows, dependencies, aboutId, views and books are strings. Nothing verifies them at
+        build time or at run time: a typo produces a missing node, a missing edge or a page that
+        points at nothing, silently.
 
         Options
           --workspace <path>   Workspace root. Defaults to the current directory.

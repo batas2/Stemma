@@ -64,6 +64,35 @@ public sealed class LayoutSchemaTests
             .Should().BeTrue("this is the object B-001 truncated; a schema that forbade unknown members would bless the bug");
         root.GetProperty("$defs").GetProperty("edgeEntry").GetProperty("additionalProperties").GetBoolean()
             .Should().BeTrue();
+        foreach (var def in new[] { "book", "bookPage" })
+            root.GetProperty("$defs").GetProperty(def).GetProperty("additionalProperties").GetBoolean()
+                .Should().BeTrue($"the client owns the schema of {def}, and a key it adds must survive an older reader");
+    }
+
+    [Fact]
+    public void Schema_describes_books_although_the_engine_does_not_model_them()
+    {
+        // The engine keeps `books` as extension data (ADR-0022), so the check against LayoutSidecar
+        // above cannot see it. The shape is the one lib/books.ts reads and `stemma validate` checks.
+        using var doc = Schema();
+        var root = doc.RootElement;
+        var defs = root.GetProperty("$defs");
+
+        root.GetProperty("properties").GetProperty("books").GetProperty("additionalProperties").GetProperty("$ref").GetString()
+            .Should().Be("#/$defs/book");
+
+        var book = defs.GetProperty("book");
+        book.GetProperty("required").EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(["name", "pages"]);
+        book.GetProperty("properties").GetProperty("order").GetProperty("items").GetProperty("type").GetString().Should().Be("string");
+        book.GetProperty("properties").GetProperty("pages").GetProperty("additionalProperties").GetProperty("$ref").GetString()
+            .Should().Be("#/$defs/bookPage", "pages are keyed by id, not a list, so one narrative is one change");
+
+        var page = defs.GetProperty("bookPage");
+        page.GetProperty("required").EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(["title", "view"]);
+        var members = page.GetProperty("properties");
+        members.GetProperty("frame").GetProperty("enum").EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(["view", "focus"]);
+        members.GetProperty("others").GetProperty("enum").EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(["dim", "hide"]);
+        members.GetProperty("focus").GetProperty("items").GetProperty("type").GetString().Should().Be("string");
     }
 
     [Fact]

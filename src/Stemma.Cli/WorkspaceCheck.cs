@@ -13,10 +13,11 @@ public sealed record CheckFinding(CheckSeverity Severity, string Rule, string Me
 /// <summary>
 /// The checks the C# compiler cannot make.
 ///
-/// Ids in flows, dependencies, `AboutId` and views are strings, and nothing verifies them at build
-/// time or at run time — a typo produces a missing node or a missing edge, silently. For someone
-/// working in the canvas that is a puzzle; for an agent that never sees the picture it is invisible,
-/// and it renders a diagram that is quietly wrong rather than failing.
+/// Ids in flows, dependencies, `AboutId`, views and books are strings, and nothing verifies them at
+/// build time or at run time — a typo produces a missing node, a missing edge or a page pointing at
+/// nothing, silently. For someone working in the canvas that is a puzzle; for an agent that never
+/// sees the picture it is invisible, and it renders a diagram that is quietly wrong rather than
+/// failing.
 ///
 /// So this is written for a reader who cannot look: every finding names the rule, the element and
 /// what to do, and the exit code distinguishes "this is broken" from "this is unusual".
@@ -49,16 +50,191 @@ public static class WorkspaceCheck
         }
 
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
+        var views = ReadViews(workspaceRoot);
         findings.AddRange(DuplicateIds(model));
         findings.AddRange(DanglingLinkEndpoints(model, ids));
         findings.AddRange(DanglingAttributeReferences(model, ids));
         findings.AddRange(RegisterFindings(model));
-        findings.AddRange(ViewFindings(workspaceRoot, model, ids));
+        findings.AddRange(ViewFindings(views, model, ids));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
         findings.AddRange(ConstraintFindings(workspaceRoot, ids));
+        findings.AddRange(BookFindings(workspaceRoot, views, ids));
+        findings.AddRange(LegacyBookFindings(workspaceRoot));
 
         return findings;
     }
+
+    /// <summary>The views declared in <c>Views/*.cs</c>, read once for every check that names them.</summary>
+    private static IReadOnlyList<ArchView> ReadViews(string workspaceRoot)
+    {
+        var viewsDir = Path.Combine(workspaceRoot, "Views");
+        if (!Directory.Exists(viewsDir)) return [];
+
+        var docs = Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.AllDirectories)
+            .Select(f => (FilePath: f, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()));
+        return ViewsAdapter.ReadAllFrom(docs);
+    }
+
+    /// <summary>
+    /// Books written before ADR-0022 lived in <c>Concepts/view-book.stemma.yaml</c>, and Stemma no
+    /// longer reads that file. Without this the books in it simply stop appearing, and nothing says
+    /// where they went.
+    /// </summary>
+    private static IEnumerable<CheckFinding> LegacyBookFindings(string workspaceRoot)
+    {
+        if (!File.Exists(Path.Combine(workspaceRoot, "Concepts", "view-book.stemma.yaml"))) yield break;
+        yield return new(CheckSeverity.Warning, "book/legacy-file",
+            "Concepts/view-book.stemma.yaml is no longer read — books now live in stemma.layout.json under `books` " +
+            "(ADR-0022); move them there, or the app shows none of them");
+    }
+
+    /// <summary>The views a page may show without a file in <c>Views/</c>: the canvas's own lenses.</summary>
+    private static readonly HashSet<string> BuiltInViews =
+        new(StringComparer.Ordinal) { "moduleMap", "dependencyGraph" };
+
+    /// <summary>The prefix a code view's key has under <c>views</c>, and that a page's <c>view</c> does not.</summary>
+    private const string CustomViewKey = "custom:";
+
+    /// <summary>
+    /// Books: the walks through the model kept in the sidecar's `books` section (ADR-0022, F-013).
+    ///
+    /// A page names the view it shows and the elements it points at, and both are strings in a
+    /// presentation file that nothing else checks. The compiler never sees the sidecar, the engine
+    /// stores the section without reading it, and the canvas marks a broken page only for someone who
+    /// opens that page. A slide that outlives the element it points at is the drift Stemma exists to
+    /// prevent: the deck still presents, and tells the room something about a system that is no
+    /// longer true.
+    /// </summary>
+    private static IEnumerable<CheckFinding> BookFindings(string workspaceRoot, IReadOnlyList<ArchView> views, HashSet<string> elementIds)
+    {
+        var path = LayoutSidecar.PathFor(workspaceRoot);
+        if (!File.Exists(path)) yield break;
+
+        JsonDocument? doc = null;
+        try { doc = JsonDocument.Parse(File.ReadAllText(path)); }
+        catch (JsonException) { yield break; }   // already reported by ShapeFindings
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) yield break;
+            if (!doc.RootElement.TryGetProperty("books", out var books) || books.ValueKind == JsonValueKind.Null) yield break;
+
+            if (books.ValueKind != JsonValueKind.Object)
+            {
+                yield return MalformedBook("`books` in stemma.layout.json is not an object keyed by book id, so the canvas shows no books at all");
+                yield break;
+            }
+
+            // A view declared twice is already reported elsewhere as arbitrary; the first one stands.
+            var viewMembers = views
+                .GroupBy(v => v.Id, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().ElementIds.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+
+            foreach (var book in books.EnumerateObject())
+            {
+                if (book.Value.ValueKind != JsonValueKind.Object)
+                {
+                    yield return MalformedBook($"book '{book.Name}' is not an object, so the canvas skips it");
+                    continue;
+                }
+                if (!book.Value.TryGetProperty("pages", out var pages) || pages.ValueKind != JsonValueKind.Object)
+                {
+                    yield return MalformedBook($"book '{book.Name}' has no `pages` object keyed by page id, so it has nothing to present");
+                    continue;
+                }
+
+                var pageIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var page in pages.EnumerateObject())
+                {
+                    pageIds.Add(page.Name);
+                    foreach (var finding in PageFindings(book.Name, page, viewMembers, elementIds)) yield return finding;
+                }
+
+                foreach (var finding in OrderFindings(book.Name, book.Value, pageIds)) yield return finding;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One page's references: the view it shows, and the elements it points at in that view.
+    ///
+    /// A focus outside a code view is a warning rather than an error: the element exists, so the page
+    /// is not broken, but the view does not draw it and there is nothing on the slide to light up.
+    /// The built-in views draw every element, so they are not checked.
+    /// </summary>
+    private static IEnumerable<CheckFinding> PageFindings(
+        string book, JsonProperty page, Dictionary<string, HashSet<string>> views, HashSet<string> elementIds)
+    {
+        var where = $"book '{book}' page '{page.Name}'";
+        if (page.Value.ValueKind != JsonValueKind.Object)
+        {
+            yield return MalformedBook($"{where} is not an object, so the book presents without it");
+            yield break;
+        }
+
+        var hasTitle = page.Value.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String;
+        var view = page.Value.TryGetProperty("view", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : null;
+        if (!hasTitle || view is null)
+        {
+            var missing = string.Join(" or ", new[] { hasTitle ? null : "`title`", view is null ? "`view`" : null }.OfType<string>());
+            yield return MalformedBook(
+                $"{where} has no {missing} written as a string; every page needs a title and a view, and nothing else on this one was checked");
+            yield break;
+        }
+
+        HashSet<string>? members = null;
+        if (!BuiltInViews.Contains(view) && !views.TryGetValue(view, out members))
+        {
+            var bare = view.StartsWith(CustomViewKey, StringComparison.Ordinal) ? view[CustomViewKey.Length..] : null;
+            var hint = bare is not null && views.ContainsKey(bare)
+                ? $" (write '{bare}': '{CustomViewKey}' is the view's key under `views`, not its id)"
+                : $" (a page shows {string.Join(", ", BuiltInViews.Order())} or the id of a view in Views/)";
+            yield return new(CheckSeverity.Error, "book/missing-view",
+                $"{where} shows view '{view}', which does not exist, so the page has no picture to show{hint}");
+        }
+
+        if (!page.Value.TryGetProperty("focus", out var focus) || focus.ValueKind == JsonValueKind.Null) yield break;
+        if (focus.ValueKind != JsonValueKind.Array)
+        {
+            yield return MalformedBook($"{where} has a `focus` that is not a list of element ids, so the page points at nothing");
+            yield break;
+        }
+
+        var focused = focus.EnumerateArray()
+            .Where(e => e.ValueKind == JsonValueKind.String)
+            .Select(e => e.GetString()!)
+            .Distinct(StringComparer.Ordinal);
+        foreach (var id in focused)
+        {
+            if (!elementIds.Contains(id))
+                yield return new(CheckSeverity.Error, "book/dangling-focus",
+                    $"{where} points at '{id}', which is not an element in the model, so the page is marked broken and what its narrative talks about is not on the slide", id);
+            else if (members is not null && !members.Contains(id))
+                yield return new(CheckSeverity.Warning, "book/focus-outside-view",
+                    $"{where} points at '{id}', which view '{view}' does not include, so there is nothing on the slide to light up for it", id);
+        }
+    }
+
+    /// <summary>Page ids in a book's `order` with no page: the presenter skips them, and nothing says why.</summary>
+    private static IEnumerable<CheckFinding> OrderFindings(string book, JsonElement value, HashSet<string> pageIds)
+    {
+        if (!value.TryGetProperty("order", out var order) || order.ValueKind == JsonValueKind.Null) yield break;
+        if (order.ValueKind != JsonValueKind.Array)
+        {
+            yield return MalformedBook($"book '{book}' has an `order` that is not a list of page ids, so its pages are presented in file order");
+            yield break;
+        }
+
+        var listed = order.EnumerateArray()
+            .Where(e => e.ValueKind == JsonValueKind.String)
+            .Select(e => e.GetString()!)
+            .Distinct(StringComparer.Ordinal);
+        foreach (var id in listed.Where(id => !pageIds.Contains(id)))
+            yield return new(CheckSeverity.Warning, "book/dangling-order",
+                $"book '{book}' lists '{id}' in its `order` but has no page '{id}', so the presenter skips it; restore the page or take it out of the order");
+    }
+
+    private static CheckFinding MalformedBook(string message) => new(CheckSeverity.Warning, "book/malformed", message);
 
     private static readonly HashSet<string> ConstraintKinds =
         new(StringComparer.Ordinal) { "grid", "row", "column", "stack" };
@@ -305,21 +481,15 @@ public static class WorkspaceCheck
         }
     }
 
-    private static IEnumerable<CheckFinding> ViewFindings(string workspaceRoot, ArchModel model, HashSet<string> ids)
+    private static IEnumerable<CheckFinding> ViewFindings(IReadOnlyList<ArchView> views, ArchModel model, HashSet<string> ids)
     {
-        var viewsDir = Path.Combine(workspaceRoot, "Views");
-        if (!Directory.Exists(viewsDir)) yield break;
-
-        var docs = Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.AllDirectories)
-            .Select(f => (FilePath: f, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()));
-
         // One pass over the model, not one per view member. A linear scan inside the loop makes this
         // quadratic in a workspace of any size, and this runs on every save in a build.
         var kindById = model.Elements
             .GroupBy(e => e.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.Ordinal);
 
-        foreach (var view in ViewsAdapter.ReadAllFrom(docs))
+        foreach (var view in views)
         {
             var members = view.ElementIds.Where(ids.Contains).ToList();
 
