@@ -220,10 +220,11 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
     };
   }, [enabled, viewKey, workspaceRoot, setShapesFor, selectShape, screenToFlowPosition, nodeBounds]);
 
-  if (!enabled) return null;
-
+  // Not enabled is read-only, not absent: a presented view still shows its annotations — the
+  // frames, labels and legends are part of the picture — it only stops taking edits to them.
+  const readOnly = !enabled;
   const sortedShapes = [...shapes].sort((a, b) => a.z - b.z);
-  const shapeMode = canvasMode.kind === 'shape';
+  const shapeMode = !readOnly && canvasMode.kind === 'shape';
 
   function onBackdropPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (!shapeMode || canvasMode.kind !== 'shape') return;
@@ -255,7 +256,7 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
 
   // Element docks appear ONLY while the arrow tool is armed — the rest of the time the model's
   // own 6 connection handles are the dots, and free-form arrows dock to those same points.
-  const showElementDocks = canvasMode.kind === 'shape' && canvasMode.tool === 'arrow';
+  const showElementDocks = !readOnly && canvasMode.kind === 'shape' && canvasMode.tool === 'arrow';
 
   return (
     <div
@@ -289,8 +290,9 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
           <ShapeRenderer
             key={s.id}
             shape={s}
-            selected={s.id === selectedShapeId}
-            interactive={canvasMode.kind === 'select'}
+            selected={!readOnly && s.id === selectedShapeId}
+            interactive={!readOnly && canvasMode.kind === 'select'}
+            readOnly={readOnly}
             nodeBounds={nodeBounds}
             allShapes={shapes}
             props={customPropsAll[s.id]}
@@ -433,6 +435,8 @@ interface ShapeRendererProps {
   onPointerDown: (e: React.PointerEvent<SVGGElement>) => void;
   onResizePointerDown: (e: React.PointerEvent, handle: ResizeHandle) => void;
   onDockPointerDown: (e: React.PointerEvent, anchor: ArrowAnchor, fromX: number, fromY: number) => void;
+  /** Drawn, but clicks pass through to the canvas beneath: nothing on a read-only view is editable. */
+  readOnly?: boolean;
 }
 
 function shapeStyleBits(s: ShapeRect | ShapeEllipse | ShapeTriangle) {
@@ -459,7 +463,8 @@ function shapeStyleBits(s: ShapeRect | ShapeEllipse | ShapeTriangle) {
   };
 }
 
-function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, props, onPointerDown, onResizePointerDown, onDockPointerDown }: ShapeRendererProps) {
+function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, props, onPointerDown, onResizePointerDown, onDockPointerDown, readOnly }: ShapeRendererProps) {
+  const pointerEvents = readOnly ? 'none' : 'auto';
   const stroke = (s: { strokeStyle?: 'solid' | 'dashed' | 'dotted' }) => {
     switch (s.strokeStyle) {
       case 'dashed': return '6 6';
@@ -476,7 +481,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, pr
       const rb = shapeStyleBits(r);
       return (
         <g style={{ cursor }}>
-          <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+          <g onPointerDown={handler} style={{ pointerEvents }}>
             {rb.gradientDef}
             <rect x={r.x} y={r.y} width={r.w} height={r.h}
               rx={r.radius ?? (r.rounded ? 12 : 0)} ry={r.radius ?? (r.rounded ? 12 : 0)}
@@ -494,7 +499,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, pr
       const eb = shapeStyleBits(e);
       return (
         <g style={{ cursor }}>
-          <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+          <g onPointerDown={handler} style={{ pointerEvents }}>
             {eb.gradientDef}
             <ellipse cx={e.x + e.w / 2} cy={e.y + e.h / 2} rx={e.w / 2} ry={e.h / 2}
               fill={eb.fillRef} stroke={e.stroke} strokeWidth={e.strokeWidth}
@@ -512,7 +517,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, pr
       const pts = `${tr.x + tr.w / 2},${tr.y} ${tr.x},${tr.y + tr.h} ${tr.x + tr.w},${tr.y + tr.h}`;
       return (
         <g style={{ cursor }}>
-          <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+          <g onPointerDown={handler} style={{ pointerEvents }}>
             {tb.gradientDef}
             <polygon points={pts} fill={tb.fillRef} stroke={tr.stroke} strokeWidth={tr.strokeWidth}
               strokeDasharray={stroke(tr)} strokeLinejoin="round" className={tb.anim} style={tb.filter ? { filter: tb.filter } : undefined} />
@@ -529,7 +534,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, pr
       const approxH = l.fontSize * 1.4;
       return (
         <g style={{ cursor }}>
-          <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+          <g onPointerDown={handler} style={{ pointerEvents }}>
             <rect x={l.x - 4} y={l.y - approxH * 0.8} width={approxW + 8} height={approxH} fill="transparent" />
             <text x={l.x} y={l.y} fontSize={l.fontSize} fill={l.color} style={{ userSelect: 'none' }}>{l.text}</text>
           </g>
@@ -577,7 +582,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, pr
       const p2y = baseY - Math.sin(ang + Math.PI / 2) * (arrowSize / 2);
       return (
         <g style={{ cursor }}>
-          <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+          <g onPointerDown={handler} style={{ pointerEvents }}>
             <line x1={fromPt.x} y1={fromPt.y} x2={toPt.x} y2={toPt.y}
               stroke="transparent" strokeWidth={Math.max(12, a.strokeWidth + 8)} />
             <line x1={fromPt.x} y1={fromPt.y} x2={toPt.x} y2={toPt.y}
@@ -612,7 +617,7 @@ function ShapeRenderer({ shape, selected, interactive, nodeBounds, allShapes, pr
       const im = shape as ShapeImage;
       return (
         <g style={{ cursor }}>
-          <g onPointerDown={handler} style={{ pointerEvents: 'auto' }}>
+          <g onPointerDown={handler} style={{ pointerEvents }}>
             <rect x={im.x} y={im.y} width={im.w} height={im.h} fill="transparent" />
             <image href={im.src} x={im.x} y={im.y} width={im.w} height={im.h} style={{ pointerEvents: 'none' }} />
             {im.label && <text x={im.x + im.w / 2} y={im.y + im.h + 14} textAnchor="middle" fontSize="11" fill="rgb(63,63,70)" style={{ userSelect: 'none' }}>{im.label}</text>}

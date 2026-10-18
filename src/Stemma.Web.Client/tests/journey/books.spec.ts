@@ -111,6 +111,8 @@ test('presenting turns pages with the keys, points at what a page names, and wri
 
   await page.keyboard.press('ArrowRight');
   await expect(narrative.getByRole('heading')).toHaveText('A gesture becomes a diff');
+  // This view carries annotations; they are part of the picture, so they are drawn while presenting.
+  await expect(page.locator('[data-shape-overlay] svg g').first()).toBeAttached();
   await page.keyboard.press('PageDown'); // what a clicker sends
   await expect(narrative.getByRole('heading')).toHaveText('What the engine is allowed to know');
   // This page points at two elements; the rest of its view fades.
