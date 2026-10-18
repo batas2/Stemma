@@ -8,7 +8,8 @@ await StemmaWebHost.RunAsync(StemmaWebHost.Build(args));
 public sealed record OpenWorkspaceRequest(string RootPath);
 public sealed record InitWorkspaceRequest(string RootPath, string? Name);
 
-public sealed record BookPdfPageRequest(string ViewId, string Title, string Narrative, string? CapturePngBase64);
+/// <summary>One page of a book's PDF: its title, its narrative, and the canvas as presented on it.</summary>
+public sealed record BookPdfPageRequest(string Title, string Narrative, string? CapturePngBase64);
 public sealed record BookPdfRequest(string Name, string? Audience, IReadOnlyList<BookPdfPageRequest> Pages);
 
 public partial class Program;

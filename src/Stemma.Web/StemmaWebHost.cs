@@ -367,22 +367,31 @@ public static class StemmaWebHost
             return Results.Text(xml, "application/xml");
         });
 
+        // A book's PDF is the deck (F-013 AC10). The client sends each page as it was presented, and
+        // the server lays the pages out. A capture that is not base64 is a page without its picture,
+        // not a failed export; a request too big to be a book is refused before anything is drawn.
         workspaceApi.MapPost("/export/book-pdf", (BookPdfRequest req) =>
         {
-            var book = new BookPdfExporter.PdfBook(
-                req.Name,
-                req.Audience,
-                req.Pages.Select(p => new BookPdfExporter.PdfBookPage(
-                    p.ViewId,
-                    p.Title,
-                    p.Narrative,
-                    string.IsNullOrEmpty(p.CapturePngBase64) ? null : Convert.FromBase64String(p.CapturePngBase64)
-                )).ToList());
-            var bytes = BookPdfExporter.Render(book);
-            var safeName = string.Concat(req.Name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_'));
+            var requested = req.Pages ?? [];
+            if (requested.Count > BookPdfExporter.MaxPages)
+                return Results.BadRequest(new { error = $"A book's PDF holds at most {BookPdfExporter.MaxPages} pages; this one has {requested.Count}." });
+
+            var pages = new List<BookPdfExporter.PdfBookPage>(requested.Count);
+            foreach (var p in requested)
+            {
+                if (p is null) continue;
+                var capture = BookPdfExporter.ReadCapture(p.CapturePngBase64);
+                if (capture is { Length: > BookPdfExporter.MaxCaptureBytes })
+                    return Results.BadRequest(new { error = $"The picture of page {pages.Count + 1} is over {BookPdfExporter.MaxCaptureBytes / (1024 * 1024)} MB." });
+                pages.Add(new BookPdfExporter.PdfBookPage(p.Title ?? "", p.Narrative ?? "", capture));
+            }
+
+            var name = string.IsNullOrWhiteSpace(req.Name) ? "Book" : req.Name;
+            var bytes = BookPdfExporter.Render(new BookPdfExporter.PdfBook(name, req.Audience, DateTimeOffset.UtcNow, pages));
+            var safeName = string.Concat(name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_'));
             if (string.IsNullOrEmpty(safeName)) safeName = "book";
             return Results.File(bytes, "application/pdf", $"{safeName}.pdf");
-        });
+        }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(BookPdfExporter.MaxRequestBytes));
 
         workspaceApi.MapGet("/views", async (EngineHost host, CancellationToken ct) =>
         {
