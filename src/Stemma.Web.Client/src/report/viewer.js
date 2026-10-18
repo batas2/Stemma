@@ -852,7 +852,12 @@
         });
         var sq = shows('squad') && squadOf(e.id);
         if (sq) body.appendChild(h('div', { class: 'vrn-sub', text: '👥 ' + sq }));
-        if (data.notes[e.id]) body.appendChild(h('div', { class: 'vrn-notes' }, narrativeNodes(data.notes[e.id])));
+        if (data.notes[e.id]) {
+          var notesEl = h('div', { class: 'vrn-notes' }, narrativeNodes(data.notes[e.id]));
+          // As on the canvas: a card's own text colour is its notes' colour too.
+          if (st.textColor) { notesEl.classList.add('own'); notesEl.style.color = st.textColor; notesEl.style.opacity = '0.82'; }
+          body.appendChild(notesEl);
+        }
       }
       card.appendChild(body);
     }

@@ -45,7 +45,7 @@ export interface NodeStyle {
   opacity?: number;            // 0.2 – 1
   accentSide?: NodeAccentSide; // colored accent bar on a side
   accentColor?: string;
-  textColor?: string;          // title color override
+  textColor?: string;          // the card's text colour, title and notes
   textSize?: NodeTextSize;     // the card's text: title and notes (F-014 AC7)
   textAlign?: NodeTextAlign;   // title alignment
   visibleFields?: string[];

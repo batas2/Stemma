@@ -475,8 +475,14 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                   </div>
                   {data.noteFull && (
                     <div
-                      className={clsx('archnote text-zinc-600 dark:text-zinc-300 leading-relaxed pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 overflow-auto flex-1 min-h-0 nodrag', scale.notes)}
-                      style={nodeStyle?.height || !scale.clamp ? undefined : { maxHeight: 140 }}
+                      className={clsx('archnote leading-relaxed pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800/60 overflow-auto flex-1 min-h-0 nodrag', scale.notes,
+                        nodeStyle?.textColor ? 'archnote-own' : 'text-zinc-600 dark:text-zinc-300')}
+                      // A card with a colour of its own for its text keeps it for its notes too: on a fill of
+                      // its own, the theme's grey is the wrong grey in one theme or the other.
+                      style={{
+                        ...(nodeStyle?.height || !scale.clamp ? {} : { maxHeight: 140 }),
+                        ...(nodeStyle?.textColor ? { color: nodeStyle.textColor, opacity: 0.82 } : {}),
+                      }}
                       dangerouslySetInnerHTML={{ __html: renderNotes(data.noteFull) }}
                     />
                   )}

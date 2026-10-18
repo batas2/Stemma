@@ -167,6 +167,9 @@
 .archnote ol { list-style: decimal; padding-left: 1.1rem; margin: 0.15rem 0; }
 .archnote li { display: list-item; }
 .archnote strong, .archnote b { font-weight: 600; }
+/* On a card with a text colour of its own the fill is its own too: code takes a tint of the text
+   rather than the theme's grey block, which is black on a light card in the dark theme. */
+.archnote-own code { background: color-mix(in srgb, currentColor 10%, transparent) !important; color: inherit !important; }
 .archnote em, .archnote i { font-style: italic; }
 .archnote code { background: rgb(228 228 231); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em; }
 .dark .archnote code { background: rgb(39 39 42); }
