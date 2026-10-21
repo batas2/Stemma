@@ -86,7 +86,13 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 | `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`) | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `RewriteFailed` |
 | `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For`; a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it | `SetTagFailed`, `UnreadableTag` |
 | `SetOwnership` | `Squad` and `Domain` inside `new Ownership(...)`. RAPID roles are not part of the operation and are not touched | `SetTagFailed`, `UnreadableTag` |
-| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, re-declaring it before `return` | — |
+| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, and the redo of an add, re-declaring it with its own id before `return` | — |
+
+An id `AddElement` or `AddLink` generates (`mod_001`, `flow_001`) is one nothing names: no model file
+declares it or holds it as an argument (a link's end, a context, what a risk is about), no view lists
+it, and it is neither a key nor a value in `stemma.layout.json` or `comments.stemma.json`. A removed
+element's links, layout, notes and comments stay behind by design, and a new element given its id
+would inherit all of them.
 
 `RewriteFailed` means the value is already what was asked, and nothing was written.
 `AttributeRequired`: a positional argument cannot be removed while later positional arguments depend
@@ -188,7 +194,7 @@ the entry on top is still its own even once the stack is full at 100. Undo puts 
 back, provided each file is still byte-for-byte what the edit wrote — so edit-then-undo is no
 change at all. If a file has changed since (an outside edit), restoring old bytes would erase that
 change, so undo falls back to the inverse operation (re-declare what was removed, put the old value
-back), and with no inverse it is refused as `UndoConflict`. Redo re-applies the edit. A new edit,
+back), and with no inverse it is refused as `UndoConflict`. Redo re-applies the edit — an add with the id it generated the first time. A new edit,
 or an outside one, discards the redo branch ([B-007](../bugs/B-007-undo-rebuilds-instead-of-restoring.md)).
 
 An outside edit is taken in without being written back

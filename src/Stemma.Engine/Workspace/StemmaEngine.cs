@@ -424,14 +424,14 @@ public sealed class StemmaEngine : IAsyncDisposable
             _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
         };
 
-        if (recordUndo && result is OperationApplied)
+        if (recordUndo && result is OperationApplied done)
         {
             // What the edit wrote is the undo; the inverse operation is only the fallback for when
             // the file has changed since (see RestoreDocumentsOp).
             var writes = _lastWrites;
             var fallback = UndoStack.BuildInverse(op, _archBeforeOp) ?? await InverseOfAddAsync(op, ct);
             if (writes.Count > 0 || fallback is not null)
-                _undo.Push(op, new RestoreDocumentsOp($"undo_{Guid.NewGuid():N}", writes, fallback), DescribeOp(op));
+                _undo.Push(RedoOf(op, done), new RestoreDocumentsOp($"undo_{Guid.NewGuid():N}", writes, fallback), DescribeOp(op));
         }
         // AC1 — exactly one record per operation, whatever happened. The elapsed time is here rather
         // than on each branch so no path can complete without one.
@@ -451,6 +451,19 @@ public sealed class StemmaEngine : IAsyncDisposable
         EngineLog.WorkspaceOpened(_log, arch?.Elements.Count ?? 0, arch?.Links.Count ?? 0, docs,
             (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
     }
+
+    /// <summary>
+    /// What a redo applies: the operation again — except an add, which is redone with the id it made.
+    /// Generated afresh, the id would be a different one as soon as anything names the first (the new
+    /// box was placed before it was undone, so the layout does), and the element would come back
+    /// without its place.
+    /// </summary>
+    private static OperationBase RedoOf(OperationBase op, OperationApplied applied) => (op, applied.Deltas.FirstOrDefault()) switch
+    {
+        (AddElementOp a, ElementAdded e) => new RestoreElementOp(a.OpId, e.Id, a.Name, a.ElementKind, a.ContextId, a.SystemId, a.ContainerKind, a.Role),
+        (AddLinkOp a, LinkAdded l) => new RestoreLinkOp(a.OpId, l.Id, a.FromId, a.ToId, a.LinkKind, a.Payload, a.Direction, a.DependencyKind),
+        _ => op,
+    };
 
     private static string DescribeOp(OperationBase op) => op switch
     {
@@ -1421,7 +1434,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var current = await ReadArchModelAsync(ct) ?? DslReader.TryRead(doc.FilePath!, root);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Architecture.Build() body not found");
 
-        var id = GenerateId(op.ElementKind, current);
+        var id = GenerateId(op.ElementKind, await TakenIdsAsync(current, ct));
         var attrs = new Dictionary<string, string?>();
         if (op.ContextId is not null) attrs["contextId"] = op.ContextId;
         if (op.SystemId is not null) attrs["systemId"] = op.SystemId;
@@ -1530,7 +1543,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (!current.Elements.Any(e => e.Id == op.ToId))
             return new OperationFailed(op.OpId, "ToNotFound", op.ToId);
 
-        var id = GenerateLinkId(op.LinkKind, current);
+        var id = GenerateLinkId(op.LinkKind, await TakenIdsAsync(current, ct));
         var attrs = new Dictionary<string, string?>();
         if (op.Payload is not null) attrs["payload"] = op.Payload;
         if (op.Direction is not null) attrs["direction"] = op.Direction;
@@ -1601,7 +1614,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
+            () => new OperationApplied(op.OpId, [new ElementAdded(op.ElementId)]), ct);
     }
 
     private async Task<OperationResult> RestoreArchLinkAsync(RestoreLinkOp op, CancellationToken ct)
@@ -1621,7 +1634,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
+            () => new OperationApplied(op.OpId, [new LinkAdded(op.LinkId)]), ct);
     }
 
     private Task<OperationResult> SetLifecycleAsync(SetLifecycleOp op, CancellationToken ct) =>
@@ -1652,7 +1665,85 @@ public sealed class StemmaEngine : IAsyncDisposable
         return await CommitAsync(opId, oldSolution, newSolution, () => new OperationApplied(opId, []), ct);
     }
 
-    private static string GenerateId(ArchElementKind kind, ArchModel.ArchModel current)
+    /// <summary>
+    /// Every id something names, which a generated id must not be. Removing an element leaves its
+    /// links, its layout, notes and styles, its comments and the views that list it, on purpose: they
+    /// are references, shown detached. An id free in the declarations alone was given to the next new
+    /// element, and every one of those attached to it — a link left pointing at nothing pointed at the
+    /// new box.
+    ///
+    /// So: what the model declares and every value its declarations and tags hold (link ends, a
+    /// context, a system, what a risk is about — every attribute, since one that is not an id cannot
+    /// collide with one), every view's id and members, and every key and string in the layout sidecar
+    /// and the comments file, where positions, styles, notes, book pages and comments are keyed by id.
+    /// </summary>
+    private async Task<HashSet<string>> TakenIdsAsync(ArchModel.ArchModel current, CancellationToken ct)
+    {
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var e in current.Elements)
+        {
+            taken.Add(e.Id);
+            foreach (var value in e.Attributes.Values) if (value is not null) taken.Add(value);
+        }
+        foreach (var l in current.Links)
+        {
+            taken.Add(l.Id);
+            taken.Add(l.FromId);
+            taken.Add(l.ToId);
+            foreach (var value in l.Attributes.Values) if (value is not null) taken.Add(value);
+        }
+        foreach (var t in current.Tags) taken.Add(t.TargetId);
+        foreach (var doc in _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents))
+        {
+            if (doc.FilePath is null || !doc.FilePath.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (await doc.GetSyntaxRootAsync(ct) is not { } root || ViewsAdapter.TryReadOne(root) is not { } view) continue;
+            taken.Add(view.Id);
+            taken.UnionWith(view.ElementIds);
+        }
+        AddJsonStrings(LayoutSidecar.PathFor(_model.RootPath), taken);
+        AddJsonStrings(CommentsSidecar.PathFor(_model.RootPath), taken);
+        return taken;
+    }
+
+    /// <summary>Every property name and every string value in the JSON file at <paramref name="path"/>.</summary>
+    private void AddJsonStrings(string path, HashSet<string> into)
+    {
+        if (!File.Exists(path)) return;
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(path),
+                new System.Text.Json.JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = System.Text.Json.JsonCommentHandling.Skip });
+            Walk(json.RootElement);
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+        {
+            // Silent on purpose: a file that cannot be read (a merge left its markers in) names nothing
+            // that can be found, every write to it is refused and says so, and the id is generated from
+            // what can be read.
+        }
+
+        void Walk(System.Text.Json.JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case System.Text.Json.JsonValueKind.Object:
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        into.Add(property.Name);
+                        Walk(property.Value);
+                    }
+                    break;
+                case System.Text.Json.JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray()) Walk(item);
+                    break;
+                case System.Text.Json.JsonValueKind.String:
+                    into.Add(element.GetString()!);
+                    break;
+            }
+        }
+    }
+
+    private static string GenerateId(ArchElementKind kind, IReadOnlySet<string> taken)
     {
         var prefix = kind switch
         {
@@ -1669,15 +1760,14 @@ public sealed class StemmaEngine : IAsyncDisposable
             ArchElementKind.Concept => "con",
             _ => "elem"
         };
-        var existing = current.Elements.Select(e => e.Id).ToHashSet();
         for (var n = 1; ; n++)
         {
             var candidate = $"{prefix}_{n:000}";
-            if (!existing.Contains(candidate)) return candidate;
+            if (!taken.Contains(candidate)) return candidate;
         }
     }
 
-    private static string GenerateLinkId(ArchLinkKind kind, ArchModel.ArchModel current)
+    private static string GenerateLinkId(ArchLinkKind kind, IReadOnlySet<string> taken)
     {
         var prefix = kind switch
         {
@@ -1685,11 +1775,10 @@ public sealed class StemmaEngine : IAsyncDisposable
             ArchLinkKind.Relation => "rel",
             _ => "dep",
         };
-        var existing = current.Links.Select(l => l.Id).ToHashSet();
         for (var n = 1; ; n++)
         {
             var candidate = $"{prefix}_{n:000}";
-            if (!existing.Contains(candidate)) return candidate;
+            if (!taken.Contains(candidate)) return candidate;
         }
     }
 
