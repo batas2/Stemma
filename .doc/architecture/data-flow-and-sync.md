@@ -126,6 +126,12 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
   engine has not yet seen is refused as `ChangedOnDisk` rather than written over it.
 - The client merges deltas **without clobbering in-flight local edits** — the same discipline as the
   sidecar cache.
+- **One refresh at a time, newest drawn** (`lib/modelRefresh.ts`). Refreshes that arrive while one
+  is on its way are read once more after it, as one; a paste of ten operations used to send ten
+  refreshes side by side and draw whichever answer came back last. An operation this window sent
+  reads the model and its problems only — an operation never changes a project, a type or a view —
+  unless the model turns out to be another workspace's; one from another window, an undo, an
+  outside change or a reconnect reads the workspace and the views as well.
 - **After a drop, catch up.** What was announced while the live connection was down is not sent
   again, so when it comes back (`onReconnected` in `lib/signalr.ts`: reconnected on its own, or made
   again after it gave up) the window reads the model, the views, the layout and the comments afresh.

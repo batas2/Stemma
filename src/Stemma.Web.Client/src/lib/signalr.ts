@@ -92,10 +92,32 @@ export async function sendPresenter(kind: 'PresenterState' | 'PresenterCommand',
  */
 export async function applyOperation(op: OperationEnvelope): Promise<OperationResult> {
   const conn = await ensureConnection();
-  const result = await conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
+  sentOperations.add(op.opId);
+  // A bound, for operations whose announcement never came (the connection dropped meanwhile).
+  if (sentOperations.size > 500) sentOperations.delete(sentOperations.values().next().value!);
+  let result: OperationResult;
+  try {
+    result = await conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
+  } catch (error) {
+    sentOperations.delete(op.opId);
+    throw error;
+  }
   // Every edit this window makes is a step of its undo history (F-015 AC6), in the order it was made.
   if (!('reason' in result)) history.recordOperation(describeOperation(op));
+  else sentOperations.delete(op.opId); // refused: nothing is announced
   return result;
+}
+
+// Operations this window sent whose announcement (OperationApplied) has not come back yet.
+const sentOperations = new Set<string>();
+
+/**
+ * Whether the operation announced as `opId` is one this window sent — asked once per announcement.
+ * An operation edits the model and nothing else, so a window's own needs only the model read again;
+ * one from another window may come from a workspace that window has just opened on this server.
+ */
+export function isOwnOperation(opId: string): boolean {
+  return sentOperations.delete(opId);
 }
 
 /** What an operation did, in the words an undo toast uses ("Undid Rename"). */

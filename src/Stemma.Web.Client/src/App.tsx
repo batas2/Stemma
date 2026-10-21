@@ -12,7 +12,8 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, onReconnected, applyOperation } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, onReconnected, applyOperation, isOwnOperation } from './lib/signalr';
+import { modelRefresh, type RefreshScope } from './lib/modelRefresh';
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
 import { removeShape, saveShapes } from './lib/shapes';
@@ -69,26 +70,11 @@ export default function App() {
   useEffect(() => {
     ensureConnection().catch(reportFailure('Signalr', ClientEvent.ConnectionLost, 'Opening the live connection'));
     snapshot().then((s) => { if (s) setWs(s); }).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Reading the workspace snapshot'));
-    // A transient archModel() failure must NOT clobber a previously good arch — use a sentinel
-    // so refresh() can preserve the prior in-memory model on a 404 / network blip.
-    const PRESERVE = Symbol('preserve');
-    async function refresh() {
-      const [s, a, v] = await Promise.all([
-        snapshot(),
-        archModel().catch(() => PRESERVE as unknown as null),
-        listViolations().catch(() => []),
-      ]);
-      if (s) {
-        setWs(s);
-        primeLayoutSidecar(s.rootPath).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
-        // A view file added or deleted outside Stemma — a pull, an IDE — shows now, not on reopen.
-        void useApp.getState().syncViews();
-      }
-      if ((a as unknown) !== PRESERVE) setArch(a);
-      setViolations(v);
-    }
+    // One read at a time, newest drawn (lib/modelRefresh). An operation this window sent changed the
+    // model and nothing else; one from another window, or an undo, may come with more.
+    const refresh = (scope: RefreshScope = 'workspace') => modelRefresh.refresh(scope);
     configureHistory();
-    const offOp = onOperationApplied(refresh);
+    const offOp = onOperationApplied((r) => { void refresh(isOwnOperation(r.opId) ? 'model' : 'workspace'); });
     // An edit from outside makes the engine forget what could be redone; so does the journal.
     const offExt = onExternalChange(() => { history.dropRedo(); void refresh(); });
     // A pull or a hand edit changed the sidecar: read it again, with this session's unsent edits laid over it.
@@ -106,7 +92,7 @@ export default function App() {
       window.dispatchEvent(new Event('stemma:comments-changed'));
     });
     return () => { offOp(); offExt(); offSidecar(); offComments(); offReconnect(); };
-  }, [setWs, setArch, setViolations]);
+  }, [setWs]);
 
   // Load the active workspace's model + presentation whenever the workspace changes — on the
   // initial snapshot, but also when one is opened from Recents / by path / via Init. Previously
@@ -128,10 +114,12 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus);
   }, [wsRoot]);
   useEffect(() => {
+    // This workspace's turn: a refresh still on its way for the last one is not drawn over it.
+    const current = modelRefresh.claim();
     if (!wsRoot) { setArch(null); return; }
     primeLayoutSidecar(wsRoot).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
-    archModel().then((a) => setArch(a)).catch(() => setArch(null));
-    listViolations().then((v) => setViolations(v)).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading violations'));
+    archModel().then((a) => { if (current()) setArch(a); }).catch(() => { if (current()) setArch(null); });
+    listViolations().then((v) => { if (current()) setViolations(v); }).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading violations'));
   }, [wsRoot, setArch, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
