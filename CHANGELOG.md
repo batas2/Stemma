@@ -130,6 +130,60 @@ keyboard path; none of them adds a file to your repository.
   closed with Delete; the active tab shows its close button.
 - **Reverse direction** is in an arrow's right-click menu.
 
+*The model and its files*
+
+- **Ids and names written as constants are read.** `new Module(Ids.Payments, …)` with a `const`,
+  `"mod_" + "core"`, `nameof(...)` or a raw string used to vanish from the canvas without a word.
+  They are read now; anything Stemma still cannot read is reported by the canvas and by
+  `stemma validate` as `model/unreadable-declaration`, with the file and line, and is never edited.
+- **A tag kept in a local (`var tag = Tag.For(...)`)**, as the domain model shows it, is read and
+  edited like any other.
+- **A new element never inherits a removed one's arrows, position or comments.** Its id used to be
+  the first free one, which could be the id of something just deleted.
+- **In a model split over several files**, a relationship can end at an element in any of them.
+- **Undo is dependable after an outside edit:** an undo or redo that the file refuses stays the next
+  one to try, and undoing an add removes what was added.
+- **Clearing a status removes it**, instead of leaving `new Lifecycle(null)` in the code. Renaming a
+  relationship as if it were an element is refused rather than moving where it starts.
+- **An edit is checked against outside changes just before it is written**, so a save from your
+  editor a moment earlier is never overwritten.
+- **Quieter and quicker on big repositories.** An idle workspace costs almost no CPU, the first edit
+  after opening no longer waits for a full compile, and an edit compiles only what it can break.
+- **A model folder whose name is not a C# name** (`my-arch`) can have views added to it.
+
+*The layout and comments files*
+
+- **`stemma.layout.json` that cannot be read is said**, in a banner above the canvas, in plain words
+  — merge-conflict markers, a trailing comma, a key written twice — with the line. Your layout edits
+  are kept in the window until it can be read again (*Try again*, or the fix arriving), then saved.
+- **Two windows on one workspace see each other's layout and comment changes**, instead of one
+  quietly writing over the other's.
+- **A layout change made while the file was still loading** changes only what it changed, and no
+  longer replaces positions, bends and shapes the window had not drawn yet.
+- **One emoji no longer switches the whole file to `\u` escapes**, half an emoji cannot break every
+  later save, and saving a large layout is many times faster.
+- **Notes show the editor's formatting everywhere** — underline, highlight, colour, tables, task
+  lists — on cards, in presentations and in the exported report, instead of raw tags.
+- **The connection catches up after a drop**, and refreshes after a burst of edits draw the newest
+  model, never an older one.
+
+*Exports, the start screen and the command line*
+
+- **Mermaid and draw.io exports are correct for any name:** a newline, a `|` or an id like `end` no
+  longer breaks the Mermaid chart, and draw.io labels, ids and numbers (in any language setting) come
+  out right. An export says when the layout file cannot be read instead of failing.
+- **Creating a model inside an existing Git repository** no longer commits it, nor starts a second
+  repository inside the first; Stemma says the files are there to commit. Creating one in a folder
+  that already holds files commits only the model.
+- **A workspace whose folder is missing for now stays on the recent list**, marked *Not found*, and
+  any entry can be taken off the list with its ×.
+- **Opening a workspace that fails leaves the open one open.**
+- **`stemma validate <path>`** checks that path; validate and `render --check` read every model file;
+  a malformed layout file is reported (`sidecar/malformed`) instead of crashing; a link or view id
+  declared twice is reported. `render` no longer adds the workspace to your recent list.
+- **The diagnostics bundle** carries today's records, and the log no longer fills with a record per
+  request.
+
 - Pressing **Escape** to close a right-click menu also cleared your selection, and the arrow keys
   that move through the menu also nudged the selected box. The menu now keeps the keyboard to itself.
 - Every item in **⌘K** was set in spaced capitals.
