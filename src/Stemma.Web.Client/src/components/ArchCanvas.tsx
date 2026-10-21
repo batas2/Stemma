@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef, useDeferredValue } from 'react';
 import { reportFailure, ClientEvent } from '@/lib/log';
 import clsx from 'clsx';
 import {
@@ -141,6 +141,24 @@ import { filterByView } from '@/lib/viewFilter';
 const nodeTypes = { arch: ArchNodeView };
 const edgeTypes = { waypointed: WaypointEdge };
 
+/** Equal by value: a model refresh brings new objects for elements and tags that have not changed. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Whether a rebuilt card says nothing the card on screen does not: same place, state, size and data. */
+function sameNode(a: Node, b: Node): boolean {
+  if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false;
+  if (a.selected !== b.selected || a.draggable !== b.draggable || a.type !== b.type) return false;
+  if (!sameValue(a.style, b.style)) return false;
+  const ad = a.data as Record<string, unknown>;
+  const bd = b.data as Record<string, unknown>;
+  for (const key of Object.keys(bd)) if (!sameValue(ad[key], bd[key])) return false;
+  return Object.keys(ad).length === Object.keys(bd).length;
+}
+
 const LAYOUT_LABEL: Record<LayoutAlgorithm, string> = {
   hierarchical: 'hierarchical', force: 'force-directed',
   focused: 'focused', byType: 'architectural (by type)',
@@ -221,7 +239,11 @@ function CanvasInner() {
   const view = useApp((s) => s.view);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
-  const workspace = useApp((s) => s.workspace);
+  // Only the folder, as an object that stays the same while the folder does. Each refresh after an edit
+  // replaces the store's workspace with a new object, and with it as a dependency every card and every
+  // arrow was rebuilt after every edit — a rename took up to 1.9 s to show on a 300-box model.
+  const rootPath = useApp((s) => s.workspace?.rootPath ?? null);
+  const workspace = useMemo(() => (rootPath ? { rootPath } : null), [rootPath]);
   const theme = useApp((s) => s.theme);
   const snapEnabled = useApp((s) => s.snapEnabled);
   const edgeStyles = useApp((s) => s.edgeStyles);
@@ -905,7 +927,7 @@ function CanvasInner() {
         const ctxId = e.attributes?.contextId ?? null;
         const ctxName = ctxId ? ctxById.get(ctxId) ?? null : null;
         const noteText = notesById.get(e.id) ?? '';
-        return {
+        const built = {
           id: e.id,
           type: 'arch',
           position: pos,
@@ -939,6 +961,9 @@ function CanvasInner() {
             isDependencyView: view === 'dependencyGraph',
           },
         } satisfies Node;
+        // The same card when nothing about it changed: React Flow then leaves it alone, and only the
+        // boxes an edit touched are drawn again.
+        return existing && sameNode(existing, built) ? existing : built;
       });
     });
   }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick]);
@@ -2293,7 +2318,10 @@ function CanvasInner() {
       props: customProps[e.id],
     }));
   }, [find.open, arch, drawn.elements, notesById, customProps]);
-  const findTokens = useMemo(() => parseQuery(find.query), [find.query]);
+  // Matched at React's lower priority: the field takes each keystroke at once, and the canvas catches
+  // up — each key used to rebuild every card and arrow before the next one could be typed.
+  const findQuery = useDeferredValue(find.query);
+  const findTokens = useMemo(() => parseQuery(findQuery), [findQuery]);
   const findFound = useMemo(() => {
     if (!find.open || findTokens.length === 0) return null;
     const hit = new Set(cardFacts.filter((f) => findMatchesCard(f, findTokens)).map((f) => f.element.id));
@@ -2418,9 +2446,22 @@ function CanvasInner() {
   // every box draggable — and a drop onto another bounded context rewrites Architecture.cs. Every way
   // in is taken off the nodes and edges themselves: drag, select, resize, rename, notes, label edits,
   // waypoints, arrowheads.
+  // What each card was turned into last time, by the card it came from and what was applied to it: a
+  // card whose lighting, mark and state did not change is handed back as the same object, so lighting
+  // three matches out of three hundred draws three cards again, not three hundred.
+  const renderedNodeCache = useRef(new WeakMap<Node, { key: string; node: Node }>());
   const renderedNodes = useMemo<Node[]>(() => {
     if (!lit && !readOnly && !revealId && flashIds.size === 0 && !diff) return nestedNodes;
+    const cache = renderedNodeCache.current;
     return nestedNodes.map((n) => {
+      const key = [
+        n.id === revealId || flashIds.has(n.id) ? 'r' : '',
+        diff ? diff.elementChange.get(n.id) ?? (compareDimRest ? 'dim' : '-') : '',
+        readOnly ? 'ro' : '',
+        lit ? (lit.has(n.id) ? 'lit' : litHides ? 'hide' : 'fade') : '',
+      ].join('|');
+      const hit = cache.get(n);
+      if (hit && hit.key === key) return hit.node;
       let out = n;
       if (n.id === revealId || flashIds.has(n.id)) out = { ...out, data: { ...out.data, revealed: true } };
       if (diff) {
@@ -2441,13 +2482,26 @@ function CanvasInner() {
       if (lit && !lit.has(n.id)) {
         out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.2 } };
       }
+      cache.set(n, { key, node: out });
       return out;
     });
   }, [nestedNodes, lit, litHides, readOnly, revealId, flashIds, diff, compareDimRest]);
 
+  const renderedEdgeCache = useRef(new WeakMap<Edge, { key: string; edge: Edge }>());
   const renderedEdges = useMemo<Edge[]>(() => {
     if (!lit && !readOnly && !diff) return allEdges;
+    const cache = renderedEdgeCache.current;
     return allEdges.map((e) => {
+      const step = !spotLit ? stepNumber.get(e.id) : undefined;
+      const key = [
+        diff ? diff.linkChange.get(e.id) ?? (compareDimRest ? 'dim' : '-') : '',
+        readOnly ? 'ro' : '',
+        step !== undefined ? `s${step}${stepState.current?.link === e.id ? '*' : ''}` : stepNumber.size > 0 && !spotLit ? 'flow' : '',
+        lit ? (lit.has(e.source) && lit.has(e.target) ? 'lit' : 'out') : '',
+        litHides ? 'h' : '',
+      ].join('|');
+      const hit = cache.get(e);
+      if (hit && hit.key === key) return hit.edge;
       let out = e;
       if (diff) {
         const change = diff.linkChange.get(e.id);
@@ -2483,6 +2537,7 @@ function CanvasInner() {
       } else if (lit && !(lit.has(e.source) && lit.has(e.target))) {
         out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.15 } };
       }
+      cache.set(e, { key, edge: out });
       return out;
     });
   }, [allEdges, lit, litHides, readOnly, diff, compareDimRest, spotLit, stepNumber, stepState]);

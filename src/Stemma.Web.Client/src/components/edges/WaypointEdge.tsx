@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath, getSmoothStepPath, getStraightPath,
-  Position, useReactFlow,
+  BaseEdge, type EdgeProps, getBezierPath, getSmoothStepPath, getStraightPath,
+  Position, useReactFlow, useStore,
 } from '@xyflow/react';
 import { ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
@@ -31,6 +32,32 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   onSetType?: (edgeId: string, t: RelationshipType) => void;
   /** The step a book page is on (F-020): its label is the one the room should be reading. */
   stepCurrent?: boolean;
+}
+
+/** The label layer of each canvas, found once. */
+const labelLayers = new WeakMap<HTMLElement, HTMLElement>();
+
+/**
+ * React Flow's EdgeLabelRenderer, without its cost: that one looks the label layer up with
+ * querySelector inside a store selector, so every edge searched the whole canvas on every store update
+ * — 500 arrows made it the biggest cost of a drag, a keystroke in ⌘F and a rename. Here the layer is
+ * found once per canvas, and an edge drawn before the layer exists tries again on the next frame.
+ */
+function EdgeLabelLayer({ children }: { children: ReactNode }) {
+  const domNode = useStore((st) => st.domNode);
+  const [, retry] = useState(0);
+  let layer: HTMLElement | null = null;
+  if (domNode) {
+    const known = labelLayers.get(domNode);
+    layer = known?.isConnected ? known : domNode.querySelector<HTMLElement>('.react-flow__edgelabel-renderer');
+    if (layer) labelLayers.set(domNode, layer);
+  }
+  useEffect(() => {
+    if (layer || !domNode) return;
+    const frame = requestAnimationFrame(() => retry((n) => n + 1));
+    return () => cancelAnimationFrame(frame);
+  }, [layer, domNode]);
+  return layer ? createPortal(children, layer) : null;
 }
 
 /** Which side of a box a line heading (dx, dy) leaves from — used to give bezier/step waypoint
@@ -156,7 +183,7 @@ export function WaypointEdge({
           <circle cx={targetX} cy={targetY} r={4.5} fill={SELECT_COLOR} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
         </>
       )}
-      <EdgeLabelRenderer>
+      <EdgeLabelLayer>
         {/* Selection toolbar — floats above the label midpoint and follows the line while nodes
             move. ← / → toggle the arrowhead at that end (click again to remove it); the dropdown
             picks a predefined relationship type (writes the model attribute + applies its style). */}
@@ -295,7 +322,7 @@ export function WaypointEdge({
             }}
           />
         ))}
-      </EdgeLabelRenderer>
+      </EdgeLabelLayer>
     </>
   );
 }
