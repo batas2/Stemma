@@ -37,15 +37,17 @@ export function unusedMarker(text: string): string {
 }
 
 function inlineMdToHtml(s: string): string {
+  // Not a fixed marker: one the text could hold drew "undefined", or put a tag in its place.
+  const marker = unusedMarker(s);
   const tokens: string[] = [];
-  const protectedStr = s.replace(RAW_INLINE, (m) => { tokens.push(m); return `${tokens.length - 1}`; });
+  const protectedStr = s.replace(RAW_INLINE, (m) => { tokens.push(m); return `${marker}${tokens.length - 1}${marker}`; });
   let t = escHtml(protectedStr);
   t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   t = t.replace(/~~([^~]+)~~/g, '<s>$1</s>');
   t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
   t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
-  t = t.replace(/(\d+)/g, (_, i) => tokens[+i]);
+  t = t.replace(new RegExp(`${marker}(\\d+)${marker}`, 'g'), (_, i) => tokens[+i]);
   return t;
 }
 

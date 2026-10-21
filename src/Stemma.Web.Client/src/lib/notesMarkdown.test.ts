@@ -114,6 +114,15 @@ describe('renderNotes draws what the editor writes', () => {
   });
 });
 
+describe('renderNotes keeps what the text says', () => {
+  it('text that looks like the marker raw tags are set aside under', () => {
+    expect(render('a \u00011\u0001 b').textContent).toBe('a \u00011\u0001 b');
+    const el = render('<u>x</u> \ue0000\ue000 y');
+    expect(el.querySelectorAll('u')).toHaveLength(1);
+    expect(el.textContent).toBe('x \ue0000\ue000 y');
+  });
+});
+
 describe('renderNotes keeps out what the editor does not write', () => {
   it('a span with any other style is text', () => {
     const el = render('x <span style="background:url(https://attacker.example/beacon)">y</span>');
