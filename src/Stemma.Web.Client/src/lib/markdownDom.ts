@@ -22,7 +22,19 @@ function escAttr(s: string): string {
 // Inline HTML we pass through verbatim (colour / highlight / underline live as HTML in the md).
 // The span carries a colour or a highlight and nothing else: a style with `url(…)` made the editor fetch
 // from any server, and `position:fixed` let a note cover the screen.
-const RAW_INLINE = /<\/?(?:u|mark|sub|sup)>|<span style="(?:\s*(?:color|background-color)\s*:\s*(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\(\s*[\d.\s,%]+\))\s*;?)+">|<\/span>|<br\s*\/?>/gi;
+// The read-only renderer (notesMarkdown) and the tag parser (hashtags) use the same rule, so all
+// three agree on what in a note is markup.
+export const RAW_INLINE = /<\/?(?:u|mark|sub|sup)>|<span style="(?:\s*(?:color|background-color)\s*:\s*(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\(\s*[\d.\s,%]+\))\s*;?)+">|<\/span>|<br\s*\/?>/gi;
+
+/**
+ * A character the text does not contain, to mark where a raw tag was taken out while the rest is
+ * escaped and formatted.
+ */
+export function unusedMarker(text: string): string {
+  let code = 0xe000; // the private use area: nobody types these, and if someone has, the next one
+  while (text.includes(String.fromCharCode(code))) code++;
+  return String.fromCharCode(code);
+}
 
 function inlineMdToHtml(s: string): string {
   const tokens: string[] = [];

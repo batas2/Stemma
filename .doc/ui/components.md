@@ -127,6 +127,10 @@ selected). Drives the canvas via the `stemma:layout-action` event.
 
 - **`RichTextEditor.tsx`** — contenteditable WYSIWYG, markdown-backed; simple inline toolbar, or a
   `rich` "turbo" toolbar in the full editor; `#tag` autocomplete from the element's attributes.
+  What it writes (`lib/markdownDom.ts`) is what every read-only view draws (`lib/notesMarkdown.ts`:
+  cards, the presenter, a view's header, shapes) — colour, underline, highlight, headings, lists,
+  tasks, quotes, code, rules, tables — and nothing more; the raw tags it may hold are one rule
+  (`RAW_INLINE`), shared with the `#tag` parser, so a colour's hex code is never a tag.
 - **`NotesModal.tsx`** — the full-screen editor (fills the popup, turbo toolbar).
 - **`MarkerSelect.tsx`** — edge end-marker dropdown with SVG previews.
 - **`CommandPalette.tsx`** (⌘K, F-016) — Views (all of them, with counts), Books, Elements (kind and
