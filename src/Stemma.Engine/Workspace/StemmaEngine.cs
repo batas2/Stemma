@@ -244,8 +244,8 @@ public sealed class StemmaEngine : IAsyncDisposable
     /// <summary>
     /// Whether <paramref name="path"/> is in a folder called <paramref name="folder"/> inside the
     /// workspace, at any depth — counted from the workspace root, never from the top of the disk.
-    /// Looked for in the absolute path, a workspace kept in ~/Architecture/shop took every file in it
-    /// for a model file.
+    /// Looked for in the absolute path, a workspace kept in ~/Views/shop took every file in it for a
+    /// view file, as one in ~/Architecture/shop took every file for a model file.
     /// </summary>
     private bool InFolder(string path, string folder)
     {
