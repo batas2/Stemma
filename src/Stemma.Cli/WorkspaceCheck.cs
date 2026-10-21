@@ -51,8 +51,11 @@ public static class WorkspaceCheck
         }
 
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
-        var views = ReadViews(workspaceRoot);
+        var viewFiles = ReadViews(workspaceRoot);
+        var views = viewFiles.Select(v => v.View).ToList();
         findings.AddRange(DuplicateIds(read.Partials));
+        findings.AddRange(DuplicateLinkIds(read.Partials));
+        findings.AddRange(DuplicateViewIds(workspaceRoot, viewFiles));
         findings.AddRange(DanglingLinkEndpoints(model, ids));
         findings.AddRange(DanglingAttributeReferences(model, ids));
         findings.AddRange(RegisterFindings(model));
@@ -66,15 +69,17 @@ public static class WorkspaceCheck
         return findings;
     }
 
-    /// <summary>The views declared in <c>Views/*.cs</c>, read once for every check that names them.</summary>
-    private static IReadOnlyList<ArchView> ReadViews(string workspaceRoot)
+    /// <summary>The views declared in <c>Views/*.cs</c>, each with its file, read once for every check that names them.</summary>
+    private static IReadOnlyList<(string File, ArchView View)> ReadViews(string workspaceRoot)
     {
         var viewsDir = Path.Combine(workspaceRoot, "Views");
         if (!Directory.Exists(viewsDir)) return [];
 
-        var docs = Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.AllDirectories)
-            .Select(f => (FilePath: f, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()));
-        return ViewsAdapter.ReadAllFrom(docs);
+        return Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal)
+            .SelectMany(f => ViewsAdapter.ReadAllFrom([(f, CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot())])
+                .Select(view => (f, view)))
+            .ToList();
     }
 
     /// <summary>
@@ -127,7 +132,7 @@ public static class WorkspaceCheck
                 yield break;
             }
 
-            // A view declared twice is already reported elsewhere as arbitrary; the first one stands.
+            // A view declared twice is reported as `view/duplicate-id`; here the first one stands.
             var viewMembers = views
                 .GroupBy(v => v.Id, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First().ElementIds.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
@@ -666,6 +671,28 @@ public static class WorkspaceCheck
         foreach (var group in partials.SelectMany(m => m.Elements).GroupBy(e => e.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
             yield return new(CheckSeverity.Error, "model/duplicate-id",
                 $"id '{group.Key}' is declared {group.Count()} times; whichever wins is arbitrary", group.Key);
+    }
+
+    /// <summary>A link id twice over: the canvas keys an edge by its id, so one of the two is not drawn.</summary>
+    private static IEnumerable<CheckFinding> DuplicateLinkIds(IReadOnlyList<ArchModel> partials)
+    {
+        foreach (var group in partials.SelectMany(m => m.Links).GroupBy(l => l.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
+            yield return new(CheckSeverity.Error, "link/duplicate-id",
+                $"link id '{group.Key}' is declared {group.Count()} times; only one of them is drawn, and which is arbitrary", group.Key);
+    }
+
+    /// <summary>
+    /// Two view files declaring one id. The app opens, saves and deletes a view by its id, so it
+    /// reaches whichever file it read first, and an edit meant for the other goes into this one.
+    /// </summary>
+    private static IEnumerable<CheckFinding> DuplicateViewIds(string workspaceRoot, IReadOnlyList<(string File, ArchView View)> views)
+    {
+        foreach (var group in views.GroupBy(v => v.View.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        {
+            var files = string.Join(", ", group.Select(v => Path.GetRelativePath(workspaceRoot, v.File).Replace('\\', '/')));
+            yield return new(CheckSeverity.Error, "view/duplicate-id",
+                $"view id '{group.Key}' is declared by {group.Count()} files ({files}); the app opens and saves whichever it reads first, so give each its own id", group.Key);
+        }
     }
 
     private static IEnumerable<CheckFinding> DanglingLinkEndpoints(ArchModel model, HashSet<string> ids)

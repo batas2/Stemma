@@ -465,7 +465,8 @@ What it catches, in rough order of how often it bites:
 |---|---|---|
 | `link/dangling-endpoint`, `element/dangling-reference`, `view/dangling-member` | error | A string id nothing else checks. The node or edge silently vanishes. |
 | `view/empty` | error | The render will report `empty`; better to know now. |
-| `model/duplicate-id` | error | Which one wins is arbitrary. |
+| `model/duplicate-id`, `link/duplicate-id` | error | An element or a link id declared twice, in one file or two. Which one wins is arbitrary. |
+| `view/duplicate-id` | error | Two view files with one id. The app opens and saves whichever it reads first. |
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |
 | `book/missing-view`, `book/dangling-focus` | error | A page that shows a view that is gone, or points at an element that is: a slide that outlived what it was about. |
 | `book/focus-outside-view` | warning | The page points at an element its view does not draw, so nothing lights up. |

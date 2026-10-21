@@ -847,6 +847,56 @@ public sealed class WorkspaceCheckTests : IDisposable
     }
 
     [Fact]
+    public void A_link_id_declared_twice_is_an_error()
+    {
+        // Elements were checked for duplicates and links were not, though the canvas keys an edge by
+        // its id as it keys a box: one of the two arrows is simply not drawn.
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var f1 = new DataFlow("flow_1", "mod_a", "mod_b", "order");
+                    var f2 = new DataFlow("flow_1", "mod_b", "mod_a", "receipt");
+                    return Model.Of(a, b, f1, f2);
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "link/duplicate-id").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.ElementId.Should().Be("flow_1");
+    }
+
+    [Fact]
+    public void A_link_id_declared_in_two_model_files_is_an_error_too()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var f1 = new DataFlow("flow_1", "mod_a", "mod_b", "order");
+                    return Model.Of(a, b, f1);
+        """);
+        ModelFile("Payments.cs", "Payments", """
+                    var f2 = new DataFlow("flow_1", "mod_b", "mod_a", "receipt");
+                    return Model.Of(f2);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "link/duplicate-id");
+    }
+
+    [Fact]
+    public void A_view_id_declared_by_two_files_is_an_error_naming_both()
+    {
+        // A comment said this was reported elsewhere; nothing reported it. The app opens and saves
+        // whichever file it reads first, so the other one's edits go nowhere.
+        Model(TwoModules);
+        View("First", """new(Id: "view_x", Name: "First", BaseView: "all", ElementIds: new[] { "mod_a" })""");
+        View("Second", """new(Id: "view_x", Name: "Second", BaseView: "all", ElementIds: new[] { "mod_b" })""");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/duplicate-id").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.ElementId.Should().Be("view_x");
+        finding.Message.Should().Contain("First.cs").And.Contain("Second.cs");
+    }
+
+    [Fact]
     public void Build_output_under_Architecture_is_not_part_of_the_model()
     {
         Model(TwoModules);
