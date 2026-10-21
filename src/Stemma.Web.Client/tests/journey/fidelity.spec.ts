@@ -76,9 +76,14 @@ test('an edit in the inspector changes its own argument, and undo puts the bytes
   const original = await readFile(join(root, ARCH));
   await inspect(page, 'stemma CLI');
 
+  // The phase the sample gives it, read rather than assumed: when the sample's phase changed, the
+  // expected file was the original, and the check passed only when it read the file before the edit.
+  const phase = await field(page, 'Phase').inputValue();
+  expect(phase).not.toBe('shipped 2026-10');
   await field(page, 'Phase').fill('shipped 2026-10');
   await field(page, 'Phase').press('Enter');
-  const expected = original.toString('utf8').replace('Phase: "shipped 2026-08"', 'Phase: "shipped 2026-10"');
+  const expected = original.toString('utf8').replace(`Phase: "${phase}"`, 'Phase: "shipped 2026-10"');
+  expect(expected).not.toBe(original.toString('utf8'));
   await expect.poll(() => read(ARCH)).toBe(expected);
 
   const undo = page.locator('button[title^="Undo"]');
