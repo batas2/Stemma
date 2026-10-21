@@ -96,6 +96,47 @@ public sealed class StemmaEngine : IAsyncDisposable
             .FirstOrDefault();
     }
 
+    /// <summary>
+    /// The refusal for an operation whose own values are unacceptable, or null. Checked before anything
+    /// else, because these values are pasted into source text or used as a path: a name that is not an
+    /// identifier would be code, and a path outside the workspace would be a write anywhere on disk.
+    /// </summary>
+    private OperationFailed? Refuse(OperationBase op)
+    {
+        static bool Identifier(string? s) => !string.IsNullOrEmpty(s) && SyntaxFacts.IsValidIdentifier(s);
+        static bool DottedName(string? s) => !string.IsNullOrEmpty(s) && s.Split('.').All(Identifier);
+        switch (op)
+        {
+            case AddTypeOp x:
+                string full;
+                try { full = Path.GetFullPath(x.FilePath, _model.RootPath); }
+                catch (Exception) { return new(x.OpId, "OutsideWorkspace", $"'{x.FilePath}' is not a path"); }
+                if (!IsUnder(_model.RootPath, full) || !full.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                    return new(x.OpId, "OutsideWorkspace", $"A type can only be added to a .cs file inside the workspace, not '{x.FilePath}'");
+                if (full.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase))
+                    return new(x.OpId, "GeneratedFile", "Generated files are never edited");
+                // Build output, or a file that exists but is not one the workspace holds: writing a new
+                // document there would replace whatever is in it.
+                if (ModelWorkspaceLoader.IsExcluded(_model.RootPath, full))
+                    return new(x.OpId, "OutsideWorkspace", $"'{x.FilePath}' is in a folder the workspace leaves out");
+                if (File.Exists(full) && FindDocument(full) is null)
+                    return new(x.OpId, "OutsideWorkspace", $"'{x.FilePath}' exists but is not part of the workspace; it is not overwritten");
+                if (!Identifier(x.Name)) return new(x.OpId, "InvalidName", $"'{x.Name}' is not a C# type name");
+                if (!DottedName(x.Namespace)) return new(x.OpId, "InvalidName", $"'{x.Namespace}' is not a C# namespace");
+                return null;
+            case RenameTypeOp x when !Identifier(x.NewName):
+                return new(x.OpId, "InvalidName", $"'{x.NewName}' is not a C# type name");
+            case AddPropertyOp x when !Identifier(x.Name):
+                return new(x.OpId, "InvalidName", $"'{x.Name}' is not a C# property name");
+            case AddPropertyOp x when SyntaxFactory.ParseTypeName(x.TypeName ?? "") is var t && (t.ContainsDiagnostics || t.ToString() != (x.TypeName ?? "").Trim()):
+                return new(x.OpId, "InvalidName", $"'{x.TypeName}' is not a C# type");
+            case RenamePropertyOp x when !Identifier(x.NewName):
+                return new(x.OpId, "InvalidName", $"'{x.NewName}' is not a C# property name");
+            default:
+                return null;
+        }
+    }
+
     private static bool IsUnder(string directory, string path)
     {
         var relative = Path.GetRelativePath(directory, path);
@@ -342,6 +383,14 @@ public sealed class StemmaEngine : IAsyncDisposable
                 _archBeforeOp = null;
                 EngineLog.UndoSnapshotUnavailable(_log, op.GetType().Name, e);
             }
+        }
+
+        // Names and paths an operation carries become C# text and file locations. Anything that is not a
+        // C# name, or a file outside this workspace (or a generated one), is refused before it is used.
+        if (Refuse(op) is { } refused)
+        {
+            EngineLog.OperationFailed(_log, op.GetType().Name, 0, $"{refused.Reason}: {refused.Message}", null);
+            return refused;
         }
 
         var result = op switch

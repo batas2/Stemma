@@ -71,8 +71,17 @@ public static class StemmaWebHost
         // genuinely wrong. Kestrel only ever binds loopback here, so an origin that can reach it is
         // already running on this machine and gains nothing from being refused.
         builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
-            .SetIsOriginAllowed(IsLocalOrigin)
+            .SetIsOriginAllowed(IsDevOrigin)
             .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+        // A server on loopback is still reachable from any page the user's browser opens, by a name that
+        // resolves to 127.0.0.1 (DNS rebinding): that page is then "same origin" and the whole API is
+        // its. Only requests addressed to a loopback name are answered. Set here rather than in
+        // appsettings.json, which not every package ships.
+        builder.Services.Configure<Microsoft.AspNetCore.HostFiltering.HostFilteringOptions>(o =>
+        {
+            o.AllowedHosts = ["localhost", "127.0.0.1", "[::1]"];
+            o.AllowEmptyHosts = false;
+        });
         builder.Services.ConfigureHttpJsonOptions(o =>
         {
             o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -81,6 +90,23 @@ public static class StemmaWebHost
 
         var app = builder.Build();
 
+        app.UseHostFiltering();
+        // CORS does not cover a WebSocket, nor a "simple" cross-site POST: a page anywhere could open the
+        // hub and apply operations, or close the workspace. A browser always says where a request comes
+        // from, so a request that names an origin must name this server's own (or the dev server's).
+        // One with no Origin is not from a page — the tests, the CLI — and a page cannot leave it out.
+        app.Use(async (context, next) =>
+        {
+            var path = context.Request.Path;
+            if ((path.StartsWithSegments("/api") || path.StartsWithSegments("/hubs"))
+                && context.Request.Headers.Origin is { Count: > 0 } origin
+                && !IsAllowedOrigin(origin.ToString(), context.Request.Host))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+            await next();
+        });
         app.UseCors();
         // Before anything that logs, so every downstream record inherits the correlation scope.
         app.UseMiddleware<CorrelationMiddleware>();
@@ -155,6 +181,24 @@ public static class StemmaWebHost
     /// </summary>
     public static bool IsLocalOrigin(string origin) =>
         Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.IsLoopback;
+
+    /// <summary>The Vite dev server, the one other origin that serves this app (development only).</summary>
+    public static bool IsDevOrigin(string origin) =>
+        Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.IsLoopback && uri.Scheme == Uri.UriSchemeHttp && uri.Port == 5173;
+
+    /// <summary>
+    /// Whether a request naming <paramref name="origin"/> may use the API: this server's own page (its
+    /// origin is the host the request was addressed to) or the dev server. Any other site — or another
+    /// local web app — may not.
+    /// </summary>
+    public static bool IsAllowedOrigin(string origin, HostString host)
+    {
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+        var own = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+        return (host.HasValue && string.Equals(own, host.Value, StringComparison.OrdinalIgnoreCase)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            || IsDevOrigin(origin);
+    }
 
     /// <summary>
     /// Where the built front end is.
