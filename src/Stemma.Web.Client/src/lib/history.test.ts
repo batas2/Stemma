@@ -197,6 +197,23 @@ describe('History', () => {
     expect(h.canUndo).toBe(false);
   });
 
+  it('a group that takes back its own operation leaves no step that would undo someone else\'s', async () => {
+    const { driver, engine, edit } = fakeDriver();
+    const h = new History(driver);
+    op(h, edit, 'earlier');
+    await h.undo();
+    op(h, edit, 'before');
+    h.beginGroup('Reverse relationship');
+    op(h, edit, 'remove');
+    expect(await h.takeBackInGroup()).toBe(true);
+    h.endGroup(top(engine));
+
+    // One step to undo, and it is "before" — not the removal, which the engine no longer holds as ours.
+    expect(h.undoDescription).toBe('before');
+    expect(h.canRedo).toBe(false);
+    expect(await h.takeBackInGroup()).toBe(false);
+  });
+
   it('returns null with nothing to undo, so the caller can fall back', async () => {
     const { driver } = fakeDriver();
     expect(await new History(driver).undo()).toBeNull();

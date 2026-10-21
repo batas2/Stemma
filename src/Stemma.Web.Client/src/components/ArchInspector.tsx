@@ -6,6 +6,8 @@ import { InspectorActions } from './InspectorActions';
 import { MarkerSelect } from './MarkerSelect';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
+import { relink } from '@/lib/relink';
+import { linkLabel, linkLabelField, LINK_FIELD_LABEL } from '@/lib/linkLabel';
 import { DEFAULT_EDGE_STYLE, DEFAULT_EDGE_ROUTING, type EdgeLineStyle, type EdgeStyle, type EdgeAnimSpeed, type EdgeRouting } from '@/lib/edgeStyles';
 import { RELATIONSHIP_TYPES, type RelationshipType } from '@/lib/relationshipTypes';
 import { DEFAULT_NODE_STYLE, DEFAULT_VISIBLE_FIELDS, type NodeBorderStyle, type NodeStyle, type NodeFillStyle, type NodeShadow, type NodeAccentSide, type NodeTextSize, type NodeTextAlign, type NodeAnimation, type NodeAnimSpeed, type NodeFieldKey } from '@/lib/nodeStyles';
@@ -58,9 +60,9 @@ export function ArchInspector() {
   if (tab === 'layout') {
     panel = <PanelShell title="Layout & arrange" icon={LAYOUT_TAB.icon} onClose={() => setTab(null)}><LayoutPanel /></PanelShell>;
   } else if (tab?.startsWith('link.')) {
-    panel = arch && linkId ? <LinkInspectorBody linkId={linkId} /> : <SelectPrompt what="relationship" onClose={() => setTab(null)} />;
+    panel = arch && linkId ? <LinkInspectorBody key={linkId} linkId={linkId} /> : <SelectPrompt what="relationship" onClose={() => setTab(null)} />;
   } else if (tab?.startsWith('element.')) {
-    panel = arch && elementId ? <ElementInspectorBody elementId={elementId} /> : <SelectPrompt what="element" onClose={() => setTab(null)} />;
+    panel = arch && elementId ? <ElementInspectorBody key={elementId} elementId={elementId} /> : <SelectPrompt what="element" onClose={() => setTab(null)} />;
   }
 
   return (
@@ -616,7 +618,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
         </Section>
 
         <Section label="Comments" persistKey="element.comments" defaultOpen={false} icon={<MessageSquare className="w-3 h-3" />}>
-          <CommentsPanel targetKind="element" targetId={e.id} title={e.name} />
+          <CommentsPanel key={e.id} targetKind="element" targetId={e.id} title={e.name} />
         </Section>
       </div>
       <div className="p-3 mt-auto border-t border-default">
@@ -697,7 +699,8 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
       const draft = useApp.getState().linkDraft;
       const mine = draft && draft.linkId === link.id ? draft : null;
       setPayloadEdit(mine?.field === 'payload' ? mine.value : (link.attributes.payload ?? ''));
-      setKindEdit(mine?.field === 'kind' ? mine.value : (link.attributes.kind ?? 'uses'));
+      // A dependency's kind, or a relation's label: whichever attribute the arrow is labelled with.
+      setKindEdit(mine && mine.field === linkLabelField(link.kind) ? mine.value : linkLabel(link));
     }
     setLinkStatus(tag?.lifecycle?.status ?? '');
     setLinkPhase(tag?.lifecycle?.phase ?? '');
@@ -746,6 +749,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   const from = arch.elements.find((x) => x.id === link.fromId);
   const to = arch.elements.find((x) => x.id === link.toId);
   const isDataFlow = link.kind === 'dataFlow';
+  const labelField = linkLabelField(link.kind);
 
   async function handlePayloadSave() {
     if (!link || !isDataFlow) return;
@@ -762,13 +766,13 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   async function handleKindSave() {
     if (!link || isDataFlow) return;
     if (linkDraft?.linkId === linkId) setLinkDraft(null);
-    if (kindEdit === (link.attributes.kind ?? '')) return;
+    if (kindEdit === (link.attributes[labelField] ?? '')) return;
     const r = await applyOperation({
       kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
-      linkId: link.id, attributeName: 'kind', value: kindEdit,
+      linkId: link.id, attributeName: labelField, value: kindEdit,
     });
     if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
-    else setToast({ kind: 'success', text: 'Kind updated' });
+    else setToast({ kind: 'success', text: `${LINK_FIELD_LABEL[labelField]} updated` });
   }
 
   // Pick a predefined relationship type: write the model attribute + apply the style preset
@@ -778,7 +782,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
     if (isDataFlow) setPayloadEdit(t.value); else setKindEdit(t.value);
     setLinkDraft(null);
     setEdgeStyleFor(linkId, { ...userStyle, ...t.style });
-    const field = isDataFlow ? 'payload' : 'kind';
+    const field = labelField;
     if ((link.attributes[field] ?? '') === t.value) { setToast({ kind: 'success', text: `Styled as ${t.value}` }); return; }
     const r = await applyOperation({
       kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
@@ -791,7 +795,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   async function handleRemove() {
     if (!link) return;
     const ok = await confirmAction({
-      title: `Remove this ${isDataFlow ? 'data flow' : 'dependency'}?`,
+      title: `Remove this ${isDataFlow ? 'data flow' : link.kind === 'relation' ? 'relation' : 'dependency'}?`,
       confirmLabel: 'Remove',
       destructive: true,
     });
@@ -809,20 +813,13 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
     setEdgeStyleFor(linkId, { ...DEFAULT_EDGE_STYLE, ...preset });
   }
 
-  // Reverse the relationship in the model (swap source ↔ target) via remove + re-add.
+  // Reverse the relationship in the model (swap source ↔ target): the same relationship, kept whole.
   async function reverseLink() {
     if (!link) return;
-    const kind = link.kind === 'dataFlow' ? 'dataFlow' : 'dependency';
-    const r1 = await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: link.id });
-    if ('reason' in r1) { setToast({ kind: 'error', text: friendlyOpError(r1) }); return; }
-    const r2 = await applyOperation({
-      kind: 'AddLink', opId: `op_${Date.now()}_r`,
-      linkKind: kind, fromId: link.toId, toId: link.fromId,
-      payload: kind === 'dataFlow' ? (link.attributes.payload ?? 'Event') : null,
-      dependencyKind: kind === 'dependency' ? (link.attributes.kind ?? 'uses') : null,
-    });
-    if ('reason' in r2) setToast({ kind: 'error', text: friendlyOpError(r2) });
-    else { setToast({ kind: 'success', text: 'Relationship reversed' }); selectLink(null); }
+    const { id, error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
+    if (error) setToast({ kind: 'error', text: error });
+    else setToast({ kind: 'success', text: 'Relationship reversed' });
+    selectLink(id);
   }
 
   return (
@@ -830,7 +827,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
       <div className="px-4 py-3 border-b border-default flex items-center gap-2">
         <Workflow className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
         <h2 className="text-sm font-semibold flex-1 truncate">
-          {isDataFlow ? 'Data Flow' : 'Dependency'}
+          {isDataFlow ? 'Data Flow' : link.kind === 'relation' ? 'Relation' : 'Dependency'}
         </h2>
         <InspectorActions showCollapseAll={false} />
         <button className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => selectLink(null)} title="Close">
@@ -857,12 +854,12 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
             />
           ) : (
             <RelTypeCombobox
-              label="Kind"
+              label={LINK_FIELD_LABEL[labelField]}
               value={kindEdit}
-              onChange={(v) => { setKindEdit(v); setLinkDraft({ linkId, field: 'kind', value: v }); }}
+              onChange={(v) => { setKindEdit(v); setLinkDraft({ linkId, field: labelField, value: v }); }}
               onCommit={handleKindSave}
               onPickType={applyRelType}
-              placeholder="uses, calls, reads…"
+              placeholder={labelField === 'label' ? 'gated by, implemented by…' : 'uses, calls, reads…'}
             />
           )}
 

@@ -162,6 +162,19 @@ export class History {
     this.push(step(g.description, this.now(), { ops: g.ops, presentation: g.presentation, topAfter }));
   }
 
+  /**
+   * Undo the open group's last operation: a step that cannot finish takes back what it began. The
+   * engine then holds that operation to redo, and no step here may redo it, so the redo steps go.
+   */
+  async takeBackInGroup(): Promise<boolean> {
+    if (!this.group || this.group.ops === 0) return false;
+    if (!(await this.driver.undoOperation())) return false;
+    this.group.ops--;
+    this.redoSteps = [];
+    this.notify();
+    return true;
+  }
+
   get groupOpen(): boolean { return this.group !== null; }
 
   /** Something outside this window changed the files: what was undone can no longer be redone. */

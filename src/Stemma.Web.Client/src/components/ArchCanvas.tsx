@@ -104,6 +104,7 @@ import { stepMark, stepsLit, viewKeyOf } from '@/lib/books';
 import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
+import { relink } from '@/lib/relink';
 import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
 import { loadNote, saveNote } from '@/lib/elementNotes';
@@ -489,7 +490,7 @@ function CanvasInner() {
     if (!wasMine) return;
     const link = useApp.getState().arch?.links.find((l) => l.id === edgeId);
     if (!link) return;
-    const field = link.kind === 'dataFlow' ? 'payload' : 'kind';
+    const field = linkLabelField(link.kind);
     const current = linkLabel(link);
     const next = value.trim();
     if (!next || next === current) return;
@@ -520,7 +521,7 @@ function CanvasInner() {
   }, []);
 
   // Apply a predefined relationship type: write the attribute into the model (kind for a
-  // dependency, payload for a data flow) and apply the type's style preset, keeping the
+  // dependency, payload for a data flow, label for a relation) and apply the type's style preset, keeping the
   // user's routing/docking choices.
   const handleSetEdgeType = useCallback(async (edgeId: string, t: RelationshipType) => {
     const st = useApp.getState();
@@ -528,7 +529,7 @@ function CanvasInner() {
     if (!link) return;
     const cur = st.edgeStyles[edgeId] ?? DEFAULT_EDGE_STYLE;
     st.setEdgeStyleFor(edgeId, { ...cur, ...t.style });
-    const field = link.kind === 'dataFlow' ? 'payload' : 'kind';
+    const field = linkLabelField(link.kind);
     if ((link.attributes[field] ?? '') === t.value) { setToast({ kind: 'success', text: `Styled as ${t.value}` }); return; }
     const r = await applyOperation({
       kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
@@ -1995,18 +1996,15 @@ function CanvasInner() {
       setEdgeHandles((prev) => ({ ...prev, [oldEdge.id]: handles }));
       return;
     }
-    const linkKind = view === 'dependencyGraph' ? 'dependency' : 'dataFlow';
-    await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: oldEdge.id });
+    // The same relationship with a new end — its kind, label and look kept — not a new one of
+    // whichever kind the view usually draws.
+    const link = arch?.links.find((l) => l.id === oldEdge.id);
+    if (!link) return;
     pendingDock.current.push({ from: conn.source, to: conn.target, handles });
-    const result = await applyOperation({
-      kind: 'AddLink', opId: `op_${Date.now() + 1}`,
-      linkKind, fromId: conn.source, toId: conn.target,
-      payload: linkKind === 'dataFlow' ? 'Event' : null,
-      dependencyKind: linkKind === 'dependency' ? 'uses' : null,
-    });
-    if ('reason' in result) setToast({ kind: 'error', text: friendlyOpError(result) });
+    const { error } = await relink(link, conn.source, conn.target, 'Reconnect relationship');
+    if (error) setToast({ kind: 'error', text: error });
     else setToast({ kind: 'success', text: 'Relationship reconnected' });
-  }, [arch, view, workspace, layoutKey, setToast]);
+  }, [arch, workspace, layoutKey, setToast]);
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/stemma-palette')

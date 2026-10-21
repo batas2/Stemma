@@ -237,7 +237,7 @@ export function ShapeInspector({ viewKey, workspaceRoot }: Props) {
         {shape.kind === 'arrow' && <ArrowEndpointInfo arrow={shape as ShapeArrow} />}
 
         {/* Comments — same substrate the model elements use, targeting the shape id. */}
-        <CommentsPanel targetKind="shape" targetId={shape.id} title={(shape as ShapeRect).label ?? shape.kind} />
+        <CommentsPanel key={shape.id} targetKind="shape" targetId={shape.id} title={(shape as ShapeRect).label ?? shape.kind} />
       </div>
 
       <div className="p-3 border-t border-default">
