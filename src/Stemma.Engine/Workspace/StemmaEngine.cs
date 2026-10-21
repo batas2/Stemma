@@ -896,10 +896,9 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RenameTypeAsync(RenameTypeOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (typeModel, doc, _, _) = site;
 
         var compilation = await doc.Project.GetCompilationAsync(ct);
         var symbol = compilation?.GetTypeByMetadataName(op.TypeId);
@@ -917,15 +916,9 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveTypeAsync(RemoveTypeOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeNode = root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>()
-            .FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
-        if (typeNode is null) return new OperationFailed(op.OpId, "TypeNodeNotFound", op.TypeId);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (_, doc, root, typeNode) = site;
 
         var newRoot = TypeWriter.RemoveMember(root, typeNode);
         var oldSolution = _workspace.CurrentSolution;
@@ -936,15 +929,10 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> AddPropertyAsync(AddPropertyOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
-        if (typeDecl is null) return new OperationFailed(op.OpId, "TypeNodeNotFound", op.TypeId);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (_, doc, root, declaration) = site;
+        if (declaration is not TypeDeclarationSyntax typeDecl) return new OperationFailed(op.OpId, "TypeNodeNotFound", op.TypeId);
 
         var accessors = "";
         if (op.HasGetter) accessors += " get;";
@@ -967,10 +955,9 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RenamePropertyAsync(RenamePropertyOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var doc = site.Document;
         var compilation = await doc.Project.GetCompilationAsync(ct);
         var typeSymbol = compilation?.GetTypeByMetadataName(op.TypeId);
         var propSymbol = typeSymbol?.GetMembers(op.PropertyName).OfType<ISymbol>().FirstOrDefault();
@@ -989,13 +976,10 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemovePropertyAsync(RemovePropertyOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (_, doc, root, declaration) = site;
+        var typeDecl = declaration as TypeDeclarationSyntax;
         var prop = typeDecl?.Members.OfType<PropertyDeclarationSyntax>().FirstOrDefault(p => p.Identifier.Text == op.PropertyName);
         if (prop is null) return new OperationFailed(op.OpId, "PropertyNotFound", op.PropertyName);
 
@@ -1018,13 +1002,10 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveInheritanceAsync(RemoveInheritanceOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (typeModel, doc, root, declaration) = site;
+        var typeDecl = declaration as TypeDeclarationSyntax;
         if (typeDecl?.BaseList is null || typeDecl.BaseList.Types.Count == 0)
             return new OperationFailed(op.OpId, "NoBaseList", "Type has no base list");
         // A base class is always first in the list, but the first entry is not always a base class:
@@ -1046,15 +1027,12 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveImplementationAsync(RemoveImplementationOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
         var ifaceModel = _model.FindType(op.InterfaceTypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
         if (ifaceModel is null) return new OperationFailed(op.OpId, "InterfaceNotFound", op.InterfaceTypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
+        var (_, doc, root, declaration) = site;
+        var typeDecl = declaration as TypeDeclarationSyntax;
         if (typeDecl?.BaseList is null) return new OperationFailed(op.OpId, "NoBaseList", "Type has no base list");
 
         var match = typeDecl.BaseList.Types.FirstOrDefault(b => b.Type.ToString() == ifaceModel.Name || b.Type.ToString() == ifaceModel.Id);
@@ -1073,16 +1051,12 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> ModifyBaseListAsync(string opId, string typeId, string addedTypeId, bool addAtFront, CancellationToken ct)
     {
-        var typeModel = _model.FindType(typeId);
+        var (site, refused) = await FindTypeAsync(opId, typeId, ct);
+        if (site is null) return refused!;
         var addedModel = _model.FindType(addedTypeId);
-        if (typeModel is null) return new OperationFailed(opId, "TypeNotFound", typeId);
         if (addedModel is null) return new OperationFailed(opId, "TargetNotFound", addedTypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(opId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(opId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
-        if (typeDecl is null) return new OperationFailed(opId, "TypeNodeNotFound", typeId);
+        var (_, doc, root, declaration) = site;
+        if (declaration is not TypeDeclarationSyntax typeDecl) return new OperationFailed(opId, "TypeNodeNotFound", typeId);
 
         if (typeDecl.BaseList?.Types.Any(b => b.Type.ToString() == addedModel.Name) == true)
             return new OperationFailed(opId, "AlreadyPresent", addedTypeId);
@@ -1096,6 +1070,34 @@ public sealed class StemmaEngine : IAsyncDisposable
             var refreshed = _model.FindType(typeId);
             return new OperationApplied(opId, refreshed is null ? [] : [new TypeUpdated(refreshed)]);
         }, ct);
+    }
+
+    private sealed record TypeSite(TypeModel Model, Document Document, SyntaxNode Root, BaseTypeDeclarationSyntax Declaration);
+
+    /// <summary>
+    /// The declaration of the type the model calls <paramref name="typeId"/>, matched by that full
+    /// name in each file the model says declares it — never by the simple name, which took the first
+    /// <c>Item</c> in a file that has one in two namespaces. Parts of one partial type are one type, and
+    /// the first part stands for it; any other two declarations with the name (a nested type and a
+    /// top-level one, which the model names alike) are refused, since which was meant cannot be told.
+    /// </summary>
+    private async Task<(TypeSite? Site, OperationFailed? Refusal)> FindTypeAsync(string opId, string typeId, CancellationToken ct)
+    {
+        var models = _model.AllTypes.Where(t => t.Id == typeId).ToList();
+        if (models.Count == 0) return (null, new OperationFailed(opId, "TypeNotFound", typeId));
+        var sites = new List<TypeSite>();
+        foreach (var model in models.DistinctBy(m => m.FilePath, StringComparer.OrdinalIgnoreCase))
+        {
+            if (FindDocument(model.FilePath) is not { } doc || await doc.GetSyntaxRootAsync(ct) is not { } root) continue;
+            sites.AddRange(root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>()
+                .Where(d => WorkspaceLoader.TypeIdOf(d) == typeId)
+                .Select(d => new TypeSite(model, doc, root, d)));
+        }
+        if (sites.Count == 0) return (null, new OperationFailed(opId, "TypeNodeNotFound", typeId));
+        if (sites.Count > 1 && !sites.All(s => s.Declaration.Modifiers.Any(SyntaxKind.PartialKeyword)))
+            return (null, new OperationFailed(opId, "AmbiguousType",
+                $"{sites.Count} declarations are named {typeId} (a nested type is named by its namespace and its own name), so which one is meant cannot be told."));
+        return (sites[0], null);
     }
 
     private static async Task WriteFileAtomicAsync(string path, string contents, CancellationToken ct)

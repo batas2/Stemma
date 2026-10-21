@@ -105,7 +105,10 @@ and edited like a positional one, and an argument added to it is named too.
 ### Type operations (any `.cs` file in the workspace)
 
 Not sent by the canvas today; accepted by the operation protocol, so an agent can send them. Each
-refuses `TypeNotFound` for an id the model does not have.
+names its type by full name (the model's id, namespace and name) and edits that declaration, never
+the first with the same simple name. Each refuses `TypeNotFound` for an id the model does not have,
+and `AmbiguousType` when two declarations share the id that are not parts of one partial type — a
+nested type and a top-level one, which the model names alike.
 
 | Operation | Edits exactly | Refuses |
 |---|---|---|

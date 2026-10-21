@@ -93,7 +93,7 @@ public sealed class WorkspaceLoader(ILogger? log = null)
                 {
                     var ns = GetNamespace(typeDecl);
                     var name = typeDecl.Identifier.Text;
-                    var fqn = string.IsNullOrEmpty(ns) ? name : $"{ns}.{name}";
+                    var fqn = TypeIdOf(typeDecl);
                     var kind = typeDecl switch
                     {
                         ClassDeclarationSyntax => TypeKind.Class,
@@ -160,6 +160,16 @@ public sealed class WorkspaceLoader(ILogger? log = null)
                 Types: types));
         }
         return new WorkspaceModel(rootPath, projects);
+    }
+
+    /// <summary>
+    /// The id the model gives a type declaration: its namespace and its name. A type operation finds
+    /// its declaration by this, never by the name alone.
+    /// </summary>
+    internal static string TypeIdOf(BaseTypeDeclarationSyntax typeDecl)
+    {
+        var ns = GetNamespace(typeDecl);
+        return string.IsNullOrEmpty(ns) ? typeDecl.Identifier.Text : $"{ns}.{typeDecl.Identifier.Text}";
     }
 
     private static string GetNamespace(SyntaxNode node)
