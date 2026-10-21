@@ -277,6 +277,120 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().Contain(f => f.Rule == "sidecar/unreadable");
     }
 
+    [Theory]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [42] } } }""", "views.custom:view_v.shapes[0]")]
+    [InlineData("""{ "version": 1, "views": [] }""", "views")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": 7, "kind": "rect" } ] } } }""", "views.custom:view_v.shapes[0].id")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": "sh_1", "kind": ["rect"] } ] } } }""", "views.custom:view_v.shapes[0].kind")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": "sh_1", "kind": "label", "text": 3 } ] } } }""", "views.custom:view_v.shapes[0].text")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": "sh_1", "kind": "arrow", "toAnchor": { "kind": "element", "id": 5 } } ] } } }""", "views.custom:view_v.shapes[0].toAnchor.id")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": "flat" } }""", "views.custom:view_v")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": {} } } }""", "views.custom:view_v.shapes")]
+    [InlineData("""[1, 2]""", "the file")]
+    public void A_sidecar_value_of_the_wrong_kind_is_named_rather_than_crashing_the_check(string sidecar, string path)
+    {
+        // Each of these threw out of the check ("requires an element of type 'Object'"), and the CLI
+        // exited 1 — the code that means the workspace has errors — having checked nothing.
+        Model(TwoModules);
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), sidecar);
+
+        var findings = Run();
+
+        findings.Should().Contain(f => f.Rule == "sidecar/malformed" && f.Message.Contains($"`{path}`")
+                                       || f.Rule == "sidecar/malformed" && path == "the file");
+    }
+
+    [Fact]
+    public void No_value_of_any_kind_anywhere_in_the_sidecar_crashes_the_check()
+    {
+        // A hand edit or a merge can leave any value as any kind. Each is replaced in turn by each
+        // kind it is not, and the check has to report, never throw.
+        Model(TwoModules);
+        View("V", """new(Id: "view_v", Name: "V", BaseView: "all", ElementIds: new[] { "mod_a", "mod_b" })""");
+        var rich = System.Text.Json.Nodes.JsonNode.Parse("""
+            {
+              "version": 1,
+              "views": {
+                "custom:view_v": {
+                  "nodes": { "mod_a": { "x": 0, "y": 0 } },
+                  "layout": { "kind": "grid", "columns": [["mod_a"], ["mod_b"]], "gap": [40, 40] },
+                  "header": { "title": "T", "legend": [ { "status": "current" }, { "swatch": { "fill": "#fff" }, "label": "L" } ] },
+                  "shapes": [
+                    { "id": "sh_1", "kind": "label", "text": "Hi" },
+                    { "id": "sh_2", "kind": "arrow", "fromAnchor": { "kind": "element", "id": "mod_a" }, "toAnchor": { "kind": "shape", "id": "sh_1" } }
+                  ]
+                },
+                "moduleMap": { "layout": { "kind": "row", "ids": ["mod_a"], "gap": 10 } }
+              },
+              "books": {
+                "b": { "name": "B", "order": ["p1"], "pages": { "p1": { "title": "P", "view": "view_v", "focus": ["mod_a"], "steps": ["flow_x", { "link": "flow_y" }] } } }
+              }
+            }
+            """)!;
+        var replacements = new Func<System.Text.Json.Nodes.JsonNode?>[]
+        {
+            () => System.Text.Json.Nodes.JsonValue.Create(42),
+            () => System.Text.Json.Nodes.JsonValue.Create("text"),
+            () => new System.Text.Json.Nodes.JsonArray(),
+            () => new System.Text.Json.Nodes.JsonObject(),
+            () => null,
+        };
+
+        var paths = new List<string>();
+        void Collect(System.Text.Json.Nodes.JsonNode? node)
+        {
+            if (node is null) return;
+            if (node.Parent is not null) paths.Add(node.GetPath());
+            if (node is System.Text.Json.Nodes.JsonObject o) foreach (var (_, child) in o) Collect(child);
+            if (node is System.Text.Json.Nodes.JsonArray a) foreach (var child in a) Collect(child);
+        }
+        Collect(rich);
+        paths.Should().HaveCountGreaterThan(40);
+
+        var crashes = new List<string>();
+        foreach (var path in paths)
+        {
+            foreach (var replacement in replacements)
+            {
+                var copy = rich.DeepClone();
+                Replace(copy, path, replacement());
+                File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), copy.ToJsonString());
+                try { Run(); }
+                catch (Exception e) { crashes.Add($"{path} = {replacement()?.ToJsonString() ?? "null"}: {e.Message}"); }
+            }
+        }
+
+        crashes.Should().BeEmpty();
+    }
+
+    /// <summary>Put <paramref name="value"/> at <paramref name="path"/> (as <c>JsonNode.GetPath</c> writes it) in <paramref name="root"/>.</summary>
+    private static void Replace(System.Text.Json.Nodes.JsonNode root, string path, System.Text.Json.Nodes.JsonNode? value)
+    {
+        var target = Find(root, path)!;
+        switch (target.Parent)
+        {
+            case System.Text.Json.Nodes.JsonObject o:
+                o[o.First(kv => ReferenceEquals(kv.Value, target)).Key] = value;
+                break;
+            case System.Text.Json.Nodes.JsonArray a:
+                a[a.IndexOf(target)] = value;
+                break;
+        }
+
+        static System.Text.Json.Nodes.JsonNode? Find(System.Text.Json.Nodes.JsonNode? node, string path)
+        {
+            if (node is null) return null;
+            if (node.GetPath() == path) return node;
+            IEnumerable<System.Text.Json.Nodes.JsonNode?> children = node switch
+            {
+                System.Text.Json.Nodes.JsonObject o => o.Select(kv => kv.Value),
+                System.Text.Json.Nodes.JsonArray a => a,
+                _ => [],
+            };
+            return children.Select(c => Find(c, path)).FirstOrDefault(found => found is not null);
+        }
+    }
+
     [Fact]
     public void A_workspace_with_no_sidecar_is_not_a_finding()
     {

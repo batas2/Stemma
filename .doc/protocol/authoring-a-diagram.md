@@ -451,7 +451,8 @@ stemma validate [<path>] [--json] [--strict]       # or --workspace <path>; defa
 ```
 
 Exit `0` when nothing is broken, `1` on an error (or a warning under `--strict`), `2` on a bad
-command line. `--json` is the form to act on programmatically.
+command line or a workspace that does not exist, `3` when the check could not run at all (a file it
+could not read) and so has no verdict. `--json` is the form to act on programmatically.
 
 It checks the model the app reads: every C# file in a folder named `Architecture` (subfolders
 included, build output left out), merged, so a link from `Architecture.cs` to an element declared in
@@ -472,6 +473,7 @@ What it catches, in rough order of how often it bites:
 | `book/dangling-order`, `book/malformed` | warning | A hand edit or a merge left the book's order or shape wrong; it presents what it can. |
 | `book/legacy-file` | warning | `Concepts/view-book.stemma.yaml` is no longer read; its books have to move to `books`. |
 | `sidecar/unreadable` | warning | The canvas silently ignores it — every position in it is already lost. |
+| `sidecar/malformed` | warning | A value of the wrong kind — `views` as a list, a shape that is a number, an id that is not text. Named by its path; the canvas skips it. |
 | `view/busy` | warning | Past seven boxes a diagram has usually stopped answering one question. |
 | `view/mixed-register` | warning | Half the boxes claim something about a system and half claim nothing. |
 | `view/half-link` | info | One endpoint in the view, so the relationship is not drawn. Often deliberate. |

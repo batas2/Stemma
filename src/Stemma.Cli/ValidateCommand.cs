@@ -23,7 +23,8 @@ public static class ValidateCommand
         Exit codes
           0  nothing wrong (warnings and notes may still be printed)
           1  at least one error, or a warning under --strict
-          2  the command line was wrong
+          2  the command line was wrong, or the workspace does not exist
+          3  the check could not run (a file it could not read, say), so there is no verdict
         """;
 
     public static Task<int> RunAsync(string[] args)
@@ -65,10 +66,21 @@ public static class ValidateCommand
         if (!Directory.Exists(workspace))
         {
             Console.Error.WriteLine($"stemma validate: no such workspace '{workspace}'");
-            return Task.FromResult(1);
+            return Task.FromResult(2);
         }
 
-        var findings = WorkspaceCheck.Run(workspace);
+        IReadOnlyList<CheckFinding> findings;
+        try
+        {
+            findings = WorkspaceCheck.Run(workspace);
+        }
+        catch (Exception e)
+        {
+            // 1 is the verdict "this workspace has errors", which a build acts on. A check that could
+            // not run has no verdict, and must not be mistaken for one.
+            Console.Error.WriteLine($"stemma validate: could not check '{workspace}': {e.Message}");
+            return Task.FromResult(3);
+        }
         var errors = findings.Count(f => f.Severity == CheckSeverity.Error);
         var warnings = findings.Count(f => f.Severity == CheckSeverity.Warning);
 

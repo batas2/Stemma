@@ -81,6 +81,36 @@ public sealed class ValidateCommandTests : IDisposable
     }
 
     [Fact]
+    public void A_check_that_could_not_run_does_not_exit_as_if_it_had_found_errors()
+    {
+        // A crash exited 1, the code a build reads as "this workspace has errors". It had checked
+        // nothing, and said so only in a line a pipeline does not read.
+        if (OperatingSystem.IsWindows()) return;
+        var root = Workspace();
+        var view = Path.Combine(root, "Views", "Locked.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(view)!);
+        File.WriteAllText(view, "public static class Locked { }");
+        File.SetUnixFileMode(view, UnixFileMode.None);
+        try
+        {
+            try { File.ReadAllText(view); return; }          // running as root: nothing is unreadable
+            catch (UnauthorizedAccessException) { }
+
+            var (exit, _, error) = Stemma("validate", root);
+
+            exit.Should().Be(3);
+            error.Should().Contain("could not");
+        }
+        finally { File.SetUnixFileMode(view, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public void A_workspace_that_does_not_exist_is_a_mistake_on_the_command_line()
+    {
+        Stemma("validate", Path.Combine(_dir, "nowhere")).ExitCode.Should().Be(2);
+    }
+
+    [Fact]
     public void A_second_bare_argument_is_refused_rather_than_ignored()
     {
         var (exit, _, error) = Stemma("validate", Workspace(), "extra");

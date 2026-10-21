@@ -397,6 +397,7 @@ public static class WorkspaceCheck
 
         using (doc)
         {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) yield break;   // reported by ShapeFindings
             if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind != JsonValueKind.Object)
                 yield break;
 
@@ -514,26 +515,66 @@ public static class WorkspaceCheck
 
         using (doc)
         {
-            if (!doc.RootElement.TryGetProperty("views", out var views)) yield break;
+            // The structure every sidecar check walks, reported here and only here; the other checks
+            // skip what is not the shape they read. A value of the wrong kind used to throw out of the
+            // whole check, which exited with the code that means "this workspace has errors".
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                yield return new(CheckSeverity.Warning, "sidecar/malformed",
+                    "stemma.layout.json is not a JSON object, so the canvas reads nothing from it — every position and annotation in it is lost");
+                yield break;
+            }
+            if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind == JsonValueKind.Null) yield break;
+            if (views.ValueKind != JsonValueKind.Object)
+            {
+                yield return Malformed("views", "an object keyed by view", "no view has a layout");
+                yield break;
+            }
 
             foreach (var view in views.EnumerateObject())
             {
-                if (!view.Value.TryGetProperty("shapes", out var shapes) || shapes.ValueKind != JsonValueKind.Array) continue;
+                var where = $"views.{view.Name}";
+                if (view.Value.ValueKind != JsonValueKind.Object)
+                {
+                    yield return Malformed(where, "an object", "the view has no layout");
+                    continue;
+                }
+                if (!view.Value.TryGetProperty("shapes", out var shapes) || shapes.ValueKind == JsonValueKind.Null) continue;
+                if (shapes.ValueKind != JsonValueKind.Array)
+                {
+                    yield return Malformed($"{where}.shapes", "a list", "the view draws none of its shapes");
+                    continue;
+                }
 
                 var all = shapes.EnumerateArray().ToList();
                 var shapeIds = all
-                    .Select(s => s.TryGetProperty("id", out var id) ? id.GetString() : null)
-                    .Where(id => id is not null).Select(id => id!)
+                    .Select(s => TryText(s, "id", out var id) ? id : null)
+                    .OfType<string>()
                     .ToHashSet(StringComparer.Ordinal);
 
                 if (all.Count > MaxShapesPerView)
                     yield return new(CheckSeverity.Warning, "shape/too-many",
                         $"view '{view.Name}' has {all.Count} shapes; the canvas stops drawing past {MaxShapesPerView}");
 
-                foreach (var shape in all)
+                for (var index = 0; index < all.Count; index++)
                 {
-                    var id = shape.TryGetProperty("id", out var i) ? i.GetString() : null;
-                    var kind = shape.TryGetProperty("kind", out var k) ? k.GetString() : null;
+                    var shape = all[index];
+                    var at = $"{where}.shapes[{index}]";
+                    if (shape.ValueKind != JsonValueKind.Object)
+                    {
+                        yield return Malformed(at, "an object", "the canvas skips it");
+                        continue;
+                    }
+                    if (!TryText(shape, "id", out var id))
+                    {
+                        yield return Malformed($"{at}.id", "text", "the shape cannot be selected, styled or removed");
+                        continue;
+                    }
+                    if (!TryText(shape, "kind", out var kind))
+                    {
+                        yield return Malformed($"{at}.kind", "text", "the canvas does not draw the shape");
+                        continue;
+                    }
 
                     if (id is null)
                     {
@@ -547,15 +588,28 @@ public static class WorkspaceCheck
                             $"shape '{id}' has kind '{kind ?? "(none)"}', which the canvas does not draw (known: {string.Join(", ", ShapeKinds.Order())})", id);
                         continue;
                     }
-                    if (kind == "label" && string.IsNullOrWhiteSpace(shape.TryGetProperty("text", out var txt) ? txt.GetString() : null))
-                        yield return new(CheckSeverity.Warning, "shape/empty-label",
-                            $"label '{id}' has no text, so it draws nothing", id);
+                    if (kind == "label")
+                    {
+                        if (!TryText(shape, "text", out var text))
+                            yield return Malformed($"{at}.text", "text", "the label draws nothing");
+                        else if (string.IsNullOrWhiteSpace(text))
+                            yield return new(CheckSeverity.Warning, "shape/empty-label",
+                                $"label '{id}' has no text, so it draws nothing", id);
+                    }
 
                     foreach (var end in new[] { "fromAnchor", "toAnchor" })
                     {
                         if (!shape.TryGetProperty(end, out var anchor) || anchor.ValueKind != JsonValueKind.Object) continue;
-                        var anchorKind = anchor.TryGetProperty("kind", out var ak) ? ak.GetString() : null;
-                        var target = anchor.TryGetProperty("id", out var tid) ? tid.GetString() : null;
+                        if (!TryText(anchor, "kind", out var anchorKind))
+                        {
+                            yield return Malformed($"{at}.{end}.kind", "text", "the arrow's end is not anchored");
+                            continue;
+                        }
+                        if (!TryText(anchor, "id", out var target))
+                        {
+                            yield return Malformed($"{at}.{end}.id", "text", "the arrow's end is not anchored");
+                            continue;
+                        }
                         if (anchorKind is null or "free" || target is null) continue;
 
                         var known = anchorKind == "element" ? elementIds.Contains(target) : shapeIds.Contains(target);
@@ -566,6 +620,25 @@ public static class WorkspaceCheck
                 }
             }
         }
+    }
+
+    /// <summary>A value in the sidecar that is not the kind the canvas reads, named by its path.</summary>
+    private static CheckFinding Malformed(string path, string expected, string consequence) =>
+        new(CheckSeverity.Warning, "sidecar/malformed",
+            $"`{path}` in stemma.layout.json is not {expected}, so {consequence}");
+
+    /// <summary>
+    /// A text property of <paramref name="value"/>: the text, or null when it is absent or null. False
+    /// when the property is there and is not text — or when <paramref name="value"/> is not an object.
+    /// </summary>
+    private static bool TryText(JsonElement value, string name, out string? text)
+    {
+        text = null;
+        if (value.ValueKind != JsonValueKind.Object) return false;
+        if (!value.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null) return true;
+        if (property.ValueKind != JsonValueKind.String) return false;
+        text = property.GetString();
+        return true;
     }
 
     /// <summary>
