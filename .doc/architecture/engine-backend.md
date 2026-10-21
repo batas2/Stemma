@@ -127,7 +127,11 @@ nested type and a top-level one, which the model names alike.
 
 Saved and deleted through `PUT` / `DELETE /api/workspace/views`, which call
 `StemmaEngine.SaveViewAsync` / `RemoveViewAsync`. A view is found by reading the id its `Define()`
-declares, never by searching file text. Saving edits the name, the lens and the member ids in place
+declares, never by searching file text. Before either, the workspace catches up with files a pull
+added or deleted ([B-015](../bugs/B-015-outside-changes-to-the-set-of-files-are-missed.md)): a new
+file is taken in when its project compiles it — by the project's evaluation, so one kept out with
+`<Compile Remove>` stays out — and the walk never enters `bin`, `obj`, `node_modules`, `.git` or
+another dot-folder. The watcher takes a file in by the same rule. Saving edits the name, the lens and the member ids in place
 — in whatever form the file writes them — and keeps the file and class names; a new view gets a file
 no other file or class is named after, in the namespace `Architecture.cs` declares — or, when it declares
 none, the project's name made into a C# one (`my-arch` → `my_arch`). Refuses `ViewNotFound`, `UnreadableView`. Not on the undo

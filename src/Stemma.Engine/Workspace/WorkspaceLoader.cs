@@ -72,6 +72,24 @@ public sealed class WorkspaceLoader(ILogger? log = null)
         return (ws, model);
     }
 
+    /// <summary>
+    /// The files <paramref name="projectFile"/> compiles, evaluated now: its globs against what is on
+    /// disk at this moment, less whatever it removes. Kept apart from the engine's other code so that a
+    /// model-only workspace, which may run with no SDK at all, never loads MSBuild through it.
+    /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    internal static async Task<HashSet<string>> CompileItemsAsync(Microsoft.CodeAnalysis.Workspace workspace, string projectFile, CancellationToken ct)
+    {
+        var loader = new MSBuildProjectLoader(workspace) { LoadMetadataForReferencedProjects = true };
+        var projects = await loader.LoadProjectInfoAsync(projectFile, cancellationToken: ct);
+        return projects
+            .Where(p => string.Equals(p.FilePath, projectFile, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(p => p.Documents)
+            .Select(d => d.FilePath)
+            .OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     public static async Task<WorkspaceModel> BuildModelAsync(string rootPath, Solution solution, CancellationToken ct = default)
     {
         var projects = new List<ProjectModel>();

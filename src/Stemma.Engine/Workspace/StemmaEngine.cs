@@ -98,6 +98,46 @@ public sealed class StemmaEngine : IAsyncDisposable
     }
 
     /// <summary>
+    /// The project that compiles <paramref name="path"/>, a file the workspace does not hold yet (a pull
+    /// just added it), or null. A model-only workspace compiles every source it would load. A project
+    /// compiles what its evaluation says — not every .cs file in its folder: one kept out of the build
+    /// with <c>&lt;Compile Remove&gt;</c> (a fixture, a sample) was taken in, and the model it declares
+    /// joined the live one. Evaluating takes most of a second, so each project's answer is kept until
+    /// its project file changes.
+    /// </summary>
+    private async Task<Project?> CompilingProjectAsync(string path, CancellationToken ct)
+    {
+        if (ProjectFor(path) is not { } project) return null;
+        if (_workspace is FileBackedWorkspace || project.FilePath is not { Length: > 0 } projectFile) return project;
+
+        var written = File.GetLastWriteTimeUtc(projectFile);
+        if (!_compileItems.TryGetValue(projectFile, out var known) || known.ProjectWritten != written)
+            _compileItems[projectFile] = known = (written, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        if (known.Compiled?.Contains(path) == true) return project;
+        if (known.NotCompiled.Contains(path)) return null;
+
+        // A file neither answer covers is newer than the last evaluation: evaluate again, which also
+        // answers for every other file added since.
+        HashSet<string> compiled;
+        try { compiled = await WorkspaceLoader.CompileItemsAsync(_workspace, projectFile, ct); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // The project cannot be evaluated now (a broken project file mid-edit): the folder is the
+            // best answer there is, as it always was.
+            EngineLog.ProjectEvaluationFailed(_log, projectFile, e);
+            return project;
+        }
+        _compileItems[projectFile] = known = (written, compiled, known.NotCompiled);
+        if (compiled.Contains(path)) return project;
+        known.NotCompiled.Add(path);
+        return null;
+    }
+
+    /// <summary>Per project file: when it was written, what its last evaluation compiled, and files found not to be compiled.</summary>
+    private readonly Dictionary<string, (DateTime ProjectWritten, HashSet<string>? Compiled, HashSet<string> NotCompiled)> _compileItems =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// The refusal for an operation whose own values are unacceptable, or null. Checked before anything
     /// else, because these values are pasted into source text or used as a path: a name that is not an
     /// identifier would be code, and a path outside the workspace would be a write anywhere on disk.
@@ -192,7 +232,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             // A file the workspace does not hold: one a pull or an IDE has just added, if it is a
             // source the workspace would have loaded, and otherwise nothing to do with the model.
             // Not taken in, a view that arrived this way was saved into a second file with its id.
-            if (!File.Exists(path) || ProjectFor(path) is not { } project) return false;
+            if (!File.Exists(path) || await CompilingProjectAsync(path, ct) is not { } project) return false;
             await TakeInAddedAsync(project, path, ReadFromDisk(path), ct);
             return true;
         }
@@ -1408,9 +1448,9 @@ public sealed class StemmaEngine : IAsyncDisposable
             await TakeOutAsync(doc, ct);
             changed.Add(doc.FilePath!);
         }
-        foreach (var path in Directory.EnumerateFiles(_model.RootPath, "*.cs", SearchOption.AllDirectories))
+        foreach (var path in ModelWorkspaceLoader.EnumerateFiles(_model.RootPath, "*.cs"))
         {
-            if (heldPaths.Contains(path) || ProjectFor(path) is not { } project) continue;
+            if (heldPaths.Contains(path) || await CompilingProjectAsync(path, ct) is not { } project) continue;
             await TakeInAddedAsync(project, path, ReadFromDisk(path), ct);
             changed.Add(path);
         }

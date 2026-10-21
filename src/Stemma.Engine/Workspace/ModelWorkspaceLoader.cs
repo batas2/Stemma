@@ -32,8 +32,7 @@ public static class ModelWorkspaceLoader
         if (Directory.EnumerateFiles(rootPath, "*.sln", SearchOption.TopDirectoryOnly).Any())
             return WorkspaceKind.MsBuild;
 
-        var hasProject = Directory.EnumerateFiles(rootPath, "*.csproj", SearchOption.AllDirectories)
-            .Any(p => !IsExcluded(rootPath, p));
+        var hasProject = EnumerateFiles(rootPath, "*.csproj").Any();
         if (hasProject && IsSdkAvailable())
             return WorkspaceKind.MsBuild;
 
@@ -69,9 +68,7 @@ public static class ModelWorkspaceLoader
 
     public static (Microsoft.CodeAnalysis.Workspace Workspace, WorkspaceModel Model) Load(string rootPath)
     {
-        var sources = Directory
-            .EnumerateFiles(rootPath, "*.cs", SearchOption.AllDirectories)
-            .Where(p => !IsExcluded(rootPath, p))
+        var sources = EnumerateFiles(rootPath, "*.cs")
             .OrderBy(p => p, StringComparer.Ordinal)
             .ToList();
 
@@ -121,8 +118,42 @@ public static class ModelWorkspaceLoader
     {
         var relative = Path.GetRelativePath(rootPath, filePath);
         var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return segments.Any(s => ExcludedDirs.Contains(s, StringComparer.OrdinalIgnoreCase)
-                                 || (s.StartsWith('.') && s.Length > 1 && !s.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)));
+        return segments.Any(s => IsExcludedDirectory(s) && !s.EndsWith(".cs", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsExcludedDirectory(string name) =>
+        ExcludedDirs.Contains(name, StringComparer.OrdinalIgnoreCase) || (name.StartsWith('.') && name.Length > 1);
+
+    private static readonly EnumerationOptions OneFolder = new() { AttributesToSkip = 0, IgnoreInaccessible = true };
+
+    /// <summary>
+    /// The files matching <paramref name="pattern"/> under <paramref name="rootPath"/> that are not in a
+    /// folder <see cref="IsExcluded"/> leaves out — without going into those folders at all. Walked
+    /// into and filtered afterwards, node_modules alone was most of the cost of every save and every
+    /// poll, and a folder in it that could not be read stopped the workspace from opening.
+    /// </summary>
+    internal static IEnumerable<string> EnumerateFiles(string rootPath, string pattern)
+    {
+        var pending = new Stack<string>();
+        pending.Push(rootPath);
+        while (pending.Count > 0)
+        {
+            var dir = pending.Pop();
+            string[] files, dirs;
+            try
+            {
+                files = Directory.GetFiles(dir, pattern, OneFolder);
+                dirs = Directory.GetDirectories(dir, "*", OneFolder);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A folder removed or locked while it was being walked has nothing in it to read.
+                continue;
+            }
+            foreach (var file in files) yield return file;
+            for (var i = dirs.Length - 1; i >= 0; i--)
+                if (!IsExcludedDirectory(Path.GetFileName(dirs[i]))) pending.Push(dirs[i]);
+        }
     }
 
     private static ImmutableArray<MetadataReference> _cachedReferences;
