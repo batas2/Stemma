@@ -215,7 +215,10 @@ public sealed class StemmaEngine : IAsyncDisposable
         {
             // MSBuildWorkspace has no way to update a document without persisting it, so this writes
             // the bytes it just read straight back — identical, encoding included — and its echo
-            // finds nothing to take in.
+            // finds nothing to take in. Identical only for UTF-8: anything else was read with its other
+            // bytes replaced by U+FFFD, and writing that back damaged a file nobody had asked Stemma to
+            // touch. Such a file is left as it is on disk, and any edit to it is refused (CommitAsync).
+            if (!IsUtf8(await File.ReadAllBytesAsync(path, ct))) return false;
             _workspace.TryApplyChanges(doc.WithText(disk).Project.Solution);
         }
         return true;
@@ -530,10 +533,27 @@ public sealed class StemmaEngine : IAsyncDisposable
                 if (doc?.FilePath is not null) touchedPaths.Add(doc.FilePath);
             }
         }
+        // The bytes, for putting back exactly — BOM, line endings and all — and the text, for the record
+        // of what changed.
+        var raw = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
         var backups = new Dictionary<string, string?>();
         foreach (var path in touchedPaths.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            backups[path] = File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
+            var bytes = File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
+            raw[path] = bytes;
+            backups[path] = bytes is null ? null : Encoding.UTF8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes);
+        }
+
+        // A file that is not UTF-8 is read with each byte that is not replaced by U+FFFD, so writing it
+        // back would damage every such character in it, edited or not. It is not edited.
+        foreach (var projectChange in changes.GetProjectChanges())
+        {
+            foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetRemovedDocuments()))
+            {
+                if (oldSolution.GetDocument(docId)?.FilePath is { } path && raw.GetValueOrDefault(path) is { } bytes && !IsUtf8(bytes))
+                    return new OperationFailed(opId, "NotUtf8",
+                        $"{Path.GetFileName(path)} is not saved as UTF-8, so Stemma does not edit it: rewriting it would damage its other characters. Save it as UTF-8, then try again.");
+            }
         }
 
 
@@ -567,34 +587,75 @@ public sealed class StemmaEngine : IAsyncDisposable
         var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, ct);
 
         var projectFiles = await SnapshotProjectFilesAsync(oldSolution, ct);
-        if (!_workspace.TryApplyChanges(newSolution))
-            return new OperationFailed(opId, "ApplyFailed", "TryApplyChanges returned false");
-        await RestoreProjectFilesAsync(projectFiles, ct);
-
-        var introduced = await CollectIntroducedErrorsAsync(baselineErrors, ct);
-        if (introduced.Count > 0)
+        // From here on the files are being written, and an edit half-made is worse than one finished
+        // or one undone: the caller's cancellation (a closed tab) no longer applies, and anything that
+        // goes wrong puts every file back as it was.
+        var settled = CancellationToken.None;
+        try
         {
-            foreach (var (path, original) in backups)
+            if (!_workspace.TryApplyChanges(newSolution))
+                return new OperationFailed(opId, "ApplyFailed", "TryApplyChanges returned false");
+            await RestoreProjectFilesAsync(projectFiles, settled);
+
+            var introduced = await CollectIntroducedErrorsAsync(baselineErrors, settled);
+            if (introduced.Count > 0)
             {
-                if (original is null)
-                {
-                    if (File.Exists(path)) File.Delete(path);
-                }
-                else
-                {
-                    await WriteFileAtomicAsync(path, original, ct);
-                }
+                await RollBackAsync(raw, projectFiles);
+                return new OperationFailed(opId, "WouldBreakBuild", "This change introduced compile errors and was rolled back.", introduced);
             }
-            _workspace.TryApplyChanges(oldSolution);
-            await RestoreProjectFilesAsync(projectFiles, ct);
-            return new OperationFailed(opId, "WouldBreakBuild", "This change introduced compile errors and was rolled back.", introduced);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // A file it could not write (read-only, locked) after others were written: all of them back.
+            await RollBackAsync(raw, projectFiles);
+            return new OperationFailed(opId, "WriteFailed", $"The change could not be written, and nothing was changed: {e.Message}");
         }
 
-        await VerifyWritesAsync(newSolution, backups, ct);
-        _lastWrites = await DescribeWritesAsync(changes, oldSolution, newSolution, ct);
+        await VerifyWritesAsync(newSolution, backups, settled);
+        _lastWrites = await DescribeWritesAsync(changes, oldSolution, newSolution, settled);
 
-        await ReloadAsync(ct);
+        await ReloadAsync(settled);
         return buildSuccessResult();
+    }
+
+    private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    private static bool IsUtf8(byte[] bytes)
+    {
+        try { StrictUtf8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes); return true; }
+        catch (DecoderFallbackException) { return false; }
+    }
+
+    /// <summary>
+    /// Put every file an edit touched back to the bytes it had — BOM included; restored as text it lost
+    /// it — and the workspace's own copy of each with it. Rolling the workspace back to the solution the
+    /// edit started from is refused once that solution is out of date, which left the refused edit in
+    /// the model: the next operation then failed for a file "changed on disk", or an element "not found".
+    /// Taking each file in from disk is the path an outside edit takes, and it holds whatever the files
+    /// now say.
+    /// </summary>
+    private async Task RollBackAsync(IReadOnlyDictionary<string, byte[]?> raw, IReadOnlyList<(string Path, byte[] Bytes)> projectFiles)
+    {
+        foreach (var (path, original) in raw)
+        {
+            try
+            {
+                if (original is null) { if (File.Exists(path)) File.Delete(path); }
+                else await SidecarFile.WriteAtomicallyAsync(path, original);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                EngineLog.ExternalChangeFailed(_log, e);
+            }
+        }
+        await RestoreProjectFilesAsync(projectFiles, CancellationToken.None);
+        foreach (var path in raw.Keys)
+        {
+            try { await TakeInFromDiskAsync(path, CancellationToken.None); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { EngineLog.ExternalChangeFailed(_log, e); }
+        }
+        await ReloadAsync(CancellationToken.None);
     }
 
     /// <summary>
@@ -1233,7 +1294,7 @@ public sealed class StemmaEngine : IAsyncDisposable
                 {
                     var project = FindArchitectureDocument()?.Project ?? oldSolution.Projects.FirstOrDefault();
                     if (project is null) return new OperationFailed(opId, "NoProject", "No project to hold the view");
-                    var (className, path) = NewViewFile(oldSolution, view.Name);
+                    var (className, path) = NewViewFile(oldSolution, project, view.Name);
                     var text = SourceText.From(ViewsAdapter.Render(NamespaceForViews(), className, view),
                         new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
                     newSolution = project.AddDocument(Path.GetFileName(path), text, folders: ["Views"], filePath: path).Project.Solution;
@@ -1316,8 +1377,13 @@ public sealed class StemmaEngine : IAsyncDisposable
         return null;
     }
 
-    /// <summary>A class and file name for a new view that no file and no class in the workspace already has.</summary>
-    private (string ClassName, string Path) NewViewFile(Solution solution, string viewName)
+    /// <summary>
+    /// A class and file name for a new view that no file and no class in the workspace already has —
+    /// checked where the file will actually be written. A project workspace writes a new document into
+    /// its project's folder, wherever the workspace root is; checking the root's Views/ instead let a
+    /// new view replace an existing file of the same name in the project.
+    /// </summary>
+    private (string ClassName, string Path) NewViewFile(Solution solution, Project project, string viewName)
     {
         var taken = solution.Projects.SelectMany(p => p.Documents)
             .Select(d => d.GetSyntaxRootAsync().GetAwaiter().GetResult())
@@ -1325,7 +1391,9 @@ public sealed class StemmaEngine : IAsyncDisposable
             .Select(c => c.Identifier.Text)
             .ToHashSet(StringComparer.Ordinal);
         var stem = ViewsAdapter.ClassNameFromViewName(viewName);
-        var dir = Path.Combine(_model.RootPath, "Views");
+        var dir = _workspace is not FileBackedWorkspace && project.FilePath is { Length: > 0 } projectFile
+            ? Path.Combine(Path.GetDirectoryName(projectFile)!, "Views")
+            : Path.Combine(_model.RootPath, "Views");
         for (var n = 1; ; n++)
         {
             var className = n == 1 ? stem : $"{stem}{n}";

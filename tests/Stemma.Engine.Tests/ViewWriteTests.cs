@@ -190,6 +190,58 @@ public sealed class ViewWriteTests
     }
 
     [Fact]
+    public async Task A_new_view_in_a_project_in_a_subfolder_does_not_replace_a_file_there()
+    {
+        // The project is not at the root: a solution holds it. A new view is written into the project's
+        // Views/, and that is where an existing file of the same name has to be seen.
+        var modelProj = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Stemma.Model", "Stemma.Model.csproj"));
+        var root = Path.Combine(Path.GetTempPath(), $"stemma-subproj-{Guid.NewGuid():N}");
+        var projectDir = Path.Combine(root, "src", "Shop");
+        Directory.CreateDirectory(Path.Combine(projectDir, "Architecture"));
+        Directory.CreateDirectory(Path.Combine(projectDir, "Views"));
+        await File.WriteAllTextAsync(Path.Combine(projectDir, "Shop.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable></PropertyGroup>
+              <ItemGroup><ProjectReference Include="{modelProj}" /></ItemGroup>
+            </Project>
+            """);
+        await File.WriteAllTextAsync(Path.Combine(root, "Shop.sln"), """
+
+            Microsoft Visual Studio Solution File, Format Version 12.00
+            Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Shop", "src\Shop\Shop.csproj", "{6E5C1D5A-1D2B-4C3A-9B8E-1A2B3C4D5E6F}"
+            EndProject
+            Global
+            EndGlobal
+            """);
+        await File.WriteAllTextAsync(Path.Combine(projectDir, "Architecture", "Architecture.cs"), Model);
+        var existing = """
+            using Stemma.Model;
+
+            namespace Sample;
+
+            // Someone's view, under a class name that differs from its file's.
+            public static class CheckoutView
+            {
+                public static View Define() => new(Id: "view_checkout", Name: "Checkout", BaseView: "all", ElementIds: new[] { "mod_a" });
+            }
+            """;
+        var existingPath = Path.Combine(projectDir, "Views", "Checkout.cs");
+        await File.WriteAllTextAsync(existingPath, existing);
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            Applied(await engine.SaveViewAsync("op", new ArchView("view_new", "Checkout", "all", ["mod_a"])));
+
+            (await File.ReadAllTextAsync(existingPath)).Should().Be(existing);
+            File.Exists(Path.Combine(projectDir, "Views", "Checkout2.cs")).Should().BeTrue();
+            ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync()).Select(v => v.Id)
+                .Should().Contain(["view_checkout", "view_new"]);
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
+    }
+
+    [Fact]
     public async Task A_view_name_with_quotes_and_a_backslash_is_written_as_a_valid_literal()
     {
         var root = await CreateAsync();

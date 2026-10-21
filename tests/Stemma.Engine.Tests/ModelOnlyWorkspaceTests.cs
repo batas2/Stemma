@@ -193,4 +193,25 @@ public sealed class ModelOnlyWorkspaceTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public async Task A_model_file_that_is_not_utf8_is_not_rewritten()
+    {
+        // A comment saved as Latin-1 ("é" is the single byte E9). Read as UTF-8 it became U+FFFD, and a
+        // rename elsewhere in the file wrote that back: three bytes of damage nobody asked for.
+        var root = await CreateModelOnlyWorkspaceAsync();
+        var path = Path.Combine(root, "Architecture", "Architecture.cs");
+        var bytes = System.Text.Encoding.UTF8.GetBytes(MinimalModel.Replace("a deliberate comment", "a caf\u0001 comment"))
+            .Select(b => b == 0x01 ? (byte)0xE9 : b).ToArray();
+        await File.WriteAllBytesAsync(path, bytes);
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            var result = await engine.ApplyAsync(new RenameElementOp("op1", "ctx_001", "Orders"));
+
+            result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("NotUtf8");
+            (await File.ReadAllBytesAsync(path)).Should().Equal(bytes);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }

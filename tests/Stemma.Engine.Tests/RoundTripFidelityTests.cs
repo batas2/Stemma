@@ -178,4 +178,38 @@ public class RoundTripFidelityTests
         var after = ws.ReadFile("Sample.cs");
         after.Should().Be(before);
     }
+
+    [Fact]
+    public async Task A_refused_edit_puts_back_every_byte_and_leaves_nothing_of_itself_in_the_model()
+    {
+        // Restored as text, the file lost its byte-order mark; and the model kept the refused edit, so
+        // the next operation failed with "changed on disk" for a file nobody else had touched.
+        const string source = """
+        namespace Sample;
+
+        public class A
+        {
+            public string Name { get; set; } = string.Empty;
+        }
+
+        public class B
+        {
+            public string Use(A a) => a.Name;
+        }
+        """;
+        await using var ws = await TestWorkspace.CreateAsync(new() { ["Sample.cs"] = source });
+        var path = Path.Combine(ws.RootPath, "Sample.cs");
+        byte[] original = [0xEF, 0xBB, 0xBF, .. System.Text.Encoding.UTF8.GetBytes(source.ReplaceLineEndings("\r\n"))];
+        await File.WriteAllBytesAsync(path, original);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+
+        var refused = await engine.ApplyAsync(new RemovePropertyOp("op1", "Sample.A", "Name"));
+        refused.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("WouldBreakBuild");
+        (await File.ReadAllBytesAsync(path)).Should().Equal(original);
+
+        // The model is the file again: A still has Name, and the next edit lands.
+        engine.Model.Projects.SelectMany(p => p.Types).Single(t => t.Name == "A").Properties.Should().Contain(p => p.Name == "Name");
+        (await engine.ApplyAsync(new AddPropertyOp("op2", "Sample.A", "Age", "int", Visibility.Public, true, true, false)))
+            .Should().BeOfType<OperationApplied>();
+    }
 }
