@@ -300,6 +300,13 @@ public sealed class StemmaEngine : IAsyncDisposable
         return SourceText.From(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
+    /// <summary>Bytes already read, decoded as <see cref="ReadFromDisk"/> decodes a file.</summary>
+    private static SourceText Decode(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        return SourceText.From(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    }
+
     private static bool SamePreamble(System.Text.Encoding? a, System.Text.Encoding? b) =>
         (a?.GetPreamble() ?? []).AsSpan().SequenceEqual(b?.GetPreamble() ?? []);
 
@@ -546,63 +553,16 @@ public sealed class StemmaEngine : IAsyncDisposable
         Func<OperationResult> buildSuccessResult,
         CancellationToken ct)
     {
-        // MSBuildWorkspace persists changes to disk inside TryApplyChanges. Snapshot
-        // every touched file's contents so we can restore them on a compile failure.
         var changes = newSolution.GetChanges(oldSolution);
-        var touchedPaths = new List<string>();
-        foreach (var projectChange in changes.GetProjectChanges())
-        {
-            foreach (var docId in projectChange.GetChangedDocuments()
-                         .Concat(projectChange.GetAddedDocuments())
-                         .Concat(projectChange.GetRemovedDocuments()))
-            {
-                var doc = oldSolution.GetDocument(docId) ?? newSolution.GetDocument(docId);
-                if (doc?.FilePath is not null) touchedPaths.Add(doc.FilePath);
-            }
-        }
-        // The bytes, for putting back exactly — BOM, line endings and all — and the text, for the record
-        // of what changed.
-        var raw = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
-        var backups = new Dictionary<string, string?>();
-        foreach (var path in touchedPaths.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var bytes = File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
-            raw[path] = bytes;
-            backups[path] = bytes is null ? null : Encoding.UTF8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes);
-        }
-
-        // A file that is not UTF-8 is read with each byte that is not replaced by U+FFFD, so writing it
-        // back would damage every such character in it, edited or not. It is not edited.
+        // The files it changes or removes, as the edit saw them, and the files it creates.
+        var edited = new List<(string Path, Document Before)>();
+        var added = new List<string>();
         foreach (var projectChange in changes.GetProjectChanges())
         {
             foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetRemovedDocuments()))
-            {
-                if (oldSolution.GetDocument(docId)?.FilePath is { } path && raw.GetValueOrDefault(path) is { } bytes && !IsUtf8(bytes))
-                    return new OperationFailed(opId, "NotUtf8",
-                        $"{Path.GetFileName(path)} is not saved as UTF-8, so Stemma does not edit it: rewriting it would damage its other characters. Save it as UTF-8, then try again.");
-            }
-        }
-
-
-        // Never write over a version of a file this edit was not computed from. Between someone's
-        // save and the watcher noticing it there is a window of a second or so, and an edit applied
-        // in it would put the old text back with the new change on top (B-008).
-        foreach (var projectChange in changes.GetProjectChanges())
-        {
-            foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetRemovedDocuments()))
-            {
-                var before = oldSolution.GetDocument(docId);
-                if (before?.FilePath is not { } path || !File.Exists(path)) continue;
-                var seen = await before.GetTextAsync(ct);
-                if (seen.ContentEquals(ReadFromDisk(path))) continue;
-
-                await TakeInFromDiskAsync(path, ct);
-                await ReloadAsync(ct);
-                _undo.OnExternalChange();
-                ExternalChange?.Invoke(path);
-                return new OperationFailed(opId, "ChangedOnDisk",
-                    $"{Path.GetFileName(path)} changed outside Stemma since it was last read. The new version is loaded; try again.");
-            }
+                if (oldSolution.GetDocument(docId) is { FilePath: { } path } before) edited.Add((path, before));
+            foreach (var docId in projectChange.GetAddedDocuments())
+                if (newSolution.GetDocument(docId)?.FilePath is { } path) added.Add(path);
         }
 
         // Capture the errors that already exist BEFORE the edit. The compile gate must only
@@ -611,9 +571,58 @@ public sealed class StemmaEngine : IAsyncDisposable
         // in this host) and the user should still be able to edit it. Signatures drop source
         // locations so a pre-existing error that merely shifts down a line when the op inserts
         // a statement isn't mistaken for a new one.
+        //
+        // First, because it is the slow part: a whole compile. Between checking the files against
+        // the disk and writing them there must be nothing that takes time, or a save made in it is
+        // written over — which is what the check is there to prevent.
         var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, ct);
-
         var projectFiles = await SnapshotProjectFilesAsync(oldSolution, ct);
+
+        // Now every file the edit touches, read once: the bytes are what a failure puts back — BOM,
+        // line endings and all — and what the edit is checked against; the text is for the record of
+        // what changed.
+        var raw = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
+        var backups = new Dictionary<string, string?>();
+        foreach (var path in edited.Select(e => e.Path).Concat(added).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var bytes = File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
+            raw[path] = bytes;
+            backups[path] = bytes is null ? null : Encoding.UTF8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes);
+        }
+
+        // A file that is not UTF-8 is read with each byte that is not replaced by U+FFFD, so writing it
+        // back would damage every such character in it, edited or not. It is not edited.
+        foreach (var (path, _) in edited)
+        {
+            if (raw.GetValueOrDefault(path) is { } bytes && !IsUtf8(bytes))
+                return new OperationFailed(opId, "NotUtf8",
+                    $"{Path.GetFileName(path)} is not saved as UTF-8, so Stemma does not edit it: rewriting it would damage its other characters. Save it as UTF-8, then try again.");
+        }
+
+        // Never write over a version of a file this edit was not computed from. Between someone's
+        // save and the watcher noticing it there is a window of a second or so, and an edit applied
+        // in it would put the old text back with the new change on top (B-008). A file deleted in
+        // that window has changed too: skipped, the write recreated it. And a file the edit creates
+        // must not have appeared in the meantime.
+        var outside = new List<(string Path, string What)>();
+        foreach (var (path, before) in edited)
+        {
+            if (raw.GetValueOrDefault(path) is not { } bytes) outside.Add((path, "was deleted outside Stemma since it was last read"));
+            else if (!(await before.GetTextAsync(ct)).ContentEquals(Decode(bytes))) outside.Add((path, "changed outside Stemma since it was last read"));
+        }
+        foreach (var path in added)
+            if (raw.GetValueOrDefault(path) is not null) outside.Add((path, "was created outside Stemma since this edit was made"));
+        if (outside.Count > 0)
+        {
+            // Every one of them taken in, so that trying again lands on top of all of them.
+            foreach (var (path, _) in outside) await TakeInFromDiskAsync(path, ct);
+            await ReloadAsync(ct);
+            _undo.OnExternalChange();
+            foreach (var (path, _) in outside) ExternalChange?.Invoke(path);
+            var (first, what) = outside[0];
+            return new OperationFailed(opId, "ChangedOnDisk", $"{Path.GetFileName(first)} {what}. The new version is loaded; try again.");
+        }
+
         // From here on the files are being written, and an edit half-made is worse than one finished
         // or one undone: the caller's cancellation (a closed tab) no longer applies, and anything that
         // goes wrong puts every file back as it was.

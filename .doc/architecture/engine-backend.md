@@ -67,7 +67,10 @@ made, and edit → undo → redo must reproduce the original and then the edit, 
 - `WouldBreakBuild` — the edit introduced a compile error (one that was already there does not count);
   the files are put back.
 - `ChangedOnDisk` — a file it would write has changed since the edit was computed from it, so writing
-  would put old text back under the new change. The new text is taken in; a retry lands on top of it.
+  would put old text back under the new change; or it was deleted, and writing would bring it back; or
+  a file it would create has appeared. The files are read and checked immediately before they are
+  written, after the slow part of the compile check, so nothing that takes time sits in between. The
+  new state is taken in; a retry lands on top of it.
 
 Project files are never changed: MSBuildWorkspace writes a `<Compile Include>` for a new document,
 which in an SDK-style project duplicates the glob, so it is put back (unless the project sets

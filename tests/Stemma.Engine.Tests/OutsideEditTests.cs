@@ -260,6 +260,42 @@ public sealed class OutsideEditTests
     }
 
     [Fact]
+    public async Task An_edit_to_a_file_deleted_outside_is_refused_and_does_not_bring_it_back()
+    {
+        // The check before writing skipped a file that was no longer there, and the write then
+        // recreated it: a model file deleted by a pull came back with the edit in it.
+        var (root, file) = await CreateModelOnlyAsync();
+        var payments = Path.Combine(root, "Architecture", "Payments.cs");
+        await File.WriteAllTextAsync(payments, """
+            using Stemma.Model;
+
+            namespace Scratch;
+
+            public static class PaymentsArchitecture
+            {
+                public static Model Build()
+                {
+                    var modPay = new Module("mod_pay", "Pay");
+                    return Model.Of(modPay);
+                }
+            }
+            """);
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            File.Delete(payments);
+
+            var refused = await engine.ApplyAsync(new RenameElementOp("op", "mod_pay", "Payments"));
+
+            refused.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("ChangedOnDisk");
+            File.Exists(payments).Should().BeFalse("a file deleted outside stays deleted");
+            (await engine.ReadArchModelAsync())!.Elements.Should().NotContain(e => e.Id == "mod_pay", "and leaves the model");
+            (await File.ReadAllTextAsync(file)).Should().Be(Source);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task An_edit_never_writes_over_a_version_of_the_file_it_has_not_seen()
     {
         // No watcher, so the engine cannot have noticed: this is the window between someone's save
