@@ -90,3 +90,31 @@ describe('markdown <-> editable DOM', () => {
     expect(roundTrip('we shipped 3 things in 2026')).toBe('we shipped 3 things in 2026');
   });
 });
+
+describe('a note is text, never code', () => {
+  function parse(md: string): HTMLElement {
+    const host = document.createElement('div');
+    host.innerHTML = mdToEditableHtml(md);
+    return host;
+  }
+
+  it('keeps a quote in a link inside the href instead of opening a handler', () => {
+    const host = parse('[spec](https://x/"onmouseover="alert(1)"style="position:fixed)');
+    for (const el of host.querySelectorAll('*')) {
+      expect([...el.attributes].map((a) => a.name).filter((n) => n.startsWith('on'))).toEqual([]);
+      expect(el.getAttribute('style') ?? '').not.toContain('fixed');
+    }
+  });
+
+  it('passes a coloured span through, and nothing else a style could do', () => {
+    expect(parse('<span style="color:#ef4444">red</span>').querySelector('span')?.getAttribute('style')).toBe('color:#ef4444');
+    expect(parse('<span style="background-color: rgb(1, 2, 3)">x</span>').querySelector('span')).not.toBeNull();
+    // Not a colour: shown as the text it is, not applied.
+    expect(parse('<span style="background:url(https://evil.example/x)">x</span>').querySelector('span')).toBeNull();
+    expect(parse('<span style="position:fixed;inset:0">x</span>').querySelector('span')).toBeNull();
+  });
+
+  it('never makes a tag out of angle brackets in text', () => {
+    expect(parse('<img src=x onerror=alert(1)>').querySelector('img')).toBeNull();
+  });
+});

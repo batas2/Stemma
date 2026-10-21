@@ -9,15 +9,20 @@
 // #tags stay literal text while editing (so values remain freely editable) and render as chips
 // only in read-only views (see notesMarkdown).
 
+// Quotes too: this HTML is assigned to innerHTML, and a link's URL goes inside an attribute. With `"`
+// left as it was, `[x](https://a/"onmouseover="…)` closed the href and opened a handler — a script in
+// a note anyone could commit, run by whoever selected the element.
 function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function escAttr(s: string): string {
   return s.replace(/"/g, '&quot;');
 }
 
 // Inline HTML we pass through verbatim (colour / highlight / underline live as HTML in the md).
-const RAW_INLINE = /<\/?(?:u|mark|sub|sup)>|<span style="[^"]*">|<\/span>|<br\s*\/?>/gi;
+// The span carries a colour or a highlight and nothing else: a style with `url(…)` made the editor fetch
+// from any server, and `position:fixed` let a note cover the screen.
+const RAW_INLINE = /<\/?(?:u|mark|sub|sup)>|<span style="(?:\s*(?:color|background-color)\s*:\s*(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\(\s*[\d.\s,%]+\))\s*;?)+">|<\/span>|<br\s*\/?>/gi;
 
 function inlineMdToHtml(s: string): string {
   const tokens: string[] = [];
