@@ -1519,7 +1519,10 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var current = DslReader.TryRead(doc.FilePath!, root);
+        // The whole model, as AddElement reads it: an end declared in another model file is an element
+        // like any other, and an id another file declares is taken. Read from this file alone, a link
+        // to Payments.cs was refused, and a new link took an id Payments.cs already had.
+        var current = await ReadArchModelAsync(ct) ?? DslReader.TryRead(doc.FilePath!, root);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
 
         if (!current.Elements.Any(e => e.Id == op.FromId))

@@ -78,7 +78,7 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 | Operation | Edits exactly | Refuses |
 |---|---|---|
 | `AddElement` | a new `var x = new Kind(...)` before `return`; `x` appended to `Model.Of(...)` | — |
-| `AddLink` | the same, for a `DataFlow` / `Dependency` / `Relation` | `FromNotFound`, `ToNotFound` |
+| `AddLink` | the same, for a `DataFlow` / `Dependency` / `Relation`; its ends may be declared in any model file | `FromNotFound`, `ToNotFound` — an id no model file declares |
 | `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound` |
 | `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable, and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
 | `SetElementContext` | the `contextId` argument of a Module or Capability | `ElementNotFound`, `NotNestable`, `ContextNotFound`, `AttributeRequired`, `RewriteFailed` |

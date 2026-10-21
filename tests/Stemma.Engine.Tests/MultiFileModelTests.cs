@@ -83,4 +83,42 @@ public sealed class MultiFileModelTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public async Task A_link_can_end_at_an_element_declared_in_another_model_file()
+    {
+        var root = await CreateAsync(("Architecture.cs", Primary), ("Payments.cs", Payments));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            var result = await engine.ApplyAsync(new AddLinkOp("op", ArchLinkKind.DataFlow, "mod_a", "mod_pay", Payload: "Invoice"));
+
+            result.Should().BeOfType<OperationApplied>("the element is in the model, whichever file declares it");
+            var link = (await engine.ReadArchModelAsync())!.Links.Single(l => l.FromId == "mod_a");
+            link.ToId.Should().Be("mod_pay");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task A_new_link_never_takes_an_id_another_model_file_declares()
+    {
+        // The new link took flow_001, which Payments.cs already declared; removing it by that id then
+        // removed whichever came first, and the other one reappeared.
+        var root = await CreateAsync(("Architecture.cs", Primary), ("Payments.cs", Payments));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            var result = await engine.ApplyAsync(new AddLinkOp("op", ArchLinkKind.DataFlow, "ctx_001", "mod_a", Payload: "Order"));
+
+            var id = result.Should().BeOfType<OperationApplied>().Which.Deltas.OfType<LinkAdded>().Single().Id;
+            id.Should().NotBe("flow_001");
+            var links = (await engine.ReadArchModelAsync())!.Links;
+            links.Should().HaveCount(2);
+            links.Should().ContainSingle(l => l.Id == "flow_001").Which.FromId.Should().Be("mod_pay");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }
