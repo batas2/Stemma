@@ -288,10 +288,13 @@ id; its pages are keyed by page id, and `order` says the order they are shown in
 | `frame` | `focus` (the default when there is a focus) zooms to it; `view` keeps the whole view in frame, the focus lit in its surroundings. |
 | `others` | `dim` (default) or `hide`, for a page that builds a picture up rather than pointing into it. |
 | `narrative` | Markdown: what is said while the page is on screen. `**bold**`, `` `code` ``, `- ` lists. |
+| `steps` | A flow played one relationship at a time ([F-020](../features/F-020-flow-steps.md)): each Next lights the next one, numbered, before the page turns. A step is a link id, or `{ "link": "…", "note": "what to say" }`. |
 
 Write a book as a zoom: an orientation page with no focus, then pages that point into it, then pages
 on closer views. Two pages on one view with different focus are a camera move when presented, which
-is most of what makes a walk easier to follow than slides. Every id is checked by `validate`.
+is most of what makes a walk easier to follow than slides. Where a page tells how something happens —
+a request, a deployment, a payment — give it `steps` in the order things happen, rather than a
+paragraph that says "follow the arrows". Every id is checked by `validate`.
 
 ---
 
@@ -458,6 +461,7 @@ What it catches, in rough order of how often it bites:
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |
 | `book/missing-view`, `book/dangling-focus` | error | A page that shows a view that is gone, or points at an element that is: a slide that outlived what it was about. |
 | `book/focus-outside-view` | warning | The page points at an element its view does not draw, so nothing lights up. |
+| `book/dangling-step` | error | A step plays a relationship the model no longer has, so the flow skips a beat in front of the room. |
 | `book/dangling-order`, `book/malformed` | warning | A hand edit or a merge left the book's order or shape wrong; it presents what it can. |
 | `book/legacy-file` | warning | `Concepts/view-book.stemma.yaml` is no longer read; its books have to move to `books`. |
 | `sidecar/unreadable` | warning | The canvas silently ignores it — every position in it is already lost. |

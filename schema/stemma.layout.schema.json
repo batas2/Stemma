@@ -140,6 +140,34 @@
             "hide"
           ],
           "description": "What happens to the elements outside the focus. Absent means 'dim'."
+        },
+        "steps": {
+          "type": "array",
+          "description": "A flow played one relationship at a time (F-020): each Next lights the next one, numbered, before the presenter moves to the next page. A step is a relationship id, or an object with that id as `link` and a `note` to say over it.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "required": [
+                  "link"
+                ],
+                "properties": {
+                  "link": {
+                    "type": "string",
+                    "description": "The id of a DataFlow, Dependency or Relation in the model."
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "What to say while this step is lit."
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     },

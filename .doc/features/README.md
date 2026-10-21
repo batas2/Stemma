@@ -35,6 +35,7 @@ Living feature records — one Markdown file per feature, created from
 | [F-017](./F-017-what-changed.md) | What changed — the difference between two versions, drawn on the canvas ([ADR-0024](../architecture/decisions/0024-history-read-from-git.md)) | Shipped | Next | Bartosz |
 | [F-018](./F-018-find-on-the-view.md) | Find on the view — light what matches, fade the rest | Shipped | Later → built | Bartosz |
 | [F-019](./F-019-presenter-view.md) | The presenter view — notes, next page and a timer on your screen, the picture on theirs | Shipped | Next | Bartosz |
+| [F-020](./F-020-flow-steps.md) | Steps — a book page plays a flow one arrow at a time | Shipped | Next | Bartosz |
 
 F-011 **blocked F-002** — the desktop shell's "backend failed to start" state needs a log file to
 point at, and now names `~/.stemma/logs/` in that surface.

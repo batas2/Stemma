@@ -275,6 +275,19 @@ interface AppState {
   /** Make a page of the open book the current one, and put its view on the canvas. */
   showPage: (pageId: string) => void;
   stepPage: (delta: 1 | -1) => void;
+  /**
+   * How far the page on screen has played its steps (F-020): 0 before the first, n with all n lit.
+   * Showing a page starts it at 0.
+   */
+  activeStep: number;
+  /** Next or Previous as a presenter means it: through the page's steps first, then to the next page. */
+  advance: (delta: 1 | -1) => void;
+  setActiveStep: (n: number) => void;
+  /** While on, a relationship clicked on the canvas becomes the next step of the page on screen. */
+  recordingSteps: boolean;
+  setRecordingSteps: (b: boolean) => void;
+  /** Add a relationship as the page on screen's next step; false when there is no page here to add to. */
+  addStep: (linkId: string) => boolean;
   edgePage: (which: 'first' | 'last') => void;
   startPresenting: (bookId: string, pageId?: string) => void;
   stopPresenting: () => void;
@@ -439,6 +452,8 @@ export const useApp = create<AppState>((set, get) => ({
   activePageId: null,
   presenting: false,
   capturing: false,
+  activeStep: 0,
+  recordingSteps: false,
   viewHeaders: {},
   trail: { back: [], forward: [] },
   find: { open: false, query: '', mode: 'dim' },
@@ -827,7 +842,8 @@ export const useApp = create<AppState>((set, get) => ({
     const s = get();
     const page = activeBook(s)?.pages.find((p) => p.id === pageId);
     if (!page) return;
-    set({ activePageId: pageId });
+    // A page arrives before its first step; recording steps was for the page that is going.
+    set({ activePageId: pageId, activeStep: 0, ...(s.activePageId !== pageId ? { recordingSteps: false } : {}) });
     if (page.view === 'moduleMap' || page.view === 'dependencyGraph') {
       if (s.view !== page.view || s.activeCustomViewId !== null) get().setView(page.view);
     } else if (s.customViews.some((v) => v.id === page.view)) {
@@ -859,6 +875,34 @@ export const useApp = create<AppState>((set, get) => ({
     set({ activeBookId: bookId, presenting: true, selectedElementId: null, selectedLinkId: null });
     get().showPage(start.id);
   },
-  stopPresenting: () => set({ presenting: false }),
+  stopPresenting: () => set({ presenting: false, activeStep: 0 }),
+  advance: (delta) => {
+    const s = get();
+    const page = activePage(s);
+    const n = page?.steps.length ?? 0;
+    if (delta > 0 && page && s.activeStep < n) { set({ activeStep: s.activeStep + 1 }); return; }
+    if (delta < 0 && page && s.activeStep > 0) { set({ activeStep: s.activeStep - 1 }); return; }
+    const before = s.activePageId;
+    get().stepPage(delta);
+    const after = get();
+    // Back into the page before arrives where that page ended: every step lit, as Keynote does.
+    if (delta < 0 && after.activePageId !== before) set({ activeStep: activePage(after)?.steps.length ?? 0 });
+  },
+  setActiveStep: (n) => {
+    const total = activePage(get())?.steps.length ?? 0;
+    set({ activeStep: Math.max(0, Math.min(total, n)) });
+  },
+  setRecordingSteps: (b) => set({ recordingSteps: b }),
+  addStep: (linkId) => {
+    const s = get();
+    const book = activeBook(s);
+    const page = activePage(s);
+    if (!book || !page) return false;
+    if (page.steps[page.steps.length - 1]?.link === linkId) return false;
+    const steps = [...page.steps, { link: linkId, note: '' }];
+    get().updateBookPage(book.id, page.id, { steps });
+    set({ activeStep: steps.length });
+    return true;
+  },
   setCapturing: (b) => set({ capturing: b }),
 }));

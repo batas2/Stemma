@@ -6,8 +6,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addBook, addPage, describeProblems, duplicatePage, movePage, newBookId, newPageId, pageProblems,
-  readBooks, reflowNarrative, removeBook, removePage, renameBook, resolveFrame, setBookAudience, updatePage, viewKeyOf,
-  type BooksSection,
+  readBooks, readSteps, reflowNarrative, removeBook, removePage, renameBook, resolveFrame, setBookAudience, stepMark, stepsLit,
+  updatePage, viewKeyOf, type BookPage, type BooksSection,
 } from './books';
 import { sidecarChanges } from './layout';
 
@@ -44,7 +44,7 @@ describe('reading a book', () => {
     expect(book.pages.map((p) => p.id)).toEqual(['path', 'money']);
     expect(book.pages[0]).toEqual({
       id: 'path', title: 'The path a purchase takes', view: 'view_buy', narrative: 'Follow the arrows.',
-      focus: [], frame: 'view', others: 'dim',
+      focus: [], frame: 'view', others: 'dim', steps: [],
     });
     expect(book.pages[1]).toMatchObject({ focus: ['mod_pay', 'ext_psp'], frame: 'focus', others: 'dim' });
   });
@@ -68,7 +68,7 @@ describe('reading a book', () => {
     expect(books).toHaveLength(1);
     expect(books[0].name).toBe('b');
     expect(books[0].audience).toBeNull();
-    expect(books[0].pages).toEqual([{ id: 'p1', title: '', view: 'moduleMap', narrative: '', focus: ['a'], frame: 'focus', others: 'hide' }]);
+    expect(books[0].pages).toEqual([{ id: 'p1', title: '', view: 'moduleMap', narrative: '', focus: ['a'], frame: 'focus', others: 'hide', steps: [] }]);
   });
 
   it('reads nothing from a section that is not an object', () => {
@@ -301,5 +301,47 @@ describe('editing through the sidecar', () => {
     expect(layout.editBooksSection(ROOT, (s) => addBook(s, 'book_a', 'A'))).toBe(false);
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.patchLayoutSidecar).not.toHaveBeenCalled();
+  });
+});
+
+describe('steps (F-020)', () => {
+  it('reads a step written as an id or as { link, note }, and skips anything else', () => {
+    expect(readSteps(['df_1', { link: 'df_2', note: 'Then it pays' }, { note: 'no link' }, 7, ''])).toEqual([
+      { link: 'df_1', note: '' },
+      { link: 'df_2', note: 'Then it pays' },
+    ]);
+    expect(readSteps('df_1')).toEqual([]);
+  });
+
+  it('writes a step with nothing to say as its id alone, and removes `steps` when none are left', () => {
+    expect(changesOf((s) => updatePage(s, 'book_sold', 'path', { steps: [{ link: 'df_1', note: '' }, { link: 'df_2', note: 'Pays' }] }))).toEqual([
+      { path: ['books', 'book_sold', 'pages', 'path', 'steps'], value: ['df_1', { link: 'df_2', note: 'Pays' }] },
+    ]);
+    const s = section();
+    updatePage(s, 'book_sold', 'path', { steps: [{ link: 'df_1', note: '' }] });
+    updatePage(s, 'book_sold', 'path', { steps: [] });
+    expect((s.book_sold as { pages: { path: Record<string, unknown> } }).pages.path).not.toHaveProperty('steps');
+  });
+
+  it('marks a page broken when a step plays a relationship that has gone', () => {
+    const page: BookPage = { id: 'p', title: 'P', view: 'moduleMap', narrative: '', focus: [], frame: 'view', others: 'dim', steps: [{ link: 'df_1', note: '' }, { link: 'df_gone', note: '' }] };
+    const problems = pageProblems(page, { views: new Set(['moduleMap']), elements: new Set(), links: new Set(['df_1']) });
+    expect(problems).toEqual([{ kind: 'dangling-step', ids: ['df_gone'] }]);
+    expect(describeProblems(problems, page)).toContain('df_gone');
+  });
+
+  it('numbers a step as it is drawn on its arrow', () => {
+    expect(stepMark(1)).toBe('①');
+    expect(stepMark(20)).toBe('⑳');
+    expect(stepMark(21)).toBe('21.');
+  });
+
+  it('lights the steps reached so far, the last one being the one talked about — and all of them on paper', () => {
+    const page: BookPage = { id: 'p', title: 'P', view: 'moduleMap', narrative: '', focus: [], frame: 'view', others: 'dim', steps: [{ link: 'a', note: '' }, { link: 'b', note: '' }, { link: 'c', note: '' }] };
+    expect(stepsLit(page, 0, false)).toEqual({ shown: [], current: null });
+    expect(stepsLit(page, 2, false).shown.map((s) => s.link)).toEqual(['a', 'b']);
+    expect(stepsLit(page, 2, false).current?.link).toBe('b');
+    expect(stepsLit(page, 9, false).current?.link).toBe('c');
+    expect(stepsLit(page, 1, true)).toEqual({ shown: page.steps, current: null });
   });
 });

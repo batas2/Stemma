@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, MonitorSpeaker, TriangleAlert, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp, activeBook, activePage, pageViewIds } from '@/lib/store';
-import { describeProblems, pageProblems, reflowNarrative } from '@/lib/books';
+import { describeProblems, pageProblems, reflowNarrative, stepCaption, stepMark } from '@/lib/books';
 import { renderNotes } from '@/lib/notesMarkdown';
 import { isTextTarget, presenterAction } from '@/lib/presenterKeys';
 import { onPresenterCommand, sendPresenter } from '@/lib/signalr';
@@ -19,7 +19,8 @@ export function BookPresenter() {
   const page = useApp(activePage);
   const arch = useApp((s) => s.arch);
   const customViews = useApp((s) => s.customViews);
-  const stepPage = useApp((s) => s.stepPage);
+  const advance = useApp((s) => s.advance);
+  const activeStep = useApp((s) => s.activeStep);
   const stopPresenting = useApp((s) => s.stopPresenting);
   const [narrativeShown, setNarrativeShown] = useState(true);
   const [blank, setBlank] = useState(false);
@@ -40,7 +41,7 @@ export function BookPresenter() {
   const index = page ? pages.findIndex((p) => p.id === page.id) : -1;
   const problems = useMemo(() => {
     if (!page) return [];
-    return pageProblems(page, { views: pageViewIds({ customViews }), elements: new Set(arch?.elements.map((e) => e.id) ?? []) });
+    return pageProblems(page, { views: pageViewIds({ customViews }), elements: new Set(arch?.elements.map((e) => e.id) ?? []), links: new Set(arch?.links.map((l) => l.id) ?? []) });
   }, [page, customViews, arch]);
   const narrativeHtml = useMemo(() => (page?.narrative ? renderNotes(reflowNarrative(page.narrative)) : ''), [page?.narrative]);
 
@@ -82,8 +83,9 @@ export function BookPresenter() {
       // A key on a blank screen brings the picture back before it moves on.
       if (blankRef.current && (action === 'next' || action === 'prev')) { setBlank(false); return; }
       setBlank(false);
-      if (action === 'next') useApp.getState().stepPage(1);
-      else if (action === 'prev') useApp.getState().stepPage(-1);
+      // Through the page's steps first (F-020), then to the next page.
+      if (action === 'next') useApp.getState().advance(1);
+      else if (action === 'prev') useApp.getState().advance(-1);
       else if (action === 'first') useApp.getState().edgePage('first');
       else if (action === 'last') useApp.getState().edgePage('last');
       else if (action === 'narrative') {
@@ -118,12 +120,13 @@ export function BookPresenter() {
     if (!book) return null;
     const views = pageViewIds({ customViews });
     const elements = new Set(arch?.elements.map((e) => e.id) ?? []);
+    const links = new Set(arch?.links.map((l) => l.id) ?? []);
     return {
       type: 'state',
       session: session.current,
       book: { name: book.name, audience: book.audience },
       pages: book.pages.map((p) => {
-        const probs = pageProblems(p, { views, elements });
+        const probs = pageProblems(p, { views, elements, links });
         return {
           title: p.title,
           narrative: p.narrative,
@@ -133,11 +136,13 @@ export function BookPresenter() {
         };
       }),
       index: Math.max(0, index),
-      step: null,
+      step: page && page.steps.length > 0 && activeStep > 0
+        ? { at: activeStep, of: page.steps.length, caption: stepCaption(page.steps[activeStep - 1], arch) }
+        : null,
       startedAt: startedAt.current,
       blank,
     };
-  }, [book, index, blank, customViews, arch]);
+  }, [book, index, blank, customViews, arch, page, activeStep]);
   const stateRef = useRef(consoleState);
   stateRef.current = consoleState;
   useEffect(() => {
@@ -160,8 +165,8 @@ export function BookPresenter() {
         requestAnimationFrame(() => window.dispatchEvent(new Event('stemma:book-reframe')));
         if (stateRef.current) void sendPresenter('PresenterState', stateRef.current).catch(() => {});
         break;
-      case 'next': setBlank(false); st.stepPage(1); break;
-      case 'prev': setBlank(false); st.stepPage(-1); break;
+      case 'next': setBlank(false); st.advance(1); break;
+      case 'prev': setBlank(false); st.advance(-1); break;
       case 'first': setBlank(false); st.edgePage('first'); break;
       case 'last': setBlank(false); st.edgePage('last'); break;
       case 'goto': {
@@ -184,7 +189,8 @@ export function BookPresenter() {
   }
 
   if (!book || !page) return null;
-  const announcement = `Page ${index + 1} of ${pages.length}: ${page.title || 'Untitled page'}`;
+  const announcement = `Page ${index + 1} of ${pages.length}: ${page.title || 'Untitled page'}`
+    + (page.steps.length > 0 && activeStep > 0 ? ` — step ${activeStep} of ${page.steps.length}: ${stepCaption(page.steps[activeStep - 1], arch)}` : '');
 
   return (
     <div className={clsx('absolute inset-0 pointer-events-none z-chrome', idle && 'cursor-none')}>
@@ -202,6 +208,12 @@ export function BookPresenter() {
             {book.name} · {index + 1} / {pages.length}
           </div>
           {page.title && <h2 className="text-xl font-semibold text-body leading-snug">{page.title}</h2>}
+          {page.steps.length > 0 && activeStep > 0 && (
+            <p className="mt-2 inline-flex items-baseline gap-2 rounded-md bg-amber-500/15 text-amber-900 dark:text-amber-100 px-2 py-1 text-sm">
+              <span className="font-semibold tabular-nums">{stepMark(activeStep)} Step {activeStep} of {page.steps.length}</span>
+              <span>{stepCaption(page.steps[activeStep - 1], arch)}</span>
+            </p>
+          )}
           {problems.length > 0 && (
             <p className="mt-2 flex items-start gap-1.5 text-sm text-amber-700 dark:text-amber-300">
               <TriangleAlert className="w-4 h-4 shrink-0 mt-0.5" aria-hidden />
@@ -230,11 +242,11 @@ export function BookPresenter() {
           idle && !blank ? 'opacity-0' : 'opacity-100',
         )}
       >
-        <button onClick={() => stepPage(-1)} disabled={index <= 0} aria-label="Previous page" className="p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800 disabled:opacity-30">
+        <button onClick={() => advance(-1)} disabled={index <= 0 && activeStep === 0} aria-label="Previous" className="p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800 disabled:opacity-30">
           <ChevronLeft className="w-4 h-4" />
         </button>
         <span className="text-xs tabular-nums text-muted px-1">{index + 1} / {pages.length}</span>
-        <button onClick={() => stepPage(1)} disabled={index >= pages.length - 1} aria-label="Next page" className="p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800 disabled:opacity-30">
+        <button onClick={() => advance(1)} disabled={index >= pages.length - 1 && activeStep >= (page?.steps.length ?? 0)} aria-label="Next" className="p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800 disabled:opacity-30">
           <ChevronRight className="w-4 h-4" />
         </button>
         <button

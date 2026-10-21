@@ -52,16 +52,16 @@ describe('report books', () => {
       books: [{
         id: 'book_a', name: 'A walk', audience: 'engineering',
         pages: [
-          { id: 'wide', title: 'Everything', view: 'moduleMap', narrative: 'First the context.', focus: [], frame: 'view', others: 'dim' },
-          { id: 'close', title: 'Alpha', view: 'cv1', narrative: 'Then the detail.', focus: ['mod_a'], frame: 'focus', others: 'hide' },
+          { id: 'wide', title: 'Everything', view: 'moduleMap', narrative: 'First the context.', focus: [], frame: 'view', others: 'dim', steps: [] },
+          { id: 'close', title: 'Alpha', view: 'cv1', narrative: 'Then the detail.', focus: ['mod_a'], frame: 'focus', others: 'hide', steps: [] },
         ],
       }],
     });
     expect(b.books).toEqual([{
       id: 'book_a', name: 'A walk', audience: 'engineering',
       pages: [
-        { id: 'wide', title: 'Everything', viewKey: 'moduleMap', narrative: 'First the context.', focus: [], frame: 'view', others: 'dim' },
-        { id: 'close', title: 'Alpha', viewKey: 'custom:cv1', narrative: 'Then the detail.', focus: ['mod_a'], frame: 'focus', others: 'hide' },
+        { id: 'wide', title: 'Everything', viewKey: 'moduleMap', narrative: 'First the context.', focus: [], frame: 'view', others: 'dim', steps: [] },
+        { id: 'close', title: 'Alpha', viewKey: 'custom:cv1', narrative: 'Then the detail.', focus: ['mod_a'], frame: 'focus', others: 'hide', steps: [] },
       ],
     }]);
     expect(b.views.some((v) => v.key === b.books[0].pages[1].viewKey)).toBe(true);

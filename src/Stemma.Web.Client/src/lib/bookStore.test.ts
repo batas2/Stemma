@@ -119,6 +119,43 @@ describe('books in the store', () => {
     expect(useApp.getState()).toMatchObject({ activePageId: 'wide', view: 'moduleMap', activeCustomViewId: null });
   });
 
+  it('plays a page\'s steps before turning it, and comes back into the page before at its end (F-020)', async () => {
+    const disk = onDisk();
+    (disk.books.book_sold.pages.wide as Record<string, unknown>).steps = ['df_1', { link: 'df_2', note: 'Then it pays' }];
+    const { layout, useApp } = await session(disk);
+    await layout.primeLayoutSidecar(ROOT);
+    useApp.getState().reloadBooks();
+    useApp.getState().openBook('book_sold');
+    expect(useApp.getState()).toMatchObject({ activePageId: 'wide', activeStep: 0 });
+
+    useApp.getState().advance(1);
+    expect(useApp.getState()).toMatchObject({ activePageId: 'wide', activeStep: 1 });
+    useApp.getState().advance(1);
+    expect(useApp.getState()).toMatchObject({ activePageId: 'wide', activeStep: 2 });
+    useApp.getState().advance(1);
+    expect(useApp.getState()).toMatchObject({ activePageId: 'money', activeStep: 0 });
+
+    // Back arrives where the page ended, every step lit, and unwinds them one at a time.
+    useApp.getState().advance(-1);
+    expect(useApp.getState()).toMatchObject({ activePageId: 'wide', activeStep: 2 });
+    useApp.getState().advance(-1);
+    expect(useApp.getState().activeStep).toBe(1);
+  });
+
+  it('records a clicked relationship as the next step of the page on screen', async () => {
+    const { layout, useApp } = await session();
+    await layout.primeLayoutSidecar(ROOT);
+    useApp.getState().reloadBooks();
+    useApp.getState().openBook('book_sold');
+    expect(useApp.getState().addStep('df_1')).toBe(true);
+    expect(useApp.getState().addStep('df_1')).toBe(false); // the same arrow twice in a row is a double click
+    expect(useApp.getState().addStep('df_2')).toBe(true);
+    const page = useApp.getState().books[0].pages.find((p) => p.id === 'wide')!;
+    expect(page.steps.map((st) => st.link)).toEqual(['df_1', 'df_2']);
+    expect(useApp.getState().activeStep).toBe(2);
+    await vi.waitFor(() => expect(layout.loadBooksSection(ROOT)).toMatchObject({ book_sold: { pages: { wide: { steps: ['df_1', 'df_2'] } } } }));
+  });
+
   it('leaves the canvas alone on a page whose view is gone', async () => {
     const { layout, useApp } = await session();
     await layout.primeLayoutSidecar(ROOT);

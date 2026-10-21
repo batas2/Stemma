@@ -100,7 +100,7 @@ import { kindLabel } from '@/lib/modelDiff';
 import { facets as findFacets, matches as findMatchesCard, parseQuery, spotlightLighting, type CardFacts } from '@/lib/spotlight';
 import { FindBar } from './FindBar';
 import { useApp, activePage } from '@/lib/store';
-import { viewKeyOf } from '@/lib/books';
+import { stepMark, stepsLit, viewKeyOf } from '@/lib/books';
 import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
 import { applyOperation } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
@@ -246,6 +246,30 @@ function CanvasInner() {
     [focusKey, arch], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const pageHides = bookPage?.others === 'hide';
+  // F-020: a page's steps. The ones reached so far light their two ends and wear their number; the
+  // last one reached is the one being talked about. Captured for the PDF, the whole flow is lit.
+  const activeStep = useApp((s) => s.activeStep);
+  const stepState = useMemo(
+    () => (bookPage ? stepsLit(bookPage, activeStep, capturing) : { shown: [], current: null }),
+    [bookPage, activeStep, capturing],
+  );
+  const stepNumber = useMemo(() => new Map(stepState.shown.map((st, i) => [st.link, i + 1])), [stepState]);
+  const stepLit = useMemo(() => {
+    if (!arch || stepState.shown.length === 0) return null;
+    const ids = new Set<string>(pageLit ?? []);
+    const links = new Map(arch.links.map((l) => [l.id, l]));
+    const elements = new Map(arch.elements.map((e) => [e.id, e]));
+    for (const st of stepState.shown) {
+      const l = links.get(st.link);
+      if (!l) continue;
+      for (const id of [l.fromId, l.toId]) {
+        ids.add(id);
+        const ctx = elements.get(id)?.attributes.contextId;
+        if (ctx) ids.add(ctx);
+      }
+    }
+    return ids;
+  }, [arch, stepState, pageLit]);
   const readOnly = presenting || capturing;
   // Read by the ordinary fit-on-open, which must not fight the page's own framing.
   const bookPageApplies = useRef(false);
@@ -1567,7 +1591,18 @@ function CanvasInner() {
     if (notesEditingId && node.id !== notesEditingId) setNotesEditingId(null);
     select(node.id);
   };
-  const onEdgeClick: EdgeMouseHandler = (_, edge) => selectLink(edge.id);
+  const onEdgeClick: EdgeMouseHandler = (_, edge) => {
+    selectLink(edge.id);
+    // F-020: recording a page's steps, a clicked relationship is the next one.
+    const st = useApp.getState();
+    if (!st.recordingSteps || edge.id.startsWith('__about__')) return;
+    if (st.addStep(edge.id)) {
+      const link = st.arch?.links.find((l) => l.id === edge.id);
+      const name = (id: string) => st.arch?.elements.find((e) => e.id === id)?.name ?? id;
+      const n = activePage(useApp.getState())?.steps.length ?? 0;
+      setToast({ kind: 'info', text: `Step ${n}: ${link ? `${name(link.fromId)} → ${name(link.toId)}` : edge.id}` });
+    }
+  };
   // Double-click a relationship → edit its payload/kind in place (shift+dbl-click adds a waypoint).
   const onEdgeDoubleClick: EdgeMouseHandler = useCallback((ev, edge) => {
     if (ev.shiftKey || edge.id.startsWith('__about__')) return;
@@ -2212,7 +2247,7 @@ function CanvasInner() {
     () => (findFound && findFound.length > 0 && !readOnly ? spotlightLighting(findFound, drawn.elements) : null),
     [findFound, drawn.elements, readOnly],
   );
-  const lit = spotLit ?? pageLit;
+  const lit = spotLit ?? stepLit ?? pageLit;
   const litHides = spotLit ? find.mode === 'hide' : pageHides;
 
   // A Bounded Context that owns modules renders as a container box wrapping them: its position
@@ -2369,12 +2404,26 @@ function CanvasInner() {
           },
         };
       }
-      if (lit && !(lit.has(e.source) && lit.has(e.target))) {
+      const n = !spotLit ? stepNumber.get(e.id) : undefined;
+      if (n !== undefined) {
+        // A step: its number on its label, and the one being talked about in the books' amber, moving.
+        const current = stepState.current?.link === e.id;
+        out = {
+          ...out,
+          label: `${stepMark(n)} ${typeof out.label === 'string' ? out.label : ''}`.trim(),
+          animated: current || out.animated,
+          style: current ? { ...out.style, stroke: '#f59e0b', strokeWidth: Math.max(Number(out.style?.strokeWidth ?? 1.5), 3.5), opacity: 1 } : { ...out.style, opacity: 1 },
+          data: { ...out.data, stepCurrent: current },
+        };
+      } else if (stepNumber.size > 0 && !spotLit) {
+        // While a flow plays, only its arrows are lit: two lit boxes do not light every line between them.
+        out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.15 } };
+      } else if (lit && !(lit.has(e.source) && lit.has(e.target))) {
         out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.15 } };
       }
       return out;
     });
-  }, [allEdges, lit, litHides, readOnly, diff, compareDimRest]);
+  }, [allEdges, lit, litHides, readOnly, diff, compareDimRest, spotLit, stepNumber, stepState]);
 
   const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected).map((n) => n.id), [nodes]);
   const selectedCount = selectedNodeIds.length;

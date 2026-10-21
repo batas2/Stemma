@@ -11,7 +11,7 @@
 import { useApp, pageViewIds } from './store';
 import { exportBookPdf } from './api';
 import { reportFailure, ClientEvent } from './log';
-import { reflowNarrative, type Book } from './books';
+import { reflowNarrative, stepsAsText, type Book } from './books';
 import { saveOpenViews } from './views';
 
 /** Longest wait for a page to say it is framed before it is taken as it is. */
@@ -88,7 +88,10 @@ async function capture(bookId: string, book: Book): Promise<void> {
       pages.push({
         title: page.title,
         // Read as prose on paper: the editor's wrapping is not the author's line breaks.
-        narrative: reflowNarrative(page.narrative),
+        // The flow a page plays in the room (F-020) is all lit in its picture, and listed here.
+        narrative: page.steps.length > 0
+          ? `${reflowNarrative(page.narrative)}${page.narrative.trim() ? '\n\n' : ''}${stepsAsText(page, useApp.getState().arch)}`
+          : reflowNarrative(page.narrative),
         ...(image ? { capturePngBase64: image.replace(/^data:image\/png;base64,/, '') } : {}),
       });
     }

@@ -128,6 +128,9 @@ comparing writes nothing, and a ghost is never a position in the sidecar.
    point at, *Add page*, write what you will say. The first page is usually the widest view with no
    focus; the next ones point into it, then move to closer views. *Duplicate* makes the next step
    of a zoom.
+   A page that tells how something happens gets **steps**
+   ([F-020](../features/F-020-flow-steps.md)): *Record*, then click the arrows in the order things
+   happen; each can carry what to say. Presenting, Next lights them one at a time, numbered.
 2. **Answer the room.** A question the pages did not foresee — "what does Core own?" — is ⌘F and a
    chip ([F-018](../features/F-018-find-on-the-view.md)): what matches stays lit, the rest fades or
    hides, Enter walks it. *Point the page at these* keeps the answer as the page on screen's focus.

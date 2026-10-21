@@ -29,6 +29,8 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   onToggleArrow?: (edgeId: string, end: 'start' | 'end') => void;
   typeValue?: string;
   onSetType?: (edgeId: string, t: RelationshipType) => void;
+  /** The step a book page is on (F-020): its label is the one the room should be reading. */
+  stepCurrent?: boolean;
 }
 
 /** Which side of a box a line heading (dx, dy) leaves from — used to give bezier/step waypoint
@@ -262,13 +264,15 @@ export function WaypointEdge({
               pointerEvents: data?.onEditStart ? 'all' : 'none',
               cursor: data?.onEditStart ? 'text' : undefined,
               fontSize: LABEL_PX[data?.labelSize ?? 'base'] ?? 10, padding: '1px 4px',
-              background: selected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.85)',
-              border: `1px solid ${selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
-              color: selected ? SELECT_COLOR : undefined, fontWeight: selected ? 600 : undefined,
+              background: data?.stepCurrent ? '#f59e0b' : selected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.85)',
+              border: `1px solid ${data?.stepCurrent ? '#d97706' : selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
+              color: data?.stepCurrent ? '#1c1917' : selected ? SELECT_COLOR : undefined,
+              fontWeight: selected || data?.stepCurrent ? 600 : undefined,
+              boxShadow: data?.stepCurrent ? '0 0 0 3px rgba(245,158,11,0.25)' : undefined,
               // A faded edge fades its label with it; a label left at full strength reads as lit.
               opacity: style?.opacity,
             }}
-            className="stemma-edge-label dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700"
+            className={data?.stepCurrent ? 'stemma-edge-label' : 'stemma-edge-label dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700'}
             title={data?.onEditStart ? 'Double-click to edit' : undefined}
             onDoubleClick={data?.onEditStart ? (ev) => { ev.stopPropagation(); data.onEditStart?.(id); } : undefined}
           >

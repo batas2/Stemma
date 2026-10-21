@@ -500,6 +500,44 @@ public sealed class WorkspaceCheckTests : IDisposable
         finding.Message.Should().Contain("book_walk").And.Contain("p1");
     }
 
+    private static readonly string TwoLinkedModules = """
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var flow = new DataFlow("df_ab", "mod_a", "mod_b", "Event");
+                    return Model.Of(a, b, flow);
+        """;
+
+    [Fact]
+    public void A_page_playing_steps_along_relationships_that_exist_reports_nothing()
+    {
+        Model(TwoLinkedModules);
+        Books("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "moduleMap", "steps": [ { "link": "df_ab", "note": "First" }, "df_ab" ] } } } }""");
+
+        BookRun().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_step_along_a_relationship_the_model_no_longer_has_is_an_error()
+    {
+        Model(TwoLinkedModules);
+        Books("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "moduleMap", "steps": [ { "link": "df_ab" }, { "link": "df_gone" } ] } } } }""");
+
+        var finding = BookRun().Should().ContainSingle().Which;
+        finding.Rule.Should().Be("book/dangling-step");
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.ElementId.Should().Be("df_gone");
+        finding.Message.Should().Contain("step 2").And.Contain("p1");
+    }
+
+    [Fact]
+    public void Steps_that_are_not_a_list_are_reported_as_a_hand_edit_gone_wrong()
+    {
+        Model(TwoLinkedModules);
+        Books("""{ "book_walk": { "name": "W", "pages": { "p1": { "title": "One", "view": "moduleMap", "steps": "df_ab" } } } }""");
+
+        BookRun().Should().ContainSingle().Which.Rule.Should().Be("book/malformed");
+    }
+
     [Fact]
     public void A_page_pointing_at_an_element_its_view_does_not_draw_is_a_warning()
     {

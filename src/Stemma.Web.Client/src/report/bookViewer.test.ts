@@ -33,9 +33,9 @@ beforeAll(() => {
     books: [{
       id: 'book_a', name: 'A walk', audience: 'engineering',
       pages: [
-        { id: 'wide', title: 'Everything', view: 'moduleMap', narrative: 'First the\ncontext.\n\n1. one\n2. two', focus: [], frame: 'view', others: 'dim' },
-        { id: 'ab', title: 'Alpha and Beta', view: 'moduleMap', narrative: '<img src=x onerror="window.pwned=1"> **bold** `code`', focus: ['mod_a', 'mod_b'], frame: 'focus', others: 'dim' },
-        { id: 'only', title: 'Only Alpha', view: 'moduleMap', narrative: '', focus: ['mod_a'], frame: 'view', others: 'hide' },
+        { id: 'wide', title: 'Everything', view: 'moduleMap', narrative: 'First the\ncontext.\n\n1. one\n2. two', focus: [], frame: 'view', others: 'dim', steps: [] },
+        { id: 'ab', title: 'Alpha and Beta', view: 'moduleMap', narrative: '<img src=x onerror="window.pwned=1"> **bold** `code`', focus: ['mod_a', 'mod_b'], frame: 'focus', others: 'dim', steps: [] },
+        { id: 'only', title: 'Only Alpha', view: 'moduleMap', narrative: '', focus: ['mod_a'], frame: 'view', others: 'hide', steps: [] },
       ],
     }],
   });

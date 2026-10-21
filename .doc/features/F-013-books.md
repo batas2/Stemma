@@ -187,6 +187,6 @@
   (`["a", "b"]` comes back `["b","a"]`); an escaped character in a changed value is written with
   upper-case hex. None changes what the file says, and all are the sidecar writer's, not books'.
 - **Deferred:** ~~a presenter view (narrative and next page on a second screen)~~ — built as
-  [F-019](./F-019-presenter-view.md); step-by-step
-  messages in the IcePanel sense, which want a `DataFlow` order rather than a page; PowerPoint
+  [F-019](./F-019-presenter-view.md); ~~step-by-step
+  messages in the IcePanel sense~~ — built as [F-020](./F-020-flow-steps.md), the order kept on the page; PowerPoint
   export with narratives as speaker notes; `stemma render --book <id> --page <id>` for agents.

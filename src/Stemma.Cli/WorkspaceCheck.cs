@@ -58,7 +58,7 @@ public static class WorkspaceCheck
         findings.AddRange(ViewFindings(views, model, ids));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
         findings.AddRange(ConstraintFindings(workspaceRoot, ids));
-        findings.AddRange(BookFindings(workspaceRoot, views, ids));
+        findings.AddRange(BookFindings(workspaceRoot, views, ids, model.Links.Select(l => l.Id).ToHashSet(StringComparer.Ordinal)));
         findings.AddRange(HeaderFindings(workspaceRoot, views, model));
         findings.AddRange(LegacyBookFindings(workspaceRoot));
 
@@ -106,7 +106,7 @@ public static class WorkspaceCheck
     /// prevent: the deck still presents, and tells the room something about a system that is no
     /// longer true.
     /// </summary>
-    private static IEnumerable<CheckFinding> BookFindings(string workspaceRoot, IReadOnlyList<ArchView> views, HashSet<string> elementIds)
+    private static IEnumerable<CheckFinding> BookFindings(string workspaceRoot, IReadOnlyList<ArchView> views, HashSet<string> elementIds, HashSet<string> linkIds)
     {
         var path = LayoutSidecar.PathFor(workspaceRoot);
         if (!File.Exists(path)) yield break;
@@ -149,6 +149,7 @@ public static class WorkspaceCheck
                 {
                     pageIds.Add(page.Name);
                     foreach (var finding in PageFindings(book.Name, page, viewMembers, elementIds)) yield return finding;
+                    foreach (var finding in StepFindings(book.Name, page, linkIds)) yield return finding;
                 }
 
                 foreach (var finding in OrderFindings(book.Name, book.Value, pageIds)) yield return finding;
@@ -213,6 +214,40 @@ public static class WorkspaceCheck
             else if (members is not null && !members.Contains(id))
                 yield return new(CheckSeverity.Warning, "book/focus-outside-view",
                     $"{where} points at '{id}', which view '{view}' does not include, so there is nothing on the slide to light up for it", id);
+        }
+    }
+
+    /// <summary>
+    /// A page's steps (F-020): the relationships it plays one at a time. A step naming a relationship
+    /// the model no longer has lights nothing when it is reached, so the flow skips a beat in front of
+    /// the room — an error, as a focus that points at nothing is.
+    /// </summary>
+    private static IEnumerable<CheckFinding> StepFindings(string book, JsonProperty page, HashSet<string> linkIds)
+    {
+        if (page.Value.ValueKind != JsonValueKind.Object) yield break;
+        if (!page.Value.TryGetProperty("steps", out var steps) || steps.ValueKind == JsonValueKind.Null) yield break;
+        var where = $"book '{book}' page '{page.Name}'";
+        if (steps.ValueKind != JsonValueKind.Array)
+        {
+            yield return MalformedBook($"{where} has `steps` that are not a list, so the page plays no steps");
+            yield break;
+        }
+
+        var position = 0;
+        foreach (var step in steps.EnumerateArray())
+        {
+            position++;
+            var link = step.ValueKind switch
+            {
+                JsonValueKind.String => step.GetString(),
+                JsonValueKind.Object when step.TryGetProperty("link", out var l) && l.ValueKind == JsonValueKind.String => l.GetString(),
+                _ => null,
+            };
+            if (link is null)
+                yield return MalformedBook($"{where} has a step {position} with no `link`, so the presenter skips it");
+            else if (!linkIds.Contains(link))
+                yield return new(CheckSeverity.Error, "book/dangling-step",
+                    $"{where} plays step {position} along '{link}', which is not a relationship in the model, so that step lights nothing", link);
         }
     }
 

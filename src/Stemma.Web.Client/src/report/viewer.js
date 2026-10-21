@@ -1398,6 +1398,17 @@
       h('h2', { class: 'vr-book-title', text: page.title || 'Untitled page' }),
       h('div', { class: 'vr-book-narrative' }, narrativeNodes(page.narrative || '')),
     ]);
+    // The flow the page plays in a meeting (F-020), step by step, as a numbered list.
+    if (page.steps && page.steps.length) {
+      var nameOf = function (id) { var el = data.model.elements.find(function (x) { return x.id === id; }); return el ? el.name : id; };
+      aside.appendChild(h('ol', { class: 'vr-book-steps', 'aria-label': 'Steps' }, page.steps.map(function (st) {
+        var link = data.model.links.find(function (l) { return l.id === st.link; });
+        var line = link
+          ? nameOf(link.fromId) + ' → ' + nameOf(link.toId) + (link.attributes.payload || link.attributes.label || link.attributes.kind ? ' · ' + (link.attributes.payload || link.attributes.label || link.attributes.kind) : '')
+          : st.link + ' (no longer in the model)';
+        return h('li', {}, [h('span', { class: 'vr-step-line', text: line }), st.note ? h('span', { class: 'vr-step-note', text: st.note }) : null]);
+      })));
+    }
     var prev = h('button', { class: 'vr-book-step', text: '←', title: 'Previous page (←)', 'aria-label': 'Previous page', onclick: function () { stepBook(book, -1); } });
     var next = h('button', { class: 'vr-book-step', text: '→', title: 'Next page (→)', 'aria-label': 'Next page', onclick: function () { stepBook(book, 1); } });
     if (idx === 0) prev.disabled = true;

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
-  BookOpen, Copy, Crosshair, FileDown, GripVertical, Maximize2, MonitorSpeaker, Play, Plus, Trash2, TriangleAlert, X, ZoomIn,
+  ArrowDown, ArrowUp, BookOpen, Copy, Crosshair, FileDown, GripVertical, Maximize2, MonitorSpeaker, Play, Plus, Trash2, TriangleAlert, X, ZoomIn,
 } from 'lucide-react';
 import { openConsole } from '@/lib/presenterLink';
 import clsx from 'clsx';
 import { useApp, activeBook, activePage, currentViewId, pageViewIds } from '@/lib/store';
-import { describeProblems, pageProblems, type Book, type BookPage } from '@/lib/books';
+import { describeProblems, pageProblems, stepCaption, stepMark, type Book, type BookPage, type BookStep } from '@/lib/books';
 import { exportBookAsPdf, isExportingBook } from '@/lib/bookExport';
 import { confirmAction } from './ConfirmDialog';
 import { promptText } from './PromptDialog';
@@ -36,7 +36,7 @@ function Editor({ book, page }: { book: Book; page: BookPage | null }) {
   const [exporting, setExporting] = useState(isExportingBook);
 
   const ctx = useMemo(
-    () => ({ views: pageViewIds({ customViews }), elements: new Set(arch?.elements.map((e) => e.id) ?? []) }),
+    () => ({ views: pageViewIds({ customViews }), elements: new Set(arch?.elements.map((e) => e.id) ?? []), links: new Set(arch?.links.map((l) => l.id) ?? []) }),
     [customViews, arch],
   );
   const hereView = currentViewId({ view, activeCustomViewId });
@@ -269,6 +269,7 @@ function Editor({ book, page }: { book: Book; page: BookPage | null }) {
                 className="flex-1 min-h-[5.5rem] px-2 py-1 rounded border border-default bg-white/70 dark:bg-zinc-900/60 text-body resize-y"
               />
             </label>
+            <StepsEditor book={book} page={page} />
           </div>
         </div>
       )}
@@ -300,6 +301,126 @@ function Segmented<T extends string>({ label, value, options, onChange, disabled
           {o.icon}{o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * A page's steps (F-020): a flow played one relationship at a time. Record, then click the arrows on
+ * the canvas in the order things happen; or add the selected one. Clicking a step shows the page as
+ * it will be at that step, so the walk is rehearsed where it is written.
+ */
+function StepsEditor({ book, page }: { book: Book; page: BookPage }) {
+  const arch = useApp((s) => s.arch);
+  const activeStep = useApp((s) => s.activeStep);
+  const recording = useApp((s) => s.recordingSteps);
+  const selectedLinkId = useApp((s) => s.selectedLinkId);
+  const st = useApp.getState;
+  const [drag, setDrag] = useState<number | null>(null);
+  const n = page.steps.length;
+  const links = useMemo(() => new Set(arch?.links.map((l) => l.id) ?? []), [arch]);
+
+  function update(steps: BookStep[]) { st().updateBookPage(book.id, page.id, { steps }); }
+  function move(from: number, to: number) {
+    if (to < 0 || to >= n || from === to) return;
+    const next = [...page.steps];
+    const [step] = next.splice(from, 1);
+    next.splice(to, 0, step);
+    update(next);
+    st().setActiveStep(to + 1);
+  }
+  function remove(i: number) {
+    update(page.steps.filter((_, j) => j !== i));
+    st().setActiveStep(Math.min(activeStep, n - 1));
+  }
+
+  return (
+    <div className="flex flex-col gap-1 pt-1" aria-label="Steps">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] uppercase tracking-wider text-muted">Steps{n ? ` · ${n}` : ''}</span>
+        <button
+          onClick={() => st().setRecordingSteps(!recording)}
+          aria-pressed={recording}
+          title={recording ? 'Stop recording' : 'Record: click relationships on the canvas in the order things happen'}
+          className={clsx(
+            'flex items-center gap-1.5 px-1.5 py-0.5 rounded border',
+            recording ? 'border-rose-500/60 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-default text-muted hover:text-body',
+          )}
+        >
+          <span className={clsx('w-2 h-2 rounded-full', recording ? 'bg-rose-500 animate-pulse motion-reduce:animate-none' : 'bg-zinc-400')} aria-hidden />
+          {recording ? 'Recording — click the arrows in order · Done' : 'Record'}
+        </button>
+        <button
+          onClick={() => { if (selectedLinkId) st().addStep(selectedLinkId); }}
+          disabled={!selectedLinkId}
+          title={selectedLinkId ? 'Add the selected relationship as the next step' : 'Select a relationship on the canvas to add it'}
+          className="flex items-center gap-1 text-indigo-500 hover:underline disabled:text-faint disabled:no-underline"
+        >
+          <Plus className="w-3 h-3" aria-hidden /> Selected relationship
+        </button>
+        {n > 0 && (
+          <button onClick={() => st().setActiveStep(0)} className="ml-auto text-muted hover:text-body" title="Show the page before its first step">
+            Before step 1
+          </button>
+        )}
+      </div>
+      {n === 0 ? (
+        <p className="text-[11px] text-muted leading-snug">
+          Play a flow one arrow at a time: <span className="text-body">Record</span>, then click the relationships on the canvas in the
+          order things happen. Presenting, each Next lights the next one, numbered, before the page turns.
+        </p>
+      ) : (
+        <ol className="max-h-28 overflow-y-auto flex flex-col gap-0.5 pr-1">
+          {page.steps.map((step, i) => {
+            const broken = !links.has(step.link);
+            return (
+              <li
+                key={`${step.link}:${i}`}
+                draggable
+                onDragStart={(e) => { setDrag(i); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); if (drag !== null) move(drag, i); setDrag(null); }}
+                onDragEnd={() => setDrag(null)}
+                className={clsx(
+                  'group flex items-center gap-1.5 rounded px-1 py-0.5',
+                  activeStep === i + 1 ? 'bg-amber-200/60 dark:bg-amber-800/40' : 'hover:bg-amber-100/70 dark:hover:bg-amber-900/30',
+                  drag === i && 'opacity-50',
+                )}
+              >
+                <button
+                  onClick={() => st().setActiveStep(i + 1)}
+                  onKeyDown={(e) => {
+                    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+                    e.preventDefault();
+                    move(i, e.key === 'ArrowUp' ? i - 1 : i + 1);
+                  }}
+                  aria-current={activeStep === i + 1 ? 'step' : undefined}
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                  title="Show the page at this step · Alt+↑↓ to move it"
+                  className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                >
+                  <span className="text-amber-700 dark:text-amber-300 font-semibold shrink-0">{stepMark(i + 1)}</span>
+                  <span className={clsx('truncate', broken ? 'text-rose-600 line-through' : 'text-body')}>
+                    {broken ? `${step.link} — no longer in the model` : stepCaption({ ...step, note: '' }, arch)}
+                  </span>
+                </button>
+                <input
+                  value={step.note}
+                  onChange={(e) => update(page.steps.map((s, j) => (j === i ? { ...s, note: e.target.value } : s)))}
+                  placeholder="What to say"
+                  aria-label={`What to say at step ${i + 1}`}
+                  className="w-40 px-1.5 py-0.5 rounded border border-default bg-white/70 dark:bg-zinc-900/60 text-body"
+                />
+                <span className="flex items-center opacity-60 group-hover:opacity-100 focus-within:opacity-100">
+                  <button onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`Move step ${i + 1} earlier`} className="p-0.5 text-muted hover:text-body disabled:opacity-30"><ArrowUp className="w-3 h-3" /></button>
+                  <button onClick={() => move(i, i + 1)} disabled={i === n - 1} aria-label={`Move step ${i + 1} later`} className="p-0.5 text-muted hover:text-body disabled:opacity-30"><ArrowDown className="w-3 h-3" /></button>
+                  <button onClick={() => remove(i)} aria-label={`Remove step ${i + 1}`} className="p-0.5 text-muted hover:text-red-500"><X className="w-3 h-3" /></button>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </div>
   );
 }

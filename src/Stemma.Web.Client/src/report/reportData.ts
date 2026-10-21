@@ -56,6 +56,8 @@ export interface ReportBook {
     focus: string[];
     frame: BookFrame;
     others: BookOthers;
+    /** The flow the page plays (F-020), listed under its narrative in the report. */
+    steps: { link: string; note: string }[];
   }[];
 }
 
@@ -158,6 +160,7 @@ export function buildReportBundle(i: ReportInputs): ReportBundle {
       audience: b.audience,
       pages: b.pages.map((p) => ({
         id: p.id, title: p.title, viewKey: viewKeyOf(p.view), narrative: p.narrative, focus: [...p.focus], frame: p.frame, others: p.others,
+        steps: p.steps.map((st) => ({ link: st.link, note: st.note })),
       })),
     })),
   };

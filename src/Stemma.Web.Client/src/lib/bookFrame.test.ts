@@ -9,7 +9,7 @@ const el = (id: string, contextId: string | null = null, kind: ArchElement['kind
   ({ id, name: id, kind, attributes: { contextId } });
 
 const page = (focus: string[]): BookPage =>
-  ({ id: 'p', title: 'P', view: 'moduleMap', narrative: '', focus, frame: focus.length ? 'focus' : 'view', others: 'dim' });
+  ({ id: 'p', title: 'P', view: 'moduleMap', narrative: '', focus, frame: focus.length ? 'focus' : 'view', others: 'dim', steps: [] });
 
 describe('pageLighting', () => {
   const elements = [el('bc_sales', null, 'boundedContext'), el('mod_quote', 'bc_sales'), el('mod_basket', 'bc_sales'), el('mod_fares')];

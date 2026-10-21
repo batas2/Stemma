@@ -429,7 +429,15 @@
         "diff": {
           "title": "A gesture becomes a diff",
           "view": "view_write",
-          "narrative": "Follow the top row left to right, then drop down and come back along the bottom. You\nrename a box on the canvas, the canvas sends one operation over SignalR, the hub hands\nit to the engine, the engine goes through DslWriter, DslWriter asks Roslyn for a\ntargeted edit, and Roslyn writes Architecture.cs. Seven hops, and the last one is a\nline in `git diff`. The dashed arrow going back to Roslyn is the read path: the same\nfile, parsed, is where the model came from in the first place."
+          "narrative": "Follow the top row left to right, then drop down and come back along the bottom. You\nrename a box on the canvas, the canvas sends one operation over SignalR, the hub hands\nit to the engine, the engine goes through DslWriter, DslWriter asks Roslyn for a\ntargeted edit, and Roslyn writes Architecture.cs. Seven hops, and the last one is a\nline in `git diff`. The dashed arrow going back to Roslyn is the read path: the same\nfile, parsed, is where the model came from in the first place.",
+          "steps": [
+            { "link": "flow_gesture", "note": "You rename a box." },
+            { "link": "flow_op", "note": "One operation, over SignalR." },
+            "flow_apply",
+            { "link": "dep_engine_writer", "note": "The engine never edits text itself." },
+            { "link": "flow_rewrite", "note": "A targeted edit: the trivia around it is untouched." },
+            { "link": "flow_write", "note": "And the last hop is one line in git diff." }
+          ]
         },
         "engine": {
           "title": "What the engine is allowed to know",

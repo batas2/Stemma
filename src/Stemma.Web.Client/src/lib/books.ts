@@ -16,8 +16,16 @@
  * edit is about, so a key Stemma does not know and a default somebody spelled out both survive.
  */
 
+import type { ArchModel } from './types';
+
 export type BookFrame = 'view' | 'focus';
 export type BookOthers = 'dim' | 'hide';
+
+/** One beat of a flow (F-020): a relationship lit in its turn, and what to say over it. */
+export interface BookStep {
+  link: string;
+  note: string;
+}
 
 export interface BookPage {
   id: string;
@@ -30,6 +38,8 @@ export interface BookPage {
   focus: string[];
   frame: BookFrame;
   others: BookOthers;
+  /** Relationships played one at a time before the next page (F-020); empty for most pages. */
+  steps: BookStep[];
 }
 
 export interface Book {
@@ -44,11 +54,11 @@ export type BooksSection = Record<string, unknown>;
 
 type Raw = Record<string, unknown>;
 
-export type PagePatch = Partial<Pick<BookPage, 'title' | 'view' | 'narrative' | 'focus' | 'frame' | 'others'>>;
+export type PagePatch = Partial<Pick<BookPage, 'title' | 'view' | 'narrative' | 'focus' | 'frame' | 'others' | 'steps'>>;
 
 export interface PageProblem {
-  kind: 'missing-view' | 'dangling-focus';
-  /** The focus ids that are not elements, for `dangling-focus`. */
+  kind: 'missing-view' | 'dangling-focus' | 'dangling-step';
+  /** The focus ids that are not elements, or the step links that are not relationships. */
   ids?: string[];
 }
 
@@ -89,6 +99,17 @@ export function pageOrder(book: unknown): string[] {
   return [...listed, ...Object.keys(pages).filter((id) => !listed.includes(id))];
 }
 
+/** Steps as a person or an agent may write them: an id, or `{ link, note }`. Anything else is skipped. */
+export function readSteps(value: unknown): BookStep[] {
+  if (!Array.isArray(value)) return [];
+  const out: BookStep[] = [];
+  for (const v of value) {
+    if (typeof v === 'string' && v) out.push({ link: v, note: '' });
+    else if (isRecord(v) && typeof v.link === 'string' && v.link) out.push({ link: v.link, note: text(v.note) });
+  }
+  return out;
+}
+
 function readPage(id: string, raw: unknown): BookPage | null {
   // A page that is not an object is a hand edit gone wrong; `stemma validate` says so, and the
   // book presents without it rather than not at all.
@@ -102,6 +123,7 @@ function readPage(id: string, raw: unknown): BookPage | null {
     focus,
     frame: resolveFrame(focus, raw.frame),
     others: raw.others === 'hide' ? 'hide' : 'dim',
+    steps: readSteps(raw.steps),
   };
 }
 
@@ -200,6 +222,11 @@ export function updatePage(section: BooksSection, bookId: string, pageId: string
     if (patch.focus.length > 0) raw.focus = [...patch.focus];
     else delete raw.focus;
   }
+  if (patch.steps !== undefined) {
+    // A step with nothing to say is written as its id alone, the shortest thing that says it.
+    if (patch.steps.length > 0) raw.steps = patch.steps.map((st) => (st.note.trim() ? { link: st.link, note: st.note } : st.link));
+    else delete raw.steps;
+  }
   if (patch.focus !== undefined || patch.frame !== undefined) {
     const focus = strings(raw.focus);
     const wanted = patch.frame ?? (raw.frame === 'view' ? 'view' : 'focus');
@@ -270,11 +297,15 @@ export function viewKeyOf(view: string): string {
  * What is wrong with a page against the model as it is now: a view that no longer exists, or focus
  * ids that are no longer elements. `views` holds the view ids a page may name.
  */
-export function pageProblems(page: BookPage, ctx: { views: Set<string>; elements: Set<string> }): PageProblem[] {
+export function pageProblems(page: BookPage, ctx: { views: Set<string>; elements: Set<string>; links?: Set<string> }): PageProblem[] {
   const problems: PageProblem[] = [];
   if (!ctx.views.has(page.view)) problems.push({ kind: 'missing-view' });
   const dangling = page.focus.filter((id) => !ctx.elements.has(id));
   if (dangling.length > 0) problems.push({ kind: 'dangling-focus', ids: dangling });
+  if (ctx.links) {
+    const gone = page.steps.map((st) => st.link).filter((id) => !ctx.links!.has(id));
+    if (gone.length > 0) problems.push({ kind: 'dangling-step', ids: [...new Set(gone)] });
+  }
   return problems;
 }
 
@@ -307,6 +338,42 @@ export function reflowNarrative(md: string): string {
 export function describeProblems(problems: PageProblem[], page: BookPage): string {
   return problems.map((p) => p.kind === 'missing-view'
     ? `The view "${page.view}" no longer exists.`
-    : `${p.ids!.length === 1 ? 'An element it points at is' : `${p.ids!.length} elements it points at are`} no longer in the model (${p.ids!.join(', ')}).`,
+    : p.kind === 'dangling-step'
+      ? `${p.ids!.length === 1 ? 'A step plays a relationship that is' : `${p.ids!.length} steps play relationships that are`} no longer in the model (${p.ids!.join(', ')}).`
+      : `${p.ids!.length === 1 ? 'An element it points at is' : `${p.ids!.length} elements it points at are`} no longer in the model (${p.ids!.join(', ')}).`,
   ).join(' ');
+}
+
+/** "①" … "⑳", then "21." — a step's number as it is drawn on its arrow. */
+export function stepMark(n: number): string {
+  return n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : `${n}.`;
+}
+
+/**
+ * Where a page's flow has got to (F-020): `at` steps lit, the last of them the one being talked about.
+ * Captured for the PDF, every step is lit and none is singled out — the handout shows the whole flow.
+ */
+export function stepsLit(page: BookPage, at: number, everything: boolean): { shown: BookStep[]; current: BookStep | null } {
+  if (page.steps.length === 0) return { shown: [], current: null };
+  if (everything) return { shown: page.steps, current: null };
+  const n = Math.max(0, Math.min(at, page.steps.length));
+  return { shown: page.steps.slice(0, n), current: n > 0 ? page.steps[n - 1] : null };
+}
+
+/** What a step is about, said in a line: its note, or the arrow it lights ("Canvas → Web host · open"). */
+export function stepCaption(step: BookStep, arch: Pick<ArchModel, 'elements' | 'links'> | null): string {
+  if (step.note.trim()) return step.note.trim();
+  const link = arch?.links.find((l) => l.id === step.link);
+  if (!link) return step.link;
+  const name = (id: string) => arch?.elements.find((e) => e.id === id)?.name ?? id;
+  const label = link.attributes.payload ?? link.attributes.label ?? link.attributes.kind ?? '';
+  return `${name(link.fromId)} → ${name(link.toId)}${label ? ` · ${label}` : ''}`;
+}
+
+/** A page's steps as text, for a page of paper: "1. Canvas → Web host · open — what to say". */
+export function stepsAsText(page: BookPage, arch: Pick<ArchModel, 'elements' | 'links'> | null): string {
+  return page.steps.map((st, i) => {
+    const arrow = stepCaption({ ...st, note: '' }, arch);
+    return `${i + 1}. ${arrow}${st.note.trim() ? ` — ${st.note.trim()}` : ''}`;
+  }).join('\n');
 }

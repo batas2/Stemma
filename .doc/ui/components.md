@@ -44,6 +44,12 @@ The frontend's building blocks, what they own, and the rules for changing them. 
   draggable strip, *Add page* (the current view, pointing at the current selection), and the page
   on screen as a form — title, view, focus, frame (whole view / zoom in), the rest (dim / hide),
   narrative, duplicate, delete. Present and PDF live in its header.
+- **Steps** ([F-020](../features/F-020-flow-steps.md)) — in the book editor, under the narrative:
+  *Record* (a clicked relationship becomes the next step), *Selected relationship*, and the steps as
+  a numbered list — click to show the page at that step, a note to say, ↑ ↓ / Alt+↑↓ / drag to
+  reorder, × to remove. On the canvas the reached steps light their ends and wear ①②③ on their
+  labels; the current one's label is an amber chip and its line moves. Presenting, Next and Back
+  step through them first.
 - **`BookPresenter.tsx`** — the full-screen overlay while presenting: the narrative card, page
   count and progress, a black screen, and the presenter's keys (`lib/presenterKeys.ts`). App hides
   every other piece of chrome while it is up, and the canvas is read-only.

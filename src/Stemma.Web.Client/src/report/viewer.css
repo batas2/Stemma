@@ -429,3 +429,8 @@ input, textarea { font: inherit; color: var(--vr-text); }
 .vrn-titlerow .vrn-name { flex: 1; min-width: 0; }
 .vrn-titlerow .vrn-badge { margin-left: auto; flex: none; margin-top: 2px; }
 .vrn-notes.own code { background: color-mix(in srgb, currentColor 10%, transparent); color: inherit; }
+/* A page's flow (F-020): numbered, each step on its line with what to say under it. */
+.vr-book-steps { margin: 4px 0 12px; padding-left: 22px; font-size: 13px; line-height: 1.5; color: var(--vr-text); }
+.vr-book-steps li { margin: 0 0 6px; }
+.vr-step-line { display: block; font-weight: 500; }
+.vr-step-note { display: block; color: var(--vr-faint); }
