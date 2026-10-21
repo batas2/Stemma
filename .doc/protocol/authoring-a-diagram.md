@@ -447,7 +447,7 @@ or with `STEMMA_RECENTS=off` in its environment, does the same.)
 ## 7. Checking your work
 
 ```
-stemma validate --workspace <path> [--json] [--strict]
+stemma validate [<path>] [--json] [--strict]       # or --workspace <path>; default: the current directory
 ```
 
 Exit `0` when nothing is broken, `1` on an error (or a warning under `--strict`), `2` on a bad
