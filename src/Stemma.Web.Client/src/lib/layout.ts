@@ -201,7 +201,9 @@ async function sendChanges(rootPath: string): Promise<void> {
   if (changes.length === 0) return;
   try {
     const refused = await patchLayoutSidecar(changes, rootPath);
-    if (refused) {
+    if (refused && CHANGE_REFUSALS.has(refused.reason)) {
+      await sendOneByOne(rootPath, changes);
+    } else if (refused) {
       // Kept against the copy, so the next send carries them again.
       reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(new Error(`${refused.reason}: ${refused.message}`));
       // Broken since it was read — a merge, a hand edit: said until it reads again.
@@ -212,6 +214,31 @@ async function sendChanges(rootPath: string): Promise<void> {
     }
   } catch (error) {
     reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(error);
+  }
+}
+
+/** Refusals of one change rather than of the file: sent again, they are refused again. */
+const CHANGE_REFUSALS = new Set(['InvalidText', 'TooDeep', 'NotAnObject', 'EmptyPath']);
+
+/**
+ * A batch the server refused because of one change in it — half an emoji in a note, a path too deep.
+ * Each change is sent on its own, and one that is refused is taken back out of the copy and said,
+ * once. Kept, it went with every later save, and every later save was refused with it.
+ */
+async function sendOneByOne(rootPath: string, changes: SidecarChange[]): Promise<void> {
+  for (const change of changes) {
+    const refused = await patchLayoutSidecar([change], rootPath);
+    if (!refused) {
+      if (sidecarBase?.rootPath === rootPath) applySidecarChanges(sidecarBase.sidecar as Record<string, unknown>, [change]);
+      continue;
+    }
+    if (!CHANGE_REFUSALS.has(refused.reason)) return; // the file, not the change: the rest go with the next send
+    if (sidecarBase?.rootPath === rootPath && sidecarCache?.rootPath === rootPath) {
+      const was = valueAt(sidecarBase.sidecar, change.path);
+      applySidecarChanges(sidecarCache.sidecar as Record<string, unknown>, [was === undefined ? { path: change.path, remove: true } : { path: change.path, value: structuredClone(was) }]);
+    }
+    reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing a layout change')(new Error(`${refused.reason}: ${refused.message}`));
+    window.dispatchEvent(new CustomEvent('stemma:layout-change-refused', { detail: { message: refused.message } }));
   }
 }
 

@@ -94,7 +94,13 @@ export default function App() {
       if (root) rereadLayoutSidecar(root).catch(reportFailure('Sidecar', ClientEvent.RequestFailed, 'Reading the layout sidecar after reconnecting'));
       window.dispatchEvent(new Event('stemma:comments-changed'));
     });
-    return () => { offOp(); offExt(); offSidecar(); offComments(); offReconnect(); };
+    // One layout change the server would not take — half an emoji in a note — is said, and dropped.
+    function onChangeRefused(e: Event) {
+      const message = (e as CustomEvent<{ message: string }>).detail?.message;
+      useApp.getState().setToast({ kind: 'error', text: `A layout change was not saved: ${message || 'the file would not take it.'}` });
+    }
+    window.addEventListener('stemma:layout-change-refused', onChangeRefused);
+    return () => { offOp(); offExt(); offSidecar(); offComments(); offReconnect(); window.removeEventListener('stemma:layout-change-refused', onChangeRefused); };
   }, [setWs]);
 
   // Load the active workspace's model + presentation whenever the workspace changes — on the

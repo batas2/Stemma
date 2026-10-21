@@ -34,6 +34,9 @@ const FRIENDLY: Record<string, string> = {
   WorkspaceChanged: 'Another workspace was opened, so that change was not saved into it.',
   UnreadableSidecar: "stemma.layout.json can't be read, so layout changes aren't being saved. Fix the file, then try again.",
   NotAnElement: 'That is a relationship, not an element.',
+  NotALiteral: 'That value is written in the code as an expression, not as text, so Stemma leaves it alone. Change it in the code.',
+  InvalidText: 'That text holds a broken character (often half of an emoji), so it was not saved.',
+  TooDeep: 'That change is nested too deeply to be saved.',
 };
 
 /** A human-readable message for a failed operation. Falls back to the engine message. */

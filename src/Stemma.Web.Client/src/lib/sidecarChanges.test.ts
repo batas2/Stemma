@@ -237,3 +237,31 @@ describe('another workspace', () => {
     expect(s.api.patchLayoutSidecar).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('a change the server will not take', () => {
+  it('is sent on its own, dropped from the copy, and said — the others are saved', async () => {
+    const s = await session();
+    const said: string[] = [];
+    const listen = (e: Event) => said.push((e as CustomEvent<{ message: string }>).detail.message);
+    window.addEventListener('stemma:layout-change-refused', listen);
+    try {
+      s.api.patchLayoutSidecar.mockImplementation(async (changes: { path: string[] }[]) =>
+        changes.some((c) => c.path[0] === 'notes')
+          ? { opId: '', reason: 'InvalidText', message: 'The note holds half an emoji.' }
+          : null);
+      const { saveNote } = await import('./elementNotes');
+      s.layout.saveLayout(ROOT, 'moduleMap', { mod_1: { x: 15, y: 20 }, mod_2: { x: 300, y: 20 } });
+      saveNote(ROOT, 'mod_2', 'Ship it \ud83d');
+      await flush();
+
+      expect(said).toEqual(['The note holds half an emoji.']);
+      // The position landed; the note is out of the copy, so the next save does not carry it.
+      s.api.patchLayoutSidecar.mockClear();
+      s.layout.saveLayout(ROOT, 'moduleMap', { mod_1: { x: 15, y: 30 }, mod_2: { x: 300, y: 20 } });
+      await flush();
+      expect(sent(s)).toEqual([{ path: ['views', 'moduleMap', 'nodes', 'mod_1', 'y'], value: 30 }]);
+    } finally {
+      window.removeEventListener('stemma:layout-change-refused', listen);
+    }
+  });
+});
