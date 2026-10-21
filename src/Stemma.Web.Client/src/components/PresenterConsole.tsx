@@ -22,6 +22,14 @@ export function PresenterConsole() {
   const [offset, setOffset] = useState(0);
   const [resetAt, setResetAt] = useState<number | null>(null);
   const session = useRef<string | null>(null);
+  // How to finish setting up, said here rather than on the projector, where the room would read it.
+  const [hint, setHint] = useState(() => {
+    try { return localStorage.getItem('stemma.presenterHintSeen') !== '1'; } catch { return true; }
+  });
+  function dismissHint() {
+    setHint(false);
+    try { localStorage.setItem('stemma.presenterHintSeen', '1'); } catch { /* private window */ }
+  }
 
   useEffect(() => {
     document.title = 'Presenter — Stemma';
@@ -81,7 +89,7 @@ export function PresenterConsole() {
   if (!state) {
     return (
       <div className="h-screen flex flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-100 px-8 text-center">
-        <Monitor className="w-10 h-10 text-zinc-500" aria-hidden />
+        <Monitor className="w-10 h-10 text-zinc-400" aria-hidden />
         <h1 className="text-2xl font-semibold">{ended ? 'The presentation has ended' : 'Waiting for a presentation'}</h1>
         <p className="text-zinc-400 max-w-md leading-relaxed">
           {ended
@@ -102,7 +110,7 @@ export function PresenterConsole() {
       <header className="flex items-center gap-4 px-6 py-3 border-b border-zinc-800">
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold truncate">{state.book.name}</div>
-          <div className="text-xs text-zinc-500">{state.book.audience ?? 'general audience'}</div>
+          <div className="text-xs text-zinc-400">{state.book.audience ?? 'general audience'}</div>
         </div>
         <div className="flex items-center gap-3" aria-label="Timer">
           <span className={clsx('text-3xl font-semibold tabular-nums', pausedAt !== null && 'text-amber-400')} aria-live="off">{formatElapsed(elapsed)}</span>
@@ -116,14 +124,21 @@ export function PresenterConsole() {
         <div className="text-2xl tabular-nums text-zinc-400 pl-4 border-l border-zinc-800" aria-label="Time of day">{clock}</div>
       </header>
 
+      {hint && (
+        <div role="note" className="flex items-center gap-3 px-6 py-2 bg-amber-500/10 border-b border-amber-500/20 text-sm text-amber-100">
+          <Monitor className="w-4 h-4 text-amber-300 shrink-0" aria-hidden />
+          <span className="flex-1">Put the presentation window on the projector and press <kbd className="px-1 rounded bg-zinc-800">F</kbd> there for full screen. This window stays on your screen.</span>
+          <button onClick={dismissHint} className="px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300">Got it</button>
+        </div>
+      )}
       <main className="flex-1 min-h-0 grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section aria-label="Now" className="min-h-0 overflow-y-auto px-8 py-6 border-r border-zinc-800">
           <div className="text-xs uppercase tracking-wider text-amber-400 mb-2">
             Now · {state.index + 1} of {state.pages.length}
-            {state.blank && <span className="ml-2 text-zinc-500 normal-case tracking-normal">· the screen is blank</span>}
+            {state.blank && <span className="ml-2 text-zinc-400 normal-case tracking-normal">· the screen is blank</span>}
           </div>
           <h1 className="text-3xl font-semibold leading-tight">{page?.title || 'Untitled page'}</h1>
-          <div className="mt-1 text-sm text-zinc-500">{page?.viewName}{page && page.focus > 0 ? ` · points at ${page.focus}` : ''}</div>
+          <div className="mt-1 text-sm text-zinc-400">{page?.viewName}{page && page.focus > 0 ? ` · points at ${page.focus}` : ''}</div>
           {state.step && (
             <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-500/15 text-indigo-200 px-3 py-1.5 text-sm">
               <span className="font-semibold tabular-nums">Step {state.step.at} of {state.step.of}</span>
@@ -138,15 +153,15 @@ export function PresenterConsole() {
             : <p className="mt-6 text-zinc-600 text-lg">No narrative on this page.</p>}
         </section>
         <section aria-label="Next" className="min-h-0 overflow-y-auto px-8 py-6 bg-zinc-900/40">
-          <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">Next</div>
+          <div className="text-xs uppercase tracking-wider text-zinc-400 mb-2">Next</div>
           {next ? (
             <>
               <h2 className="text-xl font-semibold leading-snug text-zinc-200">{next.title || 'Untitled page'}</h2>
-              <div className="mt-1 text-sm text-zinc-500">{next.viewName}{next.focus > 0 ? ` · points at ${next.focus}` : ''}</div>
+              <div className="mt-1 text-sm text-zinc-400">{next.viewName}{next.focus > 0 ? ` · points at ${next.focus}` : ''}</div>
               {next.narrative && <p className="mt-4 text-[15px] leading-relaxed text-zinc-400 line-clamp-6 whitespace-pre-line">{reflowNarrative(next.narrative)}</p>}
             </>
           ) : (
-            <p className="text-zinc-500 text-lg">This is the last page.</p>
+            <p className="text-zinc-400 text-lg">This is the last page.</p>
           )}
           <ol aria-label="Pages" className="mt-8 space-y-1">
             {state.pages.map((p, i) => (
@@ -159,7 +174,7 @@ export function PresenterConsole() {
                     i === state.index ? 'bg-amber-500/15 text-amber-200' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200',
                   )}
                 >
-                  <span className="tabular-nums text-zinc-500 mr-2">{i + 1}</span>{p.title || 'Untitled page'}
+                  <span className="tabular-nums text-zinc-400 mr-2">{i + 1}</span>{p.title || 'Untitled page'}
                 </button>
               </li>
             ))}

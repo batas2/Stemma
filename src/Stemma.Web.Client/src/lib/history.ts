@@ -98,6 +98,9 @@ export class History {
   get redoDescription(): string | null { return this.redoSteps[this.redoSteps.length - 1]?.description ?? null; }
   get isReplaying(): boolean { return this.replaying; }
 
+  /** The step the last undo or redo took back or put back, for showing where it happened. */
+  lastReplayed: { step: HistoryStep; direction: 'undo' | 'redo' } | null = null;
+
   /** A drag the layout stack has just taken. */
   recordLayout(description: string): void {
     if (this.replaying) return;
@@ -177,6 +180,7 @@ export class History {
       }
       if (s.layout) this.driver.undoLayout();
       this.redoSteps.push(s);
+      this.lastReplayed = { step: s, direction: 'undo' };
       this.notify();
       return s.description;
     } finally {
@@ -199,6 +203,7 @@ export class History {
       }
       if (s.presentation.length > 0) this.driver.applyPresentation(s.presentation, 'after');
       this.undoSteps.push({ ...s, at: this.now(), key: null });
+      this.lastReplayed = { step: s, direction: 'redo' };
       this.notify();
       return s.description;
     } finally {

@@ -345,7 +345,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           <span
             className={clsx(
               'absolute -top-2.5 right-3 z-[2] text-[10px] font-semibold px-1.5 py-0.5 rounded-full shadow-sm pointer-events-none',
-              data.diff === 'added' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white',
+              // 4.5:1 at 10 px: white on emerald-700, near-black on amber.
+              data.diff === 'added' ? 'bg-emerald-700 text-white' : 'bg-amber-500 text-stone-900',
             )}
           >
             {data.diff === 'added' ? 'New' : 'Changed'}
@@ -608,7 +609,7 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
           : <span className="font-medium">{name}</span>}
         {childCount !== undefined && childCount > 0 && <span className="opacity-80">· {childCount}</span>}
         {diff && diff !== 'removed' && (
-          <span className={clsx('ml-1 px-1.5 rounded-full text-white font-semibold', diff === 'added' ? 'bg-emerald-500' : 'bg-amber-500')}>
+          <span className={clsx('ml-1 px-1.5 rounded-full font-semibold', diff === 'added' ? 'bg-emerald-700 text-white' : 'bg-amber-500 text-stone-900')}>
             {diff === 'added' ? 'New' : 'Changed'}
           </span>
         )}

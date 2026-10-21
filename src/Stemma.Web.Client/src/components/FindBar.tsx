@@ -133,7 +133,7 @@ export function FindBar({ matches, facets, viewId, onStep }: {
                       title={on ? `Stop filtering by ${f.label}` : `Only ${f.label} (${f.count})`}
                       className={clsx(chip, on ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300' : 'border-default text-muted hover:text-body hover:border-indigo-400')}
                     >
-                      {f.label} <span className="tabular-nums opacity-60">{f.count}</span>
+                      {f.label} <span className="tabular-nums text-muted">{f.count}</span>
                     </button>
                   );
                 })}

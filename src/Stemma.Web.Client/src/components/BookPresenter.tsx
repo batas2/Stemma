@@ -183,9 +183,9 @@ export function BookPresenter() {
     // A browser leaves full screen when a page opens a window. That is not the presenter stopping.
     ownsFullscreen.current = false;
     const opened = await openConsole();
-    useApp.getState().setToast(opened
-      ? { kind: 'info', text: 'Presenter view opened. Put this window on the projector and press F for full screen.' }
-      : { kind: 'error', text: 'The presenter view could not open — allow pop-ups for Stemma, then press P again.' });
+    // Said on failure only: this window is the one the room is looking at. How to finish setting up
+    // is said on the console, where only the presenter reads it.
+    if (!opened) useApp.getState().setToast({ kind: 'error', text: 'The presenter view could not open — allow pop-ups for Stemma, then press P again.' });
   }
 
   if (!book || !page) return null;

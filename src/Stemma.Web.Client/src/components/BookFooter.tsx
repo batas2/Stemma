@@ -104,9 +104,7 @@ function Editor({ book, page }: { book: Book; page: BookPage | null }) {
             // window, ready to be put on the projector and made full screen with F.
             const opened = await openConsole();
             st().startPresenting(book.id, page?.id);
-            st().setToast(opened
-              ? { kind: 'info', text: 'Presenter view opened. Put this window on the projector and press F for full screen.' }
-              : { kind: 'error', text: 'The presenter view could not open — allow pop-ups for Stemma. Presenting without it.' });
+            if (!opened) st().setToast({ kind: 'error', text: 'The presenter view could not open — allow pop-ups for Stemma. Presenting without it.' });
           }}
           disabled={book.pages.length === 0}
           aria-label="Present with the presenter view on another screen"

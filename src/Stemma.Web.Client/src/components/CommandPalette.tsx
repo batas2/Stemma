@@ -222,12 +222,12 @@ export function CommandPalette() {
               </Command.Item>
               {compare ? (
                 <Command.Item value="stop comparing compare done" onSelect={() => { close(); stopCompare(); }} className={item}>
-                  <span>Stop comparing with {compare.label}</span>
+                  <span>Stop comparing</span>
                   <span className="text-[10px] font-mono text-zinc-500">Esc</span>
                 </Command.Item>
               ) : (
                 <Command.Item value="compare with the last commit changes diff git" onSelect={() => { close(); void startCompare('HEAD', 'the last commit'); }} className={item}>
-                  <span>Compare with the last commit</span>
+                  <span>Compare with last commit</span>
                 </Command.Item>
               )}
               <Command.Item value="keyboard shortcuts help" onSelect={() => { close(); window.dispatchEvent(new CustomEvent('stemma:show-shortcuts')); }} className={item}>
@@ -235,7 +235,7 @@ export function CommandPalette() {
                 <span className="text-[10px] font-mono text-zinc-500">?</span>
               </Command.Item>
               <Command.Item value="switch theme dark light appearance" onSelect={() => { close(); toggleTheme(); }} className={item}>
-                <span>{theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}</span>
+                <span>{theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}</span>
               </Command.Item>
             </Command.Group>
           </Command.List>

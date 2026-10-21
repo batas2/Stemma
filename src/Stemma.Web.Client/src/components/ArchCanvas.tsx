@@ -943,6 +943,10 @@ function CanvasInner() {
   // that wears the ring for a moment once it is there.
   const revealPending = useRef<string | null>(null);
   const [revealId, setRevealId] = useState<string | null>(null);
+  // Cards an undo or redo just changed, ringed for a moment so the change is seen (HIG, Undo and redo).
+  const [flashIds, setFlashIds] = useState<Set<string>>(() => new Set());
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
   const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(revealTimer.current), []);
   // F-016 AC5: each view keeps its pan and zoom for the session, so looking elsewhere for a moment
@@ -1350,6 +1354,26 @@ function CanvasInner() {
     };
   }, [screenToFlowPosition]);
 
+  useEffect(() => {
+    function onFlash(ev: Event) {
+      const wanted = new Set(((ev as CustomEvent).detail?.ids as string[] | undefined) ?? []);
+      const move = (ev as CustomEvent).detail?.move !== false;
+      // After the undo has been drawn: a move lands on the next render.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const here = getNodes().filter((n) => wanted.has(n.id) && !n.hidden);
+        if (here.length === 0) return;
+        const screen = screenInFlow();
+        const seen = here.some((n) => screen.shows(n.position, { w: n.measured?.width ?? 200, h: n.measured?.height ?? 92 }));
+        if (!seen && move) fitView({ nodes: here.map((n) => ({ id: n.id })), padding: 0.4, duration: prefersReducedMotion() ? 0 : 450, maxZoom: 1.2 });
+        setFlashIds(new Set(here.map((n) => n.id)));
+        clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setFlashIds(new Set()), 1400);
+      }));
+    }
+    window.addEventListener('stemma:flash', onFlash);
+    return () => window.removeEventListener('stemma:flash', onFlash);
+  }, [getNodes, screenInFlow, fitView]);
+
   const pasteClip = useCallback(async (clip: Clip, at: Point, description: string) => {
     const st = useApp.getState();
     if (!st.arch) return;
@@ -1384,7 +1408,9 @@ function CanvasInner() {
       holdClip(clip);
       // The names, as text, for whatever the person pastes into next. Refused on an insecure origin.
       navigator.clipboard?.writeText(clipText(clip)).catch(reportFailure('Canvas', ClientEvent.Unhandled, 'Copying names as text'));
-      setToast({ kind: 'info', text: clip.elements.length === 1 ? `Copied ${clip.elements[0].name}` : `Copied ${clip.elements.length} elements` });
+      // No toast: a copy is expected to work, and the paste that follows is what shows it did. The
+      // copied boxes are ringed for a moment instead, so the person sees what went onto the clipboard.
+      window.dispatchEvent(new CustomEvent('stemma:flash', { detail: { ids: clip.elements.map((e) => e.id), move: false } }));
     }
     function onPaste(ev: Event) {
       const clip = heldClip();
@@ -2357,10 +2383,10 @@ function CanvasInner() {
   // in is taken off the nodes and edges themselves: drag, select, resize, rename, notes, label edits,
   // waypoints, arrowheads.
   const renderedNodes = useMemo<Node[]>(() => {
-    if (!lit && !readOnly && !revealId && !diff) return nestedNodes;
+    if (!lit && !readOnly && !revealId && flashIds.size === 0 && !diff) return nestedNodes;
     return nestedNodes.map((n) => {
       let out = n;
-      if (n.id === revealId) out = { ...out, data: { ...out.data, revealed: true } };
+      if (n.id === revealId || flashIds.has(n.id)) out = { ...out, data: { ...out.data, revealed: true } };
       if (diff) {
         const change = diff.elementChange.get(n.id);
         if (change) out = { ...out, data: { ...out.data, diff: change } };
@@ -2381,7 +2407,7 @@ function CanvasInner() {
       }
       return out;
     });
-  }, [nestedNodes, lit, litHides, readOnly, revealId, diff, compareDimRest]);
+  }, [nestedNodes, lit, litHides, readOnly, revealId, flashIds, diff, compareDimRest]);
 
   const renderedEdges = useMemo<Edge[]>(() => {
     if (!lit && !readOnly && !diff) return allEdges;
@@ -2597,10 +2623,10 @@ function GhostLayer({ cards, lines, since }: {
           style={{ transform: `translate(${c.x}px, ${c.y}px)`, width: c.w, minHeight: c.h }}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[11px] uppercase tracking-wider text-rose-500/80 truncate">{kindLabel(c.kind)}</span>
-            <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-300">Removed</span>
+            <span className="text-[11px] uppercase tracking-wider text-rose-700 dark:text-rose-300 truncate">{kindLabel(c.kind)}</span>
+            <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-700 text-white dark:bg-rose-500/25 dark:text-rose-100">Removed</span>
           </div>
-          <div className="text-sm font-medium text-rose-700/80 dark:text-rose-200/80 line-through decoration-rose-500/70">{c.name}</div>
+          <div className="text-sm font-medium text-rose-800 dark:text-rose-200 line-through decoration-rose-500/70">{c.name}</div>
         </div>
       ))}
     </div>

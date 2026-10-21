@@ -437,7 +437,10 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
                   style={presetSwatchStyle(p.style)}
                   className="h-11 rounded-lg border border-default flex items-center justify-center text-xs font-medium text-zinc-700 dark:text-zinc-200 transition-transform hover:scale-[1.03]"
                 >
-                  {p.label}
+                  {/* Stripes under a label make it hard to read; the label gets a quiet plate of its own. */}
+                  {p.style.fillStyle === 'hatch'
+                    ? <span className="px-1.5 rounded bg-white/85 dark:bg-zinc-900/85">{p.label}</span>
+                    : p.label}
                 </button>
               ))}
             </div>
@@ -1217,9 +1220,11 @@ function presetSwatchStyle(s: Partial<NodeStyle>): React.CSSProperties {
   if (s.shadow === 'glow') css.boxShadow = `0 0 7px ${s.borderColor ?? '#6366f1'}99`;
   else if (s.shadow === 'raised') css.boxShadow = '0 3px 8px rgba(0,0,0,0.22)';
   else if (s.shadow === 'soft') css.boxShadow = '0 1px 2px rgba(0,0,0,0.16)';
-  // Keep the label legible on light pastel fills regardless of theme.
+  // Keep the label legible on light pastel fills regardless of theme. A see-through swatch — glass, or
+  // hatching with the panel showing between the stripes — keeps the theme's own text colour instead:
+  // forced dark, it disappeared into the dark panel behind it.
   if (s.textColor) css.color = s.textColor;
-  else if (fill || s.fillStyle) css.color = '#27272a';
+  else if (fill && s.fillStyle !== 'glass' && s.fillStyle !== 'hatch') css.color = '#27272a';
   return css;
 }
 

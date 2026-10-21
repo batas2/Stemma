@@ -6,7 +6,7 @@
  * and where the result is said out loud.
  */
 
-import { history, setHistoryDriver, type PresentationChange } from './history';
+import { history, setHistoryDriver, type HistoryStep, type PresentationChange } from './history';
 import { layoutUndo } from './layoutUndo';
 import { loadLayout, saveLayout, sidecarSet } from './layout';
 import { fetchUndoState, redoOperation, undoOperation } from './signalr';
@@ -21,10 +21,14 @@ function applyLayoutEntry(entry: { workspaceRoot: string; viewKey: string; posit
   window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: entry.viewKey } }));
 }
 
+/** The boxes the last move undone or redone moved, for showing where it happened. */
+let movedIds: string[] = [];
+
 function undoLayout(): boolean {
   const entry = layoutUndo.popUndo();
   if (!entry) return false;
   applyLayoutEntry({ workspaceRoot: entry.workspaceRoot, viewKey: entry.viewKey, positions: entry.before });
+  movedIds = Object.keys(entry.before);
   return true;
 }
 
@@ -32,7 +36,25 @@ function redoLayout(): boolean {
   const entry = layoutUndo.popRedo();
   if (!entry) return false;
   applyLayoutEntry({ workspaceRoot: entry.workspaceRoot, viewKey: entry.viewKey, positions: entry.after });
+  movedIds = Object.keys(entry.after);
   return true;
+}
+
+/**
+ * Show where an undo or redo happened (HIG, Undo and redo: "highlight the result of each undo and
+ * redo to keep people from thinking that the action had no effect"): the boxes it moved or restyled
+ * are ringed for a moment, and brought on screen when none of them is. A model edit is shown by the
+ * model redrawing; a step that took boxes away has nothing left to point at.
+ */
+function showWhere(replayed: { step: HistoryStep; direction: 'undo' | 'redo' } | null, layout: boolean) {
+  if (typeof window === 'undefined') return;
+  const ids = new Set<string>(layout ? movedIds : []);
+  for (const c of replayed?.step.presentation ?? []) {
+    if (c.section === 'edgeStyles') continue;
+    const now = replayed!.direction === 'undo' ? c.before : c.after;
+    if (now !== undefined || c.section === 'nodeStyles') ids.add(c.id);
+  }
+  if (ids.size > 0) window.dispatchEvent(new CustomEvent('stemma:flash', { detail: { ids: [...ids] } }));
 }
 
 async function engineStep(run: () => Promise<{ reason: string } | object | null>): Promise<boolean> {
@@ -96,17 +118,19 @@ export function configureHistory(): void {
  * since, or an edit made in another window — the engine's own stack is all there is.
  */
 export async function undo(): Promise<void> {
+  movedIds = [];
   const done = await history.undo();
-  if (done !== null) { say(`Undid ${done}`); return; }
-  if (undoLayout()) { say('Undid Move'); return; }
+  if (done !== null) { say(`Undid ${done}`); showWhere(history.lastReplayed, history.lastReplayed?.step.layout ?? false); return; }
+  if (undoLayout()) { say('Undid Move'); showWhere(null, true); return; }
   const state = await fetchUndoState().catch(() => null);
   if (state?.canUndo && (await engineStep(undoOperation))) say(`Undid ${state.undoDescription ?? 'the last edit'}`);
 }
 
 export async function redo(): Promise<void> {
+  movedIds = [];
   const done = await history.redo();
-  if (done !== null) { say(`Redid ${done}`); return; }
-  if (redoLayout()) { say('Redid Move'); return; }
+  if (done !== null) { say(`Redid ${done}`); showWhere(history.lastReplayed, history.lastReplayed?.step.layout ?? false); return; }
+  if (redoLayout()) { say('Redid Move'); showWhere(null, true); return; }
   const state = await fetchUndoState().catch(() => null);
   if (state?.canRedo && (await engineStep(redoOperation))) say(`Redid ${state.redoDescription ?? 'the last edit'}`);
 }
