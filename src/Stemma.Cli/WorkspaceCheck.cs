@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.CodeAnalysis.CSharp;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Workspace;
 
@@ -51,7 +50,7 @@ public static class WorkspaceCheck
         }
 
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
-        var viewFiles = ReadViews(workspaceRoot);
+        var viewFiles = WorkspaceViews.Read(workspaceRoot);
         var views = viewFiles.Select(v => v.View).ToList();
         findings.AddRange(DuplicateIds(read.Partials));
         findings.AddRange(DuplicateLinkIds(read.Partials));
@@ -67,19 +66,6 @@ public static class WorkspaceCheck
         findings.AddRange(LegacyBookFindings(workspaceRoot));
 
         return findings;
-    }
-
-    /// <summary>The views declared in <c>Views/*.cs</c>, each with its file, read once for every check that names them.</summary>
-    private static IReadOnlyList<(string File, ArchView View)> ReadViews(string workspaceRoot)
-    {
-        var viewsDir = Path.Combine(workspaceRoot, "Views");
-        if (!Directory.Exists(viewsDir)) return [];
-
-        return Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.AllDirectories)
-            .Order(StringComparer.Ordinal)
-            .SelectMany(f => ViewsAdapter.ReadAllFrom([(f, CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot())])
-                .Select(view => (f, view)))
-            .ToList();
     }
 
     /// <summary>

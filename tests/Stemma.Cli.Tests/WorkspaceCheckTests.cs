@@ -897,6 +897,34 @@ public sealed class WorkspaceCheckTests : IDisposable
     }
 
     [Fact]
+    public void Views_are_the_ones_the_workspace_holds_and_build_output_is_not_one()
+    {
+        // The app lists every view in a folder named Views, at any depth, and never build output.
+        // validate read everything under the root's Views/, a stale copy in obj/ included.
+        Model(TwoModules);
+        View("Overview", """new(Id: "view_overview", Name: "Overview", BaseView: "all", ElementIds: new[] { "mod_a" })""");
+        var stale = Path.Combine(_root, "Views", "obj", "Stale.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(stale)!);
+        File.WriteAllText(stale, """
+            using Stemma.Model;
+            namespace Probe;
+            public static class Stale { public static View Define() => new(Id: "view_stale", Name: "Stale", BaseView: "all", ElementIds: new[] { "mod_gone" }); }
+            """);
+        var nested = Path.Combine(_root, "Billing", "Views", "Invoices.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(nested)!);
+        File.WriteAllText(nested, """
+            using Stemma.Model;
+            namespace Probe;
+            public static class Invoices { public static View Define() => new(Id: "view_invoices", Name: "Invoices", BaseView: "all", ElementIds: new[] { "mod_missing" }); }
+            """);
+
+        var findings = Run();
+
+        findings.Should().NotContain(f => f.Message.Contains("view_stale"));
+        findings.Should().Contain(f => f.Rule == "view/dangling-member" && f.Message.Contains("view_invoices"));
+    }
+
+    [Fact]
     public void Build_output_under_Architecture_is_not_part_of_the_model()
     {
         Model(TwoModules);

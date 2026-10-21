@@ -108,7 +108,9 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
   work starts on it (`EngineHost`).
 - Views are read from `Views/*.cs` on open and on every refresh, and the browser's list is a cache
   of that. A save or delete still on its way is laid over it until the engine answers, so a refresh
-  in between does not take the change away.
+  in between does not take the change away. The list is the views the engine holds — every file in a
+  folder named `Views`, subfolders included, never build output — which are the files it saves and
+  deletes a view in, and the ones `stemma validate` checks.
 - During a session: model edits broadcast as **deltas** over SignalR; the client merges them.
   External file edits (git pull, IDE) are picked up by the engine and broadcast too — once per change,
   and without the engine writing the file in reply. Files added and deleted outside are taken in the

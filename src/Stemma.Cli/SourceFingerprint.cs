@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.CodeAnalysis.CSharp;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Workspace;
 
@@ -30,7 +29,7 @@ public static class SourceFingerprint
     {
         // A view is named by its id or its name, and its layout is kept under its id. Resolved first,
         // so a view checked by name finds its layout, and by either it is the same picture.
-        var views = ReadViews(workspaceRoot).ToList();
+        var views = WorkspaceViews.Read(workspaceRoot).Select(v => v.View).ToList();
         var match = views.FirstOrDefault(v => v.Id == view) ?? views.FirstOrDefault(v => v.Name == view);
         var viewId = match?.Id ?? view;
 
@@ -69,15 +68,6 @@ public static class SourceFingerprint
 
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..16];
         return new Fingerprint(hash, elements, links, members);
-    }
-
-    private static IEnumerable<ArchView> ReadViews(string workspaceRoot)
-    {
-        var dir = Path.Combine(workspaceRoot, "Views");
-        if (!Directory.Exists(dir)) return [];
-        var docs = Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
-            .Select(f => (FilePath: f, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()));
-        return ViewsAdapter.ReadAllFrom(docs);
     }
 
     /// <summary>

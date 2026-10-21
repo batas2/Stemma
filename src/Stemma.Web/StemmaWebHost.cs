@@ -446,7 +446,7 @@ public static class StemmaWebHost
             var layoutKey = "moduleMap";
             if (!string.IsNullOrWhiteSpace(view))
             {
-                var views = await ReadViewsAsync(engine.RootPath, ct);
+                var views = await ReadViewsAsync(engine, ct);
                 var match = views.FirstOrDefault(v => v.Id == view || v.Name == view);
                 if (match is not null)
                 {
@@ -503,17 +503,7 @@ public static class StemmaWebHost
         {
             using var lease = host.Use();
             if (lease is null) return Results.NotFound();
-            var engine = lease.Engine;
-            var viewsDir = Path.Combine(engine.RootPath, "Views");
-            if (!Directory.Exists(viewsDir)) return Results.Ok(Array.Empty<ArchView>());
-            var docs = new List<(string, Microsoft.CodeAnalysis.SyntaxNode)>();
-            foreach (var path in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
-            {
-                var content = await File.ReadAllTextAsync(path, ct);
-                var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content);
-                docs.Add((path, tree.GetRoot()));
-            }
-            return Results.Ok(ViewsAdapter.ReadAllFrom(docs));
+            return Results.Ok(await ReadViewsAsync(lease.Engine, ct));
         });
 
         // Both go through the engine, so a view file is edited in place, compile-gated, and found by
@@ -749,15 +739,20 @@ public static class StemmaWebHost
 
     // ---------------- Helpers ----------------
 
-    private static async Task<IReadOnlyList<ArchView>> ReadViewsAsync(string root, CancellationToken ct)
+    /// <summary>
+    /// The views the engine holds: the documents it saves and deletes a view in, so the list cannot
+    /// name a view the engine cannot find, or miss one it can. That is every file in a folder named
+    /// Views, at any depth — the list once read only the top of the root's Views/ — and never build
+    /// output, which the workspace does not hold.
+    /// </summary>
+    private static async Task<IReadOnlyList<ArchView>> ReadViewsAsync(StemmaEngine engine, CancellationToken ct)
     {
-        var viewsDir = Path.Combine(root, "Views");
-        if (!Directory.Exists(viewsDir)) return [];
         var docs = new List<(string, Microsoft.CodeAnalysis.SyntaxNode)>();
-        foreach (var path in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
+        foreach (var doc in engine.Solution.Projects.SelectMany(p => p.Documents).OrderBy(d => d.FilePath, StringComparer.Ordinal))
         {
-            var content = await File.ReadAllTextAsync(path, ct);
-            docs.Add((path, Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content).GetRoot()));
+            // The same test ViewsAdapter makes, made first so no other file is parsed for nothing.
+            if (doc.FilePath is not { } path || !path.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (await doc.GetSyntaxRootAsync(ct) is { } root) docs.Add((path, root));
         }
         return ViewsAdapter.ReadAllFrom(docs);
     }

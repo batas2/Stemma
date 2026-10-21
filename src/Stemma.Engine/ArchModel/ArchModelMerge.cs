@@ -1,5 +1,3 @@
-using System.IO.Enumeration;
-
 namespace Stemma.Engine.ArchModel;
 
 /// <summary>
@@ -57,16 +55,8 @@ public static class ArchModelMerge
     {
         if (!Directory.Exists(workspaceRoot)) return [];
         var root = Path.GetFullPath(workspaceRoot);
-        var sources = new FileSystemEnumerable<string>(root, (ref FileSystemEntry entry) => entry.ToFullPath(),
-            new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true })
-        {
-            ShouldIncludePredicate = (ref FileSystemEntry entry) =>
-                !entry.IsDirectory && entry.FileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase),
-            ShouldRecursePredicate = (ref FileSystemEntry entry) =>
-                !Workspace.ModelWorkspaceLoader.IsExcluded(root, entry.ToFullPath()),
-        };
-        return ReadingOrder(sources.Where(path =>
-                !Workspace.ModelWorkspaceLoader.IsExcluded(root, path) && IsModelFile(Path.GetRelativePath(root, path))))
+        return ReadingOrder(Workspace.ModelWorkspaceLoader.SourcesIn(root)
+                .Where(path => IsModelFile(Path.GetRelativePath(root, path))))
             .ToList();
     }
 
