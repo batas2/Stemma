@@ -122,10 +122,10 @@ export function CompareMenu() {
             <>
               <div className={clsx(heading, 'border-t border-subtle mt-1')}>Tags</div>
               {history.tags.map((t) => (
-                <button key={t.name} role="menuitem" className={row} disabled={busy !== null} onClick={() => choose(t.name, t.name)}>
+                <button key={t.name} role="menuitem" className={row} disabled={busy !== null} onClick={() => choose(t.sha, t.name)}>
                   <Tag className="w-4 h-4 mt-0.5 text-amber-500 shrink-0" aria-hidden />
                   <span className="text-sm flex-1 truncate">{t.name}</span>
-                  {busy === t.name && <Loader2 className="w-3.5 h-3.5 animate-spin text-faint" aria-label="Reading" />}
+                  {busy === t.sha && <Loader2 className="w-3.5 h-3.5 animate-spin text-faint" aria-label="Reading" />}
                 </button>
               ))}
             </>

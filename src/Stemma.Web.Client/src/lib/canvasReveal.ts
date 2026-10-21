@@ -116,6 +116,9 @@ export function revealElement(id: string): void {
   }
   const moved = !samePlace(target, here);
   if (moved) st.goTo(target);
+  // A module inside a collapsed bounded context is not drawn until the context is opened up.
+  const ctx = el.kind === 'module' ? el.attributes.contextId : null;
+  if (ctx && useApp.getState().collapsedBcs.has(ctx)) useApp.getState().toggleBcCollapsed(ctx);
   // After the move: opening a view clears the selection.
   useApp.getState().selectElement(id);
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('stemma:focus-node', { detail: { nodeId: id } }));

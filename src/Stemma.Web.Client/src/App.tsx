@@ -20,6 +20,7 @@ import { archModel, listViolations, snapshot } from './lib/api';
 import { primeLayoutSidecar, rereadLayoutSidecar } from './lib/layout';
 import { configureHistory, redo, undo } from './lib/undo';
 import { history } from './lib/history';
+import { layoutUndo } from './lib/layoutUndo';
 import { RenderShell } from './components/RenderShell';
 import { currentRenderParams } from './lib/renderMode';
 import { ViolationsPanel } from './components/ViolationsPanel';
@@ -106,6 +107,11 @@ export default function App() {
   const wsRoot = ws?.rootPath ?? null;
   // The last commit's model, for the count of uncommitted changes (F-017 AC6): read on open, and again
   // when the window comes back into focus — a commit is usually made from a terminal.
+  // Another workspace: none of the steps in the undo history are about it (F-015).
+  useEffect(() => {
+    history.clear();
+    layoutUndo.clear();
+  }, [wsRoot]);
   useEffect(() => {
     if (!wsRoot) return;
     void refreshHeadModel();

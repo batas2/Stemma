@@ -22,7 +22,8 @@ export interface LayoutUndoEntry {
   ts: number;
 }
 
-const CAPACITY = 50;
+/** As long as the journal's: a move it remembers is a move this stack still holds. */
+const CAPACITY = 100;
 
 export class LayoutUndoStack {
   private undo: LayoutUndoEntry[] = [];
@@ -54,6 +55,9 @@ export class LayoutUndoStack {
   get canRedo(): boolean { return this.redo.length > 0; }
   get undoDescription(): string | null { return this.undo[this.undo.length - 1]?.description ?? null; }
   get redoDescription(): string | null { return this.redo[this.redo.length - 1]?.description ?? null; }
+
+  /** Another workspace is open: none of these moves are about it. */
+  clear() { if (this.undo.length || this.redo.length) { this.undo = []; this.redo = []; this.notify(); } }
 
   /** External-edit-style invalidation. Drops the redo branch. */
   invalidateRedo() { if (this.redo.length > 0) { this.redo = []; this.notify(); } }

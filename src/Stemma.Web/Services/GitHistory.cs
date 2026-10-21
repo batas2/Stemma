@@ -91,11 +91,14 @@ public static class GitHistory
         if (resolved.ExitCode != 0) throw new RevisionNotFound($"There is no commit \"{rev}\" in this repository.");
         var sha = resolved.Output.Trim();
 
-        // Paths relative to the workspace, wherever it sits in the repository.
-        var files = await RunAsync(root, ct, "ls-tree", "-r", "--name-only", sha, "--", ModelWorkspaceLoader.ArchitectureDir);
+        // Paths relative to the workspace, wherever it sits in the repository. NUL-separated, because git
+        // quotes a name with anything but ASCII in it otherwise, and "Zamówienia.cs" would come back as
+        // a quoted string that is no file at all. A model file is any C# file in a folder named
+        // Architecture, as the live workspace reads them.
+        var files = await RunAsync(root, ct, "ls-tree", "-r", "-z", "--name-only", sha, "--", ".");
         var modelFiles = files.ExitCode != 0 ? [] : files.Output
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Where(p => p.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && !p.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase))
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Where(IsModelFile)
             .ToList();
 
         var partials = new List<ArchModel?>();
@@ -124,6 +127,15 @@ public static class GitHistory
     }
 
     private static History Unavailable(string reason) => new(false, reason, null, null, null, [], []);
+
+    /// <summary>A C# file inside a folder named <c>Architecture</c>, not generated — the live read's rule.</summary>
+    public static bool IsModelFile(string path)
+    {
+        var p = "/" + path.Replace('\\', '/');
+        return p.Contains($"/{ModelWorkspaceLoader.ArchitectureDir}/", StringComparison.OrdinalIgnoreCase)
+            && p.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+            && !p.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static async Task<string?> DefaultBranchAsync(string root, CancellationToken ct)
     {
@@ -176,9 +188,11 @@ public static class GitHistory
                 await process.WaitForExitAsync(timeout.Token);
                 return new Result(process.ExitCode, await output, null);
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
+                // Too slow, or the request went away: either way nobody is waiting for this git any more.
                 try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                if (ct.IsCancellationRequested) throw;
                 return new Result(-1, "", "Git took too long to answer.");
             }
             finally

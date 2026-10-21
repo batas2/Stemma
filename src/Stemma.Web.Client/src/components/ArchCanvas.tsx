@@ -1282,8 +1282,10 @@ function CanvasInner() {
         if (revealPending.current !== detail.nodeId) return;
         const node = getNodes().find((n) => n.id === detail.nodeId);
         if (!node?.measured?.width) {
-          if (tries++ < 40) setTimeout(attempt, 50);
-          else revealPending.current = null;
+          if (tries++ < 40) { setTimeout(attempt, 50); return; }
+          // Never drawn here after all: the view the reveal opened gets the fit it stood down for.
+          revealPending.current = null;
+          window.dispatchEvent(new CustomEvent('stemma:fit-view'));
           return;
         }
         setNodes((current) => current.map((n) => (n.selected === (n.id === detail.nodeId) ? n : { ...n, selected: n.id === detail.nodeId })));
@@ -1454,7 +1456,7 @@ function CanvasInner() {
       if (st.selectedLinkId) {
         const held = heldStyleFor('edge');
         if (!held || held.target !== 'edge') { setToast({ kind: 'info', text: 'Copy a relationship\'s style first (⌥⌘C)' }); return; }
-        history.beginGroup('Paste style');
+        if (!history.beginGroup('Paste style')) return;
         st.setEdgeStyleFor(st.selectedLinkId, { ...held.style });
         history.endGroup();
         setToast({ kind: 'success', text: 'Pasted the style' });
@@ -1465,7 +1467,8 @@ function CanvasInner() {
       if (ids.length === 0) return;
       if (!held || held.target !== 'node') { setToast({ kind: 'info', text: 'Copy an element\'s style first (⌥⌘C)' }); return; }
       const description = ids.length === 1 ? 'Paste style' : `Paste style to ${ids.length} elements`;
-      history.beginGroup(description);
+      // While a paste is still being written its group is open; this waits its turn rather than join it.
+      if (!history.beginGroup(description)) return;
       for (const id of ids) st.setNodeStyleFor(id, pasteLook(useApp.getState().nodeStyles[id], held.style));
       history.endGroup();
       setToast({ kind: 'success', text: ids.length === 1 ? 'Pasted the style' : `Pasted the style to ${ids.length} elements` });
@@ -1621,7 +1624,8 @@ function CanvasInner() {
     selectLink(edge.id);
     // F-020: recording a page's steps, a clicked relationship is the next one.
     const st = useApp.getState();
-    if (!st.recordingSteps || edge.id.startsWith('__about__')) return;
+    // Only on the page's own view: an arrow the page does not draw is not a step it can play.
+    if (!st.recordingSteps || !bookPage || edge.id.startsWith('__about__')) return;
     if (st.addStep(edge.id)) {
       const link = st.arch?.links.find((l) => l.id === edge.id);
       const name = (id: string) => st.arch?.elements.find((e) => e.id === id)?.name ?? id;

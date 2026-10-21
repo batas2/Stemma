@@ -141,6 +141,50 @@ public sealed class GitHistoryTests : IDisposable
         then.Layout.Should().BeNull();
     }
 
+    [Fact]
+    public async Task A_model_file_with_a_non_ascii_name_or_in_a_nested_Architecture_folder_is_read()
+    {
+        if (!GitAvailable()) return;
+        Git("init", "-q", "-b", "main");
+        // The live workspace reads any C# file in a folder named Architecture; so does a past revision.
+        var nested = Path.Combine(_root, "src", "Shop", "Architecture");
+        Directory.CreateDirectory(nested);
+        await File.WriteAllTextAsync(Path.Combine(nested, "Architecture.cs"), Model);
+        await File.WriteAllTextAsync(Path.Combine(nested, "Zamówienia.cs"), """
+            using Stemma.Model;
+
+            namespace Sample;
+
+            public static class Zamowienia
+            {
+                public static Model Build()
+                {
+                    var orders = new Module("mod_orders", "Zamówienia");
+                    return Model.Of(orders);
+                }
+            }
+            """);
+        Git("add", "-A");
+        Git("commit", "-q", "-m", "Nested model");
+
+        var then = await GitHistory.ModelAtAsync(_root, "HEAD");
+
+        then.Arch!.Elements.Select(e => e.Id).Should().Contain(["mod_auth", "mod_orders"]);
+        // The primary file first, as the live read orders them.
+        then.Arch.FilePath.Should().EndWith("Architecture.cs");
+    }
+
+    [Theory]
+    [InlineData("src/Shop/Architecture/Architecture.cs", true)]
+    [InlineData("Architecture/Zamówienia.cs", true)]
+    [InlineData("Architecture/Model.g.cs", false)]
+    [InlineData("Views/Payments.cs", false)]
+    [InlineData("ArchitectureNotes/Thing.cs", false)]
+    public void A_model_file_is_a_CSharp_file_in_a_folder_named_Architecture(string path, bool model)
+    {
+        GitHistory.IsModelFile(path).Should().Be(model);
+    }
+
     [Theory]
     [InlineData("--output=/tmp/x")]
     [InlineData("-p")]

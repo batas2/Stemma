@@ -142,6 +142,32 @@ describe('books in the store', () => {
     expect(useApp.getState().activeStep).toBe(1);
   });
 
+  it('cannot be at a step a page no longer has after the file is read again', async () => {
+    const disk = onDisk();
+    (disk.books.book_sold.pages.wide as Record<string, unknown>).steps = ['df_1', 'df_2', 'df_3'];
+    const { layout, useApp, api } = await session(disk);
+    await layout.primeLayoutSidecar(ROOT);
+    useApp.getState().reloadBooks();
+    useApp.getState().openBook('book_sold');
+    useApp.getState().setActiveStep(3);
+    // A pull takes two of the steps away.
+    const pulled = onDisk();
+    (pulled.books.book_sold.pages.wide as Record<string, unknown>).steps = ['df_1'];
+    api.fetchLayout.mockImplementation(async () => structuredClone(pulled));
+    await layout.rereadLayoutSidecar(ROOT);
+    useApp.getState().reloadBooks();
+    expect(useApp.getState().activeStep).toBe(1);
+  });
+
+  it('goes Back to Concerns from a view opened there', async () => {
+    const { useApp } = await session();
+    useApp.setState({ view: 'concerns', activeCustomViewId: null, trail: { back: [], forward: [] } });
+    useApp.getState().goTo({ view: 'moduleMap', customViewId: 'view_buy' });
+    expect(useApp.getState()).toMatchObject({ view: 'moduleMap', activeCustomViewId: 'view_buy' });
+    useApp.getState().goBack();
+    expect(useApp.getState()).toMatchObject({ view: 'concerns', activeCustomViewId: null });
+  });
+
   it('records a clicked relationship as the next step of the page on screen', async () => {
     const { layout, useApp } = await session();
     await layout.primeLayoutSidecar(ROOT);

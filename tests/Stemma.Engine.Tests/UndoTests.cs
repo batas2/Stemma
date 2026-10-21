@@ -193,6 +193,26 @@ public sealed class UndoTests
     }
 
     [Fact]
+    public void Each_entry_is_numbered_so_a_full_stack_still_tells_its_tops_apart()
+    {
+        // A client that grouped operations checks the top of the stack before undoing them together.
+        // The depth stops moving at the capacity; the sequence does not.
+        var stack = new UndoStack();
+        var op = new RemoveElementOp("op", "x");
+        for (var i = 0; i < UndoStack.Capacity; i++) stack.Push(op, op, "edit");
+        var full = stack.UndoTop;
+        stack.UndoDepth.Should().Be(UndoStack.Capacity);
+
+        stack.Push(op, op, "someone else's edit");
+        stack.UndoDepth.Should().Be(UndoStack.Capacity);
+        stack.UndoTop.Should().Be(full + 1);
+
+        stack.PopUndo();
+        stack.RedoTop.Should().Be(full + 1);
+        stack.UndoTop.Should().Be(full);
+    }
+
+    [Fact]
     public void The_fallback_for_removing_a_relation_keeps_its_label()
     {
         var before = new ArchModel.ArchModel("Architecture.cs",

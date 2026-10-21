@@ -78,7 +78,11 @@ function applyPresentation(changes: PresentationChange[], which: 'before' | 'aft
   if (!root) return;
   for (const c of changes) {
     const value = which === 'before' ? c.before : c.after;
-    if (c.section === 'position') {
+    if (c.section === 'viewMembers') {
+      // A view from Views/ names its elements in code; the change is a save of that view, as any is.
+      const view = st.customViews.find((v) => v.id === c.id);
+      if (view && Array.isArray(value)) st.upsertCustomView({ ...view, elementIds: value as string[] });
+    } else if (c.section === 'position') {
       const positions = { ...loadLayout(root, c.view as ViewKind) };
       if (value) positions[c.id] = value as { x: number; y: number };
       else delete positions[c.id];
@@ -103,10 +107,10 @@ export function configureHistory(): void {
     redoLayout,
     undoOperation: () => engineStep(undoOperation),
     redoOperation: () => engineStep(redoOperation),
-    depths: async () => {
+    tops: async () => {
       try {
         const s = await fetchUndoState();
-        return { undo: s.undoDepth, redo: s.redoDepth };
+        return { undo: s.undoTop, redo: s.redoTop };
       } catch { return null; }
     },
     applyPresentation,
@@ -118,8 +122,11 @@ export function configureHistory(): void {
  * since, or an edit made in another window — the engine's own stack is all there is.
  */
 export async function undo(): Promise<void> {
+  // A paste still being written is not yet a step to take back: its operations are still arriving.
+  if (history.groupOpen) { say('Still pasting — undo when it has finished'); return; }
   movedIds = [];
   const done = await history.undo();
+  if (history.lastFailed) return; // the engine said why, in its own toast
   if (done !== null) { say(`Undid ${done}`); showWhere(history.lastReplayed, history.lastReplayed?.step.layout ?? false); return; }
   if (undoLayout()) { say('Undid Move'); showWhere(null, true); return; }
   const state = await fetchUndoState().catch(() => null);
@@ -127,10 +134,13 @@ export async function undo(): Promise<void> {
 }
 
 export async function redo(): Promise<void> {
+  if (history.groupOpen) { say('Still pasting — redo when it has finished'); return; }
   movedIds = [];
   const done = await history.redo();
+  if (history.lastFailed) return;
   if (done !== null) { say(`Redid ${done}`); showWhere(history.lastReplayed, history.lastReplayed?.step.layout ?? false); return; }
-  if (redoLayout()) { say('Redid Move'); showWhere(null, true); return; }
+  // No layout fallback here: every move is in the journal, so a move only the layout stack still
+  // remembers was undone before a later step, and replaying it would put it back out of order.
   const state = await fetchUndoState().catch(() => null);
   if (state?.canRedo && (await engineStep(redoOperation))) say(`Redid ${state.redoDescription ?? 'the last edit'}`);
 }

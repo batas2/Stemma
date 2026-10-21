@@ -323,6 +323,14 @@ describe('steps (F-020)', () => {
     expect((s.book_sold as { pages: { path: Record<string, unknown> } }).pages.path).not.toHaveProperty('steps');
   });
 
+  it('keeps the keys a step was written with when only its note changes', () => {
+    const s = section();
+    const pages = (s.book_sold as { pages: Record<string, Record<string, unknown>> }).pages;
+    pages.path.steps = [{ link: 'df_1', note: 'Old', colour: 'amber' }, 'df_2'];
+    updatePage(s, 'book_sold', 'path', { steps: [{ link: 'df_1', note: 'New' }, { link: 'df_2', note: '' }] });
+    expect(pages.path.steps).toEqual([{ link: 'df_1', note: 'New', colour: 'amber' }, 'df_2']);
+  });
+
   it('marks a page broken when a step plays a relationship that has gone', () => {
     const page: BookPage = { id: 'p', title: 'P', view: 'moduleMap', narrative: '', focus: [], frame: 'view', others: 'dim', steps: [{ link: 'df_1', note: '' }, { link: 'df_gone', note: '' }] };
     const problems = pageProblems(page, { views: new Set(['moduleMap']), elements: new Set(), links: new Set(['df_1']) });

@@ -47,7 +47,19 @@ export async function executePaste(plan: PastePlan, viewKey: string, description
     return addedId(r);
   };
 
-  history.beginGroup(description);
+  // One step of the undo history, and the engine keeps a hundred: a paste bigger than that could never
+  // be taken back whole, so it is not started.
+  const cost = plan.elements.length
+    + plan.elements.filter((e) => e.about).length
+    + plan.elements.filter((e) => e.lifecycle && (e.lifecycle.status || e.lifecycle.phase || e.lifecycle.validFrom || e.lifecycle.validUntil)).length
+    + plan.elements.filter((e) => e.ownership && (e.ownership.squad || e.ownership.domain)).length
+    + plan.links.length + plan.links.filter((l) => l.label).length;
+  const capacity = await fetchUndoState().then((s) => s.capacity).catch(() => 100);
+  if (cost > capacity) {
+    return { created: [], failed: `That is ${cost} edits, more than one undo can take back (${capacity}). Paste fewer elements at a time.` };
+  }
+  if (!history.beginGroup(description)) return { created: [], failed: 'Another paste is still being written. Try again when it has finished.' };
+  const viewBefore = useApp.getState().customViews.find((v) => v.id === useApp.getState().activeCustomViewId) ?? null;
   try {
     for (const e of plan.elements) {
       const id = await apply({
@@ -103,17 +115,24 @@ export async function executePaste(plan: PastePlan, viewKey: string, description
     }
 
     if (looks.length > 0) {
-      for (const c of looks) if (c.section !== 'position') sidecarSet(root, c.section, c.id, c.after);
+      for (const c of looks) {
+        if (c.section === 'nodeStyles' || c.section === 'edgeStyles' || c.section === 'notes' || c.section === 'customProps') sidecarSet(root, c.section, c.id, c.after);
+      }
       history.recordPresentation(looks, description);
       useApp.getState().rehydratePresentation();
       window.dispatchEvent(new CustomEvent('stemma:notes-changed'));
     }
 
-    // On a view from Views/, the copies join it — in one save, not one per element.
-    if (created.length > 0 && useApp.getState().activeCustomViewId) useApp.getState().addElementsToActiveView(created);
+    // On a view from Views/, the copies join it — in one save, not one per element — and undoing the
+    // paste takes them out of it again, so the view is not left naming elements that are gone.
+    if (created.length > 0 && viewBefore) {
+      useApp.getState().addElementsToActiveView(created);
+      const viewAfter = useApp.getState().customViews.find((v) => v.id === viewBefore.id);
+      if (viewAfter) history.recordPresentation([{ section: 'viewMembers', id: viewBefore.id, before: viewBefore.elementIds, after: viewAfter.elementIds }], description);
+    }
   } finally {
-    const depth = await fetchUndoState().then((s) => s.undoDepth).catch(() => null);
-    history.endGroup(depth);
+    const top = await fetchUndoState().then((s) => s.undoTop).catch(() => null);
+    history.endGroup(top);
   }
 
   return { created, failed };

@@ -15,24 +15,34 @@ namespace Stemma.Engine.Workspace;
 /// </summary>
 public sealed class UndoStack
 {
-    private const int Capacity = 100;
+    public const int Capacity = 100;
 
-    public sealed record Entry(OperationBase Forward, OperationBase Inverse, string Description);
+    /// <param name="Sequence">Which push this entry was, counting from 1 for the session. Unlike the
+    /// depth, it tells two entries apart even once the stack is full, so a client that grouped several
+    /// operations into one step can tell whether the top of the stack is still its own.</param>
+    public sealed record Entry(OperationBase Forward, OperationBase Inverse, string Description, long Sequence = 0);
 
     private readonly LinkedList<Entry> _undo = new();
     private readonly LinkedList<Entry> _redo = new();
+    private long _pushed;
 
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public int UndoDepth => _undo.Count;
     public int RedoDepth => _redo.Count;
 
+    /// <summary>The sequence of the entry an undo would take back, or 0 when there is none.</summary>
+    public long UndoTop => _undo.Last?.Value.Sequence ?? 0;
+
+    /// <summary>The sequence of the entry a redo would put back, or 0 when there is none.</summary>
+    public long RedoTop => _redo.Last?.Value.Sequence ?? 0;
+
     public string? PeekUndoDescription() => _undo.Last?.Value.Description;
     public string? PeekRedoDescription() => _redo.Last?.Value.Description;
 
     public void Push(OperationBase forward, OperationBase inverse, string description)
     {
-        _undo.AddLast(new Entry(forward, inverse, description));
+        _undo.AddLast(new Entry(forward, inverse, description, ++_pushed));
         while (_undo.Count > Capacity) _undo.RemoveFirst();
         _redo.Clear();
     }

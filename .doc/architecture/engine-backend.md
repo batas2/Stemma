@@ -182,7 +182,9 @@ changes something. `GET` returns the file as it is, and `PATCH` answers with it.
 
 ### What undo guarantees
 
-Each edit's undo entry is the tree of every file it wrote, as it was before. Undo puts those trees
+Each edit's undo entry is the tree of every file it wrote, as it was before, and a number — which push
+it was — so a client that grouped several operations into one step (a paste, F-015) can tell whether
+the entry on top is still its own even once the stack is full at 100. Undo puts those trees
 back, provided each file is still byte-for-byte what the edit wrote — so edit-then-undo is no
 change at all. If a file has changed since (an outside edit), restoring old bytes would erase that
 change, so undo falls back to the inverse operation (re-declare what was removed, put the old value

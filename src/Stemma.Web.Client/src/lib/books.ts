@@ -223,9 +223,25 @@ export function updatePage(section: BooksSection, bookId: string, pageId: string
     else delete raw.focus;
   }
   if (patch.steps !== undefined) {
-    // A step with nothing to say is written as its id alone, the shortest thing that says it.
-    if (patch.steps.length > 0) raw.steps = patch.steps.map((st) => (st.note.trim() ? { link: st.link, note: st.note } : st.link));
-    else delete raw.steps;
+    // A step with nothing to say is written as its id alone, the shortest thing that says it. A step
+    // someone wrote with keys of their own keeps them: the schema allows them, and an edit to a note
+    // must not delete what it did not touch.
+    const before = Array.isArray(raw.steps) ? (raw.steps as unknown[]) : [];
+    const kept = (link: string): Raw | null => {
+      const i = before.findIndex((b) => isRecord(b) && b.link === link && Object.keys(b).some((k) => k !== 'link' && k !== 'note'));
+      return i >= 0 ? (before.splice(i, 1)[0] as Raw) : null;
+    };
+    if (patch.steps.length > 0) {
+      raw.steps = patch.steps.map((st) => {
+        const own = kept(st.link);
+        if (own) {
+          const out: Raw = { ...own, link: st.link };
+          if (st.note.trim()) out.note = st.note; else delete out.note;
+          return out;
+        }
+        return st.note.trim() ? { link: st.link, note: st.note } : st.link;
+      });
+    } else delete raw.steps;
   }
   if (patch.focus !== undefined || patch.frame !== undefined) {
     const focus = strings(raw.focus);

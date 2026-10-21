@@ -9,18 +9,23 @@
  * many engine operations a step was made of — so ⌘Z undoes the last thing done, whatever it was.
  *
  * It never holds a model edit itself: undoing one is still the engine's undo, run once per operation
- * the step was made of. A grouped step is undone together only while the engine's stack is as deep as
- * it was when the step ended; anything else means someone else has edited since, and one operation is
- * undone instead of guessing which of them were ours.
+ * the step was made of. A grouped step is undone together only while the entry on top of the engine's
+ * stack is the one the step ended with — entries are numbered, so this holds even once the stack is
+ * full — and anything else means someone else has edited since, and one operation is undone instead
+ * of guessing which of them were ours.
+ *
+ * Undo and redo run one at a time, in the order they were asked for, and not at all while a group is
+ * still being recorded: either would interleave with operations whose results have not arrived.
  *
  * Pure apart from the driver it is handed, so the order and grouping rules test without a server.
  */
 
 /**
  * A presentation section a step can change: one entry, keyed by element or relationship id — or,
- * for `position`, where an element sits on one view (`view` names it).
+ * for `position`, where an element sits on one view (`view` names it); for `viewMembers`, the elements
+ * a view from `Views/` names (`id` is the view's id).
  */
-export type PresentationSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'position';
+export type PresentationSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'position' | 'viewMembers';
 
 export interface PresentationChange {
   section: PresentationSection;
@@ -40,10 +45,10 @@ export interface HistoryStep {
   /** How many engine operations the step was made of. */
   ops: number;
   presentation: PresentationChange[];
-  /** The engine's undo depth when the step ended; null when it was not asked (a single operation). */
-  depthAfter: number | null;
-  /** The engine's redo depth after the step was undone, for the same check on the way back. */
-  redoDepthAfter: number | null;
+  /** The engine's top entry when the step ended; null when it was not asked (a single operation). */
+  topAfter: number | null;
+  /** The engine's top redo entry after the step was undone, for the same check on the way back. */
+  redoTopAfter: number | null;
   /** When the step was last added to, and what it is about — for folding a run of small edits into one. */
   at: number;
   key: string | null;
@@ -54,8 +59,8 @@ export interface HistoryDriver {
   redoLayout(): boolean;
   undoOperation(): Promise<boolean>;
   redoOperation(): Promise<boolean>;
-  /** The engine's stack depths, or null when they cannot be read. */
-  depths(): Promise<{ undo: number; redo: number } | null>;
+  /** The sequence numbers of the engine's top undo and redo entries (0 for none), or null when unreadable. */
+  tops(): Promise<{ undo: number; redo: number } | null>;
   applyPresentation(changes: PresentationChange[], which: 'before' | 'after'): void;
 }
 
@@ -70,7 +75,7 @@ interface OpenGroup {
 }
 
 function step(description: string, at: number, over: Partial<HistoryStep> = {}): HistoryStep {
-  return { description, layout: false, ops: 0, presentation: [], depthAfter: null, redoDepthAfter: null, at, key: null, ...over };
+  return { description, layout: false, ops: 0, presentation: [], topAfter: null, redoTopAfter: null, at, key: null, ...over };
 }
 
 /** `changes` folded into `into`: the first `before` of an entry and the last `after` are kept. */
@@ -88,6 +93,8 @@ export class History {
   private group: OpenGroup | null = null;
   /** While the journal is itself undoing or redoing, what that does is not a new step. */
   private replaying = false;
+  /** Undo and redo, one after another. */
+  private queue: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
 
   constructor(private readonly driver: HistoryDriver, private readonly now: () => number = () => Date.now()) {}
@@ -100,6 +107,8 @@ export class History {
 
   /** The step the last undo or redo took back or put back, for showing where it happened. */
   lastReplayed: { step: HistoryStep; direction: 'undo' | 'redo' } | null = null;
+  /** Whether the last undo or redo found the engine unable to do it; the step was dropped. */
+  lastFailed = false;
 
   /** A drag the layout stack has just taken. */
   recordLayout(description: string): void {
@@ -135,18 +144,22 @@ export class History {
     this.push(s);
   }
 
-  /** Start one step made of several: what is recorded until `endGroup` is undone together. */
-  beginGroup(description: string): void {
-    if (this.replaying) return;
+  /**
+   * Start one step made of several: what is recorded until `endGroup` is undone together. False — and
+   * nothing started — while another group is open or an undo is running: the caller waits its turn.
+   */
+  beginGroup(description: string): boolean {
+    if (this.replaying || this.group) return false;
     this.group = { description, ops: 0, presentation: [] };
+    return true;
   }
 
-  /** Close the group; `depthAfter` is the engine's undo depth now, when there was more than one operation. */
-  endGroup(depthAfter: number | null = null): void {
+  /** Close the group; `topAfter` is the engine's top entry now, when there was more than one operation. */
+  endGroup(topAfter: number | null = null): void {
     const g = this.group;
     this.group = null;
     if (!g || (g.ops === 0 && g.presentation.length === 0)) return;
-    this.push(step(g.description, this.now(), { ops: g.ops, presentation: g.presentation, depthAfter }));
+    this.push(step(g.description, this.now(), { ops: g.ops, presentation: g.presentation, topAfter }));
   }
 
   get groupOpen(): boolean { return this.group !== null; }
@@ -158,26 +171,53 @@ export class History {
     this.notify();
   }
 
+  /** Forget everything: another workspace is open, and none of these steps are about it. */
+  clear(): void {
+    this.undoSteps = [];
+    this.redoSteps = [];
+    this.group = null;
+    this.lastReplayed = null;
+    this.notify();
+  }
+
   /** Undo the last step. Returns what was undone, or null when there was nothing to undo here. */
-  async undo(): Promise<string | null> {
+  undo(): Promise<string | null> {
+    return this.serially(() => this.undoNow());
+  }
+
+  redo(): Promise<string | null> {
+    return this.serially(() => this.redoNow());
+  }
+
+  private serially(run: () => Promise<string | null>): Promise<string | null> {
+    const next = this.queue.then(run, run);
+    this.queue = next.catch(() => null);
+    return next;
+  }
+
+  private async undoNow(): Promise<string | null> {
+    this.lastFailed = false;
+    if (this.group) return null;
     const s = this.undoSteps.pop();
     if (!s) return null;
     this.replaying = true;
     try {
-      // The reverse of the order a step was made in: its looks were set after its elements existed.
-      if (s.presentation.length > 0) this.driver.applyPresentation(s.presentation, 'before');
       if (s.ops > 0) {
-        const together = s.ops === 1 || (s.depthAfter !== null && (await this.driver.depths())?.undo === s.depthAfter);
+        const together = s.ops === 1 || (s.topAfter !== null && (await this.driver.tops())?.undo === s.topAfter);
         const times = together ? s.ops : 1;
-        for (let i = 0; i < times; i++) if (!(await this.driver.undoOperation())) break;
-        if (!together) {
-          // Someone else edited in between: one operation was undone, and the rest of this step cannot
-          // be told apart from theirs. It is not offered for redo, which would replay a guess.
+        let done = 0;
+        while (done < times && (await this.driver.undoOperation())) done++;
+        if (done < times || !together) {
+          // The engine could not take it all back, or someone else edited in between: what is left of
+          // this step cannot be told apart from theirs. It is dropped, not offered for redo.
+          this.lastFailed = done < times;
           this.notify();
-          return s.description;
+          return done > 0 ? s.description : null;
         }
-        s.redoDepthAfter = s.ops > 1 ? (await this.driver.depths())?.redo ?? null : null;
+        s.redoTopAfter = s.ops > 1 ? (await this.driver.tops())?.redo ?? null : null;
       }
+      // Its looks after its operations: a look on an element the undo just took away is no loss.
+      if (s.presentation.length > 0) this.driver.applyPresentation(s.presentation, 'before');
       if (s.layout) this.driver.undoLayout();
       this.redoSteps.push(s);
       this.lastReplayed = { step: s, direction: 'undo' };
@@ -188,19 +228,26 @@ export class History {
     }
   }
 
-  async redo(): Promise<string | null> {
+  private async redoNow(): Promise<string | null> {
+    this.lastFailed = false;
+    if (this.group) return null;
     const s = this.redoSteps.pop();
     if (!s) return null;
     this.replaying = true;
     try {
-      if (s.layout) this.driver.redoLayout();
       if (s.ops > 0) {
-        const together = s.ops === 1 || (s.redoDepthAfter !== null && (await this.driver.depths())?.redo === s.redoDepthAfter);
+        const together = s.ops === 1 || (s.redoTopAfter !== null && (await this.driver.tops())?.redo === s.redoTopAfter);
         const times = together ? s.ops : 1;
-        for (let i = 0; i < times; i++) if (!(await this.driver.redoOperation())) break;
-        if (!together) { this.notify(); return s.description; }
-        s.depthAfter = s.ops > 1 ? (await this.driver.depths())?.undo ?? null : null;
+        let done = 0;
+        while (done < times && (await this.driver.redoOperation())) done++;
+        if (done < times || !together) {
+          this.lastFailed = done < times;
+          this.notify();
+          return done > 0 ? s.description : null;
+        }
+        s.topAfter = s.ops > 1 ? (await this.driver.tops())?.undo ?? null : null;
       }
+      if (s.layout) this.driver.redoLayout();
       if (s.presentation.length > 0) this.driver.applyPresentation(s.presentation, 'after');
       this.undoSteps.push({ ...s, at: this.now(), key: null });
       this.lastReplayed = { step: s, direction: 'redo' };
@@ -231,7 +278,7 @@ const unconfigured: HistoryDriver = {
   redoLayout: () => false,
   undoOperation: async () => false,
   redoOperation: async () => false,
-  depths: async () => null,
+  tops: async () => null,
   applyPresentation: () => {},
 };
 
@@ -243,7 +290,7 @@ export const history = new History({
   redoLayout: () => current.redoLayout(),
   undoOperation: () => current.undoOperation(),
   redoOperation: () => current.redoOperation(),
-  depths: () => current.depths(),
+  tops: () => current.tops(),
   applyPresentation: (changes, which) => current.applyPresentation(changes, which),
 });
 

@@ -51,9 +51,13 @@ test('a paste of two linked boxes adds them, their tags and their links — and 
 
   await expect(card(page, 'Canvas copy')).toBeVisible({ timeout: 20_000 });
   await expect(card(page, 'Web host copy')).toBeVisible();
-  // The copies are what is selected now.
+  // The copies are what is selected now — which is also the sign the paste has finished: the originals
+  // stay selected until its last operation has landed.
+  await expect(page.locator('.react-flow__node.selected', { hasText: 'copy' })).toHaveCount(2, { timeout: 20_000 });
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
 
+  await expect.poll(async () => (await read(ARCH)).match(/new DataFlow\(/g)?.length ?? 0, { timeout: 10_000 })
+    .toBe(original.toString('utf8').match(/new DataFlow\(/g)!.length + 2);
   const after = await read(ARCH);
   const added = after.split('\n').filter((line) => !original.toString('utf8').includes(line));
   // Two containers in the same system, their status and owner, and the two flows between them — the

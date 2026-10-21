@@ -468,9 +468,12 @@ export const useApp = create<AppState>((set, get) => ({
     const s = get();
     if (place.customViewId) {
       if (!s.customViews.some((v) => v.id === place.customViewId)) return;
-      // Concerns is a list; a view from Views/ is drawn over a canvas lens.
+      // Concerns is a list; a view from Views/ is drawn over a canvas lens. Leaving Concerns is the
+      // visit Back returns to, so the trail is taken before the lens underneath changes.
+      const trail = visited(s, place);
       if (s.view === 'concerns') set({ view: 'moduleMap' });
-      if (s.activeCustomViewId !== place.customViewId) get().setActiveCustomView(place.customViewId);
+      if (get().activeCustomViewId !== place.customViewId) get().setActiveCustomView(place.customViewId);
+      set({ trail });
     } else {
       get().setView(place.view);
     }
@@ -550,7 +553,7 @@ export const useApp = create<AppState>((set, get) => ({
   setView: (v) => {
     const s = get();
     if (v === s.view && s.activeCustomViewId === null) return;
-    set({ view: v, activeCustomViewId: null, selectedElementId: null, trail: visited(s, { view: v, customViewId: null }) });
+    set({ view: v, activeCustomViewId: null, selectedElementId: null, trail: visited(s, { view: v, customViewId: null }), recordingSteps: false });
   },
   setCustomViews: (vs) => {
     set({ customViews: vs });
@@ -583,7 +586,7 @@ export const useApp = create<AppState>((set, get) => ({
     // Activating a saved view also opens it as a bottom tab (closing later only hides the tab).
     const open = id && !get().openViewIds.includes(id) ? [...get().openViewIds, id] : get().openViewIds;
     const s = get();
-    set({ activeCustomViewId: id, selectedElementId: null, openViewIds: open, trail: visited(s, { view: s.view, customViewId: id }) });
+    set({ activeCustomViewId: id, selectedElementId: null, openViewIds: open, trail: visited(s, { view: s.view, customViewId: id }), recordingSteps: false });
     const ws = get().workspace;
     if (ws) {
       saveActiveView(ws.rootPath, id);
@@ -772,11 +775,14 @@ export const useApp = create<AppState>((set, get) => ({
     // A pull can take away the book or the page on screen. The book closes; a page falls back to
     // the first one rather than leaving the presenter on nothing.
     const pageId = book?.pages.some((p) => p.id === s.activePageId) ? s.activePageId : book?.pages[0]?.id ?? null;
+    // A page that lost steps in the change cannot be at a step it no longer has.
+    const stepsNow = book?.pages.find((p) => p.id === pageId)?.steps.length ?? 0;
     set({
       books,
       activeBookId: book?.id ?? null,
       activePageId: pageId,
       presenting: s.presenting && !!book && book.pages.length > 0,
+      activeStep: Math.min(s.activeStep, stepsNow),
     });
     if (pageId && pageId !== s.activePageId) get().showPage(pageId);
   },

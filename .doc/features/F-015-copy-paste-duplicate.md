@@ -129,6 +129,14 @@
 
 ## 9. Notes / open questions
 
+- **After an independent review (2026-10-21):** the journal is cleared when another workspace opens;
+  undo and redo run one at a time and not at all while a paste is still being written; a step the
+  engine could not take back is dropped rather than offered again; and a grouped step is checked
+  against the *number* of the engine's top entry (`UndoStack.Entry.Sequence`, `UndoState.UndoTop`)
+  rather than its depth, which stops moving once the stack is full. A paste of more operations than
+  the engine keeps (100) is refused before it starts, with the reason. Undoing a paste on a view
+  from `Views/` takes the copies out of the view again.
+
 - **Found on the way:** an open context menu let its keys through to the canvas — Escape closed the
   menu *and* cleared the selection behind it, and the arrows moving through the menu also nudged the
   selected box (writing the sidecar). The menu now takes every key until it closes.

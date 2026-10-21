@@ -119,8 +119,11 @@ export async function redoOperation(): Promise<OperationResult | null> {
 
 export interface UndoState {
   canUndo: boolean; canRedo: boolean; undoDescription: string | null; redoDescription: string | null;
-  /** How deep the engine's stacks are; a grouped undo checks these before undoing a group together. */
   undoDepth: number; redoDepth: number;
+  /** Which push the top undo / redo entry was (0 for none): a grouped undo checks these before undoing a group together. */
+  undoTop: number; redoTop: number;
+  /** How many steps the engine keeps. */
+  capacity: number;
 }
 
 export async function fetchUndoState(): Promise<UndoState> {

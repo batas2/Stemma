@@ -74,13 +74,23 @@ describe('LayoutUndoStack', () => {
     expect(s.canRedo).toBe(false);
   });
 
-  it('caps at 50 entries (drops oldest)', () => {
+  it('caps at 100 entries (drops oldest), as the undo journal does', () => {
     const s = new LayoutUndoStack();
-    for (let i = 0; i < 60; i++) s.push(entry({ description: `op${i}` }));
-    // The stack keeps the most recent 50; the oldest 10 ("op0".."op9") are dropped.
+    for (let i = 0; i < 110; i++) s.push(entry({ description: `op${i}` }));
+    // The stack keeps the most recent 100 — every move the journal (history.ts) can still name.
     let count = 0;
     while (s.popUndo()) count++;
-    expect(count).toBe(50);
+    expect(count).toBe(100);
+  });
+
+  it('forgets every move when another workspace opens', () => {
+    const s = new LayoutUndoStack();
+    s.push(entry({}));
+    s.popUndo();
+    s.push(entry({}));
+    s.clear();
+    expect(s.canUndo).toBe(false);
+    expect(s.canRedo).toBe(false);
   });
 
   it('subscribers are notified on push and pop', () => {

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Stemma.Engine.Operations;
+using Stemma.Engine.Workspace;
 using Stemma.Web.Diagnostics;
 using Stemma.Web.Services;
 
@@ -59,10 +60,10 @@ public sealed class WorkspaceHub(EngineHost host, ILogger<WorkspaceHub> log) : H
     public UndoState GetUndoState()
     {
         var engine = _host.Engine;
-        if (engine is null) return new UndoState(false, false, null, null, 0, 0);
+        if (engine is null) return new UndoState(false, false, null, null, 0, 0, 0, 0, UndoStack.Capacity);
         var stack = engine.Undo;
         return new UndoState(stack.CanUndo, stack.CanRedo, stack.PeekUndoDescription(), stack.PeekRedoDescription(),
-            stack.UndoDepth, stack.RedoDepth);
+            stack.UndoDepth, stack.RedoDepth, stack.UndoTop, stack.RedoTop, UndoStack.Capacity);
     }
 
     public Task Subscribe() => Task.CompletedTask;
@@ -78,8 +79,10 @@ public sealed class WorkspaceHub(EngineHost host, ILogger<WorkspaceHub> log) : H
     public Task PresenterCommand(JsonElement command) => Clients.Others.SendAsync("PresenterCommand", command);
 }
 
-/// <param name="UndoDepth">How many steps the engine can undo. The client groups several operations
-/// into one step (a paste) and checks this before undoing them together: a depth it does not expect
-/// means someone else edited since, and it undoes one step instead of guessing.</param>
+/// <param name="UndoTop">Which push the entry an undo would take back was (see <c>UndoStack.Entry</c>).
+/// The client groups several operations into one step (a paste) and checks this before undoing them
+/// together: an entry it does not expect means someone else edited since, and it undoes one step
+/// instead of guessing. The depth cannot say so once the stack is full.</param>
+/// <param name="Capacity">How many steps the engine keeps; a group larger than this cannot be undone whole.</param>
 public sealed record UndoState(bool CanUndo, bool CanRedo, string? UndoDescription, string? RedoDescription,
-    int UndoDepth, int RedoDepth);
+    int UndoDepth, int RedoDepth, long UndoTop, long RedoTop, int Capacity);

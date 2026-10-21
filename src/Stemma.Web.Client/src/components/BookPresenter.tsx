@@ -20,7 +20,8 @@ export function BookPresenter() {
   const arch = useApp((s) => s.arch);
   const customViews = useApp((s) => s.customViews);
   const advance = useApp((s) => s.advance);
-  const activeStep = useApp((s) => s.activeStep);
+  // Read through `stepAt`, never raw: a page re-read mid-presentation can have fewer steps than it had.
+  const rawStep = useApp((s) => s.activeStep);
   const stopPresenting = useApp((s) => s.stopPresenting);
   const [narrativeShown, setNarrativeShown] = useState(true);
   const [blank, setBlank] = useState(false);
@@ -33,11 +34,14 @@ export function BookPresenter() {
   // Whether this presentation took the screen, so that leaving full screen (Esc, which the browser
   // keeps for itself) is taken as stopping, and a presentation that never had it is not stopped.
   const ownsFullscreen = useRef(false);
+  // Set for the moment the presenter view is being opened (see onFullscreenChange).
+  const openingConsole = useRef(false);
   // Read by the key handler, which is bound once.
   const blankRef = useRef(blank);
   blankRef.current = blank;
 
   const pages = book?.pages ?? [];
+  const activeStep = Math.min(rawStep, page?.steps.length ?? 0);
   const index = page ? pages.findIndex((p) => p.id === page.id) : -1;
   const problems = useMemo(() => {
     if (!page) return [];
@@ -54,6 +58,9 @@ export function BookPresenter() {
     }
     function onFullscreenChange() {
       if (document.fullscreenElement) { ownsFullscreen.current = true; return; }
+      // A browser leaves full screen when a page opens a window: opening the presenter view is not
+      // the presenter stopping. Anything else — Esc, the window's own control — is.
+      if (openingConsole.current) { ownsFullscreen.current = false; return; }
       if (ownsFullscreen.current) { ownsFullscreen.current = false; useApp.getState().stopPresenting(); }
     }
     document.addEventListener('fullscreenchange', onFullscreenChange);
@@ -180,9 +187,10 @@ export function BookPresenter() {
   }), []);
 
   async function showConsole() {
-    // A browser leaves full screen when a page opens a window. That is not the presenter stopping.
-    ownsFullscreen.current = false;
+    openingConsole.current = true;
     const opened = await openConsole();
+    // The full-screen change, if there is one, arrives within a frame or two of the window opening.
+    setTimeout(() => { openingConsole.current = false; }, 1000);
     // Said on failure only: this window is the one the room is looking at. How to finish setting up
     // is said on the console, where only the presenter reads it.
     if (!opened) useApp.getState().setToast({ kind: 'error', text: 'The presenter view could not open — allow pop-ups for Stemma, then press P again.' });

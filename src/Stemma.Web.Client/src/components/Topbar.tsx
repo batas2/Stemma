@@ -26,7 +26,7 @@ export function Topbar() {
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
-  const [engineUndo, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null, undoDepth: 0, redoDepth: 0 });
+  const [engineUndo, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null, undoDepth: 0, redoDepth: 0, undoTop: 0, redoTop: 0, capacity: 100 });
   // What the arrows would do: the journal's last step when it has one, else whatever the stacks hold.
   const [, setJournalTick] = useState(0);
   useEffect(() => {
