@@ -78,6 +78,13 @@ public sealed class LayoutSidecar
         /// <summary>Everything else the client keeps per view — today `shapes`; tomorrow whatever
         /// the canvas invents next. Preserved verbatim; never interpreted here.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
+        internal ViewLayout WithoutNulls()
+        {
+            Nodes = (Nodes ?? new()).Where(n => n.Value is not null).ToDictionary(n => n.Key, n => n.Value);
+            Edges = Edges?.Where(e => e.Value is not null).ToDictionary(e => e.Key, e => e.Value.WithoutNulls());
+            return this;
+        }
     }
 
     public sealed class Position
@@ -94,6 +101,12 @@ public sealed class LayoutSidecar
         /// <summary>Everything else the client keeps per edge — today `handles` (draw.io-style dock
         /// anchors). Preserved verbatim; never interpreted here.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
+        internal EdgeWaypoints WithoutNulls()
+        {
+            Waypoints = Waypoints?.Where(p => p is not null).ToList();
+            return this;
+        }
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -104,19 +117,44 @@ public sealed class LayoutSidecar
 
     public static string PathFor(string workspaceRoot) => Path.Combine(workspaceRoot, "stemma.layout.json");
 
+    /// <summary>
+    /// The sidecar of <paramref name="workspaceRoot"/>, or an empty one when it has none. A file that
+    /// cannot be read is refused (<see cref="SidecarPatchRefusedException"/>, <c>UnreadableSidecar</c>)
+    /// with the line to look at, as <c>GET</c> and <c>PATCH</c> refuse it (ADR-0021): read as empty, the
+    /// draw.io export of a sidecar with merge markers in it laid every element out on a grid, and
+    /// nothing said why. A null written by hand where a section, a view or a position would be reads as
+    /// nothing there, rather than as a null for the next reader to throw on.
+    /// </summary>
     public static LayoutSidecar Read(string workspaceRoot)
     {
         var path = PathFor(workspaceRoot);
         if (!File.Exists(path)) return new LayoutSidecar();
+        var bytes = File.ReadAllBytes(path);
+        if (bytes.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF])) bytes = bytes[3..];
+        JsonText.Parse(bytes, FileName);
         try
         {
-            var text = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<LayoutSidecar>(text, JsonOpts) ?? new LayoutSidecar();
+            return (JsonSerializer.Deserialize<LayoutSidecar>(bytes, JsonOpts) ?? new LayoutSidecar()).WithoutNulls();
         }
-        catch
+        catch (JsonException e)
         {
-            return new LayoutSidecar();
+            var where = e.Path is { Length: > 2 } p ? $" at {p[2..]}" : "";
+            var line = e.LineNumber is { } n ? $" (line {n + 1})" : "";
+            throw JsonText.Unreadable(FileName, $"has a value Stemma cannot read{where}{line}");
         }
+    }
+
+    private const string FileName = "stemma.layout.json";
+
+    private LayoutSidecar WithoutNulls()
+    {
+        Views = (Views ?? new()).Where(v => v.Value is not null).ToDictionary(v => v.Key, v => v.Value.WithoutNulls());
+        NodeStyles ??= new();
+        EdgeStyles ??= new();
+        Notes = (Notes ?? new()).Where(n => n.Value is not null).ToDictionary(n => n.Key, n => n.Value);
+        CustomProps ??= new();
+        Annotations ??= new();
+        return this;
     }
 
     public void Write(string workspaceRoot)

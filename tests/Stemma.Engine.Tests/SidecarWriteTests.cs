@@ -212,7 +212,9 @@ public sealed class SidecarWriteTests
         {
             await using var engine = await StemmaEngine.OpenAsync(root);
             var result = await engine.PatchSidecarAsync("op", [Set("\"\\ud83d\"", "notes", "a")]);
-            result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("UnreadableSidecar");
+            // The change is what is wrong, not the file: a client can tell the two apart and drop it.
+            result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("InvalidText");
+            (await File.ReadAllTextAsync(LayoutSidecar.PathFor(root))).Should().Be(Sidecar);
             (await engine.PatchSidecarAsync("op2", [Set("\"ok\"", "notes", "a")])).Should().BeOfType<OperationApplied>();
         }
         finally { Directory.Delete(root, recursive: true); }

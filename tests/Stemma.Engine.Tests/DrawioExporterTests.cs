@@ -179,6 +179,65 @@ public class DrawioExporterTests
     }
 
     [Fact]
+    public void An_element_whose_id_is_a_root_cell_id_gets_a_cell_of_its_own()
+    {
+        // draw.io's two root cells are `0` and `1`. An element with the id `1` was written as a third
+        // cell with that id, and the file opened with its layer gone.
+        var model = new ArchModel.ArchModel("Architecture.cs",
+            [Element("1", "One"), Element("0", "Zero"), Element("a", "A")],
+            [Link("a", "1", "a", ArchLinkKind.DataFlow, "payload", "Same id as an element")],
+            []);
+
+        var cells = Parse(DrawioExporter.Export(model)).Descendants("mxCell").ToList();
+        var ids = cells.Select(c => c.Attribute("id")!.Value).ToList();
+
+        ids.Should().OnlyHaveUniqueItems();
+        cells.Where(c => c.Attribute("id")!.Value is "0" or "1").Should().HaveCount(2)
+            .And.OnlyContain(c => c.Attribute("vertex") == null && c.Attribute("edge") == null);
+        var one = cells.Single(c => c.Attribute("value")?.Value == "One");
+        var a = cells.Single(c => c.Attribute("value")?.Value == "A");
+        var edge = cells.Single(c => c.Attribute("edge") is not null);
+        edge.Attribute("source")!.Value.Should().Be(one.Attribute("id")!.Value);
+        edge.Attribute("target")!.Value.Should().Be(a.Attribute("id")!.Value);
+        a.Attribute("id")!.Value.Should().Be("a", "an id that collides with nothing is kept");
+    }
+
+    [Fact]
+    public void A_label_is_text_not_markup()
+    {
+        // The cells are html=1, so draw.io reads the value as HTML: `List<Order>` arrived as `List`
+        // followed by an unknown tag.
+        var model = new ArchModel.ArchModel("Architecture.cs",
+            [Element("a", "List<Order> & \"more\""), Element("b", "B")],
+            [Link("f", "a", "b", ArchLinkKind.DataFlow, "payload", "<b>bold</b>")],
+            []);
+
+        var xml = DrawioExporter.Export(model);
+
+        Cell(xml, "a").Attribute("value")!.Value.Should().Be("List&lt;Order&gt; &amp; &quot;more&quot;");
+        Cell(xml, "f").Attribute("value")!.Value.Should().Be("&lt;b&gt;bold&lt;/b&gt;");
+    }
+
+    [Fact]
+    public void Coordinates_are_written_the_same_whatever_the_machine_s_language()
+    {
+        // Swedish formats a negative number with U+2212, which draw.io does not read as a number.
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+        try
+        {
+            var xml = DrawioExporter.Export(Model, new DrawioExporter.Options
+            {
+                Positions = new Dictionary<string, (double X, double Y)> { ["mod_a"] = (-120.4, 1234567) },
+            });
+            var geom = Cell(xml, "mod_a").Element("mxGeometry")!;
+            geom.Attribute("x")!.Value.Should().Be("-120");
+            geom.Attribute("y")!.Value.Should().Be("1234567");
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = previous; }
+    }
+
+    [Fact]
     public void An_empty_model_still_produces_a_file_an_editor_can_open()
     {
         var xml = DrawioExporter.Export(new ArchModel.ArchModel("Architecture.cs", [], [], []));

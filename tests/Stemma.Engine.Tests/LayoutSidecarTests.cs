@@ -125,13 +125,68 @@ public class LayoutSidecarTests
     }
 
     [Fact]
-    public void Read_tolerates_garbage()
+    public void An_unreadable_file_is_reported_not_read_as_an_empty_layout()
+    {
+        // Read as empty, the draw.io export of a sidecar with merge markers in it quietly laid every
+        // element out on a grid, and nobody was told why the positions had gone.
+        var dir = TempDir();
+        try
+        {
+            File.WriteAllText(LayoutSidecar.PathFor(dir), "{\n  \"version\": 1,\n  \"views\": { not valid json\n}\n");
+            var read = () => LayoutSidecar.Read(dir);
+            read.Should().Throw<SidecarPatchRefusedException>()
+                .Which.Should().Match<SidecarPatchRefusedException>(e => e.Reason == "UnreadableSidecar" && e.Message.Contains("line 3"));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void A_value_of_the_wrong_kind_is_reported_with_where_it_is()
     {
         var dir = TempDir();
         try
         {
-            File.WriteAllText(LayoutSidecar.PathFor(dir), "{ not valid json");
-            LayoutSidecar.Read(dir).Views.Should().BeEmpty();
+            File.WriteAllText(LayoutSidecar.PathFor(dir), """{ "views": { "moduleMap": { "nodes": { "a": { "x": "left" } } } } }""");
+            var read = () => LayoutSidecar.Read(dir);
+            read.Should().Throw<SidecarPatchRefusedException>().Which.Message.Should().Contain("views.moduleMap.nodes.a.x");
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void Nulls_written_by_hand_read_as_nothing_there()
+    {
+        // `"nodes": null` read as a null dictionary, and the draw.io export threw on it.
+        var dir = TempDir();
+        try
+        {
+            File.WriteAllText(LayoutSidecar.PathFor(dir), """
+                {
+                  "views": {
+                    "moduleMap": { "nodes": null, "edges": { "f": null, "g": { "waypoints": [null, { "x": 1, "y": 2 }] } } },
+                    "custom:v": null,
+                    "dependencyGraph": { "nodes": { "a": null, "b": { "x": 5, "y": 6 } } }
+                  },
+                  "nodeStyles": null,
+                  "edgeStyles": null,
+                  "notes": { "a": null, "b": "kept" },
+                  "customProps": null,
+                  "annotations": null
+                }
+                """);
+
+            var s = LayoutSidecar.Read(dir);
+
+            s.Views.Keys.Should().BeEquivalentTo(["moduleMap", "dependencyGraph"]);
+            s.Views["moduleMap"].Nodes.Should().BeEmpty();
+            s.Views["moduleMap"].Edges!.Keys.Should().Equal("g");
+            s.Views["moduleMap"].Edges!["g"].Waypoints!.Should().ContainSingle().Which.X.Should().Be(1);
+            s.Views["dependencyGraph"].Nodes.Keys.Should().Equal("b");
+            s.NodeStyles.Should().BeEmpty();
+            s.EdgeStyles.Should().BeEmpty();
+            s.Notes.Should().Equal(new Dictionary<string, string> { ["b"] = "kept" });
+            s.CustomProps.Should().BeEmpty();
+            s.Annotations.Should().BeEmpty();
         }
         finally { Directory.Delete(dir, recursive: true); }
     }

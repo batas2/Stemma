@@ -39,7 +39,16 @@ public static class CommentsPatch
     {
         var bytes = Encoding.UTF8.GetBytes(text);
         Read(bytes); // refuse an unreadable file before anything, even when there is nothing to change
-        foreach (var change in changes)
+        var list = changes.ToList();
+        foreach (var change in list)
+        {
+            switch (change)
+            {
+                case CommentChange.Add add: JsonText.RefuseInvalidText(add.Comment, "The comment"); break;
+                case CommentChange.AddReply reply: JsonText.RefuseInvalidText(reply.Reply, "The reply"); break;
+            }
+        }
+        foreach (var change in list)
         {
             bytes = change switch
             {

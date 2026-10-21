@@ -14,6 +14,7 @@ public static class ArchModelMerge
         var elements = new List<ArchElement>();
         var links = new List<ArchLink>();
         var tags = new List<ArchTag>();
+        var unreadable = new List<ArchReadProblem>();
         var seen = new HashSet<string>();
         foreach (var partial in partials)
         {
@@ -21,8 +22,9 @@ public static class ArchModelMerge
             foreach (var e in partial.Elements) if (seen.Add($"e:{e.Id}")) elements.Add(e);
             foreach (var l in partial.Links) if (seen.Add($"l:{l.Id}")) links.Add(l);
             tags.AddRange(partial.Tags);
+            unreadable.AddRange(partial.Unreadable);
         }
-        return new ArchModel(primaryPath, elements, links, tags);
+        return new ArchModel(primaryPath, elements, links, tags) { Unreadable = unreadable };
     }
 
     /// <summary>
