@@ -277,6 +277,7 @@ async function reread(workspaceRoot: string): Promise<void> {
   applySidecarChanges(next as Record<string, unknown>, unsent);
   sidecarBase = { rootPath: workspaceRoot, sidecar: structuredClone(raw) };
   sidecarCache = { rootPath: workspaceRoot, sidecar: next };
+  mirrorSections(workspaceRoot);
   if (unsent.length > 0) scheduleSidecarWrite(workspaceRoot);
   window.dispatchEvent(new CustomEvent('stemma:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
 }
@@ -292,28 +293,100 @@ export function sidecarMap<T = unknown>(rootPath: string, section: SidecarSectio
   return sidecarCache!.sidecar[section] as Record<string, T> | undefined;
 }
 
-/**
- * A pass-through section as the canvas should draw it. Once the committed sidecar has been read it
- * is the whole answer, and the browser's copy under `cacheKey` is overwritten with it; until then,
- * that copy is all there is. The two are never merged: an entry only the browser has is one the
- * repository no longer has — a teammate removed it, a checkout went back past it — and merging it
- * in drew it again on every open (B-012).
- */
-export function cachedSection<T>(rootPath: string, section: SidecarSection, cacheKey: string): Record<string, T> {
-  if (typeof window === 'undefined') return {};
-  if (isSidecarPrimed(rootPath)) {
-    const committed = { ...sidecarMap<T>(rootPath, section) };
-    try { localStorage.setItem(cacheKey, JSON.stringify(committed)); } catch { /* ignore */ }
-    return committed;
-  }
-  try { const raw = localStorage.getItem(cacheKey); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+// Where the browser keeps its copy of a section, drawn before the sidecar has been read (B-012).
+const SECTION_CACHE: Partial<Record<SidecarSection, string>> = {
+  nodeStyles: 'stemma.nodeStyles',
+  edgeStyles: 'stemma.edgeStyles',
+  notes: 'stemma.notes',
+  customProps: 'stemma.customProps',
+};
+
+function sectionCacheKey(section: SidecarSection, rootPath: string): string | null {
+  const prefix = SECTION_CACHE[section];
+  return prefix ? `${prefix}:${rootPath}` : null;
 }
 
-/** Set (or delete, when value is undefined) one entry in a pass-through section and schedule the write. */
+// Each copy as last parsed, so reading one entry per element does not parse the section per element.
+const parsedCopies = new Map<string, { raw: string; value: Record<string, unknown> }>();
+
+function browserCopy(cacheKey: string): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(cacheKey);
+    if (!raw) return {};
+    const known = parsedCopies.get(cacheKey);
+    if (known?.raw === raw) return known.value;
+    const parsed: unknown = JSON.parse(raw);
+    const value = isPlainObject(parsed) ? parsed : {};
+    parsedCopies.set(cacheKey, { raw, value });
+    return value;
+  } catch { return {}; }
+}
+
+function writeBrowserCopy(cacheKey: string, value: Record<string, unknown>): void {
+  try { localStorage.setItem(cacheKey, JSON.stringify(value)); } catch { /* full, or blocked: it is only a cache */ }
+}
+
+/**
+ * A pass-through section as the canvas should draw it, shared rather than copied — for reading.
+ * Once the committed sidecar has been read it is the whole answer; until then the browser's copy is
+ * all there is. The two are never merged: an entry only the browser has is one the repository no
+ * longer has — a teammate removed it, a checkout went back past it — and merging it in drew it again
+ * on every open (B-012).
+ */
+function sectionAsDrawn<T>(rootPath: string, section: SidecarSection): Record<string, T> {
+  if (isSidecarPrimed(rootPath)) {
+    const committed = sidecarCache!.sidecar[section];
+    return (isPlainObject(committed) ? committed : {}) as Record<string, T>;
+  }
+  const cacheKey = sectionCacheKey(section, rootPath);
+  return (cacheKey ? browserCopy(cacheKey) : {}) as Record<string, T>;
+}
+
+/**
+ * A pass-through section as the canvas should draw it — a copy, the caller's to change. Reading
+ * writes nothing: the browser's copy is written when the section changes (`sidecarSet`) and when
+ * the sidecar is read, once each. It used to be written on every read, and the canvas reads notes
+ * once per element: on a large model, every change to a note wrote the whole notes section hundreds
+ * of times.
+ */
+export function cachedSection<T>(rootPath: string, section: SidecarSection): Record<string, T> {
+  if (typeof window === 'undefined') return {};
+  return { ...sectionAsDrawn<T>(rootPath, section) };
+}
+
+/** One entry of a pass-through section as the canvas should draw it, without copying the section. */
+export function cachedEntry<T>(rootPath: string, section: SidecarSection, key: string): T | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const map = sectionAsDrawn<T>(rootPath, section);
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
+}
+
+/** Write the browser's copy of every section from the sidecar just read: what the next open draws first. */
+function mirrorSections(rootPath: string): void {
+  for (const section of Object.keys(SECTION_CACHE) as SidecarSection[]) {
+    writeBrowserCopy(sectionCacheKey(section, rootPath)!, sectionAsDrawn(rootPath, section));
+  }
+}
+
+/**
+ * Set (or delete, when value is undefined) one entry in a pass-through section and schedule the
+ * write. The browser's copy of the section is written here, once: the committed section once the
+ * sidecar has been read, and before that the copy being drawn, with this entry in it.
+ */
 export function sidecarSet(rootPath: string, section: SidecarSection, key: string, value: unknown): void {
   if (typeof window === 'undefined') return;
   const next = value === undefined || value === null ? undefined : structuredClone(value);
   editSidecar(rootPath, [section, key], () => next);
+  const cacheKey = sectionCacheKey(section, rootPath);
+  if (!cacheKey) return;
+  if (isSidecarPrimed(rootPath)) {
+    writeBrowserCopy(cacheKey, sectionAsDrawn(rootPath, section));
+    return;
+  }
+  const drawn = { ...browserCopy(cacheKey) };
+  if (next === undefined) delete drawn[key];
+  else drawn[key] = next;
+  writeBrowserCopy(cacheKey, drawn);
 }
 
 /**
@@ -705,6 +778,9 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
       }
       localStorage.setItem(migratedKey(workspaceRoot), '1');
     }
+    // The browser's copy of each section is now the committed one (B-012), written once here
+    // rather than on every read.
+    mirrorSections(workspaceRoot);
     // Edits made while it loaded were held back (see `hold`); they go out with the migration, as
     // what they changed in the file.
     if (touched || held.length > 0) void flushSidecar(workspaceRoot);

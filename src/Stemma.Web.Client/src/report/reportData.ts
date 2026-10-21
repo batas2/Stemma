@@ -17,7 +17,7 @@ import { readBooks, viewKeyOf, type Book, type BookFrame, type BookOthers } from
 import { loadNodeStyles } from '@/lib/nodeStyles';
 import { loadEdgeStyles } from '@/lib/edgeStyles';
 import { loadCustomProps } from '@/lib/customProps';
-import { loadNote } from '@/lib/elementNotes';
+import { loadNotes } from '@/lib/elementNotes';
 import { loadViews } from '@/lib/views';
 import { fetchComments } from '@/lib/comments';
 import { RELATIONSHIP_TYPES } from '@/lib/relationshipTypes';
@@ -176,10 +176,11 @@ export async function collectReportBundle(rootPath: string): Promise<ReportBundl
     fetchComments(),
   ]);
   if (!model) throw new Error('No architecture model loaded');
+  const allNotes = loadNotes(rootPath);
   const notes: Record<string, string> = {};
   for (const e of model.elements) {
-    const n = loadNote(rootPath, e.id);
-    if (n.trim()) notes[e.id] = n;
+    const n = allNotes[e.id];
+    if (typeof n === 'string' && n.trim()) notes[e.id] = n;
   }
   const workspaceName = rootPath.replace(/\/+$/, '').split('/').pop() || rootPath;
   return buildReportBundle({

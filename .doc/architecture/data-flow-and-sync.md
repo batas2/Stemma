@@ -84,6 +84,9 @@ Frontend rules that keep it correct:
    that copy; it is not merged with it, because an entry only the browser has is one the repository
    no longer has ([B-012](../bugs/B-012-the-browser-outranks-the-repository.md)). The one exception
    is the migration of layout modes from before they were committed, which runs once per workspace.
+   A section's copy (styles, notes, custom props) is written when the sidecar is read and when the
+   section changes, once each — never while it is read: the canvas reads notes once per element,
+   and writing on each read wrote the whole notes section hundreds of times per keystroke.
 6. **Write what changed, never the file** ([ADR-0021](./decisions/0021-sidecar-written-as-changes.md)).
    The client sends the difference between the copy it last read or wrote and its current one, down
    to the smallest value; the engine applies it to the file's text as it is on disk now, so every
