@@ -67,7 +67,9 @@ Frontend rules that keep it correct:
    is read again only when the engine says someone else changed it (`SidecarChanged`), and this
    session's unsent edits are laid over what it now says (`rereadLayoutSidecar`). Not reading it
    at all meant the next edit wrote the stale copy over a pull
-   ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)).
+   ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)). Someone else
+   includes another window: each save names the window it came from (`X-Stemma-Connection`, its
+   hub connection id), and the server tells every other window.
 3. **One shared cache** routes node styles, edge styles, notes, custom props, and shapes — they must
    not keep separate caches that clobber each other on save.
 4. **Write nothing before it has been read.** Until then there is nothing to measure the edits
@@ -98,7 +100,9 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
 
 1. **Changes, by id.** The panel sends what it did — add, reply, resolve, remove — never its copy of
    the file, and shows the file the engine answers with.
-2. **Taken in.** A change made outside (`CommentsChanged`) makes an open panel read the file again.
+2. **Taken in.** A change made outside (`CommentsChanged`) makes an open panel read the file again
+   — a pull, a teammate, or another window, whose save names it (`X-Stemma-Connection`) so that
+   every window but that one is told.
 3. **Refused, never read as empty.** A file that does not parse is said to be, in the panel and in a
    report export, and nothing is written to it until it parses. Reading it as empty is how a merge
    conflict lost every comment ([B-018](../bugs/B-018-comments-written-whole-and-read-as-empty.md)).

@@ -134,3 +134,8 @@ export async function fetchUndoState(): Promise<UndoState> {
 export function getConnectionState(): signalR.HubConnectionState | 'unknown' {
   return connection?.state ?? 'unknown';
 }
+
+/** This window's live connection as the hub knows it, or null while there is none. */
+export function connectionId(): string | null {
+  return connection?.state === signalR.HubConnectionState.Connected ? connection.connectionId ?? null : null;
+}
