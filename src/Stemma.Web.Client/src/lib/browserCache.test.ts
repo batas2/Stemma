@@ -243,6 +243,25 @@ describe('views are what Views/*.cs declares', () => {
     expect(ids(s)).toEqual(['view_a']);
   });
 
+  it('a refresh that finds the views as they were keeps the same objects, so nothing is drawn again', async () => {
+    const s = await session();
+    await open(s, empty(), [A, B]);
+    s.api.listServerViews.mockResolvedValue([A, B]);
+    await s.useApp.getState().syncViews();
+    const before = s.useApp.getState().customViews;
+
+    s.api.listServerViews.mockResolvedValue([A, { ...B }]);
+    await s.useApp.getState().syncViews();
+    expect(s.useApp.getState().customViews).toBe(before);
+
+    s.api.listServerViews.mockResolvedValue([A, { ...B, name: 'Billing and refunds' }]);
+    await s.useApp.getState().syncViews();
+    const after = s.useApp.getState().customViews;
+    expect(after).not.toBe(before);
+    expect(after[0]).toBe(before[0]);
+    expect(after[1].name).toBe('Billing and refunds');
+  });
+
   it('a refresh while a save is on its way does not take the view away', async () => {
     const s = await session();
     await open(s, empty(), [A]);

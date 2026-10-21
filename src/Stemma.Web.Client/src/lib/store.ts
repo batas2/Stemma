@@ -99,7 +99,14 @@ function viewsFromCode(root: string, fromCode: ServerView[], known: CustomView[]
     else if (at >= 0) views[at] = pending.view;
     else views.push(pending.view);
   }
-  return views;
+  // A view that reads as it did is the object it was: the canvas follows the active view's object, and
+  // a new one after every edit rebuilt the picture a second time.
+  const before = new Map(known.map((v) => [v.id, v]));
+  const kept = views.map((v) => {
+    const was = before.get(v.id);
+    return was && JSON.stringify(was) === JSON.stringify(v) ? was : v;
+  });
+  return kept.length === known.length && kept.every((v, i) => v === known[i]) ? known : kept;
 }
 function saveViewLayouts(root: string, m: Record<string, LayoutMode>, changedKey?: string): void {
   if (typeof window === 'undefined') return;
@@ -518,6 +525,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (get().workspace?.rootPath !== ws.rootPath) return;
 
     const views = viewsFromCode(ws.rootPath, fromCode, get().customViews);
+    if (views === get().customViews) return;
     const ids = new Set(views.map((v) => v.id));
     const openViewIds = get().openViewIds.filter((id) => ids.has(id));
     const active = get().activeCustomViewId;
