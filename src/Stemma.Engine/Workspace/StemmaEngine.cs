@@ -1179,19 +1179,17 @@ public sealed class StemmaEngine : IAsyncDisposable
     {
         var docs = FindArchitectureDocuments();
         if (docs.Count == 0) return null;
-        if (docs.Count == 1)
-        {
-            var root = await docs[0].GetSyntaxRootAsync(ct);
-            if (root is null) return null;
-            return DslReader.TryRead(docs[0].FilePath!, root);
-        }
-        // Merge multi-file model: aggregate elements/links/tags from every file.
+        // Through the merge even when there is one file: it is also where a second declaration of an
+        // id is dropped, and the read of a past revision (GitHistory) always goes through it. Skipped
+        // for one file, a model compared with itself showed a duplicate the history did not have.
         var partials = new List<ArchModel.ArchModel?>();
         foreach (var doc in docs)
         {
             var root = await doc.GetSyntaxRootAsync(ct);
             if (root is not null) partials.Add(DslReader.TryRead(doc.FilePath!, root));
         }
+        // No file with a Build() body to read is no model, as it always was — not an empty one.
+        if (partials.All(p => p is null)) return null;
         return ArchModelMerge.Merge(docs[0].FilePath ?? "Architecture.cs", partials);
     }
 
