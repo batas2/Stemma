@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using FluentAssertions;
 using Stemma.Web;
 using Xunit;
@@ -112,6 +113,33 @@ public class StemmaWebHostTests : IDisposable
         // A port file that outlives its server sends the next launcher at a dead port, which reads
         // as a hang rather than as "nothing is running".
         File.Exists(portFile).Should().BeFalse();
+    }
+
+    // ---- What it remembers ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task A_host_told_to_keep_no_recents_adds_nothing_to_them()
+    {
+        // `stemma render` opens a workspace on a host of its own; nobody chose to open it, and it
+        // used to land at the top of the person's recent list.
+        var workspace = Path.Combine(_dir, "rendered");
+        Directory.CreateDirectory(Path.Combine(workspace, "Architecture"));
+        File.WriteAllText(Path.Combine(workspace, "Architecture", "Architecture.cs"),
+            "using Stemma.Model; namespace R; public static class Architecture { public static Model Build() { return Model.Of(); } }");
+        var app = StemmaWebHost.Build(["--urls", StemmaWebHost.DynamicLoopbackUrl, "--log-level", "none", "--recents", "off"]);
+        await app.StartAsync();
+        try
+        {
+            using var http = new HttpClient { BaseAddress = new Uri(StemmaWebHost.BoundUrl(app)) };
+            (await http.PostAsJsonAsync("/api/workspace/open", new { rootPath = workspace })).EnsureSuccessStatusCode();
+
+            (await http.GetStringAsync("/api/workspace/recents")).Should().NotContain("rendered");
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
     }
 
     private static async Task<T> Eventually<T>(Func<T?> read, int attempts = 100) where T : class

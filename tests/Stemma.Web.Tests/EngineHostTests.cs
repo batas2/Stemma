@@ -32,7 +32,7 @@ public sealed class EngineHostTests : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        _host = new EngineHost(hub: null, loggerFactory: null, load: async (root, ct) =>
+        _host = new EngineHost(hub: null, loggerFactory: null, recents: null, load: async (root, ct) =>
         {
             if (_loads.Hold)
             {

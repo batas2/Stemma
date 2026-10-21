@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.SignalR;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Diagnostics;
 using Stemma.Engine.Operations;
@@ -39,6 +40,10 @@ public static class StemmaWebHost
     private const string PortFileKey = "port-file";
     private const string PortFileEnvironmentVariable = "STEMMA_PORT_FILE";
 
+    /// <summary>Config key (and environment variable) that, set to <c>off</c>, leaves the recent list alone.</summary>
+    private const string RecentsKey = "recents";
+    private const string RecentsEnvironmentVariable = "STEMMA_RECENTS";
+
     /// <summary>
     /// Build the application. Nothing is bound yet: call <see cref="RunAsync"/>, or start it
     /// yourself and read <see cref="BoundUrl"/>.
@@ -59,7 +64,11 @@ public static class StemmaWebHost
         builder.Services.AddSingleton(levelSwitch);
         builder.Services.AddSingleton(logOptions);
 
-        builder.Services.AddSingleton<EngineHost>();
+        // The recent list is the person's: what they opened. A host started for a headless render opens
+        // a workspace nobody chose to open, so it is started with `--recents off` and adds nothing.
+        var recents = KeepsRecents(builder.Configuration) ? RecentWorkspaces.ForUser() : null;
+        builder.Services.AddSingleton(services => new EngineHost(
+            services.GetService<IHubContext<WorkspaceHub>>(), services.GetService<ILoggerFactory>(), recents));
         builder.Services.AddSignalR().AddJsonProtocol(o =>
         {
             o.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -243,6 +252,13 @@ public static class StemmaWebHost
         var path = config[PortFileKey];
         if (string.IsNullOrWhiteSpace(path)) path = Environment.GetEnvironmentVariable(PortFileEnvironmentVariable);
         return string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+    }
+
+    private static bool KeepsRecents(IConfiguration config)
+    {
+        var value = config[RecentsKey];
+        if (string.IsNullOrWhiteSpace(value)) value = Environment.GetEnvironmentVariable(RecentsEnvironmentVariable);
+        return !string.Equals(value?.Trim(), "off", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void WritePortFile(string path, string url)
@@ -518,7 +534,8 @@ public static class StemmaWebHost
             };
         });
 
-        workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
+        workspaceApi.MapGet("/recents", (EngineHost host) =>
+            Results.Ok(host.Recents?.Load() ?? Array.Empty<RecentWorkspaces.Entry>()));
 
         workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
         {

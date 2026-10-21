@@ -438,7 +438,9 @@ Each render writes a sibling `<name>.manifest.json` with a fingerprint of everyt
 what the picture looks like. `--check` re-computes it and exits non-zero when the image no longer
 matches the model — which is the whole "a diagram cannot lie" claim, extended past the app window.
 
-Rendering runs a short-lived backend of its own, so it never disturbs a workspace you have open.
+Rendering runs a short-lived backend of its own, so it never disturbs a workspace you have open,
+and it leaves the app's list of recent workspaces alone. (Any backend started with `--recents off`,
+or with `STEMMA_RECENTS=off` in its environment, does the same.)
 
 ---
 

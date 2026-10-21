@@ -3,27 +3,24 @@ using System.Text.Json;
 namespace Stemma.Engine.Workspace;
 
 /// <summary>
-/// Tracks the most recently opened workspaces in a small JSON file under the user's
-/// home directory (`~/.stemma/recent.json`). Used by the topbar dropdown.
+/// Tracks the most recently opened workspaces in a small JSON file, by default under the user's
+/// home directory (`~/.stemma/recent.json`). Used by the topbar dropdown and the start screen.
 /// </summary>
-public static class RecentWorkspaces
+public sealed class RecentWorkspaces(string filePath)
 {
     private const int MaxEntries = 10;
 
     public sealed record Entry(string RootPath, string DisplayName, DateTime LastOpened);
 
-    private static string FilePath
-    {
-        get
-        {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            return Path.Combine(home, ".stemma", "recent.json");
-        }
-    }
+    /// <summary>The list a person's own Stemma keeps, beside the logs in <c>~/.stemma</c>.</summary>
+    public static RecentWorkspaces ForUser() =>
+        new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".stemma", "recent.json"));
+
+    public string FilePath { get; } = filePath;
 
     private static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
 
-    public static IReadOnlyList<Entry> Load()
+    public IReadOnlyList<Entry> Load()
     {
         try
         {
@@ -35,7 +32,7 @@ public static class RecentWorkspaces
         catch { return []; }
     }
 
-    public static void Touch(string rootPath, string? displayName = null)
+    public void Touch(string rootPath, string? displayName = null)
     {
         try
         {

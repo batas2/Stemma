@@ -62,17 +62,20 @@ public sealed class EngineHost : IAsyncDisposable
     private readonly ILogger<EngineHost> _log;
     private readonly Func<string, CancellationToken, Task<StemmaEngine>> _load;
 
-    public EngineHost(IHubContext<WorkspaceHub>? hub = null, ILoggerFactory? loggerFactory = null)
-        : this(hub, loggerFactory, load: null)
+    /// <param name="recents">Where an opened workspace is remembered; null to remember nothing, as a
+    /// host started for a headless render does.</param>
+    public EngineHost(IHubContext<WorkspaceHub>? hub = null, ILoggerFactory? loggerFactory = null, RecentWorkspaces? recents = null)
+        : this(hub, loggerFactory, recents, load: null)
     {
     }
 
     /// <param name="load">How a workspace is loaded; the engine's own loader unless a test needs to
     /// hold a load open to see what happens meanwhile.</param>
-    internal EngineHost(IHubContext<WorkspaceHub>? hub, ILoggerFactory? loggerFactory,
+    internal EngineHost(IHubContext<WorkspaceHub>? hub, ILoggerFactory? loggerFactory, RecentWorkspaces? recents,
         Func<string, CancellationToken, Task<StemmaEngine>>? load)
     {
         _hub = hub;
+        Recents = recents;
         // The engine takes an ILogger by injection and defaults to NullLogger, so an EngineHost
         // constructed without a factory — as the tests do — still works and simply says nothing.
         _loggerFactory = loggerFactory ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
@@ -104,7 +107,7 @@ public sealed class EngineHost : IAsyncDisposable
             }
 
             await RetireAsync(Swap(new Slot(engine)));
-            RecentWorkspaces.Touch(rootPath);
+            Recents?.Touch(rootPath);
             return engine.Model;
         }
         finally
@@ -112,6 +115,9 @@ public sealed class EngineHost : IAsyncDisposable
             _gate.Release();
         }
     }
+
+    /// <summary>The recent list this host adds to, or null when it keeps none.</summary>
+    public RecentWorkspaces? Recents { get; }
 
     /// <summary>The open engine, held until the lease is disposed; null when nothing is open.</summary>
     public Lease? Use()
