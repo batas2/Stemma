@@ -101,11 +101,11 @@ public static class DslWriter
             var arg = args[at];
             if (value is not null)
             {
-                if (arg.Expression is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.StringLiteralExpression) && lit.Token.ValueText == value)
-                    return null;
+                if (DslReader.AlreadySays(arg.Expression, value, $"{attribute} of this {typeName}")) return null;
                 return list.WithArguments(args.Replace(arg, arg.WithExpression(Literal(value).WithTriviaFrom(arg.Expression))));
             }
 
+            DslReader.RefuseUnlessLiteral(arg.Expression, $"{attribute} of this {typeName}");
             if (arg.NameColon is null && args.Skip(at + 1).Any(a => a.NameColon is null))
             {
                 if (!nullablePlaceholder)
@@ -143,6 +143,7 @@ public static class DslWriter
         if (nameAt < 0) return root;
 
         var nameExpression = args[nameAt].Expression;
+        DslReader.RefuseUnlessLiteral(nameExpression, "name");
         var renamed = creation.ReplaceNode(nameExpression, Literal(newName).WithTriviaFrom(nameExpression));
 
         // The variable follows the name, so the C# keeps reading like the diagram — unless the new

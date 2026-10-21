@@ -71,6 +71,15 @@ Links render in a view when **both** endpoints are present.
 - **Ids are stable and referenced as strings** in flows/deps/aboutIds/views. The C# compiler does
   *not* check these — a typo creates a dangling reference (a missing node/edge). Validate when
   generating samples.
+- **An argument is a literal or a constant.** Besides string literals of every form (regular,
+  verbatim, raw), Stemma reads what C# folds into a constant string: a `const` declared in the same
+  file — a local of `Build()`, a field of its class, or a field named through its class
+  (`Ids.Ctx`) — `+` and interpolation over those, and `nameof(...)`. Constants are a good way to
+  keep an id from being mistyped in every flow that names it. Anything else (a method call, a
+  `static readonly` field) cannot be read from the source: validation reports it as
+  `model/unreadable-declaration` with its file and line, and a declaration whose id, or a link
+  whose end, cannot be read is not in the model. An edit from the canvas changes literals only; an
+  argument written as a constant is refused (`NotALiteral`) and left for you to change in the code.
 - The Architecture entry point is `public static Model Build()`; view entry points are `public
   static View Define()`. The engine reads exactly those names. In a file with more than one class,
   the model is the `static Model Build()` of the class named `Architecture`; a further model file

@@ -24,7 +24,11 @@ public static class DslReader
         "DataFlow", "Dependency", "Relation"
     };
 
-    public static ArchModel? TryRead(string filePath, SyntaxNode root)
+    /// <param name="semantic">
+    /// The file's semantic model, when the caller has a compilation: a constant declared in another
+    /// file is then read too. Without one, constants are read from this file alone (<see cref="DslConstants"/>).
+    /// </param>
+    public static ArchModel? TryRead(string filePath, SyntaxNode root, SemanticModel? semantic = null)
     {
         var buildBody = FindBuildMethodBody(root);
         if (buildBody is null) return null;
@@ -32,7 +36,9 @@ public static class DslReader
         var elements = new List<ArchElement>();
         var links = new List<ArchLink>();
         var tags = new List<ArchTag>();
+        var unreadable = new List<ArchReadProblem>();
         var varToId = new Dictionary<string, string>();
+        var file = Path.GetFileName(filePath);
 
         // First pass: locals (elements, links).
         foreach (var statement in buildBody.Statements.OfType<LocalDeclarationStatementSyntax>())
@@ -42,19 +48,46 @@ public static class DslReader
                 if (v.Initializer?.Value is not BaseObjectCreationExpressionSyntax oc) continue;
                 var typeName = ExtractTypeName(oc, statement.Declaration.Type);
                 if (typeName is null) continue;
-                var args = ExtractArgs(oc);
+                var isElement = ElementTypeNames.Contains(typeName);
+                if (!isElement && !LinkTypeNames.Contains(typeName)) continue;
 
-                if (ElementTypeNames.Contains(typeName))
+                var args = Keyed(ExtractArgs(oc, semantic), DslVocabulary.ParametersOf(typeName)!);
+                // An id, or a link's end, that cannot be read leaves nothing to draw or to connect: the
+                // declaration is left out, and said to be.
+                string[] identity = isElement ? ["id"] : ["id", "fromId", "toId"];
+                var unknown = args.Where(a => identity.Contains(a.Key) && !a.Arg.Readable).ToList();
+                if (unknown.Count > 0)
                 {
-                    var kind = (ArchElementKind)Enum.Parse(typeof(ArchElementKind), typeName);
-                    var (id, name, attrs) = ParseElementArgs(kind, args);
-                    if (id is not null && name is not null)
-                    {
-                        elements.Add(new ArchElement(id, name, kind, attrs));
-                        varToId[v.Identifier.Text] = id;
-                    }
+                    var line = LineOf(unknown[0].Arg.Expression);
+                    unreadable.Add(new ArchReadProblem(filePath, line, null, LeftOut: true,
+                        $"{file}:{line}: this {typeName} is not in the model, because its " +
+                        $"{string.Join(" and ", unknown.Select(u => $"{u.Key} is written as `{Quote(u.Arg.Expression)}`"))}, " +
+                        $"which Stemma cannot read. {Advice}"));
+                    continue;
                 }
-                else if (LinkTypeNames.Contains(typeName))
+
+                var id = Value(args, "id");
+                if (id is null) continue;
+                var attrs = new Dictionary<string, string?>();
+                foreach (var (key, arg) in args.Where(a => !identity.Contains(a.Key)))
+                {
+                    attrs[key] = arg.Value;
+                    if (arg.Readable) continue;
+                    var line = LineOf(arg.Expression);
+                    var consequence = key == "name" ? "so the canvas shows its id instead" : "so it is read as empty";
+                    unreadable.Add(new ArchReadProblem(filePath, line, id, LeftOut: false,
+                        $"{file}:{line}: the {key} of {id} is written as `{Quote(arg.Expression)}`, " +
+                        $"which Stemma cannot read, {consequence}. {Advice}"));
+                }
+
+                if (isElement)
+                {
+                    attrs.Remove("name", out var name);
+                    if (args.Any(a => a.Key == "name" && !a.Arg.Readable)) name = id;
+                    if (name is null) continue;
+                    elements.Add(new ArchElement(id, name, Enum.Parse<ArchElementKind>(typeName), attrs));
+                }
+                else
                 {
                     var kind = typeName switch
                     {
@@ -62,13 +95,11 @@ public static class DslReader
                         "Relation" => ArchLinkKind.Relation,
                         _ => ArchLinkKind.Dependency,
                     };
-                    var (id, fromId, toId, attrs) = ParseLinkArgs(kind, args);
-                    if (id is not null && fromId is not null && toId is not null)
-                    {
-                        links.Add(new ArchLink(id, fromId, toId, kind, attrs));
-                        varToId[v.Identifier.Text] = id;
-                    }
+                    var (from, to) = (Value(args, "fromId"), Value(args, "toId"));
+                    if (from is null || to is null) continue;
+                    links.Add(new ArchLink(id, from, to, kind, attrs));
                 }
+                varToId[v.Identifier.Text] = id;
             }
         }
 
@@ -96,14 +127,62 @@ public static class DslReader
                 if (arg.Expression is not BaseObjectCreationExpressionSyntax part) continue;
                 switch (TagPartOf(arg))
                 {
-                    case "lifecycle": lifecycle = ParseLifecycleFromCreation(part); break;
-                    case "ownership": ownership = ParseOwnershipFromCreation(part); break;
+                    case "lifecycle":
+                        var l = ReadTagPart(part, "Lifecycle", targetId);
+                        lifecycle = new ArchLifecycle(l.GetValueOrDefault("status"), l.GetValueOrDefault("phase"),
+                            l.GetValueOrDefault("validFrom"), l.GetValueOrDefault("validUntil"));
+                        break;
+                    case "ownership":
+                        // Only Squad and Domain are read; the RAPID lists are placeholders. The writer
+                        // still accepts and persists them; the reader will be extended in a follow-up pass.
+                        var o = ReadTagPart(part, "Ownership", targetId);
+                        ownership = new ArchOwnership(o.GetValueOrDefault("squad"), o.GetValueOrDefault("domain"));
+                        break;
                 }
             }
             tags.Add(new ArchTag(targetId, lifecycle, ownership));
         }
 
-        return new ArchModel(filePath, elements, links, tags);
+        return new ArchModel(filePath, elements, links, tags) { Unreadable = unreadable };
+
+        // The fields of a Lifecycle or an Ownership by name, and each one Stemma reads but cannot, reported.
+        Dictionary<string, string?> ReadTagPart(BaseObjectCreationExpressionSyntax part, string typeName, string targetId)
+        {
+            var fields = new Dictionary<string, string?>();
+            foreach (var (key, arg) in Keyed(ExtractArgs(part, semantic), DslVocabulary.ParametersOf(typeName)!))
+            {
+                if (!TagFieldsRead.Contains(key)) continue;
+                fields[key] = arg.Value;
+                if (arg.Readable) continue;
+                var line = LineOf(arg.Expression);
+                unreadable.Add(new ArchReadProblem(filePath, line, targetId, LeftOut: false,
+                    $"{file}:{line}: the {key} in the {typeName.ToLowerInvariant()} of {targetId} is written as " +
+                    $"`{Quote(arg.Expression)}`, which Stemma cannot read, so it is read as empty. {Advice}"));
+            }
+            return fields;
+        }
+    }
+
+    private const string Advice = "Write it as a string literal, or as a const string declared in this file.";
+
+    /// <summary>The tag fields the model carries. An Ownership's RAPID lists are not read, so not reported.</summary>
+    private static readonly HashSet<string> TagFieldsRead = ["status", "phase", "validFrom", "validUntil", "squad", "domain"];
+
+    /// <summary>Each argument with the parameter it is for: its name when it has one, else its position.</summary>
+    private static List<(string Key, DslArgument Arg)> Keyed(IReadOnlyList<DslArgument> args, IReadOnlyList<string> positional) =>
+        args.Select((a, i) => (a.Name ?? (i < positional.Count ? positional[i] : $"arg{i}"), a)).ToList();
+
+    private static string? Value(List<(string Key, DslArgument Arg)> args, string key) =>
+        args.FirstOrDefault(a => a.Key == key).Arg.Value;
+
+    private static int LineOf(SyntaxNode node) => node.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+
+    /// <summary>The argument as written, on one line and short enough to quote in a sentence.</summary>
+    private static string Quote(ExpressionSyntax expression)
+    {
+        var lines = expression.ToString().Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        var text = string.Join(" ", lines.Select(l => l.Trim()));
+        return text.Length <= 60 ? text : text[..59] + "…";
     }
 
     /// <summary>
@@ -116,42 +195,6 @@ public static class DslReader
         return arg.Expression is ObjectCreationExpressionSyntax { Type: var t } && GetSimpleTypeName(t) is { } typeName
             ? DslVocabulary.AttributeName(typeName)
             : null;
-    }
-
-    private static ArchLifecycle ParseLifecycleFromCreation(BaseObjectCreationExpressionSyntax oc)
-    {
-        var args = ExtractArgs(oc);
-        var positional = DslVocabulary.ParametersOf("Lifecycle")!;
-        string? status = null, phase = null, from = null, until = null;
-        for (var i = 0; i < args.Count; i++)
-        {
-            var key = args[i].Name ?? (i < positional.Count ? positional[i] : $"arg{i}");
-            switch (key.ToLowerInvariant())
-            {
-                case "status": status = args[i].Value; break;
-                case "phase": phase = args[i].Value; break;
-                case "validfrom": from = args[i].Value; break;
-                case "validuntil": until = args[i].Value; break;
-            }
-        }
-        return new ArchLifecycle(status, phase, from, until);
-    }
-
-    private static ArchOwnership ParseOwnershipFromCreation(BaseObjectCreationExpressionSyntax oc)
-    {
-        // For Spike 03, only Squad and Domain (single-string properties) are read; RAPID lists
-        // are placeholders. The DSL writer below still accepts and persists them; the reader will
-        // be extended in a follow-up pass.
-        var args = ExtractArgs(oc);
-        var positional = DslVocabulary.ParametersOf("Ownership")!;
-        string? squad = null, domain = null;
-        for (var i = 0; i < args.Count; i++)
-        {
-            var key = args[i].Name ?? (i < positional.Count ? positional[i] : null);
-            if (key == "squad") squad = args[i].Value;
-            else if (key == "domain") domain = args[i].Value;
-        }
-        return new ArchOwnership(squad, domain);
     }
 
     /// <summary>
@@ -239,65 +282,48 @@ public static class DslReader
         _ => null
     };
 
-    internal static IReadOnlyList<(string? Name, string? Value)> ExtractArgs(BaseObjectCreationExpressionSyntax oc)
+    /// <summary>
+    /// The constructor's arguments, each with its name if it has one and the string it stands for
+    /// (<see cref="DslConstants"/>); <see cref="DslArgument.Readable"/> is false when that cannot be known.
+    /// </summary>
+    internal static IReadOnlyList<DslArgument> ExtractArgs(BaseObjectCreationExpressionSyntax oc, SemanticModel? semantic = null)
     {
-        var result = new List<(string?, string?)>();
+        var result = new List<DslArgument>();
         if (oc.ArgumentList is null) return result;
         foreach (var arg in oc.ArgumentList.Arguments)
         {
             // `Id:` and `id` are the same argument. Compared as written, every named-argument
             // declaration was invisible to the reader, so there was nothing for an edit to find.
             var argName = arg.NameColon is { } nc ? DslVocabulary.AttributeName(nc.Name.Identifier.Text) : null;
-            var literal = ResolveStringValue(arg.Expression);
-            result.Add((argName, literal));
+            var readable = DslConstants.TryRead(arg.Expression, semantic, out var value);
+            result.Add(new DslArgument(argName, value, readable, arg.Expression));
         }
         return result;
     }
 
-    private static string? ResolveStringValue(ExpressionSyntax expr) => expr switch
+    /// <summary>
+    /// Whether an edit setting <paramref name="expression"/> to <paramref name="value"/> would change
+    /// nothing. A literal that says something else is the edit's to replace. An argument written any
+    /// other way — a constant, a concatenation, <c>nameof</c> — is the author's choice, and replacing it
+    /// with the literal it stands for would undo that choice, so unless it already says
+    /// <paramref name="value"/> the edit is refused.
+    /// </summary>
+    internal static bool AlreadySays(ExpressionSyntax expression, string? value, string what)
     {
-        LiteralExpressionSyntax lit when lit.Token.IsKind(SyntaxKind.StringLiteralToken)
-            => lit.Token.ValueText,
-        LiteralExpressionSyntax lit when lit.Token.IsKind(SyntaxKind.NullKeyword)
-            => null,
-        _ => null
-    };
-
-    private static (string? id, string? name, IReadOnlyDictionary<string, string?> attrs) ParseElementArgs(
-        ArchElementKind kind, IReadOnlyList<(string? Name, string? Value)> args)
-    {
-        var attrs = new Dictionary<string, string?>();
-        var positional = DslVocabulary.ParametersOf(kind.ToString()) ?? ["id", "name"];
-        string? id = null;
-        string? name = null;
-        for (var i = 0; i < args.Count; i++)
-        {
-            var key = args[i].Name ?? (i < positional.Count ? positional[i] : $"arg{i}");
-            var value = args[i].Value;
-            if (key == "id") id = value;
-            else if (key == "name") name = value;
-            else attrs[key] = value;
-        }
-        return (id, name, attrs);
+        var says = DslConstants.TryRead(expression, null, out var current) && current == value;
+        if (says || DslConstants.IsLiteral(expression)) return says;
+        throw NotALiteral(expression, what);
     }
 
-    private static (string? id, string? from, string? to, IReadOnlyDictionary<string, string?> attrs) ParseLinkArgs(
-        ArchLinkKind kind, IReadOnlyList<(string? Name, string? Value)> args)
+    /// <summary>Refuse to remove an argument that is not written as a literal, for the same reason.</summary>
+    internal static void RefuseUnlessLiteral(ExpressionSyntax expression, string what)
     {
-        var attrs = new Dictionary<string, string?>();
-        var positional = DslVocabulary.ParametersOf(kind.ToString()) ?? ["id", "fromId", "toId"];
-        string? id = null;
-        string? from = null;
-        string? to = null;
-        for (var i = 0; i < args.Count; i++)
-        {
-            var key = args[i].Name ?? (i < positional.Count ? positional[i] : $"arg{i}");
-            var value = args[i].Value;
-            if (key == "id") id = value;
-            else if (key == "fromId") from = value;
-            else if (key == "toId") to = value;
-            else attrs[key] = value;
-        }
-        return (id, from, to, attrs);
+        if (!DslConstants.IsLiteral(expression)) throw NotALiteral(expression, what);
     }
+
+    private static DslEditRefusedException NotALiteral(ExpressionSyntax expression, string what) =>
+        new("NotALiteral", $"The {what} is written as `{Quote(expression)}` rather than as a literal, so Stemma does not change it. Edit it in the code.");
 }
+
+/// <summary>An argument of a declaration: its name if it has one, and the string it stands for when that can be read.</summary>
+internal readonly record struct DslArgument(string? Name, string? Value, bool Readable, ExpressionSyntax Expression);

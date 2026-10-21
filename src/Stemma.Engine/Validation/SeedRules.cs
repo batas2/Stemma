@@ -163,3 +163,21 @@ public sealed class DeprecatedElementNoIncomingFlows : IRule
         }
     }
 }
+
+/// <summary>
+/// What the model files declare that the reader could not read (<see cref="ArchModel.ArchModel.Unreadable"/>).
+/// A declaration whose id was written as a method call used to be missing from the canvas with
+/// nothing anywhere to say so; this is where it is said. An error when a whole declaration is left
+/// out, a warning when one of its arguments is read as empty.
+/// </summary>
+[StemmaRule("model/unreadable-declaration", Severity.Warning, "Every argument Stemma reads should be a string literal or a constant.")]
+public sealed class UnreadableDeclaration : IRule
+{
+    public string Id => "model/unreadable-declaration";
+    public Severity DefaultSeverity => Severity.Warning;
+    public string Description => "Every argument Stemma reads should be a string literal or a constant.";
+
+    public IEnumerable<Violation> Check(ArchModel.ArchModel model) =>
+        model.Unreadable.Select(p => new Violation(Id, p.LeftOut ? Severity.Error : DefaultSeverity, p.Message,
+            p.Id is null ? [] : [p.Id], []));
+}
