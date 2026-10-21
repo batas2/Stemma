@@ -6,6 +6,7 @@
 // `Architecture.cs`. Deleting them is safe.
 
 import { loadViewShapes, saveViewShapes, primeLayoutSidecar, setSidecarCacheForTest } from './layout';
+import { history } from './history';
 
 export type ShapeKind = 'rect' | 'ellipse' | 'triangle' | 'label' | 'arrow' | 'image';
 
@@ -132,9 +133,16 @@ export function loadShapes(workspaceRoot: string, viewKey: string): Shape[] {
   return loadViewShapes<Shape>(workspaceRoot, viewKey);
 }
 
-/** Replace the shapes array for a view; debounced PUT of the full sidecar. */
-export function saveShapes(workspaceRoot: string, viewKey: string, shapes: Shape[]): void {
+/**
+ * Replace the shapes array for a view; debounced PUT of the full sidecar. A step of the undo history
+ * named `description`: drawing, moving, resizing, restyling or deleting a shape was the one change on
+ * the canvas ⌘Z could not take back. Changes to one view's shapes within a second of each other are
+ * one step, so a dragged slider is not forty.
+ */
+export function saveShapes(workspaceRoot: string, viewKey: string, shapes: Shape[], description = 'Change shape'): void {
+  const before = loadViewShapes<Shape>(workspaceRoot, viewKey);
   saveViewShapes(workspaceRoot, viewKey, shapes);
+  history.recordPresentation([{ section: 'shapes', id: viewKey, before, after: shapes }], description, `shapes:${viewKey}`);
 }
 
 /** Prime the shared sidecar cache. Call once at workspace open. */

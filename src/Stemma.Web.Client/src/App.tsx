@@ -15,6 +15,7 @@ import { useApp } from './lib/store';
 import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, applyOperation } from './lib/signalr';
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
+import { confirmAndRemoveElements } from './components/removeElements';
 import { removeShape, saveShapes } from './lib/shapes';
 import { archModel, listViolations, snapshot } from './lib/api';
 import { primeLayoutSidecar, rereadLayoutSidecar } from './lib/layout';
@@ -30,7 +31,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { PromptDialog } from './components/PromptDialog';
 import { ToastQueue } from './components/ToastQueue';
 import { TopProgressBar } from './components/LoadingOverlay';
-import { bindShortcuts, hasTextSelection } from './lib/shortcuts';
+import { bindShortcuts, focusIsOnCanvas, hasTextSelection } from './lib/shortcuts';
 import { filterByView } from './lib/viewFilter';
 import { hashFor, readHash, placeOf } from './lib/navigation';
 import { revealElement } from './lib/canvasReveal';
@@ -47,9 +48,11 @@ function ArchOrShapeInspector() {
   const workspace = useApp((s) => s.workspace);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
+  const view = useApp((s) => s.view);
   if (selectedShapeId && workspace) {
     const activeCustomView = customViews.find((v) => v.id === activeId);
-    const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : 'moduleMap';
+    // The view on screen, as the canvas keys it: a shape on Dependencies is not on the Module Map.
+    const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : view;
     return <ShapeInspector viewKey={layoutKey} workspaceRoot={workspace.rootPath} />;
   }
   return <ArchInspector />;
@@ -163,8 +166,8 @@ export default function App() {
       { key: 'v', code: 'KeyV', primary: true, alt: true, description: 'Paste style', handler: () => fire('stemma:paste-style') },
       { key: '/', description: 'Focus search', handler: () => focusSidebarSearch() },
       { key: '?', shift: true, description: 'Show keyboard shortcuts', handler: () => setHelpOpen((v) => !v) },
-      { key: 'tab', description: 'Cycle elements', handler: () => cycleElement(1) },
-      { key: 'tab', shift: true, description: 'Cycle elements (back)', handler: () => cycleElement(-1) },
+      { key: 'tab', description: 'Cycle elements', when: focusIsOnCanvas, handler: () => cycleElement(1) },
+      { key: 'tab', shift: true, description: 'Cycle elements (back)', when: focusIsOnCanvas, handler: () => cycleElement(-1) },
       { key: 'arrowup', description: 'Nudge up', handler: () => nudgeSelected(0, -10) },
       { key: 'arrowdown', description: 'Nudge down', handler: () => nudgeSelected(0, 10) },
       { key: 'arrowleft', description: 'Nudge left', handler: () => nudgeSelected(-10, 0) },
@@ -222,7 +225,7 @@ export default function App() {
       const viewKey = st.activeCustomViewId ? `custom:${st.activeCustomViewId}` : st.view;
       const next = removeShape(st.shapes[viewKey] ?? [], st.selectedShapeId);
       st.setShapesFor(viewKey, next);
-      saveShapes(st.workspace.rootPath, viewKey, next);
+      saveShapes(st.workspace.rootPath, viewKey, next, 'Delete shape');
       st.selectShape(null);
       st.setToast({ kind: 'info', text: 'Shape removed' });
       return;
@@ -236,20 +239,9 @@ export default function App() {
       else { st.setToast({ kind: 'success', text: 'Relationship removed' }); useApp.getState().selectLink(null); }
       return;
     }
-    if (st.selectedElementId) {
-      const el = st.arch?.elements.find((x) => x.id === st.selectedElementId);
-      if (!el) return;
-      const ok = await confirmAction({
-        title: `Remove ${el.name}?`,
-        body: 'This element will be removed from the model. Linked relationships and decisions will be detached.',
-        confirmLabel: 'Remove',
-        destructive: true,
-      });
-      if (!ok) return;
-      const r = await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: el.id });
-      if ('reason' in r) st.setToast({ kind: 'error', text: friendlyOpError(r) });
-      else { st.setToast({ kind: 'success', text: 'Removed' }); useApp.getState().selectElement(null); }
-    }
+    // Every selected box — a marquee selects without the inspector showing one — or the one shown.
+    const ids = st.canvasSelectedIds.length > 0 ? st.canvasSelectedIds : st.selectedElementId ? [st.selectedElementId] : [];
+    if (ids.length > 0) await confirmAndRemoveElements(ids);
   }
 
   function clearSelection() {
@@ -370,7 +362,7 @@ export default function App() {
         {ws ? (
           <>
             {!bare && <Sidebar />}
-            <main id="stemma-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
+            <main id="stemma-canvas" tabIndex={-1} role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
               <div className="flex-1 min-h-0 relative">
                 {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
                 {view !== 'concerns' && <CompareBar />}

@@ -38,7 +38,7 @@ export function StencilDrawer({ viewKey, workspaceRoot, onClose }: Props) {
     try {
       const next = addShape(useApp.getState().shapes[viewKey] ?? [], shape);
       setShapesFor(viewKey, next);
-      saveShapes(workspaceRoot, viewKey, next);
+      saveShapes(workspaceRoot, viewKey, next, 'Add shape');
       selectShape(shape.id);
     } catch (err) {
       setToast({ kind: 'error', text: (err as Error).message });

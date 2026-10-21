@@ -1,5 +1,5 @@
 import * as signalR from '@microsoft/signalr';
-import { correlationId } from './log';
+import { ClientEvent, correlationId, reportFailure } from './log';
 import { history } from './history';
 import type { OperationEnvelope, OperationResult } from './types';
 
@@ -74,8 +74,16 @@ export async function sendPresenter(kind: 'PresenterState' | 'PresenterCommand',
  * an invocation, and the id has to survive the hop for AC5 to hold end to end.
  */
 export async function applyOperation(op: OperationEnvelope): Promise<OperationResult> {
-  const conn = await ensureConnection();
-  const result = await conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
+  let result: OperationResult;
+  try {
+    const conn = await ensureConnection();
+    result = await conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
+  } catch (error) {
+    // A refusal like any other, so every caller that says why an edit did not happen says this too —
+    // a thrown error reached no one, and the edit silently did not happen.
+    reportFailure('Operations', ClientEvent.OperationFailed, describeOperation(op))(error);
+    return { opId: op.opId, reason: 'Unreachable', message: error instanceof Error ? error.message : String(error) };
+  }
   // Every edit this window makes is a step of its undo history (F-015 AC6), in the order it was made.
   if (!('reason' in result)) history.recordOperation(describeOperation(op));
   return result;

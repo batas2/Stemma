@@ -20,7 +20,12 @@ export interface LayoutUndoEntry {
   after: Record<string, SavedPosition>;
   description: string;
   ts: number;
+  /** Moves of one kind to the same boxes, made close together, fold into one step (arrow-key nudges). */
+  key?: string;
 }
+
+/** How close together two moves with the same key must come to be one step. */
+export const FOLD_MS = 1000;
 
 /** As long as the journal's: a move it remembers is a move this stack still holds. */
 const CAPACITY = 100;
@@ -31,6 +36,16 @@ export class LayoutUndoStack {
   private listeners = new Set<() => void>();
 
   push(entry: LayoutUndoEntry) {
+    const top = this.undo[this.undo.length - 1];
+    if (entry.key && top && top.key === entry.key && top.workspaceRoot === entry.workspaceRoot && top.viewKey === entry.viewKey
+      && entry.ts - top.ts < FOLD_MS && this.redo.length === 0 && history.lastStepIsMove) {
+      // The first position before the run, the last one after it.
+      top.before = { ...entry.before, ...top.before };
+      top.after = { ...top.after, ...entry.after };
+      top.ts = entry.ts;
+      this.notify();
+      return;
+    }
     this.undo.push(entry);
     while (this.undo.length > CAPACITY) this.undo.shift();
     this.redo = [];

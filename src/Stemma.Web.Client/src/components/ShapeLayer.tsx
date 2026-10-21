@@ -6,7 +6,7 @@ import {
   newArrow, newEllipse, newLabel, newRect, newTriangle, addShape, removeShape, updateShape, saveShapes,
 } from '@/lib/shapes';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { applyOperation } from '@/lib/signalr';
+import { applyOrSay } from '@/lib/applyOp';
 import { renderNotes } from '@/lib/notesMarkdown';
 
 interface Props {
@@ -102,7 +102,7 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
       if (!cur.some((s) => s.id === id)) return;
       const next = removeShape(cur, id);
       setShapesFor(viewKey, next);
-      saveShapes(workspaceRoot, viewKey, next);
+      saveShapes(workspaceRoot, viewKey, next, 'Delete shape');
       selectShape(null);
       e.preventDefault();
     }
@@ -166,7 +166,7 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
         }
         if (s) commitNew(s);
       } else if (d.mode === 'move' || d.mode === 'resize') {
-        saveShapes(workspaceRoot, viewKey, useApp.getState().shapes[viewKey] ?? []);
+        saveShapes(workspaceRoot, viewKey, useApp.getState().shapes[viewKey] ?? [], d.mode === 'move' ? 'Move shape' : 'Resize shape');
       } else if (d.mode === 'connect') {
         const flow = screenToFlowPosition({ x: e.clientX, y: e.clientY });
         const targetNode = findNodeUnder(flow.x, flow.y, nodeBounds);
@@ -175,12 +175,11 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
         // ----- Element ↔ Element: route to the real model link op so the relationship lives
         //       in Architecture.cs alongside hand-written links.
         if (d.from.kind === 'element' && targetNode && targetNode !== d.from.id) {
-          applyOperation({
+          // A refusal resolves rather than throws: said through applyOrSay, not a .catch that never ran.
+          void applyOrSay({
             kind: 'AddLink', opId: `op_${Date.now()}`,
             linkKind: 'dataFlow', fromId: d.from.id, toId: targetNode,
             payload: 'Event', dependencyKind: null,
-          }).catch((err: unknown) => {
-            useApp.getState().setToast({ kind: 'error', text: `Add link failed: ${(err as Error).message}` });
           });
           // No shape arrow created; existing model edge will appear via SignalR refresh.
         } else {
@@ -211,7 +210,7 @@ export function ShapeLayer({ viewKey, workspaceRoot, enabled }: Props) {
         const cur = useApp.getState().shapes[viewKey] ?? [];
         const next = addShape(cur, s);
         setShapesFor(viewKey, next);
-        saveShapes(workspaceRoot, viewKey, next);
+        saveShapes(workspaceRoot, viewKey, next, 'Add shape');
         selectShape(s.id);
       } catch (err) {
         useApp.getState().setToast({ kind: 'error', text: (err as Error).message });

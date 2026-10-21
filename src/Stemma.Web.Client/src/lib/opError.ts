@@ -25,6 +25,15 @@ const FRIENDLY: Record<string, string> = {
   ChangedOnDisk: 'The file was just changed outside Stemma. The new version is loaded — try that again.',
   UndoConflict: "The file has changed since that edit, so it can't be undone exactly.",
   UnknownOp: "Stemma doesn't know how to do that.",
+  Unreachable: "Stemma's engine didn't answer, so nothing changed. Check that Stemma is still running, then try again.",
+  InvalidName: "That isn't a name C# allows. Use letters, digits and underscores, starting with a letter.",
+  OutsideWorkspace: 'Stemma only writes files inside the open workspace.',
+  GeneratedFile: 'That file is generated, so Stemma does not edit it.',
+  NotUtf8: "That file isn't saved as UTF-8, so Stemma leaves it alone. Save it as UTF-8 to edit it here.",
+  WriteFailed: "The change couldn't be written, so every file was put back as it was.",
+  WorkspaceChanged: 'Another workspace was opened, so that change was not saved into it.',
+  UnreadableSidecar: "stemma.layout.json can't be read, so layout changes aren't being saved. Fix the file, then try again.",
+  NotAnElement: 'That is a relationship, not an element.',
 };
 
 /** A human-readable message for a failed operation. Falls back to the engine message. */

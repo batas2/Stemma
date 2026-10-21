@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LayoutUndoStack, diffPositions, isEmptyDiff, type LayoutUndoEntry } from './layoutUndo';
+import { history } from './history';
 
 function entry(over: Partial<LayoutUndoEntry> = {}): LayoutUndoEntry {
   return {
@@ -63,6 +64,24 @@ describe('LayoutUndoStack', () => {
     expect(replayed?.description).toBe('A');
     expect(s.canUndo).toBe(true);
     expect(s.canRedo).toBe(false);
+  });
+
+  it('folds a run of nudges to the same boxes into one step, and a pause starts the next', () => {
+    history.clear();
+    const s = new LayoutUndoStack();
+    s.push(entry({ description: 'Nudge', key: 'nudge:n1', ts: 1000, before: { n1: { x: 0, y: 0 } }, after: { n1: { x: 10, y: 0 } } }));
+    s.push(entry({ description: 'Nudge', key: 'nudge:n1', ts: 1300, before: { n1: { x: 10, y: 0 } }, after: { n1: { x: 20, y: 0 } } }));
+
+    expect(history.undoDescription).toBe('Nudge');
+    const folded = s.popUndo();
+    expect(folded?.before).toEqual({ n1: { x: 0, y: 0 } });
+    expect(folded?.after).toEqual({ n1: { x: 20, y: 0 } });
+    expect(s.canUndo).toBe(false);
+
+    s.popRedo();
+    s.push(entry({ description: 'Nudge', key: 'nudge:n1', ts: 5000, before: { n1: { x: 20, y: 0 } }, after: { n1: { x: 30, y: 0 } } }));
+    s.popUndo();
+    expect(s.canUndo).toBe(true);
   });
 
   it('a new push clears the redo branch', () => {

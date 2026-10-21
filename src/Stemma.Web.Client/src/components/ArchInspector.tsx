@@ -215,20 +215,26 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
     );
   }
 
+  // Only what changed is sent. Leaving a field untouched used to save it anyway ("Lifecycle saved"),
+  // and the dates written in code — which this panel does not show — were cleared by every save.
   async function commitLifecycle(newStatus: string, newPhase: string) {
+    const life = tag?.lifecycle;
+    if ((newStatus || null) === (life?.status ?? null) && (newPhase || null) === (life?.phase ?? null)) return;
     const r = await applyOperation({
       kind: 'SetLifecycle', opId: `op_${Date.now()}`,
       targetId: elementId,
       status: newStatus || null,
       phase: newPhase || null,
-      validFrom: null,
-      validUntil: null,
+      validFrom: life?.validFrom ?? null,
+      validUntil: life?.validUntil ?? null,
     });
     if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
     else setToast({ kind: 'success', text: 'Lifecycle saved' });
   }
 
   async function commitOwnership(newSquad: string, newDomain: string) {
+    const own = tag?.ownership;
+    if ((newSquad || null) === (own?.squad ?? null) && (newDomain || null) === (own?.domain ?? null)) return;
     const r = await applyOperation({
       kind: 'SetOwnership', opId: `op_${Date.now()}`,
       targetId: elementId,
@@ -240,6 +246,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   }
 
   async function commitElementAttr(name: string, value: string) {
+    if ((value.trim() || null) === (e?.attributes[name] ?? null)) return;
     const r = await applyOperation({
       kind: 'SetElementAttribute', opId: `op_${Date.now()}`,
       elementId, attributeName: name, value: value.trim() || null,
@@ -249,6 +256,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   }
 
   async function commitContext(ctxId: string) {
+    if ((ctxId || null) === (e?.attributes.contextId ?? null)) return;
     const r = await applyOperation({
       kind: 'SetElementContext', opId: `op_${Date.now()}`,
       elementId, contextId: ctxId || null,
@@ -715,24 +723,29 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   }, [linkDraft, linkId]);
 
   async function commitLinkLifecycle(status: string, phase: string) {
+    const life = tag?.lifecycle;
+    if ((status || null) === (life?.status ?? null) && (phase || null) === (life?.phase ?? null)) return;
     const r = await applyOperation({
       kind: 'SetLifecycle', opId: `op_${Date.now()}`,
       targetId: linkId,
       status: status || null,
       phase: phase || null,
-      validFrom: null,
-      validUntil: null,
+      validFrom: life?.validFrom ?? null,
+      validUntil: life?.validUntil ?? null,
     });
     if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
     else setToast({ kind: 'success', text: 'Lifecycle saved' });
   }
 
   async function commitLinkOwnership(squad: string) {
+    // The domain is kept: this panel edits only the squad, and sending null cleared the one in code.
+    const own = tag?.ownership;
+    if ((squad || null) === (own?.squad ?? null)) return;
     const r = await applyOperation({
       kind: 'SetOwnership', opId: `op_${Date.now()}`,
       targetId: linkId,
       squad: squad || null,
-      domain: null,
+      domain: own?.domain ?? null,
     });
     if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
     else setToast({ kind: 'success', text: 'Ownership saved' });

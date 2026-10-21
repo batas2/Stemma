@@ -41,7 +41,7 @@ export function ShapeInspector({ viewKey, workspaceRoot }: Props) {
     const cur = useApp.getState().shapes[viewKey] ?? [];
     const next = removeShape(cur, shape!.id);
     setShapesFor(viewKey, next);
-    saveShapes(workspaceRoot, viewKey, next);
+    saveShapes(workspaceRoot, viewKey, next, 'Delete shape');
     selectShape(null);
     setToast({ kind: 'info', text: 'Shape removed' });
   }
@@ -387,7 +387,7 @@ function ConvertToElementBlock({ shape, viewKey, workspaceRoot }: {
       const cur = useApp.getState().shapes[viewKey] ?? [];
       const next = removeShape(cur, shape.id);
       setShapesFor(viewKey, next);
-      saveShapes(workspaceRoot, viewKey, next);
+      saveShapes(workspaceRoot, viewKey, next, 'Turn shape into element');
       selectShape(null);
       setToast({ kind: 'success', text: `Promoted shape to ${kind} "${name}".` });
     } finally {
