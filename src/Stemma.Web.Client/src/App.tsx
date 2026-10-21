@@ -37,6 +37,7 @@ import { revealElement } from './lib/canvasReveal';
 import { refreshHeadModel, stopCompare } from './lib/compare';
 import { CompareBar } from './components/CompareBar';
 import { WhatsNew } from './components/WhatsNew';
+import { SidecarBanner } from './components/SidecarBanner';
 
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
@@ -371,6 +372,7 @@ export default function App() {
           <>
             {!bare && <Sidebar />}
             <main id="stemma-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
+              {!bare && <SidecarBanner />}
               <div className="flex-1 min-h-0 relative">
                 {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
                 {view !== 'concerns' && <CompareBar />}

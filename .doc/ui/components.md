@@ -13,6 +13,10 @@ The frontend's building blocks, what they own, and the rules for changing them. 
   a built-in view must always switch to it, even when a custom view is active.)
 - **Status bar** (`StatusBar.tsx`) — connection, counts, the open view, and — when there are any —
   how many changes since the last commit, a click from being drawn (F-017).
+- **Sidecar banner** (`SidecarBanner.tsx`) — a strip across the top of the canvas while
+  `stemma.layout.json` cannot be read (a merge left its markers in): the server's reason, that layout
+  changes are kept in this window until it is fixed, and *Try again*. A polite live region; it goes
+  as soon as a read succeeds (`lib/layout.ts` `sidecarProblem` / `onSidecarProblem`).
 
 ## Finding on the view ([F-018](../features/F-018-find-on-the-view.md))
 

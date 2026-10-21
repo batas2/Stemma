@@ -160,10 +160,25 @@ export async function listRecents(): Promise<RecentEntry[]> {
   return r.json();
 }
 
-/** The sidecar as the file has it. A file that cannot be read (409) throws: nothing is primed from it. */
+/** The server would not read the sidecar (409): it does not parse — a merge conflict, a half-saved edit. */
+export class LayoutRefused extends Error {
+  constructor(readonly reason: string, message: string) {
+    super(message);
+    this.name = 'LayoutRefused';
+  }
+}
+
+/**
+ * The sidecar as the file has it. A file that cannot be read (409) throws a `LayoutRefused` with the
+ * server's reason, in words meant for whoever opens the file to fix it: nothing is primed from it.
+ */
 export async function fetchLayout(): Promise<unknown> {
   const r = await request(`${BASE}/api/workspace/layout`);
   if (r.status === 404) return null;
+  if (r.status === 409) {
+    const refused = await refusal(r);
+    throw new LayoutRefused(refused.reason, refused.message);
+  }
   if (!r.ok) throw new Error(`Layout fetch failed: ${r.status} ${await r.text()}`);
   return r.json();
 }

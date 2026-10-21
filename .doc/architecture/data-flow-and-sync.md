@@ -86,7 +86,9 @@ Frontend rules that keep it correct:
    to the smallest value; the engine applies it to the file's text as it is on disk now, so every
    other byte — order, unknown keys, escaping, number spelling, a hand-formatted line — stays, and
    whatever anyone else changed since stays with it. A file that does not parse is refused, never
-   read as empty and written back.
+   read as empty and written back. The canvas says so, in the server's words, in a banner above it
+   (`SidecarBanner`), and keeps every layout edit in the window until a read succeeds — *Try again*,
+   or the fix arriving as a change — then sends them.
 
 ## Comments (`comments.stemma.json`)
 

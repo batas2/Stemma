@@ -19,6 +19,38 @@ interface SidecarShape {
 /** Top-level pass-through sections of the committed sidecar that the client owns the schema of. */
 export type SidecarSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'annotations';
 
+/** Why the open workspace's sidecar cannot be read or written, in the server's words. */
+export interface SidecarProblem { rootPath: string; reason: string; message: string }
+
+let problem: SidecarProblem | null = null;
+const problemListeners = new Set<(problem: SidecarProblem | null) => void>();
+
+/**
+ * The sidecar of the open workspace cannot be read, or null when it can. While it cannot, no layout
+ * edit is sent: each is kept in this window and goes out once the file reads again. That used to
+ * happen without a word, and a reload lost every edit of the session.
+ */
+export function sidecarProblem(): SidecarProblem | null {
+  return problem;
+}
+
+export function onSidecarProblem(cb: (problem: SidecarProblem | null) => void): () => void {
+  problemListeners.add(cb);
+  return () => { problemListeners.delete(cb); };
+}
+
+function setProblem(next: SidecarProblem | null): void {
+  if (JSON.stringify(next) === JSON.stringify(problem)) return;
+  problem = next;
+  problemListeners.forEach((l) => l(next));
+}
+
+/** The server's refusal carried by `error` — a file it cannot read — or null for any other failure. */
+function refusalOf(error: unknown): { reason: string; message: string } | null {
+  const e = error as { reason?: unknown; message?: unknown } | null;
+  return e && typeof e.reason === 'string' && typeof e.message === 'string' ? { reason: e.reason, message: e.message } : null;
+}
+
 function ensureSidecar(rootPath: string): SidecarShape {
   if (!sidecarCache || sidecarCache.rootPath !== rootPath) {
     sidecarCache = { rootPath, sidecar: { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} } };
@@ -172,8 +204,11 @@ async function sendChanges(rootPath: string): Promise<void> {
     if (refused) {
       // Kept against the copy, so the next send carries them again.
       reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(new Error(`${refused.reason}: ${refused.message}`));
+      // Broken since it was read — a merge, a hand edit: said until it reads again.
+      if (refused.reason === 'UnreadableSidecar') setProblem({ rootPath, reason: refused.reason, message: refused.message });
     } else if (sidecarBase?.rootPath === rootPath) {
       applySidecarChanges(sidecarBase.sidecar as Record<string, unknown>, changes);
+      setProblem(null);
     }
   } catch (error) {
     reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(error);
@@ -202,6 +237,7 @@ export function forgetLayoutSidecar(): void {
   sidecarBase = null;
   primedRoot = null;
   heldBack = null;
+  setProblem(null);
 }
 
 /**
@@ -212,10 +248,20 @@ export function forgetLayoutSidecar(): void {
  */
 export async function rereadLayoutSidecar(workspaceRoot: string): Promise<void> {
   if (typeof window === 'undefined') return;
+  // Never read because it could not be: the change may be the fix, so try the first read again.
+  if (!isSidecarPrimed(workspaceRoot) && problem?.rootPath === workspaceRoot) return primeLayoutSidecar(workspaceRoot);
   // Not read yet: priming will read the file as it is now.
   if (!isSidecarPrimed(workspaceRoot) || sidecarBase?.rootPath !== workspaceRoot) return;
-  const raw = (await fetchLayout()) as SidecarShape | null;
+  let raw: SidecarShape | null;
+  try {
+    raw = (await fetchLayout()) as SidecarShape | null;
+  } catch (error) {
+    const refused = refusalOf(error);
+    if (refused) setProblem({ rootPath: workspaceRoot, ...refused });
+    throw error;
+  }
   if (raw === null || !isSidecarPrimed(workspaceRoot) || sidecarBase?.rootPath !== workspaceRoot) return;
+  setProblem(null);
   const unsent = sidecarChanges(sidecarBase.sidecar, sidecarCache!.sidecar);
   const next = structuredClone(raw);
   applySidecarChanges(next as Record<string, unknown>, unsent);
@@ -599,6 +645,7 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
     // No workspace open on the server: nothing has been read, so nothing may be written. Treating
     // it as an empty sidecar would let the next edit replace the real one with that edit alone.
     if (raw === null) return;
+    setProblem(null);
     // Opening primes from two places at once. Whichever read lands second finds the cache already
     // read — not edits held back while it loaded — and must leave it alone rather than write it.
     if (primedRoot === workspaceRoot) return;
@@ -653,7 +700,16 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
     if (touched || held.length > 0) void flushSidecar(workspaceRoot);
     // Tell the store/canvas to re-hydrate styles/notes/props from the now-loaded committed sidecar.
     window.dispatchEvent(new CustomEvent('stemma:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
-  } catch {
-    // Sidecar fetch failed (engine not ready) — fall back to localStorage transparently; retry next call.
+  } catch (error) {
+    // A file the server will not read is said (`sidecarProblem`), and edits wait in this window
+    // until it reads. Any other failure is a server not ready yet: drawn from the browser's copy,
+    // and read on the next call.
+    const refused = refusalOf(error);
+    if (refused) setProblem({ rootPath: workspaceRoot, ...refused });
   }
+}
+
+/** Read the sidecar again after it could not be: the first read if it never was, else a re-read. */
+export function retryLayoutSidecar(workspaceRoot: string): Promise<void> {
+  return isSidecarPrimed(workspaceRoot) ? rereadLayoutSidecar(workspaceRoot) : primeLayoutSidecar(workspaceRoot);
 }
