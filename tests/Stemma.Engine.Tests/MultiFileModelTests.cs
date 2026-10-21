@@ -102,6 +102,37 @@ public sealed class MultiFileModelTests
     }
 
     [Fact]
+    public async Task The_fallback_undo_of_a_removal_puts_the_element_back_in_its_own_file_with_its_tag()
+    {
+        // It was re-declared in Architecture.cs, whichever file it came from, and without its
+        // lifecycle and owner.
+        var payments = Payments
+            .Replace("        var flow = new DataFlow(",
+                "        Tag.For(modPay, lifecycle: new Lifecycle(Status: \"target\"), ownership: new Ownership(Squad: \"Core\"));\n        var flow = new DataFlow(");
+        var root = await CreateAsync(("Architecture.cs", Primary), ("Payments.cs", payments));
+        var primaryPath = Path.Combine(root, "Architecture", "Architecture.cs");
+        var paymentsPath = Path.Combine(root, "Architecture", "Payments.cs");
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            Applied(await engine.ApplyAsync(new RemoveElementOp("op", "mod_pay")));
+            await File.AppendAllTextAsync(paymentsPath, "// edited outside\n");
+            (await engine.ApplyAsync(new SetLinkAttributeOp("probe", "flow_001", "payload", "Cash"))).Should().BeOfType<OperationFailed>()
+                .Which.Reason.Should().Be("ChangedOnDisk");
+
+            Applied(await engine.UndoAsync("undo"));
+
+            (await File.ReadAllTextAsync(primaryPath)).Should().Be(Primary, "the element never lived here");
+            var after = await File.ReadAllTextAsync(paymentsPath);
+            after.Should().Contain("new Module(\"mod_pay\", \"Pay\")").And.EndWith("// edited outside\n");
+            var tag = (await engine.ReadArchModelAsync())!.Tags.Should().ContainSingle(t => t.TargetId == "mod_pay").Subject;
+            tag.Lifecycle!.Status.Should().Be("target");
+            tag.Ownership!.Squad.Should().Be("Core");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task A_new_link_never_takes_an_id_another_model_file_declares()
     {
         // The new link took flow_001, which Payments.cs already declared; removing it by that id then

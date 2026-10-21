@@ -25,6 +25,7 @@ public sealed class StemmaEngine : IAsyncDisposable
     private readonly UndoStack _undo = new();
     private ExternalWatcher? _watcher;
     private ArchModel.ArchModel? _archBeforeOp;
+    private string? _removedFromBeforeOp;
     private IReadOnlyList<DocumentWrite> _lastWrites = [];
 
     public WorkspaceModel Model => _model;
@@ -377,6 +378,12 @@ public sealed class StemmaEngine : IAsyncDisposable
             try
             {
                 _archBeforeOp = await ReadArchModelAsync(ct);
+                _removedFromBeforeOp = op switch
+                {
+                    RemoveElementOp r => FindDocumentForId(r.ElementId)?.FilePath,
+                    RemoveLinkOp r => FindDocumentForId(r.LinkId)?.FilePath,
+                    _ => null,
+                };
             }
             catch (Exception e)
             {
@@ -384,6 +391,7 @@ public sealed class StemmaEngine : IAsyncDisposable
                 // still valid — but it must not be silent: "undo stopped working" was unanswerable
                 // while this was a bare `catch { }`.
                 _archBeforeOp = null;
+                _removedFromBeforeOp = null;
                 EngineLog.UndoSnapshotUnavailable(_log, op.GetType().Name, e);
             }
         }
@@ -429,7 +437,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             // What the edit wrote is the undo; the inverse operation is only the fallback for when
             // the file has changed since (see RestoreDocumentsOp).
             var writes = _lastWrites;
-            var fallback = UndoStack.BuildInverse(op, _archBeforeOp) ?? InverseOfAdd(done);
+            var fallback = UndoStack.BuildInverse(op, _archBeforeOp, _removedFromBeforeOp) ?? InverseOfAdd(done);
             if (writes.Count > 0 || fallback is not null)
                 _undo.Push(RedoOf(op, done), new RestoreDocumentsOp($"undo_{Guid.NewGuid():N}", writes, fallback), DescribeOp(op));
         }
@@ -1595,9 +1603,28 @@ public sealed class StemmaEngine : IAsyncDisposable
             () => new OperationApplied(op.OpId, []), ct);
     }
 
+    /// <summary>
+    /// The model file a restore writes into: the one it came from, if it is still a model file, and
+    /// otherwise the primary one. Only a model file — the path comes with the operation.
+    /// </summary>
+    private Document? RestoreTarget(string? filePath) =>
+        (filePath is null ? null : FindArchitectureDocuments().FirstOrDefault(d => string.Equals(d.FilePath, filePath, StringComparison.OrdinalIgnoreCase)))
+        ?? FindArchitectureDocument();
+
+    /// <summary>The tag that was removed with a declaration, written back after it.</summary>
+    private static SyntaxNode RestoreTag(SyntaxNode root, string id, ArchLifecycle? lifecycle, ArchOwnership? ownership)
+    {
+        if (lifecycle is not null)
+            root = DslWriter.SetTag(root, id, "lifecycle",
+                [("status", lifecycle.Status), ("phase", lifecycle.Phase), ("validFrom", lifecycle.ValidFrom), ("validUntil", lifecycle.ValidUntil)]);
+        if (ownership is not null)
+            root = DslWriter.SetTag(root, id, "ownership", [("squad", ownership.Squad), ("domain", ownership.Domain)]);
+        return root;
+    }
+
     private async Task<OperationResult> RestoreArchElementAsync(RestoreElementOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = RestoreTarget(op.FilePath);
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
@@ -1609,7 +1636,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.Role is not null) attrs["role"] = op.Role;
         if (op.AboutId is not null) attrs["aboutId"] = op.AboutId;
         var element = new ArchModel.ArchElement(op.ElementId, op.Name, op.ElementKind, attrs);
-        var newRoot = DslWriter.AddElement(root, element);
+        var newRoot = RestoreTag(DslWriter.AddElement(root, element), op.ElementId, op.Lifecycle, op.Ownership);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
@@ -1618,7 +1645,7 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RestoreArchLinkAsync(RestoreLinkOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = RestoreTarget(op.FilePath);
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
@@ -1629,7 +1656,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.DependencyKind is not null) attrs["kind"] = op.DependencyKind;
         if (op.Label is not null) attrs["label"] = op.Label;
         var link = new ArchModel.ArchLink(op.LinkId, op.FromId, op.ToId, op.LinkKind, attrs);
-        var newRoot = DslWriter.AddLink(root, link);
+        var newRoot = RestoreTag(DslWriter.AddLink(root, link), op.LinkId, op.Lifecycle, op.Ownership);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,

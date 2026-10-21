@@ -209,6 +209,54 @@ public sealed class UndoTests
     }
 
     [Fact]
+    public async Task The_fallback_restore_of_an_element_whose_id_is_not_a_variable_name_compiles()
+    {
+        // The re-declaration took its variable name from the id, so "order-service" became
+        // `var order-service = …`, and the undo was refused as breaking the build.
+        var (root, file) = await CreateAsync();
+        await File.WriteAllTextAsync(file, Source.Replace(
+            "        var flow = new Relation(",
+            "        var orderService = new Module(\"order-service\", \"Order service\");\n        var flow = new Relation(")
+            .Replace("Model.Of(ctx, modCheckout, riskSlow, flow)", "Model.Of(ctx, modCheckout, riskSlow, orderService, flow)"));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            Applied(await engine.ApplyAsync(new RemoveElementOp("op", "order-service")));
+            await File.AppendAllTextAsync(file, "// edited outside\n");
+            (await engine.ApplyAsync(new RenameElementOp("probe", "ctx_001", "Sales"))).Should().BeOfType<OperationFailed>()
+                .Which.Reason.Should().Be("ChangedOnDisk");
+
+            Applied(await engine.UndoAsync("undo"));
+
+            (await engine.ReadArchModelAsync())!.Elements.Should().ContainSingle(e => e.Id == "order-service")
+                .Which.Name.Should().Be("Order service");
+            (await File.ReadAllTextAsync(file)).Should().EndWith("// edited outside\n");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task A_new_declaration_never_takes_a_variable_name_already_declared()
+    {
+        // A generated id's variable is mod001; a hand-written model may already use that name for
+        // something else, and the add broke the build.
+        var (root, file) = await CreateAsync();
+        await File.WriteAllTextAsync(file, Source.Replace("var ctx = new BoundedContext(", "var mod002 = new BoundedContext(")
+            .Replace("Model.Of(ctx,", "Model.Of(mod002,"));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            var added = await engine.ApplyAsync(new AddElementOp("op", ArchElementKind.Module, "Pricing"));
+
+            added.Should().BeOfType<OperationApplied>().Which.Deltas.OfType<ElementAdded>().Single().Id.Should().Be("mod_002");
+            (await File.ReadAllTextAsync(file)).Should().Contain("        var mod002_2 = new Module(\"mod_002\", \"Pricing\");\n")
+                .And.Contain("riskSlow, flow, mod002_2);");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task An_undo_refused_for_a_change_on_disk_is_still_the_next_undo()
     {
         // The refusal says "try again". The entry had already been moved to the redo branch, which the

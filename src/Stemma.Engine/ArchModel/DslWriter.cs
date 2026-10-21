@@ -25,11 +25,32 @@ public static class DslWriter
 {
     // ── Adding ──────────────────────────────────────────────────────────────────────────────
 
-    public static SyntaxNode AddElement(SyntaxNode root, ArchElement element) =>
-        AddDeclaration(root, BuildLocalForElement(element), VarNameFor(element.Id));
+    public static SyntaxNode AddElement(SyntaxNode root, ArchElement element)
+    {
+        var varName = FreeVariable(root, VarNameFor(element.Id));
+        return AddDeclaration(root, BuildLocalForElement(element, varName), varName);
+    }
 
-    public static SyntaxNode AddLink(SyntaxNode root, ArchLink link) =>
-        AddDeclaration(root, BuildLocalForLink(link), VarNameFor(link.Id));
+    public static SyntaxNode AddLink(SyntaxNode root, ArchLink link)
+    {
+        var varName = FreeVariable(root, VarNameFor(link.Id));
+        return AddDeclaration(root, BuildLocalForLink(link, varName), varName);
+    }
+
+    /// <summary>
+    /// <paramref name="name"/>, or a variant of it, that nothing in <c>Build()</c> declares yet. A
+    /// hand-written model may already use the name an id suggests for something else, and a second
+    /// declaration of it breaks the build.
+    /// </summary>
+    private static string FreeVariable(SyntaxNode root, string name)
+    {
+        var build = BuildBody(root);
+        if (!IsDeclared(build, name)) return name;
+        // mod001 + 2 would read as mod0012, a different id's variable; a separator keeps them apart.
+        var stem = char.IsDigit(name[^1]) ? name + "_" : name;
+        for (var n = 2; ; n++)
+            if (!IsDeclared(build, stem + n)) return stem + n;
+    }
 
     private static SyntaxNode AddDeclaration(SyntaxNode root, StatementSyntax stmt, string varName)
     {
@@ -376,7 +397,7 @@ public static class DslWriter
 
     // ── New code ────────────────────────────────────────────────────────────────────────────
 
-    private static StatementSyntax BuildLocalForElement(ArchElement e)
+    private static StatementSyntax BuildLocalForElement(ArchElement e, string varName)
     {
         var args = new List<string> { Literal(e.Id).ToString(), Literal(e.Name).ToString() };
         foreach (var attribute in DslVocabulary.ParametersOf(e.Kind.ToString())?.Skip(2) ?? [])
@@ -385,10 +406,10 @@ public static class DslWriter
             if (!e.Attributes.TryGetValue(attribute, out var value) || value is null) break;
             args.Add(Literal(value).ToString());
         }
-        return LocalDeclaration(VarNameFor(e.Id), e.Kind.ToString(), args);
+        return LocalDeclaration(varName, e.Kind.ToString(), args);
     }
 
-    private static StatementSyntax BuildLocalForLink(ArchLink l)
+    private static StatementSyntax BuildLocalForLink(ArchLink l, string varName)
     {
         var args = new List<string> { Literal(l.Id).ToString(), Literal(l.FromId).ToString(), Literal(l.ToId).ToString() };
         foreach (var attribute in DslVocabulary.ParametersOf(l.Kind.ToString())?.Skip(3) ?? [])
@@ -396,7 +417,7 @@ public static class DslWriter
             if (!l.Attributes.TryGetValue(attribute, out var value) || value is null) break;
             args.Add(Literal(value).ToString());
         }
-        return LocalDeclaration(VarNameFor(l.Id), l.Kind.ToString(), args);
+        return LocalDeclaration(varName, l.Kind.ToString(), args);
     }
 
     /// <summary>A new declaration with no trivia of its own; it is laid out where it is inserted.</summary>
@@ -462,17 +483,30 @@ public static class DslWriter
                 : base.VisitIdentifierName(node);
     }
 
+    /// <summary>
+    /// The variable an id suggests: "mod_buyer_onboarding" → <c>modBuyerOnboarding</c>. Any character
+    /// an identifier cannot hold separates words, so "order-service" → <c>orderService</c>; a name
+    /// that would still not be a C# identifier (a leading digit, a keyword) gets a <c>v</c> in front.
+    /// </summary>
     public static string VarNameFor(string id)
     {
-        // Convert "mod_buyer_onboarding" → "modBuyerOnboarding"
-        var parts = id.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return "v";
-        var sb = new System.Text.StringBuilder(parts[0]);
-        for (var i = 1; i < parts.Length; i++)
+        var parts = new List<string>();
+        var word = new System.Text.StringBuilder();
+        foreach (var ch in id)
         {
-            sb.Append(char.ToUpperInvariant(parts[i][0]));
-            if (parts[i].Length > 1) sb.Append(parts[i][1..]);
+            if (char.IsLetterOrDigit(ch)) { word.Append(ch); continue; }
+            if (word.Length > 0) parts.Add(word.ToString());
+            word.Clear();
         }
-        return sb.ToString();
+        if (word.Length > 0) parts.Add(word.ToString());
+        if (parts.Count == 0) return "v";
+        var sb = new System.Text.StringBuilder(parts[0]);
+        for (var i = 1; i < parts.Count; i++)
+            sb.Append(char.ToUpperInvariant(parts[i][0])).Append(parts[i].AsSpan(1));
+        var name = sb.ToString();
+        if (char.IsDigit(name[0]) || SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None
+            || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None)
+            name = "v" + char.ToUpperInvariant(name[0]) + name[1..];
+        return SyntaxFacts.IsValidIdentifier(name) ? name : "v";
     }
 }

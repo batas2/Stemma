@@ -77,7 +77,7 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 
 | Operation | Edits exactly | Refuses |
 |---|---|---|
-| `AddElement` | a new `var x = new Kind(...)` before `return`; `x` appended to `Model.Of(...)` | — |
+| `AddElement` | a new `var x = new Kind(...)` before `return`; `x` appended to `Model.Of(...)`. `x` is the id in camelCase (`mod_001` → `mod001`, `order-service` → `orderService`), with a suffix when `Build()` already declares it | — |
 | `AddLink` | the same, for a `DataFlow` / `Dependency` / `Relation`; its ends may be declared in any model file | `FromNotFound`, `ToNotFound` — an id no model file declares |
 | `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound`, `NotAnElement` (a link has no name) |
 | `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable, and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
@@ -86,7 +86,7 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 | `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`) | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `RewriteFailed` |
 | `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For`; a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it | `SetTagFailed`, `UnreadableTag` |
 | `SetOwnership` | `Squad` and `Domain` inside `new Ownership(...)`. RAPID roles are not part of the operation and are not touched | `SetTagFailed`, `UnreadableTag` |
-| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, and the redo of an add, re-declaring it with its own id before `return` | — |
+| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, and the redo of an add, re-declaring it with its own id before `return` — in the model file it came from, with its lifecycle, squad and domain, under a variable name nothing else declares | — |
 
 An id `AddElement` or `AddLink` generates (`mod_001`, `flow_001`) is one nothing names: no model file
 declares it or holds it as an argument (a link's end, a context, what a risk is about), no view lists
