@@ -3,7 +3,8 @@ import { reportFailure, ClientEvent } from '@/lib/log';
 import { Search, FolderOpen, Sparkles, Sun, Moon, Undo2, Redo2, ChevronDown, Clock, LogOut, ArrowLeftRight } from 'lucide-react';
 import { StemmaLockup } from './Logo';
 import { useApp } from '@/lib/store';
-import { initWorkspace, openWorkspace, listRecents, closeWorkspace } from '@/lib/api';
+import { createdMessage, initWorkspace, openWorkspace, listRecents, closeWorkspace, removeRecent } from '@/lib/api';
+import { RecentRow } from './RecentRow';
 import { promptText } from './PromptDialog';
 import { ensureConnection, fetchUndoState, getConnectionState, type UndoState } from '@/lib/signalr';
 import { history } from '@/lib/history';
@@ -100,11 +101,20 @@ export function Topbar() {
     try {
       const w = await initWorkspace(explicitPath || undefined, name.trim());
       setWs(w);
-      setToast({ kind: 'success', text: `Created ${name.trim()} in ${w.rootPath}` });
+      setToast({ kind: 'success', text: createdMessage(name.trim(), w) });
     } catch (e) {
       setToast({ kind: 'error', text: (e as Error).message });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function forgetRecent(path: string) {
+    try {
+      await removeRecent(path);
+      setRecents((rs) => rs.filter((r) => r.rootPath !== path));
+    } catch (e) {
+      setToast({ kind: 'error', text: (e as Error).message });
     }
   }
 
@@ -196,14 +206,12 @@ export function Topbar() {
                 >
                   {recents.length === 0 && <div className="px-3 py-3 text-xs text-zinc-500">No recent workspaces yet.</div>}
                   {recents.map((r) => (
-                    <button
+                    <RecentRow
                       key={r.rootPath}
-                      onClick={() => { setRecentsOpen(false); openPath(r.rootPath); }}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800/60 border-b border-zinc-100 dark:border-zinc-800 last:border-b-0"
-                    >
-                      <div className="font-medium truncate">{r.displayName}</div>
-                      <div className="text-[10px] text-zinc-500 font-mono truncate">{r.rootPath}</div>
-                    </button>
+                      entry={r}
+                      onOpen={(path) => { setRecentsOpen(false); openPath(path); }}
+                      onRemove={forgetRecent}
+                    />
                   ))}
                 </div>
               )}

@@ -3,7 +3,8 @@ import { reportFailure, ClientEvent } from '@/lib/log';
 import { Sparkles, FolderOpen, Clock, FileCode, Lightbulb, Layers, FolderSearch, Shapes } from 'lucide-react';
 import { StemmaMark } from './Logo';
 import { useApp } from '@/lib/store';
-import { initWorkspace, openWorkspace, listRecents, archModel } from '@/lib/api';
+import { createdMessage, initWorkspace, openWorkspace, listRecents, archModel, removeRecent } from '@/lib/api';
+import { RecentRow } from './RecentRow';
 import { applyOperation } from '@/lib/signalr';
 import { saveLayout } from '@/lib/layout';
 import { promptText, pickFromList } from './PromptDialog';
@@ -38,7 +39,7 @@ export function EmptyState() {
     try {
       const w = await initWorkspace(undefined, name.trim());
       setWs(w);
-      setToast({ kind: 'success', text: `Created ${name.trim()} in ${w.rootPath}` });
+      setToast({ kind: 'success', text: createdMessage(name.trim(), w) });
     } catch (e) {
       setToast({ kind: 'error', text: (e as Error).message });
     } finally {
@@ -95,8 +96,9 @@ export function EmptyState() {
       const w = await initWorkspace(undefined, name.trim());
       setWs(w);
       const outcome = await applyTemplate(template, templateRunner(w));
+      const uncommitted = w.committed === false && w.repositoryRoot ? ` Its files are in the Git repository at ${w.repositoryRoot}, not committed yet.` : '';
       setToast(outcome.failed.length === 0
-        ? { kind: 'success', text: `Created ${name.trim()} with ${outcome.elementsAdded} elements` }
+        ? { kind: 'success', text: `Created ${name.trim()} with ${outcome.elementsAdded} elements.${uncommitted}` }
         : { kind: 'error', text: `Created ${name.trim()}, but ${outcome.failed.length} element(s) could not be added` });
     } catch (e) {
       setToast({ kind: 'error', text: (e as Error).message });
@@ -168,11 +170,20 @@ export function EmptyState() {
     try {
       const w = await initWorkspace(folder, name.trim());
       setWs(w);
-      setToast({ kind: 'success', text: `Created ${name.trim()} in ${w.rootPath}` });
+      setToast({ kind: 'success', text: createdMessage(name.trim(), w) });
     } catch (e) {
       setToast({ kind: 'error', text: (e as Error).message });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function forgetRecent(path: string) {
+    try {
+      await removeRecent(path);
+      setRecents((rs) => rs.filter((r) => r.rootPath !== path));
+    } catch (e) {
+      setToast({ kind: 'error', text: (e as Error).message });
     }
   }
 
@@ -258,15 +269,7 @@ export function EmptyState() {
             </div>
             <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
               {recents.slice(0, 4).map((r) => (
-                <button
-                  key={r.rootPath}
-                  onClick={() => open(r.rootPath)}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/60
-                             border-b border-zinc-100 dark:border-zinc-800 last:border-b-0"
-                >
-                  <div className="font-medium truncate">{r.displayName}</div>
-                  <div className="text-[10px] text-zinc-500 font-mono truncate">{r.rootPath}</div>
-                </button>
+                <RecentRow key={r.rootPath} entry={r} onOpen={open} onRemove={forgetRecent} />
               ))}
             </div>
           </div>

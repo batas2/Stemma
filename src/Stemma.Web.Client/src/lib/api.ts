@@ -58,7 +58,24 @@ export async function openWorkspace(rootPath: string): Promise<WorkspaceModel> {
   return r.json();
 }
 
-export async function initWorkspace(rootPath?: string, name?: string): Promise<WorkspaceModel> {
+/** A new workspace, and what became of it in Git. */
+export interface CreatedWorkspace extends WorkspaceModel {
+  gitInitialised?: boolean;
+  /** False when the folder was already inside a repository: its files are left for its owner to commit. */
+  committed?: boolean;
+  /** The repository the folder was already in, when it was. */
+  repositoryRoot?: string | null;
+}
+
+/** What to tell someone who has just created `name`: where it is, and whether Git has it yet. */
+export function createdMessage(name: string, created: CreatedWorkspace): string {
+  if (created.committed === false && created.repositoryRoot) {
+    return `Created ${name} inside the Git repository at ${created.repositoryRoot}. Its files are not committed — commit them when you're ready.`;
+  }
+  return `Created ${name} in ${created.rootPath}`;
+}
+
+export async function initWorkspace(rootPath?: string, name?: string): Promise<CreatedWorkspace> {
   await leaving();
   const r = await request(`${BASE}/api/workspace/init`, {
     method: 'POST',
@@ -166,6 +183,12 @@ export async function exportBookPdf(book: BookPdfPayload): Promise<Blob> {
   });
   if (!r.ok) throw new Error(`book PDF export failed: ${r.status}`);
   return r.blob();
+}
+
+/** Take a workspace off the recent list (204). */
+export async function removeRecent(rootPath: string): Promise<void> {
+  const r = await request(`${BASE}/api/workspace/recents?rootPath=${encodeURIComponent(rootPath)}`, { method: 'DELETE' });
+  if (!r.ok && r.status !== 204) throw new Error(`Removing from recents failed: ${r.status}`);
 }
 
 export async function listRecents(): Promise<RecentEntry[]> {
