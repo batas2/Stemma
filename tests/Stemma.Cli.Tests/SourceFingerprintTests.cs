@@ -139,6 +139,29 @@ public sealed class SourceFingerprintTests : IDisposable
     }
 
     [Fact]
+    public void The_layout_counts_when_the_view_is_named_by_its_name_too()
+    {
+        // `--view` takes a view's id or its name. The layout was looked up under `custom:<name>`, but
+        // it is kept under `custom:<id>`, so by name a moved box was never noticed.
+        Baseline();
+        Sidecar("""{ "nodes": { "mod_a": { "x": 0, "y": 0 } } }""");
+        var before = SourceFingerprint.For(_root, "V", "publication", "dual-theme").Hash;
+
+        Sidecar("""{ "nodes": { "mod_a": { "x": 500, "y": 0 } } }""");
+
+        SourceFingerprint.For(_root, "V", "publication", "dual-theme").Hash.Should().NotBe(before);
+    }
+
+    [Fact]
+    public void A_view_named_by_its_name_or_its_id_is_the_same_picture()
+    {
+        Baseline();
+        Sidecar("""{ "nodes": { "mod_a": { "x": 0, "y": 0 } } }""");
+
+        SourceFingerprint.For(_root, "V", "publication", "dual-theme").Hash.Should().Be(Hash());
+    }
+
+    [Fact]
     public void A_layout_constraint_counts_too()
     {
         Baseline();
