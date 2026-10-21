@@ -385,8 +385,9 @@ public static class StemmaWebHost
         // model, because a reconstruction that happened to be right would still be a claim.
         workspaceApi.MapGet("/source/{id}", async (string id, EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var declaration = await engine.ReadDeclarationAsync(id, ct);
             return declaration is null ? Results.NotFound() : Results.Ok(declaration);
         });
@@ -410,13 +411,15 @@ public static class StemmaWebHost
         // escape hatch. It now honours the active view and the committed layout.
         workspaceApi.MapGet("/export/drawio", async (string? view, string? palette, bool? labelKinds, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
         {
-            var arch = await host.ReadArchAsync(ct);
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
+            var arch = await engine.ReadArchModelAsync(ct);
             if (arch is null) return Results.NotFound();
-            var engine = host.Engine;
 
             IReadOnlyCollection<string>? elementIds = null;
             var layoutKey = "moduleMap";
-            if (!string.IsNullOrWhiteSpace(view) && engine is not null)
+            if (!string.IsNullOrWhiteSpace(view))
             {
                 var views = await ReadViewsAsync(engine.RootPath, ct);
                 var match = views.FirstOrDefault(v => v.Id == view || v.Name == view);
@@ -431,7 +434,7 @@ public static class StemmaWebHost
                 }
             }
 
-            var positions = engine is null ? null : ReadPositions(engine.RootPath, layoutKey);
+            var positions = ReadPositions(engine.RootPath, layoutKey);
 
             var xml = DrawioExporter.Export(arch, new DrawioExporter.Options
             {
@@ -473,8 +476,9 @@ public static class StemmaWebHost
 
         workspaceApi.MapGet("/views", async (EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var viewsDir = Path.Combine(engine.RootPath, "Views");
             if (!Directory.Exists(viewsDir)) return Results.Ok(Array.Empty<ArchView>());
             var docs = new List<(string, Microsoft.CodeAnalysis.SyntaxNode)>();
@@ -491,8 +495,9 @@ public static class StemmaWebHost
         // the id it declares — never rewritten from a template or picked out by a text search (B-010).
         workspaceApi.MapPut("/views", async (ArchView view, EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
             var result = await engine.SaveViewAsync($"view_{Guid.NewGuid():N}", view, ct);
             return result is OperationFailed f
                 ? Results.Conflict(new { reason = f.Reason, message = f.Message })
@@ -501,8 +506,9 @@ public static class StemmaWebHost
 
         workspaceApi.MapDelete("/views/{viewId}", async (string viewId, EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
             var result = await engine.RemoveViewAsync($"view_{Guid.NewGuid():N}", viewId, ct);
             return result switch
             {
@@ -516,8 +522,9 @@ public static class StemmaWebHost
 
         workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var violations = await engine.RunValidationAsync(ct);
             return Results.Ok(violations);
         });
@@ -527,8 +534,9 @@ public static class StemmaWebHost
         // empty, since the canvas would then write that emptiness back (ADR-0021).
         workspaceApi.MapGet("/layout", (EngineHost host) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var path = LayoutSidecar.PathFor(engine.RootPath);
             if (!File.Exists(path)) return Results.Text("{\n  \"version\": 1,\n  \"views\": {}\n}\n", "application/json");
             var text = File.ReadAllText(path);
@@ -542,8 +550,9 @@ public static class StemmaWebHost
         // which wrote over whatever anyone else had changed since it was read (B-014, ADR-0021).
         workspaceApi.MapPatch("/layout", async (LayoutPatch patch, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
             if (patch.Changes.Any(c => c.Path.Length == 0 || (!c.Remove && c.Value is null)))
                 return Results.BadRequest(new { error = "every change needs a path, and a value or remove: true" });
             // A save still on its way when the window opened another workspace, or one from a window
@@ -575,8 +584,9 @@ public static class StemmaWebHost
 
         workspaceApi.MapGet("/comments", (EngineHost host) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var path = CommentsSidecar.PathFor(engine.RootPath);
             if (!File.Exists(path)) return Results.Text(CommentsSidecar.Empty, "application/json");
             var text = File.ReadAllText(path);
@@ -590,8 +600,9 @@ public static class StemmaWebHost
         // read. The answer is the file as it now is, so the panel shows the others' comments too.
         workspaceApi.MapPatch("/comments", async (CommentChanges request, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
             var changes = new List<CommentChange>();
             foreach (var c in request.Changes)
             {
@@ -686,8 +697,8 @@ public static class StemmaWebHost
                 ["os"] = Environment.OSVersion.ToString(),
                 ["dotnet"] = Environment.Version.ToString(),
                 ["processors"] = Environment.ProcessorCount.ToString(),
-                ["workspaceId"] = WorkspaceIdentity.For(host.Engine?.RootPath),
-                ["workspaceOpen"] = (host.Engine is not null).ToString(),
+                ["workspaceId"] = WorkspaceIdentity.For(host.Snapshot()?.RootPath),
+                ["workspaceOpen"] = (host.Snapshot() is not null).ToString(),
             };
             var json = DiagnosticsBundle.Build(options.Directory,
                 new DiagnosticsBundle.Options(includeModelContent ?? false), environment);

@@ -35,9 +35,9 @@ public sealed class WorkspaceHub(EngineHost host, ILogger<WorkspaceHub> log) : H
 
     public async Task<OperationResult?> Undo()
     {
-        var engine = _host.Engine;
-        if (engine is null) return null;
-        var result = await engine.UndoAsync($"undo_{Guid.NewGuid():N}", Context.ConnectionAborted);
+        using var lease = _host.Use();
+        if (lease is null) return null;
+        var result = await lease.Engine.UndoAsync($"undo_{Guid.NewGuid():N}", Context.ConnectionAborted);
         if (result is OperationApplied applied)
         {
             await Clients.All.SendAsync("OperationApplied", applied);
@@ -47,9 +47,9 @@ public sealed class WorkspaceHub(EngineHost host, ILogger<WorkspaceHub> log) : H
 
     public async Task<OperationResult?> Redo()
     {
-        var engine = _host.Engine;
-        if (engine is null) return null;
-        var result = await engine.RedoAsync($"redo_{Guid.NewGuid():N}", Context.ConnectionAborted);
+        using var lease = _host.Use();
+        if (lease is null) return null;
+        var result = await lease.Engine.RedoAsync($"redo_{Guid.NewGuid():N}", Context.ConnectionAborted);
         if (result is OperationApplied applied)
         {
             await Clients.All.SendAsync("OperationApplied", applied);
@@ -59,9 +59,9 @@ public sealed class WorkspaceHub(EngineHost host, ILogger<WorkspaceHub> log) : H
 
     public UndoState GetUndoState()
     {
-        var engine = _host.Engine;
-        if (engine is null) return new UndoState(false, false, null, null, 0, 0, 0, 0, UndoStack.Capacity);
-        var stack = engine.Undo;
+        using var lease = _host.Use();
+        if (lease is null) return new UndoState(false, false, null, null, 0, 0, 0, 0, UndoStack.Capacity);
+        var stack = lease.Engine.Undo;
         return new UndoState(stack.CanUndo, stack.CanRedo, stack.PeekUndoDescription(), stack.PeekRedoDescription(),
             stack.UndoDepth, stack.RedoDepth, stack.UndoTop, stack.RedoTop, UndoStack.Capacity);
     }

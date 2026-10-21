@@ -101,6 +101,11 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
 
 - On open: REST returns the model snapshot + the engine primes the sidecar; the client hydrates
   presentation once (`stemma:sidecar-primed` → `rehydratePresentation`).
+- Opening another workspace loads it before letting go of the open one. Until it has loaded, the
+  open workspace goes on answering and taking edits; a load that fails leaves it open and the error
+  is reported; a request that stops waiting does not stop the load. The workspace replaced — or
+  closed with `/close` — is closed once the work already running on it has finished, and no new
+  work starts on it (`EngineHost`).
 - Views are read from `Views/*.cs` on open and on every refresh, and the browser's list is a cache
   of that. A save or delete still on its way is laid over it until the engine answers, so a refresh
   in between does not take the change away.
