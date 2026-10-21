@@ -87,14 +87,8 @@ public static class DslWriter
         ArgumentListSyntax list, IReadOnlyList<string> parameters, string attribute, string? value, string typeName, bool nullablePlaceholder)
     {
         var args = list.Arguments;
-        var at = -1;
-        for (var i = 0; i < args.Count && at < 0; i++)
-        {
-            var key = args[i].NameColon is { } nc
-                ? DslVocabulary.AttributeName(nc.Name.Identifier.Text)
-                : i < parameters.Count ? parameters[i] : null;
-            if (key == attribute) at = i;
-        }
+        var found = ArgumentFor(list, parameters, attribute);
+        var at = found is null ? -1 : args.IndexOf(found);
 
         if (at >= 0)
         {
@@ -215,12 +209,52 @@ public static class DslWriter
         foreach (var (field, value) in fields)
             edited = SetArgument(edited, parameters, field, value, typeName, nullablePlaceholder: true) ?? edited;
         if (ReferenceEquals(edited, partArgs)) return root;
-        if (edited.Arguments.Count > 0) return root.ReplaceNode(partArgs, edited);
+        // A field cleared ahead of others became null to hold their places, first to last; once the
+        // fields after it are cleared too, the null holds nothing. Left, clearing a whole lifecycle
+        // wrote new Lifecycle(null).
+        if (fields.Any(f => f.Value is null && ArgumentFor(partArgs, parameters, f.Field) is { } a && !IsNull(a)))
+            edited = WithoutTrailingNulls(edited, parameters, fields);
+        if (edited.Arguments.Count > 0 && !edited.Arguments.All(IsNull)) return root.ReplaceNode(partArgs, edited);
 
         // Nothing left in this part: it goes, and a tag with no other part goes with it.
         if (args.Count <= 2) return RemoveStatement(root, tag);
         var (open, rest) = SeparatedEdits.RemoveAt(invocation.ArgumentList.OpenParenToken, args, at);
         return root.ReplaceNode(invocation.ArgumentList, invocation.ArgumentList.WithOpenParenToken(open).WithArguments(rest));
+    }
+
+    private static bool IsNull(ArgumentSyntax arg) => arg.Expression.IsKind(SyntaxKind.NullLiteralExpression);
+
+    /// <summary>
+    /// The list without the positional nulls at its end that stand for fields this edit cleared. A
+    /// null written by hand in front of a field that stays is not touched.
+    /// </summary>
+    private static ArgumentListSyntax WithoutTrailingNulls(
+        ArgumentListSyntax list, IReadOnlyList<string> parameters, IReadOnlyList<(string Field, string? Value)> fields)
+    {
+        var cleared = fields.Where(f => f.Value is null).Select(f => f.Field).ToHashSet(StringComparer.Ordinal);
+        while (list.Arguments.Count > 0)
+        {
+            var at = list.Arguments.Count - 1;
+            var last = list.Arguments[at];
+            if (last.NameColon is not null || !IsNull(last) || at >= parameters.Count || !cleared.Contains(parameters[at])) break;
+            var (open, rest) = SeparatedEdits.RemoveAt(list.OpenParenToken, list.Arguments, at);
+            list = list.WithOpenParenToken(open).WithArguments(rest);
+        }
+        return list;
+    }
+
+    /// <summary>The argument that sets <paramref name="attribute"/>: by its name, or by its position.</summary>
+    private static ArgumentSyntax? ArgumentFor(ArgumentListSyntax list, IReadOnlyList<string> parameters, string attribute)
+    {
+        var args = list.Arguments;
+        for (var i = 0; i < args.Count; i++)
+        {
+            var key = args[i].NameColon is { } nc
+                ? DslVocabulary.AttributeName(nc.Name.Identifier.Text)
+                : i < parameters.Count ? parameters[i] : null;
+            if (key == attribute) return args[i];
+        }
+        return null;
     }
 
     private static int IndexOfTagPart(SeparatedSyntaxList<ArgumentSyntax> args, string part)

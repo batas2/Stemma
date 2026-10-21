@@ -18,7 +18,7 @@ public static class Architecture { public static Model Build() {
 	var modInvoicing = new Module(Id: "mod_invoicing", Name: "Invoicing");
 	/* the slow path */ var riskLatency = new Risk("risk_latency", "Checkout is slow");
 	var flowOrders = new DataFlow("flow_orders", "mod_checkout", "mod_invoicing", "Order");/* hot */
-	Tag.For(modCheckout, lifecycle: new Lifecycle("current"));
+	Tag.For(modCheckout, lifecycle: new Lifecycle("current", "fidelity-critical"));
 	return Model.Of(ctxOrdering, /* contexts first */ ctxBilling,
 		modCheckout, modInvoicing, riskLatency, flowOrders);
 }}

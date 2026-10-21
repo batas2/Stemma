@@ -87,6 +87,47 @@ public sealed class DslWriterContractTests
     }
 
     [Fact]
+    public async Task Clearing_every_field_of_a_positional_lifecycle_removes_it_and_keeps_the_ownership()
+    {
+        // Fields were cleared first to last, so the status became a null holding the phase's place
+        // before the phase went, and new Lifecycle(null) was left behind.
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    Tag.For(mod, lifecycle: new Lifecycle("Active", "Build"), ownership: new Ownership(Squad: "Core"));
+                    return Model.Of(mod);
+            """, new SetLifecycleOp("op", "mod_001", null, null, null, null));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().Contain("        Tag.For(mod, ownership: new Ownership(Squad: \"Core\"));\n");
+    }
+
+    [Fact]
+    public async Task A_null_written_by_hand_before_a_field_that_stays_is_left_alone()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    Tag.For(mod, lifecycle: new Lifecycle("current", null, "2026-01-01"));
+                    return Model.Of(mod);
+            """, new SetLifecycleOp("op", "mod_001", "target", null, "2026-01-01", null));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().Contain("        Tag.For(mod, lifecycle: new Lifecycle(\"target\", null, \"2026-01-01\"));\n");
+    }
+
+    [Fact]
+    public async Task Clearing_the_last_field_takes_the_nulls_that_only_held_its_place()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    Tag.For(mod, lifecycle: new Lifecycle("current", null, "2026-01-01"));
+                    return Model.Of(mod);
+            """, new SetLifecycleOp("op", "mod_001", "current", null, null, null));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().Contain("        Tag.For(mod, lifecycle: new Lifecycle(\"current\"));\n");
+    }
+
+    [Fact]
     public async Task A_positional_tag_part_is_read_and_edited_in_place()
     {
         var (result, source) = await ApplyAsync("""

@@ -97,7 +97,8 @@ would inherit all of them.
 `RewriteFailed` means the value is already what was asked, and nothing was written.
 `AttributeRequired`: a positional argument cannot be removed while later positional arguments depend
 on its position — the payload of a flow that has a direction. In a `Lifecycle` or `Ownership`, where
-every parameter is nullable, it becomes `null` instead. `UnknownAttribute`: the kind has no such
+every parameter is nullable, it becomes `null` instead, and the `null` goes once the fields after it are
+cleared too; a part left with nothing but `null`s is removed. `UnknownAttribute`: the kind has no such
 parameter; nothing is written. A named-argument declaration (`new Module(Id: "m", Name: "M")`) is read
 and edited like a positional one, and an argument added to it is named too.
 
