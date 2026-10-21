@@ -85,6 +85,29 @@ public sealed class MultiFileModelTests
     }
 
     [Fact]
+    public async Task A_workspace_kept_in_a_folder_called_Architecture_reads_only_its_own_model_files()
+    {
+        // The model files were found by looking for "/Architecture/" in the absolute path, so in
+        // ~/Architecture/shop every file was one, and any class with a Build() method was read as model.
+        var parent = Path.Combine(Path.GetTempPath(), $"stemma-multi-{Guid.NewGuid():N}", "Architecture");
+        var root = Path.Combine(parent, "shop");
+        Directory.CreateDirectory(Path.Combine(root, "Architecture"));
+        Directory.CreateDirectory(Path.Combine(root, "Pipelines"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"), Primary);
+        await File.WriteAllTextAsync(Path.Combine(root, "Pipelines", "Release.cs"), Payments.Replace("PaymentsArchitecture", "ReleasePipeline"));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            var model = (await engine.ReadArchModelAsync())!;
+
+            model.Elements.Select(e => e.Id).Should().BeEquivalentTo(["ctx_001", "mod_a"]);
+            engine.FindArchitectureDocuments().Select(d => Path.GetFileName(d.FilePath)).Should().Equal("Architecture.cs");
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(parent)!, recursive: true); }
+    }
+
+    [Fact]
     public async Task A_link_can_end_at_an_element_declared_in_another_model_file()
     {
         var root = await CreateAsync(("Architecture.cs", Primary), ("Payments.cs", Payments));

@@ -73,7 +73,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (_layout.Is(path) || _comments.Is(path)) return true;
         // Watch Architecture/, every file the workspace holds, and every file it would hold if it
         // were opened now — which is what a file added by a pull is.
-        if (path.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) return true;
+        if (InFolder(path, ModelWorkspaceLoader.ArchitectureDir)) return true;
         return HeldPaths().Contains(path) || ProjectFor(path) is not null;
     }
 
@@ -191,6 +191,19 @@ public sealed class StemmaEngine : IAsyncDisposable
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="path"/> is in a folder called <paramref name="folder"/> inside the
+    /// workspace, at any depth — counted from the workspace root, never from the top of the disk.
+    /// Looked for in the absolute path, a workspace kept in ~/Architecture/shop took every file in it
+    /// for a model file.
+    /// </summary>
+    private bool InFolder(string path, string folder)
+    {
+        if (!IsUnder(_model.RootPath, path)) return false;
+        var segments = Path.GetRelativePath(_model.RootPath, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return segments.SkipLast(1).Contains(folder, StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool IsUnder(string directory, string path)
@@ -1286,7 +1299,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             foreach (var doc in project.Documents)
             {
                 if (doc.FilePath is null) continue;
-                if (!doc.FilePath.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!InFolder(doc.FilePath, ModelWorkspaceLoader.ArchitectureDir)) continue;
                 var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
                 if (root is null) continue;
                 if (root.DescendantNodes().OfType<ClassDeclarationSyntax>()
@@ -1311,7 +1324,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             foreach (var doc in project.Documents)
             {
                 if (doc.FilePath is null) continue;
-                if (!doc.FilePath.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!InFolder(doc.FilePath, ModelWorkspaceLoader.ArchitectureDir)) continue;
                 var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
                 if (root is null) continue;
                 var hasBuild = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
@@ -1529,7 +1542,7 @@ public sealed class StemmaEngine : IAsyncDisposable
     {
         foreach (var doc in _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents))
         {
-            if (doc.FilePath is null || !doc.FilePath.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (doc.FilePath is null || !InFolder(doc.FilePath, "Views")) continue;
             var root = await doc.GetSyntaxRootAsync(ct);
             if (root is not null && ViewsAdapter.TryReadOne(root)?.Id == viewId) return (doc, root);
         }
@@ -1864,7 +1877,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         foreach (var t in current.Tags) taken.Add(t.TargetId);
         foreach (var doc in _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents))
         {
-            if (doc.FilePath is null || !doc.FilePath.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (doc.FilePath is null || !InFolder(doc.FilePath, "Views")) continue;
             if (await doc.GetSyntaxRootAsync(ct) is not { } root || ViewsAdapter.TryReadOne(root) is not { } view) continue;
             taken.Add(view.Id);
             taken.UnionWith(view.ElementIds);
