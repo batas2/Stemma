@@ -73,7 +73,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (_layout.Is(path) || _comments.Is(path)) return true;
         // Watch Architecture/, every file the workspace holds, and every file it would hold if it
         // were opened now — which is what a file added by a pull is.
-        if (InFolder(path, ModelWorkspaceLoader.ArchitectureDir)) return true;
+        if (IsModelFile(path)) return true;
         return HeldPaths().Contains(path) || ProjectFor(path) is not null;
     }
 
@@ -205,6 +205,10 @@ public sealed class StemmaEngine : IAsyncDisposable
         var segments = Path.GetRelativePath(_model.RootPath, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return segments.SkipLast(1).Contains(folder, StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>A model file by the rule every reader uses (<see cref="ArchModelMerge.IsModelFile"/>), counted from the workspace root.</summary>
+    private bool IsModelFile(string path) =>
+        IsUnder(_model.RootPath, path) && ArchModelMerge.IsModelFile(Path.GetRelativePath(_model.RootPath, path));
 
     private static bool IsUnder(string directory, string path)
     {
@@ -1320,7 +1324,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             foreach (var doc in project.Documents)
             {
                 if (doc.FilePath is null) continue;
-                if (!InFolder(doc.FilePath, ModelWorkspaceLoader.ArchitectureDir)) continue;
+                if (!IsModelFile(doc.FilePath)) continue;
                 var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
                 if (root is null) continue;
                 if (root.DescendantNodes().OfType<ClassDeclarationSyntax>()
@@ -1345,7 +1349,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             foreach (var doc in project.Documents)
             {
                 if (doc.FilePath is null) continue;
-                if (!InFolder(doc.FilePath, ModelWorkspaceLoader.ArchitectureDir)) continue;
+                if (!IsModelFile(doc.FilePath)) continue;
                 var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
                 if (root is null) continue;
                 var hasBuild = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
@@ -1549,7 +1553,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             await TakeOutAsync(doc, ct);
             changed.Add(doc.FilePath!);
         }
-        foreach (var path in ModelWorkspaceLoader.EnumerateFiles(_model.RootPath, "*.cs"))
+        foreach (var path in ModelWorkspaceLoader.SourcesIn(_model.RootPath))
         {
             if (heldPaths.Contains(path) || await CompilingProjectAsync(path, ct) is not { } project) continue;
             await TakeInAddedAsync(project, path, ReadFromDisk(path), ct);

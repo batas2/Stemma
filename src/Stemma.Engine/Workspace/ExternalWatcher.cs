@@ -97,7 +97,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
             if (File.Exists(sidecar) && _shouldWatch(sidecar)) yield return sidecar;
         // Never into bin, obj, node_modules, .git or another dot-folder: walked and filtered afterwards,
         // they were most of what every poll did.
-        foreach (var path in ModelWorkspaceLoader.EnumerateFiles(_root, "*.cs"))
+        foreach (var path in ModelWorkspaceLoader.SourcesIn(_root))
         {
             if (path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)) continue;
             if (!_shouldWatch(path)) continue;

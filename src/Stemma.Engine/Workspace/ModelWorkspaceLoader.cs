@@ -119,19 +119,8 @@ public static class ModelWorkspaceLoader
     /// for a reader with no workspace open, as `stemma validate` has none. Folders the workspace leaves
     /// out are not entered at all.
     /// </summary>
-    public static IEnumerable<string> SourcesIn(string rootPath)
-    {
-        if (!Directory.Exists(rootPath)) return [];
-        var root = Path.GetFullPath(rootPath);
-        return new System.IO.Enumeration.FileSystemEnumerable<string>(root,
-            (ref System.IO.Enumeration.FileSystemEntry entry) => entry.ToFullPath(),
-            new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true })
-        {
-            ShouldIncludePredicate = (ref System.IO.Enumeration.FileSystemEntry entry) =>
-                !entry.IsDirectory && entry.FileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase),
-            ShouldRecursePredicate = (ref System.IO.Enumeration.FileSystemEntry entry) => !IsExcluded(root, entry.ToFullPath()),
-        }.Where(path => !IsExcluded(root, path));
-    }
+    public static IEnumerable<string> SourcesIn(string rootPath) =>
+        Directory.Exists(rootPath) ? EnumerateFiles(Path.GetFullPath(rootPath), "*.cs") : [];
 
     internal static bool IsExcluded(string rootPath, string filePath)
     {
