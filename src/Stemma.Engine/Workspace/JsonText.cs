@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -97,9 +98,34 @@ internal static class JsonText
             if (before >= 0 && bytes[before] == ',')
                 return $"has a comma after its last entry at line {LineOf(bytes, before)}; JSON does not allow one there";
         }
+        if (DepthAt(bytes, at) >= MaxDepth) return $"nests deeper than the {MaxDepth} levels it is read to, at line {LineOf(bytes, at)}";
         var lineText = Encoding.UTF8.GetString(bytes, Math.Max(0, lineStart), at - Math.Max(0, lineStart));
-        var found = Rune.DecodeFromUtf8(bytes.AsSpan(at), out var rune, out _) == System.Buffers.OperationStatus.Done ? rune.ToString() : "?";
-        return $"has '{found}' at line {LineOf(bytes, at)}, column {lineText.Length + 1}, where JSON does not allow it";
+        var where = $"at line {LineOf(bytes, at)}, column {lineText.Length + 1}, where JSON does not allow it";
+        if (Rune.DecodeFromUtf8(bytes.AsSpan(at), out var rune, out _) != System.Buffers.OperationStatus.Done) return $"has a byte that is not text {where}";
+        // A character no one can see is named, so there is something to look for.
+        return Rune.GetUnicodeCategory(rune) is UnicodeCategory.Format or UnicodeCategory.Control or UnicodeCategory.SpaceSeparator
+            ? $"has an invisible character, U+{rune.Value:X4}, {where}"
+            : $"has '{rune}' {where}";
+    }
+
+    /// <summary>How many objects and lists are open at <paramref name="offset"/>, strings skipped.</summary>
+    private static int DepthAt(byte[] bytes, int offset)
+    {
+        var depth = 0;
+        var inString = false;
+        for (var i = 0; i < offset && i < bytes.Length; i++)
+        {
+            var b = bytes[i];
+            if (inString)
+            {
+                if (b == '\\') i++;
+                else if (b == '"') inString = false;
+            }
+            else if (b == '"') inString = true;
+            else if (b is (byte)'{' or (byte)'[') depth++;
+            else if (b is (byte)'}' or (byte)']') depth--;
+        }
+        return depth;
     }
 
     /// <summary>The line of the first merge conflict marker in the file, if it has one.</summary>
@@ -120,6 +146,8 @@ internal static class JsonText
     }
 
     private static int LineOf(byte[] bytes, int offset) => bytes.AsSpan(0, offset).Count((byte)'\n') + 1;
+
+    private static string Lines(int first, int second) => first == second ? $"on line {first}" : $"at lines {first} and {second}";
 
     internal static SidecarPatchRefusedException Unreadable(string file, string what) =>
         new("UnreadableSidecar", $"{file} {what}.");
@@ -208,7 +236,7 @@ internal static class JsonText
             // the last, and the edit would look lost. Which one is meant is the author's to say.
             if (obj.Add(new Member(name, nameStart, valueStart, (int)reader.BytesConsumed, child, array, text)) is { } first)
                 throw Unreadable(source.File,
-                    $"has the key \"{name}\" twice in one object, at lines {LineOf(source.Bytes, first.NameStart)} and {LineOf(source.Bytes, nameStart)}; " +
+                    $"has the key \"{name}\" twice in one object, {Lines(LineOf(source.Bytes, first.NameStart), LineOf(source.Bytes, nameStart))}; " +
                     "keep the one that is meant and remove the other");
         }
         throw Unreadable(source.File, "ends inside an object");

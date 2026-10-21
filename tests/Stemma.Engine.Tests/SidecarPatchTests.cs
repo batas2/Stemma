@@ -316,6 +316,10 @@ public sealed class SidecarPatchTests
         "stemma.layout.json is empty.")]
     [InlineData("{\n  \"a\": 1\n  \"b\": 2\n}\n",
         "stemma.layout.json has '\"' at line 3, column 3, where JSON does not allow it.")]
+    [InlineData("{\n  \"a\": [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n}\n",
+        "stemma.layout.json nests deeper than the 64 levels it is read to, at line 2.")]
+    [InlineData("{\n  \"a\": ​1\n}\n",
+        "stemma.layout.json has an invisible character, U+200B, at line 2, column 8, where JSON does not allow it.")]
     public void A_file_that_cannot_be_read_is_described_in_plain_words(string text, string message)
     {
         // The parser's own words reached the person fixing the file: "not supported in this mode.
@@ -374,6 +378,9 @@ public sealed class SidecarPatchTests
             refused.Reason.Should().Be("UnreadableSidecar");
             refused.Message.Should().Contain("\"a\"").And.Contain("lines 4 and 5");
         }
+
+        var oneLine = () => SidecarPatch.Apply("{ \"notes\": { \"a\": 1, \"a\": 2 } }", []);
+        oneLine.Should().Throw<SidecarPatchRefusedException>().Which.Message.Should().Contain("twice in one object, on line 1;");
     }
 
     [Fact]
