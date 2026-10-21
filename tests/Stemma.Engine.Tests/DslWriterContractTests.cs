@@ -353,6 +353,20 @@ public sealed class DslWriterContractTests
     }
 
     [Fact]
+    public async Task Renaming_an_element_whose_name_is_a_constant_is_refused_not_thrown()
+    {
+        // The writer refuses; the engine has to say so as a result rather than let it escape ApplyAsync.
+        var (result, source) = await ApplyAsync("""
+                    const string Checkout = "Checkout";
+                    var mod = new Module("mod_001", Checkout);
+                    return Model.Of(mod);
+            """, new RenameElementOp("op", "mod_001", "Basket"));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("NotALiteral");
+        source.Should().Contain("        var mod = new Module(\"mod_001\", Checkout);\n");
+    }
+
+    [Fact]
     public void A_name_written_as_a_constant_is_not_renamed()
     {
         var root = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("""
