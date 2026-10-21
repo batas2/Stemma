@@ -74,8 +74,33 @@ keyboard path; none of them adds a file to your repository.
   of the model.
 - **AddElement and AddLink report the id they created** (`ElementAdded` / `LinkAdded` deltas), for
   anything that goes on to place, style or link what it just added.
+- **Arrows stand still unless you ask them to flow.** Dependencies and relations used to flow by
+  default, which slowed a large view to a crawl. Turn it on per arrow under **Appearance → Animation
+  → Animated flow**; with *Reduce motion* set in your system, a flowing arrow keeps its dashes and
+  stands still.
 
 **Fixed**
+
+- **Only Stemma's own window can use the local server.** Any web page open in your browser could
+  reach it — open the live connection and edit the model, close the workspace, or do so under a
+  name that pointed back at your machine. Those requests are now refused.
+- **A type can only be added inside the workspace, under a real name.** A path or a name that was
+  not one could write outside the workspace or put arbitrary code into a file.
+- **A note's link can no longer run a script** when the note is opened in the editor.
+- **Saving never leaves `stemma.layout.json` half-written,** even if Stemma is stopped mid-save, and
+  a layout file that is not valid UTF-8 is refused rather than read wrongly and written back.
+- **An edit that is refused, or fails while writing, puts every byte back** — including a file's
+  byte-order mark — and a model file that is not UTF-8 is left alone rather than rewritten.
+- **A new view in a project kept in a subfolder** no longer replaced a file of the same name there.
+- **Switching workspaces can no longer mix their layouts.** A change still being saved when you
+  opened another workspace could land in the new one's file, and reopening a workspace could show
+  it with no layout and then save that emptiness over the file.
+- **Reversing an arrow (↔ in Appearance), or dragging one of its ends to another box, keeps it the
+  same relationship.** A relation came back as a dependency without its label, and its status,
+  owner and look were dropped; if the new ends were refused, the arrow was simply gone. Now it keeps
+  everything, is one ⌘Z, and is put back if it cannot be moved.
+- **A relation's label is edited as its label.** The inspector showed it as a *Kind* of "uses".
+- **The inspector no longer carries a half-typed value** from one selected box to the next.
 
 - Pressing **Escape** to close a right-click menu also cleared your selection, and the arrow keys
   that move through the menu also nudged the selected box. The menu now keeps the keyboard to itself.
