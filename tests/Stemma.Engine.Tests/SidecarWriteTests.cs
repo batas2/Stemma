@@ -151,4 +151,70 @@ public sealed class SidecarWriteTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public async Task A_file_that_is_not_utf8_is_refused_and_left_as_it_is()
+    {
+        // A note saved by an editor in Windows-1250: read loosely, its bytes became U+FFFD and the whole
+        // file was written back with them, though only `version` was changed.
+        var bytes = Encoding.UTF8.GetBytes(Sidecar.Replace("\"nodes\"", "\"notes\": { \"a\": \"Za\u0001\" },\n      \"nodes\""))
+            .Select(b => b == 0x01 ? (byte)0xBF : b).ToArray();
+        var root = await CreateAsync(bytes);
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            var result = await engine.PatchSidecarAsync("op", [Set("2", "version")]);
+
+            result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("UnreadableSidecar");
+            (await File.ReadAllBytesAsync(LayoutSidecar.PathFor(root))).Should().Equal(bytes);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task A_reader_never_sees_half_a_file_while_it_is_being_written()
+    {
+        // The file was emptied and then written in place: a reader in between got a torn file (17 times
+        // in 400 reads), and a write cancelled in between left it empty. It is replaced whole now.
+        var root = await CreateAsync(Encoding.UTF8.GetBytes(Sidecar));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            var path = LayoutSidecar.PathFor(root);
+            var torn = 0;
+            using var stop = new CancellationTokenSource();
+            var reader = Task.Run(async () =>
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    try { JsonDocument.Parse(await File.ReadAllTextAsync(path)).Dispose(); }
+                    catch (JsonException) { torn++; }
+                    catch (IOException) { /* replaced between open and read: not a torn read */ }
+                }
+            });
+            for (var i = 0; i < 150; i++)
+                (await engine.PatchSidecarAsync($"op{i}", [Set(i.ToString(), "views", "moduleMap", "nodes", "ctx_001", "y")]))
+                    .Should().BeOfType<OperationApplied>();
+            stop.Cancel();
+            await reader;
+
+            torn.Should().Be(0);
+            Directory.GetFiles(root, "*.tmp", SearchOption.AllDirectories).Should().BeEmpty();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Half_an_emoji_in_a_change_is_a_refusal_not_a_crash()
+    {
+        var root = await CreateAsync(Encoding.UTF8.GetBytes(Sidecar));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            var result = await engine.PatchSidecarAsync("op", [Set("\"\\ud83d\"", "notes", "a")]);
+            result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("UnreadableSidecar");
+            (await engine.PatchSidecarAsync("op2", [Set("\"ok\"", "notes", "a")])).Should().BeOfType<OperationApplied>();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }

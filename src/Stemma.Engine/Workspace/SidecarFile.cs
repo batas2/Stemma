@@ -50,18 +50,62 @@ internal sealed class SidecarFile(string path, string created)
             var exists = File.Exists(path);
             var bytes = exists ? await File.ReadAllBytesAsync(path, ct) : [];
             var bom = bytes.AsSpan().StartsWith(Utf8Bom);
-            var text = exists ? Encoding.UTF8.GetString(bom ? bytes[Utf8Bom.Length..] : bytes) : created;
+            string text;
+            try { text = exists ? Strict.GetString(bom ? bytes[Utf8Bom.Length..] : bytes) : created; }
+            catch (DecoderFallbackException)
+            {
+                // Read loosely, a byte that is not UTF-8 becomes U+FFFD and the whole file is written back
+                // with it — damage to text nobody edited. Refused instead, like any file that cannot be read.
+                return new OperationFailed(opId, "UnreadableSidecar",
+                    $"{Path.GetFileName(path)} is not UTF-8 text, so it is not changed. Save it as UTF-8, then try again.");
+            }
 
             string patched;
             try { patched = apply(text); }
             catch (SidecarPatchRefusedException e) { return new OperationFailed(opId, e.Reason, e.Message); }
+            catch (InvalidOperationException e)
+            {
+                // System.Text.Json throws this for a lone UTF-16 surrogate in a string (half an emoji). As a
+                // 500 it failed every later save of the session; as a refusal it is said and survivable.
+                return new OperationFailed(opId, "UnreadableSidecar",
+                    $"{Path.GetFileName(path)}, or the change to it, holds text that is not valid Unicode: {e.Message}");
+            }
             if (patched == text) return new OperationApplied(opId, []);
 
             _seen = patched;
-            await File.WriteAllBytesAsync(path, [.. (bom ? Utf8Bom : []), .. Encoding.UTF8.GetBytes(patched)], ct);
+            // Once writing starts it finishes: the request's cancellation no longer applies, because a
+            // write cut short is a truncated file. And it lands whole — a temporary file beside it, then
+            // a rename — so a reader, or a crash, never sees half of it.
+            await WriteAtomicallyAsync(path, [.. (bom ? Utf8Bom : []), .. Encoding.UTF8.GetBytes(patched)]);
             return new OperationApplied(opId, []);
         }
         finally { _gate.Release(); }
+    }
+
+    private static readonly UTF8Encoding Strict = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>
+    /// The bytes as the file, in one step: written to a temporary file in the same folder (so the rename
+    /// stays on one file system), flushed, then moved over the original.
+    /// </summary>
+    internal static async Task WriteAtomicallyAsync(string target, byte[] bytes)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(target))!;
+        var tmp = Path.Combine(dir, $".{Path.GetFileName(target)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await using (var stream = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+            {
+                await stream.WriteAsync(bytes, CancellationToken.None);
+                await stream.FlushAsync(CancellationToken.None);
+            }
+            File.Move(tmp, target, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 
     /// <summary>The file's text without its byte-order mark; <c>null</c> when there is no file.</summary>
