@@ -145,7 +145,9 @@ public static class FidelityCases
     // ── pathological ─────────────────────────────────────────────────────────────────────────
     private static IReadOnlyList<FidelityCase> Pathological()
     {
-        const string tag = "\tTag.For(modCheckout, lifecycle: new Lifecycle(\"current\"));\r\n";
+        // Two positional fields: clearing the first writes null in its place while the second is
+        // there, and nothing once both are gone.
+        const string tag = "\tTag.For(modCheckout, lifecycle: new Lifecycle(\"current\", \"fidelity-critical\"));\r\n";
         const string ret = "riskLatency, flowOrders);";
         const string invoicing = "\tvar modInvoicing = new Module(Id: \"mod_invoicing\", Name: \"Invoicing\");\r\n";
         return
@@ -190,14 +192,20 @@ public static class FidelityCases
                 ("\"mod_invoicing\", \"Order\")", "\"mod_invoicing\", \"Invoice\")")),
             Case("SetLinkAttribute.add", new SetLinkAttributeOp(Op, "flow_orders", "direction", "twoway"),
                 ("\"mod_invoicing\", \"Order\")", "\"mod_invoicing\", \"Order\", \"twoway\")")),
-            Case("SetLifecycle.replace", new SetLifecycleOp(Op, "mod_checkout", "target", null, null, null),
-                ("new Lifecycle(\"current\")", "new Lifecycle(\"target\")")),
+            Case("SetLifecycle.replace", new SetLifecycleOp(Op, "mod_checkout", "target", "fidelity-critical", null, null),
+                ("new Lifecycle(\"current\",", "new Lifecycle(\"target\",")),
             Case("SetLifecycle.insert", new SetLifecycleOp(Op, "mod_invoicing", "current", null, null, null),
                 (invoicing, invoicing + "\tTag.For(modInvoicing, lifecycle: new Lifecycle(Status: \"current\"));\r\n")),
             Case("SetLifecycle.clear", new SetLifecycleOp(Op, "mod_checkout", null, null, null, null),
+                // Not new Lifecycle(null): a lifecycle with nothing in it goes, and the tag with it.
                 (tag, "")),
+            Case("SetLifecycle.drop-phase", new SetLifecycleOp(Op, "mod_checkout", "current", null, null, null),
+                ("new Lifecycle(\"current\", \"fidelity-critical\")", "new Lifecycle(\"current\")")),
+            Case("SetLifecycle.clear-status", new SetLifecycleOp(Op, "mod_checkout", null, "fidelity-critical", null, null),
+                // The phase is still there and positional, so the status it follows becomes null.
+                ("new Lifecycle(\"current\", \"fidelity-critical\")", "new Lifecycle(null, \"fidelity-critical\")")),
             Case("SetOwnership.add", new SetOwnershipOp(Op, "mod_checkout", "Payments", "Ordering"),
-                ("new Lifecycle(\"current\"));", "new Lifecycle(\"current\"), ownership: new Ownership(Squad: \"Payments\", Domain: \"Ordering\"));")),
+                ("\"fidelity-critical\"));", "\"fidelity-critical\"), ownership: new Ownership(Squad: \"Payments\", Domain: \"Ordering\"));")),
         ];
     }
 }

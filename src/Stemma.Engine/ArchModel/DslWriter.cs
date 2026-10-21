@@ -25,11 +25,32 @@ public static class DslWriter
 {
     // ── Adding ──────────────────────────────────────────────────────────────────────────────
 
-    public static SyntaxNode AddElement(SyntaxNode root, ArchElement element) =>
-        AddDeclaration(root, BuildLocalForElement(element), VarNameFor(element.Id));
+    public static SyntaxNode AddElement(SyntaxNode root, ArchElement element)
+    {
+        var varName = FreeVariable(root, VarNameFor(element.Id));
+        return AddDeclaration(root, BuildLocalForElement(element, varName), varName);
+    }
 
-    public static SyntaxNode AddLink(SyntaxNode root, ArchLink link) =>
-        AddDeclaration(root, BuildLocalForLink(link), VarNameFor(link.Id));
+    public static SyntaxNode AddLink(SyntaxNode root, ArchLink link)
+    {
+        var varName = FreeVariable(root, VarNameFor(link.Id));
+        return AddDeclaration(root, BuildLocalForLink(link, varName), varName);
+    }
+
+    /// <summary>
+    /// <paramref name="name"/>, or a variant of it, that nothing in <c>Build()</c> declares yet. A
+    /// hand-written model may already use the name an id suggests for something else, and a second
+    /// declaration of it breaks the build.
+    /// </summary>
+    private static string FreeVariable(SyntaxNode root, string name)
+    {
+        var build = BuildBody(root);
+        if (!IsDeclared(build, name)) return name;
+        // mod001 + 2 would read as mod0012, a different id's variable; a separator keeps them apart.
+        var stem = char.IsDigit(name[^1]) ? name + "_" : name;
+        for (var n = 2; ; n++)
+            if (!IsDeclared(build, stem + n)) return stem + n;
+    }
 
     private static SyntaxNode AddDeclaration(SyntaxNode root, StatementSyntax stmt, string varName)
     {
@@ -87,14 +108,8 @@ public static class DslWriter
         ArgumentListSyntax list, IReadOnlyList<string> parameters, string attribute, string? value, string typeName, bool nullablePlaceholder)
     {
         var args = list.Arguments;
-        var at = -1;
-        for (var i = 0; i < args.Count && at < 0; i++)
-        {
-            var key = args[i].NameColon is { } nc
-                ? DslVocabulary.AttributeName(nc.Name.Identifier.Text)
-                : i < parameters.Count ? parameters[i] : null;
-            if (key == attribute) at = i;
-        }
+        var found = ArgumentFor(list, parameters, attribute);
+        var at = found is null ? -1 : args.IndexOf(found);
 
         if (at >= 0)
         {
@@ -133,6 +148,11 @@ public static class DslWriter
     {
         if (FindDeclaration(root, id) is not { } found) return root;
         var (stmt, variable, creation) = found;
+        // Only an element has a name. A link's second argument is where it starts, and renaming one
+        // wrote the new name over it.
+        var typeName = DslReader.ExtractTypeName(creation, stmt.Declaration.Type);
+        if (typeName is null || !Enum.IsDefined(typeof(ArchElementKind), typeName))
+            throw new DslEditRefusedException("NotAnElement", $"{id} is a {typeName ?? "declaration"}, not an element, and has no name to change.");
         var args = creation.ArgumentList!.Arguments;
         var nameAt = -1;
         for (var i = 0; i < args.Count && nameAt < 0; i++)
@@ -148,9 +168,8 @@ public static class DslWriter
 
         // The variable follows the name, so the C# keeps reading like the diagram — unless the new
         // name's variable is already taken, in which case the old one is kept rather than colliding.
-        var typeName = DslReader.ExtractTypeName(creation, stmt.Declaration.Type);
         var oldVar = variable.Identifier.Text;
-        var newVar = renameVariable && typeName is not null ? VarNameFromElementName(typeName, newName) : oldVar;
+        var newVar = renameVariable ? VarNameFromElementName(typeName, newName) : oldVar;
         var build = BuildBody(root);
         if (newVar == oldVar || IsDeclared(build, newVar))
             return root.ReplaceNode(creation, renamed);
@@ -212,12 +231,52 @@ public static class DslWriter
         foreach (var (field, value) in fields)
             edited = SetArgument(edited, parameters, field, value, typeName, nullablePlaceholder: true) ?? edited;
         if (ReferenceEquals(edited, partArgs)) return root;
-        if (edited.Arguments.Count > 0) return root.ReplaceNode(partArgs, edited);
+        // A field cleared ahead of others became null to hold their places, first to last; once the
+        // fields after it are cleared too, the null holds nothing. Left, clearing a whole lifecycle
+        // wrote new Lifecycle(null).
+        if (fields.Any(f => f.Value is null && ArgumentFor(partArgs, parameters, f.Field) is { } a && !IsNull(a)))
+            edited = WithoutTrailingNulls(edited, parameters, fields);
+        if (edited.Arguments.Count > 0 && !edited.Arguments.All(IsNull)) return root.ReplaceNode(partArgs, edited);
 
         // Nothing left in this part: it goes, and a tag with no other part goes with it.
         if (args.Count <= 2) return RemoveTag(root, tag);
         var (open, rest) = SeparatedEdits.RemoveAt(invocation.ArgumentList.OpenParenToken, args, at);
         return root.ReplaceNode(invocation.ArgumentList, invocation.ArgumentList.WithOpenParenToken(open).WithArguments(rest));
+    }
+
+    private static bool IsNull(ArgumentSyntax arg) => arg.Expression.IsKind(SyntaxKind.NullLiteralExpression);
+
+    /// <summary>
+    /// The list without the positional nulls at its end that stand for fields this edit cleared. A
+    /// null written by hand in front of a field that stays is not touched.
+    /// </summary>
+    private static ArgumentListSyntax WithoutTrailingNulls(
+        ArgumentListSyntax list, IReadOnlyList<string> parameters, IReadOnlyList<(string Field, string? Value)> fields)
+    {
+        var cleared = fields.Where(f => f.Value is null).Select(f => f.Field).ToHashSet(StringComparer.Ordinal);
+        while (list.Arguments.Count > 0)
+        {
+            var at = list.Arguments.Count - 1;
+            var last = list.Arguments[at];
+            if (last.NameColon is not null || !IsNull(last) || at >= parameters.Count || !cleared.Contains(parameters[at])) break;
+            var (open, rest) = SeparatedEdits.RemoveAt(list.OpenParenToken, list.Arguments, at);
+            list = list.WithOpenParenToken(open).WithArguments(rest);
+        }
+        return list;
+    }
+
+    /// <summary>The argument that sets <paramref name="attribute"/>: by its name, or by its position.</summary>
+    private static ArgumentSyntax? ArgumentFor(ArgumentListSyntax list, IReadOnlyList<string> parameters, string attribute)
+    {
+        var args = list.Arguments;
+        for (var i = 0; i < args.Count; i++)
+        {
+            var key = args[i].NameColon is { } nc
+                ? DslVocabulary.AttributeName(nc.Name.Identifier.Text)
+                : i < parameters.Count ? parameters[i] : null;
+            if (key == attribute) return args[i];
+        }
+        return null;
     }
 
     private static int IndexOfTagPart(SeparatedSyntaxList<ArgumentSyntax> args, string part)
@@ -344,7 +403,7 @@ public static class DslWriter
 
     // ── New code ────────────────────────────────────────────────────────────────────────────
 
-    private static StatementSyntax BuildLocalForElement(ArchElement e)
+    private static StatementSyntax BuildLocalForElement(ArchElement e, string varName)
     {
         var args = new List<string> { Literal(e.Id).ToString(), Literal(e.Name).ToString() };
         foreach (var attribute in DslVocabulary.ParametersOf(e.Kind.ToString())?.Skip(2) ?? [])
@@ -353,10 +412,10 @@ public static class DslWriter
             if (!e.Attributes.TryGetValue(attribute, out var value) || value is null) break;
             args.Add(Literal(value).ToString());
         }
-        return LocalDeclaration(VarNameFor(e.Id), e.Kind.ToString(), args);
+        return LocalDeclaration(varName, e.Kind.ToString(), args);
     }
 
-    private static StatementSyntax BuildLocalForLink(ArchLink l)
+    private static StatementSyntax BuildLocalForLink(ArchLink l, string varName)
     {
         var args = new List<string> { Literal(l.Id).ToString(), Literal(l.FromId).ToString(), Literal(l.ToId).ToString() };
         foreach (var attribute in DslVocabulary.ParametersOf(l.Kind.ToString())?.Skip(3) ?? [])
@@ -364,7 +423,7 @@ public static class DslWriter
             if (!l.Attributes.TryGetValue(attribute, out var value) || value is null) break;
             args.Add(Literal(value).ToString());
         }
-        return LocalDeclaration(VarNameFor(l.Id), l.Kind.ToString(), args);
+        return LocalDeclaration(varName, l.Kind.ToString(), args);
     }
 
     /// <summary>A new declaration with no trivia of its own; it is laid out where it is inserted.</summary>
@@ -430,17 +489,30 @@ public static class DslWriter
                 : base.VisitIdentifierName(node);
     }
 
+    /// <summary>
+    /// The variable an id suggests: "mod_buyer_onboarding" → <c>modBuyerOnboarding</c>. Any character
+    /// an identifier cannot hold separates words, so "order-service" → <c>orderService</c>; a name
+    /// that would still not be a C# identifier (a leading digit, a keyword) gets a <c>v</c> in front.
+    /// </summary>
     public static string VarNameFor(string id)
     {
-        // Convert "mod_buyer_onboarding" → "modBuyerOnboarding"
-        var parts = id.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return "v";
-        var sb = new System.Text.StringBuilder(parts[0]);
-        for (var i = 1; i < parts.Length; i++)
+        var parts = new List<string>();
+        var word = new System.Text.StringBuilder();
+        foreach (var ch in id)
         {
-            sb.Append(char.ToUpperInvariant(parts[i][0]));
-            if (parts[i].Length > 1) sb.Append(parts[i][1..]);
+            if (char.IsLetterOrDigit(ch)) { word.Append(ch); continue; }
+            if (word.Length > 0) parts.Add(word.ToString());
+            word.Clear();
         }
-        return sb.ToString();
+        if (word.Length > 0) parts.Add(word.ToString());
+        if (parts.Count == 0) return "v";
+        var sb = new System.Text.StringBuilder(parts[0]);
+        for (var i = 1; i < parts.Count; i++)
+            sb.Append(char.ToUpperInvariant(parts[i][0])).Append(parts[i].AsSpan(1));
+        var name = sb.ToString();
+        if (char.IsDigit(name[0]) || SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None
+            || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None)
+            name = "v" + char.ToUpperInvariant(name[0]) + name[1..];
+        return SyntaxFacts.IsValidIdentifier(name) ? name : "v";
     }
 }

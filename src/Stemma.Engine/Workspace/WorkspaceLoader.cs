@@ -72,7 +72,34 @@ public sealed class WorkspaceLoader(ILogger? log = null)
         return (ws, model);
     }
 
-    public static async Task<WorkspaceModel> BuildModelAsync(string rootPath, Solution solution, CancellationToken ct = default)
+    /// <summary>
+    /// The files <paramref name="projectFile"/> compiles, evaluated now: its globs against what is on
+    /// disk at this moment, less whatever it removes. Kept apart from the engine's other code so that a
+    /// model-only workspace, which may run with no SDK at all, never loads MSBuild through it.
+    /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    internal static async Task<HashSet<string>> CompileItemsAsync(Microsoft.CodeAnalysis.Workspace workspace, string projectFile, CancellationToken ct)
+    {
+        var loader = new MSBuildProjectLoader(workspace) { LoadMetadataForReferencedProjects = true };
+        var projects = await loader.LoadProjectInfoAsync(projectFile, cancellationToken: ct);
+        return projects
+            .Where(p => string.Equals(p.FilePath, projectFile, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(p => p.Documents)
+            .Select(d => d.FilePath)
+            .OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static Task<WorkspaceModel> BuildModelAsync(string rootPath, Solution solution, CancellationToken ct = default) =>
+        BuildModelAsync(rootPath, solution, read: null, ct);
+
+    /// <param name="read">
+    /// The types already read out of each syntax tree. A document an edit did not touch keeps its tree,
+    /// so its types are not read again: rebuilt for every document after every edit, the type model
+    /// cost more than the edit at a few thousand files.
+    /// </param>
+    internal static async Task<WorkspaceModel> BuildModelAsync(
+        string rootPath, Solution solution, System.Runtime.CompilerServices.ConditionalWeakTable<SyntaxTree, List<TypeModel>>? read, CancellationToken ct)
     {
         var projects = new List<ProjectModel>();
         foreach (var project in solution.Projects)
@@ -87,13 +114,19 @@ public sealed class WorkspaceLoader(ILogger? log = null)
                 if (path.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase)) continue;
                 var tree = await doc.GetSyntaxTreeAsync(ct);
                 if (tree is null) continue;
+                if (read is not null && read.TryGetValue(tree, out var known))
+                {
+                    types.AddRange(known);
+                    continue;
+                }
                 var root = await tree.GetRootAsync(ct);
+                var first = types.Count;
 
                 foreach (var typeDecl in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
                 {
                     var ns = GetNamespace(typeDecl);
                     var name = typeDecl.Identifier.Text;
-                    var fqn = string.IsNullOrEmpty(ns) ? name : $"{ns}.{name}";
+                    var fqn = TypeIdOf(typeDecl);
                     var kind = typeDecl switch
                     {
                         ClassDeclarationSyntax => TypeKind.Class,
@@ -152,6 +185,7 @@ public sealed class WorkspaceLoader(ILogger? log = null)
                         Methods: methods,
                         BaseTypes: baseTypes));
                 }
+                read?.AddOrUpdate(tree, types.GetRange(first, types.Count - first));
             }
             projects.Add(new ProjectModel(
                 Name: project.Name,
@@ -160,6 +194,16 @@ public sealed class WorkspaceLoader(ILogger? log = null)
                 Types: types));
         }
         return new WorkspaceModel(rootPath, projects);
+    }
+
+    /// <summary>
+    /// The id the model gives a type declaration: its namespace and its name. A type operation finds
+    /// its declaration by this, never by the name alone.
+    /// </summary>
+    internal static string TypeIdOf(BaseTypeDeclarationSyntax typeDecl)
+    {
+        var ns = GetNamespace(typeDecl);
+        return string.IsNullOrEmpty(ns) ? typeDecl.Identifier.Text : $"{ns}.{typeDecl.Identifier.Text}";
     }
 
     private static string GetNamespace(SyntaxNode node)

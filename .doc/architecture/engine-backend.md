@@ -30,6 +30,16 @@ for the catalog and wire format). The engine maps each to a targeted source rewr
 Undo/redo is an operation stack (`UndoStack`) for the session; Git is the durable history. What
 undo guarantees is in [the catalog](#what-undo-guarantees) below.
 
+What an operation costs, on a workspace of thousands of files: the model files and the model read
+from them are found once per solution (a Roslyn solution is a snapshot, so a new one means a file
+changed), and a document's types are read again only when its syntax tree is new. The compile check
+compiles only the projects the edit changed and those that depend on them, and keeps each project's
+errors for its version, so the errors after one edit are the baseline of the next. Once the engine
+starts watching — that is, once it serves someone editing — it compiles every project in the
+background, without holding its lock, so the first edit does not wait for the compilation. The
+watcher's one-second poll never enters `bin`, `obj`, `node_modules`, `.git` or a dot-folder, and never
+overlaps itself. Each compile for the check is recorded at `Trace` (event 1104).
+
 ## The fidelity contract (the most important constraint)
 
 > For every operation applied to a source file `F`, the resulting `F'` differs from `F` **only** in
@@ -67,7 +77,10 @@ made, and edit → undo → redo must reproduce the original and then the edit, 
 - `WouldBreakBuild` — the edit introduced a compile error (one that was already there does not count);
   the files are put back.
 - `ChangedOnDisk` — a file it would write has changed since the edit was computed from it, so writing
-  would put old text back under the new change. The new text is taken in; a retry lands on top of it.
+  would put old text back under the new change; or it was deleted, and writing would bring it back; or
+  a file it would create has appeared. The files are read and checked immediately before they are
+  written, after the slow part of the compile check, so nothing that takes time sits in between. The
+  new state is taken in; a retry lands on top of it.
 
 Project files are never changed: MSBuildWorkspace writes a `<Compile Include>` for a new document,
 which in an SDK-style project duplicates the glob, so it is put back (unless the project sets
@@ -77,21 +90,28 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 
 | Operation | Edits exactly | Refuses |
 |---|---|---|
-| `AddElement` | a new `var x = new Kind(...)` before `return`; `x` appended to `Model.Of(...)` | — |
-| `AddLink` | the same, for a `DataFlow` / `Dependency` / `Relation` | `FromNotFound`, `ToNotFound` |
-| `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound`, `NotALiteral` |
+| `AddElement` | a new `var x = new Kind(...)` before `return`; `x` appended to `Model.Of(...)`. `x` is the id in camelCase (`mod_001` → `mod001`, `order-service` → `orderService`), with a suffix when `Build()` already declares it | — |
+| `AddLink` | the same, for a `DataFlow` / `Dependency` / `Relation`; its ends may be declared in any model file | `FromNotFound`, `ToNotFound` — an id no model file declares |
+| `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound`, `NotAnElement` (a link has no name), `NotALiteral` |
 | `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable (and the `Model.Of` entry of a local holding one), and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
 | `SetElementContext` | the `contextId` argument of a Module or Capability | `ElementNotFound`, `NotNestable`, `ContextNotFound`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
 | `SetElementAttribute` | one constructor argument the kind has (`aboutId` on a Risk, `role` on a Person) | `ElementNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
 | `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`) | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
 | `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For` — a statement of its own, or a local's value (`var tag = Tag.For(...)`); a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it, a local's `Model.Of` entry included | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
 | `SetOwnership` | `Squad` and `Domain` inside `new Ownership(...)`. RAPID roles are not part of the operation and are not touched | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
-| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, re-declaring it before `return` | — |
+| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, and the redo of an add, re-declaring it with its own id before `return` — in the model file it came from, with its lifecycle, squad and domain, under a variable name nothing else declares | — |
+
+An id `AddElement` or `AddLink` generates (`mod_001`, `flow_001`) is one nothing names: no model file
+declares it or holds it as an argument (a link's end, a context, what a risk is about), no view lists
+it, and it is neither a key nor a value in `stemma.layout.json` or `comments.stemma.json`. A removed
+element's links, layout, notes and comments stay behind by design, and a new element given its id
+would inherit all of them.
 
 `RewriteFailed` means the value is already what was asked, and nothing was written.
 `AttributeRequired`: a positional argument cannot be removed while later positional arguments depend
 on its position — the payload of a flow that has a direction. In a `Lifecycle` or `Ownership`, where
-every parameter is nullable, it becomes `null` instead. `UnknownAttribute`: the kind has no such
+every parameter is nullable, it becomes `null` instead, and the `null` goes once the fields after it are
+cleared too; a part left with nothing but `null`s is removed. `UnknownAttribute`: the kind has no such
 parameter; nothing is written. A named-argument declaration (`new Module(Id: "m", Name: "M")`) is read
 and edited like a positional one, and an argument added to it is named too.
 `NotALiteral`: the argument is written as something other than a literal — a constant, a
@@ -103,11 +123,14 @@ and edited like any other.
 ### Type operations (any `.cs` file in the workspace)
 
 Not sent by the canvas today; accepted by the operation protocol, so an agent can send them. Each
-refuses `TypeNotFound` for an id the model does not have.
+names its type by full name (the model's id, namespace and name) and edits that declaration, never
+the first with the same simple name. Each refuses `TypeNotFound` for an id the model does not have,
+and `AmbiguousType` when two declarations share the id that are not parts of one partial type — a
+nested type and a top-level one, which the model names alike.
 
 | Operation | Edits exactly | Refuses |
 |---|---|---|
-| `AddType` | a new file (LF, whatever the OS), or a new type after the last one in the file's namespace, a blank line above it | `NoProject` |
+| `AddType` | a new file (LF, whatever the OS), or a new type after the last one in the file's namespace, a blank line above it. A relative path is relative to the workspace | `NoProject` (no project's folder holds the file), `NamespaceNotInFile` (the existing file does not declare that namespace) |
 | `RenameType`, `RenameProperty` | the symbol and its references, through `Renamer` — not in strings, not in comments, not the file name | `SymbolNotFound` |
 | `RemoveType`, `RemoveProperty` | the member's lines, its attributes and its documentation comment | `TypeNodeNotFound`, `PropertyNotFound` |
 | `AddProperty` | a new property after the last member, indented like it | `TypeNodeNotFound` |
@@ -119,9 +142,14 @@ refuses `TypeNotFound` for an id the model does not have.
 
 Saved and deleted through `PUT` / `DELETE /api/workspace/views`, which call
 `StemmaEngine.SaveViewAsync` / `RemoveViewAsync`. A view is found by reading the id its `Define()`
-declares, never by searching file text. Saving edits the name, the lens and the member ids in place
+declares, never by searching file text. Before either, the workspace catches up with files a pull
+added or deleted ([B-015](../bugs/B-015-outside-changes-to-the-set-of-files-are-missed.md)): a new
+file is taken in when its project compiles it — by the project's evaluation, so one kept out with
+`<Compile Remove>` stays out — and the walk never enters `bin`, `obj`, `node_modules`, `.git` or
+another dot-folder. The watcher takes a file in by the same rule. Saving edits the name, the lens and the member ids in place
 — in whatever form the file writes them — and keeps the file and class names; a new view gets a file
-no other file or class is named after. Refuses `ViewNotFound`, `UnreadableView`. Not on the undo
+no other file or class is named after, in the namespace `Architecture.cs` declares — or, when it declares
+none, the project's name made into a C# one (`my-arch` → `my_arch`). Refuses `ViewNotFound`, `UnreadableView`. Not on the undo
 stack: the client keeps the views list and would not hear about an undo.
 
 ### The sidecar (`stemma.layout.json`)
@@ -205,8 +233,11 @@ the entry on top is still its own even once the stack is full at 100. Undo puts 
 back, provided each file is still byte-for-byte what the edit wrote — so edit-then-undo is no
 change at all. If a file has changed since (an outside edit), restoring old bytes would erase that
 change, so undo falls back to the inverse operation (re-declare what was removed, put the old value
-back), and with no inverse it is refused as `UndoConflict`. Redo re-applies the edit. A new edit,
-or an outside one, discards the redo branch ([B-007](../bugs/B-007-undo-rebuilds-instead-of-restoring.md)).
+back), and with no inverse it is refused as `UndoConflict`. Redo re-applies the edit — an add with
+the id it generated the first time. A new edit, or an outside one, discards the redo branch
+([B-007](../bugs/B-007-undo-rebuilds-instead-of-restoring.md)). An undo or a redo that is refused
+has not happened, so its entry stays where it was: after `ChangedOnDisk`, trying again tries the same
+entry, on top of the change it just took in.
 
 An outside edit is taken in without being written back
 ([B-008](../bugs/B-008-outside-edit-is-written-back-forever.md)).

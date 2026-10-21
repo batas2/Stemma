@@ -190,6 +190,63 @@ public sealed class ViewWriteTests
     }
 
     [Fact]
+    public async Task Saving_a_view_does_not_pull_in_a_file_the_project_does_not_compile()
+    {
+        // Every .cs file under the project's folder was taken for one of its sources. A fixture kept
+        // out of the build with <Compile Remove> defines a model too, and its elements joined the live
+        // model the first time a view was saved.
+        var modelProj = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Stemma.Model", "Stemma.Model.csproj"));
+        var csproj = $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <Nullable>enable</Nullable>
+              </PropertyGroup>
+              <ItemGroup>
+                <Compile Remove="Fixtures/**" />
+                <ProjectReference Include="{modelProj}" />
+              </ItemGroup>
+            </Project>
+            """;
+        await using var ws = await TestArchWorkspace.CreateAsync(csproj, Model);
+        var fixture = Path.Combine(ws.RootPath, "Fixtures", "old", "Architecture", "Architecture.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(fixture)!);
+        await File.WriteAllTextAsync(fixture, Model.Replace("class Architecture", "class OldArchitecture").Replace("\"mod_a\", \"A\"", "\"mod_fixture\", \"Fixture\""));
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+
+        Applied(await engine.SaveViewAsync("op1", new ArchView("view_new", "Checkout path", "all", ["mod_a"])));
+        Applied(await engine.SaveViewAsync("op2", new ArchView("view_new", "Checkout path", "all", ["mod_a", "mod_b"])));
+
+        (await engine.ReadArchModelAsync())!.Elements.Should().NotContain(e => e.Id == "mod_fixture");
+        engine.Solution.Projects.SelectMany(p => p.Documents).Should().NotContain(d => d.FilePath == fixture);
+        (await File.ReadAllTextAsync(Path.Combine(ws.RootPath, "Sample.csproj"))).Should().Be(csproj);
+    }
+
+    [Fact]
+    public async Task Saving_a_view_does_not_look_inside_folders_that_are_never_part_of_the_model()
+    {
+        // The catch-up before a save walked the whole tree, node_modules included, and a folder it
+        // could not read failed the save.
+        if (OperatingSystem.IsWindows()) return;
+        var root = await CreateAsync();
+        var locked = Path.Combine(root, "node_modules", "locked");
+        Directory.CreateDirectory(locked);
+        await File.WriteAllTextAsync(Path.Combine(locked, "Vendor.cs"), "class Vendor { }\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            Applied(await engine.SaveViewAsync("op", new ArchView("view_new", "Checkout path", "all", ["mod_a"])));
+        }
+        finally
+        {
+            File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task A_new_view_in_a_project_in_a_subfolder_does_not_replace_a_file_there()
     {
         // The project is not at the root: a solution holds it. A new view is written into the project's
@@ -299,5 +356,28 @@ public sealed class ViewWriteTests
                 .Be(shape.Replace($"            {before}", $"            {after}"));
         }
         finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    // The folder name was the namespace when the model declares none, and a folder called my-arch
+    // wrote `namespace my-arch…;`: the save was refused as breaking the build.
+    [InlineData("my-arch")]
+    [InlineData("2026 model")]
+    [InlineData("class")]
+    public async Task A_new_view_in_a_model_without_a_namespace_compiles_whatever_the_folder_is_called(string folder)
+    {
+        var parent = Path.Combine(Path.GetTempPath(), $"stemma-views-{Guid.NewGuid():N}");
+        var root = Path.Combine(parent, folder);
+        Directory.CreateDirectory(Path.Combine(root, "Architecture"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"), Model.Replace("namespace Scratch;\n\n", ""));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            Applied(await engine.SaveViewAsync("op", new ArchView("view_new", "My view", "all", ["mod_a"])));
+
+            ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync()).Should().ContainSingle(v => v.Id == "view_new");
+        }
+        finally { Directory.Delete(parent, recursive: true); }
     }
 }

@@ -52,6 +52,10 @@ internal static partial class EngineLog
         Message = "Could not snapshot the model before {OperationType}; undo will not be available for this operation")]
     public static partial void UndoSnapshotUnavailable(ILogger logger, string operationType, Exception exception);
 
+    [LoggerMessage(EventId = 1104, Level = LogLevel.Trace,
+        Message = "Compiled {ProjectName} for the compile check in {ElapsedMs} ms ({ErrorCount} errors)")]
+    public static partial void CompileChecked(ILogger logger, string projectName, long elapsedMs, int errorCount);
+
     // ---- Stemma.Engine.Fidelity — 1200–1299 ----------------------------------------------------
 
     [LoggerMessage(EventId = 1201, Level = LogLevel.Debug,
@@ -83,4 +87,8 @@ internal static partial class EngineLog
     [LoggerMessage(EventId = 1304, Level = LogLevel.Warning,
         Message = "File watcher stopped: {Reason}. External edits will not be picked up until the workspace is reopened.")]
     public static partial void WatcherStopped(ILogger logger, string reason, Exception? exception);
+
+    [LoggerMessage(EventId = 1305, Level = LogLevel.Warning,
+        Message = "Could not evaluate {ProjectFile} to see which files it compiles; a new file in its folder is taken for one of its sources")]
+    public static partial void ProjectEvaluationFailed(ILogger logger, string projectFile, Exception exception);
 }

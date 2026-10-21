@@ -25,6 +25,7 @@ public sealed class StemmaEngine : IAsyncDisposable
     private readonly UndoStack _undo = new();
     private ExternalWatcher? _watcher;
     private ArchModel.ArchModel? _archBeforeOp;
+    private string? _removedFromBeforeOp;
     private IReadOnlyList<DocumentWrite> _lastWrites = [];
 
     public WorkspaceModel Model => _model;
@@ -56,8 +57,31 @@ public sealed class StemmaEngine : IAsyncDisposable
         _log = log ?? NullLogger<StemmaEngine>.Instance;
         _layout = new SidecarFile(LayoutSidecar.PathFor(model.RootPath), NewSidecar);
         _comments = new SidecarFile(CommentsSidecar.PathFor(model.RootPath), CommentsSidecar.Empty);
+        RememberTypesRead(workspace.CurrentSolution, model);
     }
 
+    /// <summary>
+    /// The loader has just read every document's types into <paramref name="model"/>, from the trees the
+    /// solution now holds: remembered, so the first edit's reload reads only what it changed.
+    /// </summary>
+    private void RememberTypesRead(Solution solution, WorkspaceModel model)
+    {
+        // The loader builds one project model per project, in the solution's order.
+        foreach (var (project, projectModel) in solution.Projects.Zip(model.Projects))
+        {
+            var byPath = projectModel.Types.GroupBy(t => t.FilePath, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+            foreach (var doc in project.Documents)
+            {
+                if (doc.FilePath is not { } path || !doc.TryGetSyntaxTree(out var tree)) continue;
+                _typesRead.AddOrUpdate(tree, byPath.GetValueOrDefault(path) ?? []);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Watch the workspace for changes made outside Stemma — which is what an engine serving someone
+    /// editing does — and, in the background, build what their first edit would otherwise wait for.
+    /// </summary>
     public void StartWatching()
     {
         _layout.Remember();
@@ -65,6 +89,31 @@ public sealed class StemmaEngine : IAsyncDisposable
         _watcher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _watcher = new ExternalWatcher(_model.RootPath, ShouldWatch, _log);
         _watcher.Changed += OnExternalChange;
+        _ = Task.Run(WarmUpAsync);
+    }
+
+    /// <summary>
+    /// Compile every project once, ahead of the first edit, and keep its errors as that edit's
+    /// baseline. Built on demand, the compilation made the first edit after opening wait a second or
+    /// more. Neither holds the engine's lock nor delays opening; an edit that arrives first shares the
+    /// compile already under way rather than starting another.
+    /// </summary>
+    private async Task WarmUpAsync()
+    {
+        try
+        {
+            foreach (var project in _workspace.CurrentSolution.Projects)
+                await ErrorsOfAsync(project, _lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Closed before it finished: nothing is waiting for it.
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            // Silent on purpose: warming is only ever ahead of time. Whatever failed here fails again,
+            // and is reported, when an edit compiles for itself.
+        }
     }
 
     private bool ShouldWatch(string path)
@@ -72,11 +121,26 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (_layout.Is(path) || _comments.Is(path)) return true;
         // Watch Architecture/, every file the workspace holds, and every file it would hold if it
         // were opened now — which is what a file added by a pull is.
-        if (path.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) return true;
-        return _workspace.CurrentSolution.Projects
-            .SelectMany(p => p.Documents)
-            .Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase))
-            || ProjectFor(path) is not null;
+        if (IsModelFile(path)) return true;
+        return HeldPaths().Contains(path) || ProjectFor(path) is not null;
+    }
+
+    private sealed record Held(Solution Solution, HashSet<string> Paths);
+    private Held? _held;
+
+    /// <summary>
+    /// The paths of the documents the workspace holds, kept for as long as the solution is the same.
+    /// The poller asks about every file every second; finding each in the documents one by one was
+    /// files × documents comparisons a second — nine million at 3,000 files.
+    /// </summary>
+    private HashSet<string> HeldPaths()
+    {
+        var solution = _workspace.CurrentSolution;
+        if (Volatile.Read(ref _held) is { } held && ReferenceEquals(held.Solution, solution)) return held.Paths;
+        var paths = solution.Projects.SelectMany(p => p.Documents).Select(d => d.FilePath).OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Volatile.Write(ref _held, new Held(solution, paths));
+        return paths;
     }
 
     /// <summary>
@@ -95,6 +159,46 @@ public sealed class StemmaEngine : IAsyncDisposable
             .OrderByDescending(p => p.FilePath!.Length)
             .FirstOrDefault();
     }
+
+    /// <summary>
+    /// The project that compiles <paramref name="path"/>, a file the workspace does not hold yet (a pull
+    /// just added it), or null. A model-only workspace compiles every source it would load. A project
+    /// compiles what its evaluation says — not every .cs file in its folder: one kept out of the build
+    /// with <c>&lt;Compile Remove&gt;</c> (a fixture, a sample) was taken in, and the model it declares
+    /// joined the live one. Evaluating takes most of a second, so each project's answer is kept until
+    /// its project file changes.
+    /// </summary>
+    private async Task<Project?> CompilingProjectAsync(string path, CancellationToken ct)
+    {
+        if (ProjectFor(path) is not { } project) return null;
+        if (_workspace is FileBackedWorkspace || project.FilePath is not { Length: > 0 } projectFile) return project;
+
+        var written = File.GetLastWriteTimeUtc(projectFile);
+        if (!_compileItems.TryGetValue(projectFile, out var known) || known.ProjectWritten != written)
+            _compileItems[projectFile] = known = (written, null, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        if (known.Compiled?.Contains(path) == true) return project;
+        if (known.NotCompiled.Contains(path)) return null;
+
+        // A file neither answer covers is newer than the last evaluation: evaluate again, which also
+        // answers for every other file added since.
+        HashSet<string> compiled;
+        try { compiled = await WorkspaceLoader.CompileItemsAsync(_workspace, projectFile, ct); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // The project cannot be evaluated now (a broken project file mid-edit): the folder is the
+            // best answer there is, as it always was.
+            EngineLog.ProjectEvaluationFailed(_log, projectFile, e);
+            return project;
+        }
+        _compileItems[projectFile] = known = (written, compiled, known.NotCompiled);
+        if (compiled.Contains(path)) return project;
+        known.NotCompiled.Add(path);
+        return null;
+    }
+
+    /// <summary>Per project file: when it was written, what its last evaluation compiled, and files found not to be compiled.</summary>
+    private readonly Dictionary<string, (DateTime ProjectWritten, HashSet<string>? Compiled, HashSet<string> NotCompiled)> _compileItems =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// The refusal for an operation whose own values are unacceptable, or null. Checked before anything
@@ -137,6 +241,23 @@ public sealed class StemmaEngine : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Whether <paramref name="path"/> is in a folder called <paramref name="folder"/> inside the
+    /// workspace, at any depth — counted from the workspace root, never from the top of the disk.
+    /// Looked for in the absolute path, a workspace kept in ~/Views/shop took every file in it for a
+    /// view file, as one in ~/Architecture/shop took every file for a model file.
+    /// </summary>
+    private bool InFolder(string path, string folder)
+    {
+        if (!IsUnder(_model.RootPath, path)) return false;
+        var segments = Path.GetRelativePath(_model.RootPath, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return segments.SkipLast(1).Contains(folder, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A model file by the rule every reader uses (<see cref="ArchModelMerge.IsModelFile"/>), counted from the workspace root.</summary>
+    private bool IsModelFile(string path) =>
+        IsUnder(_model.RootPath, path) && ArchModelMerge.IsModelFile(Path.GetRelativePath(_model.RootPath, path));
+
     private static bool IsUnder(string directory, string path)
     {
         var relative = Path.GetRelativePath(directory, path);
@@ -158,6 +279,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync();
         try
         {
+            if (_disposed) return;
             // The echo of Stemma's own write is told apart by content, not by time: the file says
             // exactly what the workspace holds, so there is nothing to take in. A window of "writes
             // within 1.5 s are ours" also swallowed a real save made inside it, and the engine then
@@ -191,7 +313,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             // A file the workspace does not hold: one a pull or an IDE has just added, if it is a
             // source the workspace would have loaded, and otherwise nothing to do with the model.
             // Not taken in, a view that arrived this way was saved into a second file with its id.
-            if (!File.Exists(path) || ProjectFor(path) is not { } project) return false;
+            if (!File.Exists(path) || await CompilingProjectAsync(path, ct) is not { } project) return false;
             await TakeInAddedAsync(project, path, ReadFromDisk(path), ct);
             return true;
         }
@@ -299,6 +421,13 @@ public sealed class StemmaEngine : IAsyncDisposable
         return SourceText.From(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
+    /// <summary>Bytes already read, decoded as <see cref="ReadFromDisk"/> decodes a file.</summary>
+    private static SourceText Decode(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        return SourceText.From(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    }
+
     private static bool SamePreamble(System.Text.Encoding? a, System.Text.Encoding? b) =>
         (a?.GetPreamble() ?? []).AsSpan().SequenceEqual(b?.GetPreamble() ?? []);
 
@@ -355,6 +484,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(op.OpId);
             return await ApplyInternalAsync(op, recordUndo: true, ct);
         }
         finally
@@ -377,6 +507,12 @@ public sealed class StemmaEngine : IAsyncDisposable
             try
             {
                 _archBeforeOp = await ReadArchModelAsync(ct);
+                _removedFromBeforeOp = op switch
+                {
+                    RemoveElementOp r => FindDocumentForId(r.ElementId)?.FilePath,
+                    RemoveLinkOp r => FindDocumentForId(r.LinkId)?.FilePath,
+                    _ => null,
+                };
             }
             catch (Exception e)
             {
@@ -384,6 +520,7 @@ public sealed class StemmaEngine : IAsyncDisposable
                 // still valid — but it must not be silent: "undo stopped working" was unanswerable
                 // while this was a bare `catch { }`.
                 _archBeforeOp = null;
+                _removedFromBeforeOp = null;
                 EngineLog.UndoSnapshotUnavailable(_log, op.GetType().Name, e);
             }
         }
@@ -424,14 +561,14 @@ public sealed class StemmaEngine : IAsyncDisposable
             _ => new OperationFailed(op.OpId, "UnknownOp", $"Unknown op {op.GetType().Name}")
         };
 
-        if (recordUndo && result is OperationApplied)
+        if (recordUndo && result is OperationApplied done)
         {
             // What the edit wrote is the undo; the inverse operation is only the fallback for when
             // the file has changed since (see RestoreDocumentsOp).
             var writes = _lastWrites;
-            var fallback = UndoStack.BuildInverse(op, _archBeforeOp) ?? await InverseOfAddAsync(op, ct);
+            var fallback = UndoStack.BuildInverse(op, _archBeforeOp, _removedFromBeforeOp) ?? InverseOfAdd(done);
             if (writes.Count > 0 || fallback is not null)
-                _undo.Push(op, new RestoreDocumentsOp($"undo_{Guid.NewGuid():N}", writes, fallback), DescribeOp(op));
+                _undo.Push(RedoOf(op, done), new RestoreDocumentsOp($"undo_{Guid.NewGuid():N}", writes, fallback), DescribeOp(op));
         }
         // AC1 — exactly one record per operation, whatever happened. The elapsed time is here rather
         // than on each branch so no path can complete without one.
@@ -452,6 +589,19 @@ public sealed class StemmaEngine : IAsyncDisposable
             (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
     }
 
+    /// <summary>
+    /// What a redo applies: the operation again — except an add, which is redone with the id it made.
+    /// Generated afresh, the id would be a different one as soon as anything names the first (the new
+    /// box was placed before it was undone, so the layout does), and the element would come back
+    /// without its place.
+    /// </summary>
+    private static OperationBase RedoOf(OperationBase op, OperationApplied applied) => (op, applied.Deltas.FirstOrDefault()) switch
+    {
+        (AddElementOp a, ElementAdded e) => new RestoreElementOp(a.OpId, e.Id, a.Name, a.ElementKind, a.ContextId, a.SystemId, a.ContainerKind, a.Role),
+        (AddLinkOp a, LinkAdded l) => new RestoreLinkOp(a.OpId, l.Id, a.FromId, a.ToId, a.LinkKind, a.Payload, a.Direction, a.DependencyKind),
+        _ => op,
+    };
+
     private static string DescribeOp(OperationBase op) => op switch
     {
         AddElementOp x => $"Add {x.ElementKind} \"{x.Name}\"",
@@ -469,27 +619,52 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     public async Task ReloadAsync(CancellationToken ct = default)
     {
-        _model = await WorkspaceLoader.BuildModelAsync(_model.RootPath, _workspace.CurrentSolution, ct);
+        _model = await WorkspaceLoader.BuildModelAsync(_model.RootPath, _workspace.CurrentSolution, _typesRead, ct);
     }
 
+    /// <summary>The types read out of each syntax tree; a tree no edit replaced is not read again.</summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SyntaxTree, List<TypeModel>> _typesRead = new();
+
+    /// <summary>
+    /// Close the workspace: stop watching first, so nothing new starts; then wait for whatever holds
+    /// the engine's lock — an edit, an undo, an outside change being taken in — to finish, so it is
+    /// never cut off half-written; then let go. Disposed without the lock, a reload the watcher had
+    /// started ran on into a workspace that was gone. Anything asked of the engine afterwards is
+    /// refused as WorkspaceClosed.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_watcher is not null) await _watcher.DisposeAsync();
-        _workspace.Dispose();
-        EngineLog.WorkspaceClosed(_log);
-        await Task.CompletedTask;
+        await _gate.WaitAsync();
+        try
+        {
+            if (_disposed) return;
+            _disposed = true;
+            await _lifetime.CancelAsync();
+            _workspace.Dispose();
+            EngineLog.WorkspaceClosed(_log);
+        }
+        finally { _gate.Release(); }
     }
+
+    private bool _disposed;
+
+    private static OperationFailed Closed(string opId) => new(opId, "WorkspaceClosed", "The workspace has been closed.");
 
     public async Task<OperationResult> UndoAsync(string opId, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
         try
         {
-            var entry = _undo.PopUndo();
+            if (_disposed) return Closed(opId);
+            var entry = _undo.PeekUndo();
             if (entry is null) return new OperationFailed(opId, "NothingToUndo", "Undo stack is empty");
-            // Apply the inverse op without re-pushing onto the undo stack.
+            // Apply the inverse op without re-pushing onto the undo stack. The entry moves to the redo
+            // branch only once it has been undone; refused, it is still the next undo.
             var inverse = entry.Inverse with { OpId = opId };
-            return await ApplyInternalAsync(inverse, recordUndo: false, ct);
+            var result = await ApplyInternalAsync(inverse, recordUndo: false, ct);
+            if (result is OperationApplied) _undo.Undone(entry);
+            return result;
         }
         finally { _gate.Release(); }
     }
@@ -499,10 +674,14 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
-            var entry = _undo.PopRedo();
+            if (_disposed) return Closed(opId);
+            var entry = _undo.PeekRedo();
             if (entry is null) return new OperationFailed(opId, "NothingToRedo", "Redo stack is empty");
             var forward = entry.Forward with { OpId = opId };
-            return await ApplyInternalAsync(forward, recordUndo: false, ct);
+            var result = await ApplyInternalAsync(forward, recordUndo: false, ct);
+            if (result is OperationApplied) _undo.Redone(entry);
+            else _undo.RedoFailed(entry);
+            return result;
         }
         finally { _gate.Release(); }
     }
@@ -519,63 +698,16 @@ public sealed class StemmaEngine : IAsyncDisposable
         Func<OperationResult> buildSuccessResult,
         CancellationToken ct)
     {
-        // MSBuildWorkspace persists changes to disk inside TryApplyChanges. Snapshot
-        // every touched file's contents so we can restore them on a compile failure.
         var changes = newSolution.GetChanges(oldSolution);
-        var touchedPaths = new List<string>();
-        foreach (var projectChange in changes.GetProjectChanges())
-        {
-            foreach (var docId in projectChange.GetChangedDocuments()
-                         .Concat(projectChange.GetAddedDocuments())
-                         .Concat(projectChange.GetRemovedDocuments()))
-            {
-                var doc = oldSolution.GetDocument(docId) ?? newSolution.GetDocument(docId);
-                if (doc?.FilePath is not null) touchedPaths.Add(doc.FilePath);
-            }
-        }
-        // The bytes, for putting back exactly — BOM, line endings and all — and the text, for the record
-        // of what changed.
-        var raw = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
-        var backups = new Dictionary<string, string?>();
-        foreach (var path in touchedPaths.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var bytes = File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
-            raw[path] = bytes;
-            backups[path] = bytes is null ? null : Encoding.UTF8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes);
-        }
-
-        // A file that is not UTF-8 is read with each byte that is not replaced by U+FFFD, so writing it
-        // back would damage every such character in it, edited or not. It is not edited.
+        // The files it changes or removes, as the edit saw them, and the files it creates.
+        var edited = new List<(string Path, Document Before)>();
+        var added = new List<string>();
         foreach (var projectChange in changes.GetProjectChanges())
         {
             foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetRemovedDocuments()))
-            {
-                if (oldSolution.GetDocument(docId)?.FilePath is { } path && raw.GetValueOrDefault(path) is { } bytes && !IsUtf8(bytes))
-                    return new OperationFailed(opId, "NotUtf8",
-                        $"{Path.GetFileName(path)} is not saved as UTF-8, so Stemma does not edit it: rewriting it would damage its other characters. Save it as UTF-8, then try again.");
-            }
-        }
-
-
-        // Never write over a version of a file this edit was not computed from. Between someone's
-        // save and the watcher noticing it there is a window of a second or so, and an edit applied
-        // in it would put the old text back with the new change on top (B-008).
-        foreach (var projectChange in changes.GetProjectChanges())
-        {
-            foreach (var docId in projectChange.GetChangedDocuments().Concat(projectChange.GetRemovedDocuments()))
-            {
-                var before = oldSolution.GetDocument(docId);
-                if (before?.FilePath is not { } path || !File.Exists(path)) continue;
-                var seen = await before.GetTextAsync(ct);
-                if (seen.ContentEquals(ReadFromDisk(path))) continue;
-
-                await TakeInFromDiskAsync(path, ct);
-                await ReloadAsync(ct);
-                _undo.OnExternalChange();
-                ExternalChange?.Invoke(path);
-                return new OperationFailed(opId, "ChangedOnDisk",
-                    $"{Path.GetFileName(path)} changed outside Stemma since it was last read. The new version is loaded; try again.");
-            }
+                if (oldSolution.GetDocument(docId) is { FilePath: { } path } before) edited.Add((path, before));
+            foreach (var docId in projectChange.GetAddedDocuments())
+                if (newSolution.GetDocument(docId)?.FilePath is { } path) added.Add(path);
         }
 
         // Capture the errors that already exist BEFORE the edit. The compile gate must only
@@ -584,9 +716,59 @@ public sealed class StemmaEngine : IAsyncDisposable
         // in this host) and the user should still be able to edit it. Signatures drop source
         // locations so a pre-existing error that merely shifts down a line when the op inserts
         // a statement isn't mistaken for a new one.
-        var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, ct);
-
+        //
+        // First, because it is the slow part: a whole compile. Between checking the files against
+        // the disk and writing them there must be nothing that takes time, or a save made in it is
+        // written over — which is what the check is there to prevent.
+        var affected = AffectedProjects(changes, newSolution);
+        var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, affected, ct);
         var projectFiles = await SnapshotProjectFilesAsync(oldSolution, ct);
+
+        // Now every file the edit touches, read once: the bytes are what a failure puts back — BOM,
+        // line endings and all — and what the edit is checked against; the text is for the record of
+        // what changed.
+        var raw = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
+        var backups = new Dictionary<string, string?>();
+        foreach (var path in edited.Select(e => e.Path).Concat(added).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var bytes = File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
+            raw[path] = bytes;
+            backups[path] = bytes is null ? null : Encoding.UTF8.GetString(bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes);
+        }
+
+        // A file that is not UTF-8 is read with each byte that is not replaced by U+FFFD, so writing it
+        // back would damage every such character in it, edited or not. It is not edited.
+        foreach (var (path, _) in edited)
+        {
+            if (raw.GetValueOrDefault(path) is { } bytes && !IsUtf8(bytes))
+                return new OperationFailed(opId, "NotUtf8",
+                    $"{Path.GetFileName(path)} is not saved as UTF-8, so Stemma does not edit it: rewriting it would damage its other characters. Save it as UTF-8, then try again.");
+        }
+
+        // Never write over a version of a file this edit was not computed from. Between someone's
+        // save and the watcher noticing it there is a window of a second or so, and an edit applied
+        // in it would put the old text back with the new change on top (B-008). A file deleted in
+        // that window has changed too: skipped, the write recreated it. And a file the edit creates
+        // must not have appeared in the meantime.
+        var outside = new List<(string Path, string What)>();
+        foreach (var (path, before) in edited)
+        {
+            if (raw.GetValueOrDefault(path) is not { } bytes) outside.Add((path, "was deleted outside Stemma since it was last read"));
+            else if (!(await before.GetTextAsync(ct)).ContentEquals(Decode(bytes))) outside.Add((path, "changed outside Stemma since it was last read"));
+        }
+        foreach (var path in added)
+            if (raw.GetValueOrDefault(path) is not null) outside.Add((path, "was created outside Stemma since this edit was made"));
+        if (outside.Count > 0)
+        {
+            // Every one of them taken in, so that trying again lands on top of all of them.
+            foreach (var (path, _) in outside) await TakeInFromDiskAsync(path, ct);
+            await ReloadAsync(ct);
+            _undo.OnExternalChange();
+            foreach (var (path, _) in outside) ExternalChange?.Invoke(path);
+            var (first, what) = outside[0];
+            return new OperationFailed(opId, "ChangedOnDisk", $"{Path.GetFileName(first)} {what}. The new version is loaded; try again.");
+        }
+
         // From here on the files are being written, and an edit half-made is worse than one finished
         // or one undone: the caller's cancellation (a closed tab) no longer applies, and anything that
         // goes wrong puts every file back as it was.
@@ -597,7 +779,7 @@ public sealed class StemmaEngine : IAsyncDisposable
                 return new OperationFailed(opId, "ApplyFailed", "TryApplyChanges returned false");
             await RestoreProjectFilesAsync(projectFiles, settled);
 
-            var introduced = await CollectIntroducedErrorsAsync(baselineErrors, settled);
+            var introduced = await CollectIntroducedErrorsAsync(baselineErrors, affected, settled);
             if (introduced.Count > 0)
             {
                 await RollBackAsync(raw, projectFiles);
@@ -615,7 +797,15 @@ public sealed class StemmaEngine : IAsyncDisposable
         _lastWrites = await DescribeWritesAsync(changes, oldSolution, newSolution, settled);
 
         await ReloadAsync(settled);
-        return buildSuccessResult();
+        // An edit that wrote its files and then cannot say it did what was asked is put back: it either
+        // happened, or nothing is left of it.
+        var result = buildSuccessResult();
+        if (result is OperationFailed)
+        {
+            _lastWrites = [];
+            await RollBackAsync(raw, projectFiles);
+        }
+        return result;
     }
 
     private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
@@ -731,26 +921,17 @@ public sealed class StemmaEngine : IAsyncDisposable
         return await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
     }
 
-    private async Task<OperationBase?> InverseOfAddAsync(OperationBase op, CancellationToken ct)
+    /// <summary>
+    /// An add's fallback inverse: remove the id it generated, as its result says. Looked for in the
+    /// model by kind and name, it was the highest such id — another element of the same name, when the
+    /// new one sorted lower, and undo removed that one instead.
+    /// </summary>
+    private static OperationBase? InverseOfAdd(OperationApplied applied) => applied.Deltas.FirstOrDefault() switch
     {
-        // An add's inverse needs the id the engine generated, which only the model after it knows.
-        if (op is not (AddElementOp or AddLinkOp)) return null;
-        var fresh = await ReadArchModelAsync(ct);
-        return op switch
-        {
-            AddElementOp add => fresh?.Elements
-                .Where(e => e.Kind == add.ElementKind && e.Name == add.Name)
-                .OrderByDescending(e => e.Id)
-                .Select(e => new RemoveElementOp($"undo_{Guid.NewGuid():N}", e.Id))
-                .FirstOrDefault(),
-            AddLinkOp add => fresh?.Links
-                .Where(l => l.Kind == add.LinkKind && l.FromId == add.FromId && l.ToId == add.ToId)
-                .OrderByDescending(l => l.Id)
-                .Select(l => new RemoveLinkOp($"undo_{Guid.NewGuid():N}", l.Id))
-                .FirstOrDefault(),
-            _ => null,
-        };
-    }
+        ElementAdded e => new RemoveElementOp($"undo_{Guid.NewGuid():N}", e.Id),
+        LinkAdded l => new RemoveLinkOp($"undo_{Guid.NewGuid():N}", l.Id),
+        _ => null,
+    };
 
     /// <summary>
     /// Record what each write did, and check that what landed on disk is what was intended.
@@ -817,8 +998,11 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> AddTypeAsync(AddTypeOp op, CancellationToken ct)
     {
+        // The path as Refuse checked it: relative to the workspace. Used as given, a relative path was
+        // written beside the running process instead.
+        var path = Path.GetFullPath(op.FilePath, _model.RootPath);
         var oldSolution = _workspace.CurrentSolution;
-        var existingDoc = FindDocument(op.FilePath);
+        var existingDoc = FindDocument(path);
         var visibilityKw = ToVisibilityKeyword(op.Visibility);
         var typeKindKw = op.TypeKind switch
         {
@@ -836,17 +1020,22 @@ public sealed class StemmaEngine : IAsyncDisposable
             // LF whatever the OS: with Environment.NewLine the same operation wrote a CRLF file on
             // Windows, so what a model gained depended on whose machine added the type.
             var content = $"namespace {op.Namespace};\n\n{visibilityKw} {typeKindKw} {op.Name}\n{{\n}}\n";
-            var project = oldSolution.Projects
-                .OrderByDescending(p => op.FilePath.StartsWith(Path.GetDirectoryName(p.FilePath ?? "") ?? "", StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault();
-            if (project is null) return new OperationFailed(op.OpId, "NoProject", "No project to host file");
-            var newDoc = project.AddDocument(Path.GetFileName(op.FilePath), content, filePath: op.FilePath);
+            // The project that would compile the file: the one whose folder holds it. Any other project
+            // compiled it for this session only, and the type was gone the next time it was opened.
+            if (ProjectFor(path) is not { } project)
+                return new OperationFailed(op.OpId, "NoProject", $"{path} is in no project's folder, so no project would compile it.");
+            var newDoc = project.AddDocument(Path.GetFileName(path), content, filePath: path);
             newSolution = newDoc.Project.Solution;
         }
         else
         {
             var root = await existingDoc.GetSyntaxRootAsync(ct);
             if (root is not CompilationUnitSyntax cu) return new OperationFailed(op.OpId, "ParseError", "Could not parse target file");
+            // A file that does not declare the namespace would take the type into its own, and the type
+            // asked for would not exist: refused before the file is touched.
+            if (!cu.Members.OfType<BaseNamespaceDeclarationSyntax>().Any(n => n.Name.ToString() == op.Namespace))
+                return new OperationFailed(op.OpId, "NamespaceNotInFile",
+                    $"{Path.GetFileName(path)} declares no namespace {op.Namespace}, so a type in it cannot be added there.");
             var newRoot = TypeWriter.AddType(cu, op.Namespace, $"{visibilityKw} {typeKindKw} {op.Name}");
             newSolution = existingDoc.WithSyntaxRoot(newRoot).Project.Solution;
         }
@@ -862,10 +1051,9 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RenameTypeAsync(RenameTypeOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (typeModel, doc, _, _) = site;
 
         var compilation = await doc.Project.GetCompilationAsync(ct);
         var symbol = compilation?.GetTypeByMetadataName(op.TypeId);
@@ -883,15 +1071,9 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveTypeAsync(RemoveTypeOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeNode = root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>()
-            .FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
-        if (typeNode is null) return new OperationFailed(op.OpId, "TypeNodeNotFound", op.TypeId);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (_, doc, root, typeNode) = site;
 
         var newRoot = TypeWriter.RemoveMember(root, typeNode);
         var oldSolution = _workspace.CurrentSolution;
@@ -902,15 +1084,10 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> AddPropertyAsync(AddPropertyOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
-        if (typeDecl is null) return new OperationFailed(op.OpId, "TypeNodeNotFound", op.TypeId);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (_, doc, root, declaration) = site;
+        if (declaration is not TypeDeclarationSyntax typeDecl) return new OperationFailed(op.OpId, "TypeNodeNotFound", op.TypeId);
 
         var accessors = "";
         if (op.HasGetter) accessors += " get;";
@@ -933,10 +1110,9 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RenamePropertyAsync(RenamePropertyOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var doc = site.Document;
         var compilation = await doc.Project.GetCompilationAsync(ct);
         var typeSymbol = compilation?.GetTypeByMetadataName(op.TypeId);
         var propSymbol = typeSymbol?.GetMembers(op.PropertyName).OfType<ISymbol>().FirstOrDefault();
@@ -955,13 +1131,10 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemovePropertyAsync(RemovePropertyOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (_, doc, root, declaration) = site;
+        var typeDecl = declaration as TypeDeclarationSyntax;
         var prop = typeDecl?.Members.OfType<PropertyDeclarationSyntax>().FirstOrDefault(p => p.Identifier.Text == op.PropertyName);
         if (prop is null) return new OperationFailed(op.OpId, "PropertyNotFound", op.PropertyName);
 
@@ -984,13 +1157,10 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveInheritanceAsync(RemoveInheritanceOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
+        var (typeModel, doc, root, declaration) = site;
+        var typeDecl = declaration as TypeDeclarationSyntax;
         if (typeDecl?.BaseList is null || typeDecl.BaseList.Types.Count == 0)
             return new OperationFailed(op.OpId, "NoBaseList", "Type has no base list");
         // A base class is always first in the list, but the first entry is not always a base class:
@@ -1012,15 +1182,12 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> RemoveImplementationAsync(RemoveImplementationOp op, CancellationToken ct)
     {
-        var typeModel = _model.FindType(op.TypeId);
+        var (site, refused) = await FindTypeAsync(op.OpId, op.TypeId, ct);
+        if (site is null) return refused!;
         var ifaceModel = _model.FindType(op.InterfaceTypeId);
-        if (typeModel is null) return new OperationFailed(op.OpId, "TypeNotFound", op.TypeId);
         if (ifaceModel is null) return new OperationFailed(op.OpId, "InterfaceNotFound", op.InterfaceTypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(op.OpId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
+        var (_, doc, root, declaration) = site;
+        var typeDecl = declaration as TypeDeclarationSyntax;
         if (typeDecl?.BaseList is null) return new OperationFailed(op.OpId, "NoBaseList", "Type has no base list");
 
         var match = typeDecl.BaseList.Types.FirstOrDefault(b => b.Type.ToString() == ifaceModel.Name || b.Type.ToString() == ifaceModel.Id);
@@ -1039,16 +1206,12 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> ModifyBaseListAsync(string opId, string typeId, string addedTypeId, bool addAtFront, CancellationToken ct)
     {
-        var typeModel = _model.FindType(typeId);
+        var (site, refused) = await FindTypeAsync(opId, typeId, ct);
+        if (site is null) return refused!;
         var addedModel = _model.FindType(addedTypeId);
-        if (typeModel is null) return new OperationFailed(opId, "TypeNotFound", typeId);
         if (addedModel is null) return new OperationFailed(opId, "TargetNotFound", addedTypeId);
-        var doc = FindDocument(typeModel.FilePath);
-        if (doc is null) return new OperationFailed(opId, "DocumentNotFound", typeModel.FilePath);
-        var root = await doc.GetSyntaxRootAsync(ct);
-        if (root is null) return new OperationFailed(opId, "ParseError", "Could not parse");
-        var typeDecl = root.DescendantNodes().OfType<TypeDeclarationSyntax>().FirstOrDefault(t => t.Identifier.Text == typeModel.Name);
-        if (typeDecl is null) return new OperationFailed(opId, "TypeNodeNotFound", typeId);
+        var (_, doc, root, declaration) = site;
+        if (declaration is not TypeDeclarationSyntax typeDecl) return new OperationFailed(opId, "TypeNodeNotFound", typeId);
 
         if (typeDecl.BaseList?.Types.Any(b => b.Type.ToString() == addedModel.Name) == true)
             return new OperationFailed(opId, "AlreadyPresent", addedTypeId);
@@ -1064,6 +1227,34 @@ public sealed class StemmaEngine : IAsyncDisposable
         }, ct);
     }
 
+    private sealed record TypeSite(TypeModel Model, Document Document, SyntaxNode Root, BaseTypeDeclarationSyntax Declaration);
+
+    /// <summary>
+    /// The declaration of the type the model calls <paramref name="typeId"/>, matched by that full
+    /// name in each file the model says declares it — never by the simple name, which took the first
+    /// <c>Item</c> in a file that has one in two namespaces. Parts of one partial type are one type, and
+    /// the first part stands for it; any other two declarations with the name (a nested type and a
+    /// top-level one, which the model names alike) are refused, since which was meant cannot be told.
+    /// </summary>
+    private async Task<(TypeSite? Site, OperationFailed? Refusal)> FindTypeAsync(string opId, string typeId, CancellationToken ct)
+    {
+        var models = _model.AllTypes.Where(t => t.Id == typeId).ToList();
+        if (models.Count == 0) return (null, new OperationFailed(opId, "TypeNotFound", typeId));
+        var sites = new List<TypeSite>();
+        foreach (var model in models.DistinctBy(m => m.FilePath, StringComparer.OrdinalIgnoreCase))
+        {
+            if (FindDocument(model.FilePath) is not { } doc || await doc.GetSyntaxRootAsync(ct) is not { } root) continue;
+            sites.AddRange(root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>()
+                .Where(d => WorkspaceLoader.TypeIdOf(d) == typeId)
+                .Select(d => new TypeSite(model, doc, root, d)));
+        }
+        if (sites.Count == 0) return (null, new OperationFailed(opId, "TypeNodeNotFound", typeId));
+        if (sites.Count > 1 && !sites.All(s => s.Declaration.Modifiers.Any(SyntaxKind.PartialKeyword)))
+            return (null, new OperationFailed(opId, "AmbiguousType",
+                $"{sites.Count} declarations are named {typeId} (a nested type is named by its namespace and its own name), so which one is meant cannot be told."));
+        return (sites[0], null);
+    }
+
     private static async Task WriteFileAtomicAsync(string path, string contents, CancellationToken ct)
     {
         var dir = Path.GetDirectoryName(path);
@@ -1074,44 +1265,92 @@ public sealed class StemmaEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// Location-independent signatures of every compile error in a solution, used to tell
+    /// The projects an edit can have broken: the ones it changed, and every project that depends on one
+    /// of them. No other project's compilation can differ, so none other is checked.
+    /// </summary>
+    private static IReadOnlyList<ProjectId> AffectedProjects(SolutionChanges changes, Solution newSolution)
+    {
+        var graph = newSolution.GetProjectDependencyGraph();
+        var affected = new HashSet<ProjectId>();
+        foreach (var id in changes.GetProjectChanges().Select(c => c.ProjectId))
+        {
+            affected.Add(id);
+            affected.UnionWith(graph.GetProjectsThatTransitivelyDependOnThisProject(id));
+        }
+        return [.. affected];
+    }
+
+    /// <summary>
+    /// Location-independent signatures of the compile errors in <paramref name="projects"/>, used to tell
     /// errors the current op introduced apart from ones that were already present.
     /// </summary>
-    private static async Task<HashSet<string>> CollectErrorSignaturesAsync(Solution solution, CancellationToken ct)
+    private async Task<HashSet<string>> CollectErrorSignaturesAsync(Solution solution, IReadOnlyList<ProjectId> projects, CancellationToken ct)
     {
         var signatures = new HashSet<string>();
-        foreach (var project in solution.Projects)
+        foreach (var id in projects)
         {
-            var compilation = await project.GetCompilationAsync(ct);
-            if (compilation is null) continue;
-            foreach (var d in compilation.GetDiagnostics(ct))
-            {
-                if (d.Severity == DiagnosticSeverity.Error)
-                    signatures.Add($"{project.Name}|{d.Id}|{d.GetMessage()}");
-            }
+            if (solution.GetProject(id) is not { } project) continue;
+            foreach (var d in await ErrorsOfAsync(project, ct))
+                signatures.Add($"{project.Name}|{d.Id}|{d.GetMessage()}");
         }
         return signatures;
     }
 
     /// <summary>
-    /// Errors in the current workspace solution that are NOT in <paramref name="baseline"/> —
-    /// the ones the just-applied op introduced. Returned with source locations for diagnostics.
+    /// Errors in <paramref name="projects"/> of the current workspace solution that are NOT in
+    /// <paramref name="baseline"/> — the ones the just-applied op introduced. Returned with source
+    /// locations for diagnostics.
     /// </summary>
-    private async Task<IReadOnlyList<string>> CollectIntroducedErrorsAsync(HashSet<string> baseline, CancellationToken ct)
+    private async Task<IReadOnlyList<string>> CollectIntroducedErrorsAsync(HashSet<string> baseline, IReadOnlyList<ProjectId> projects, CancellationToken ct)
     {
         var introduced = new List<string>();
-        foreach (var project in _workspace.CurrentSolution.Projects)
+        var solution = _workspace.CurrentSolution;
+        foreach (var id in projects)
         {
-            var compilation = await project.GetCompilationAsync(ct);
-            if (compilation is null) continue;
-            foreach (var d in compilation.GetDiagnostics(ct))
+            if (solution.GetProject(id) is not { } project) continue;
+            foreach (var d in await ErrorsOfAsync(project, ct))
             {
-                if (d.Severity != DiagnosticSeverity.Error) continue;
                 if (baseline.Contains($"{project.Name}|{d.Id}|{d.GetMessage()}")) continue;
                 introduced.Add($"{project.Name}: {d.Id} {d.GetMessage()} at {d.Location.GetLineSpan()}");
             }
         }
         return introduced;
+    }
+
+    /// <summary>
+    /// Each project's compile errors, for the version of the project and everything it depends on that
+    /// they were found in. The errors after one edit are the errors before the next, so a check that
+    /// compiled the whole workspace twice per edit now compiles what the edit changed, once. Held as a
+    /// task so that two callers — an edit, and the warm-up after opening — share one compile.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ProjectId, (VersionStamp Version, Lazy<Task<IReadOnlyList<Diagnostic>>> Errors)> _errors = new();
+
+    /// <summary>Cancelled when the engine is disposed: a compile nobody will read stops.</summary>
+    private readonly CancellationTokenSource _lifetime = new();
+
+    private async Task<IReadOnlyList<Diagnostic>> ErrorsOfAsync(Project project, CancellationToken ct)
+    {
+        var version = await project.GetDependentVersionAsync(ct);
+        var entry = _errors.AddOrUpdate(project.Id,
+            _ => (version, new(() => CompileForErrorsAsync(project))),
+            (_, known) => known.Version == version && !(known.Errors.IsValueCreated && known.Errors.Value is { IsFaulted: true } or { IsCanceled: true })
+                ? known
+                : (version, new(() => CompileForErrorsAsync(project))));
+        return await entry.Errors.Value.WaitAsync(ct);
+    }
+
+    private async Task<IReadOnlyList<Diagnostic>> CompileForErrorsAsync(Project project)
+    {
+        // Not the caller's token: the result is shared, and one caller giving up must not fail it for
+        // the others.
+        await Task.Yield();
+        var started = Stopwatch.GetTimestamp();
+        var compilation = await project.GetCompilationAsync(_lifetime.Token);
+        IReadOnlyList<Diagnostic> errors = compilation is null
+            ? []
+            : compilation.GetDiagnostics(_lifetime.Token).Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        EngineLog.CompileChecked(_log, project.Name, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, errors.Count);
+        return errors;
     }
 
     private static string ToVisibilityKeyword(Visibility v) => v switch
@@ -1129,70 +1368,98 @@ public sealed class StemmaEngine : IAsyncDisposable
     /// Locate the primary document whose root contains a `static class Architecture { Build() {...} }`.
     /// Returns null if the workspace is not a model workspace.
     /// </summary>
-    public Document? FindArchitectureDocument()
-    {
-        foreach (var project in _workspace.CurrentSolution.Projects)
-        {
-            foreach (var doc in project.Documents)
-            {
-                if (doc.FilePath is null) continue;
-                if (!doc.FilePath.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) continue;
-                var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
-                if (root is null) continue;
-                if (root.DescendantNodes().OfType<ClassDeclarationSyntax>()
-                        .Any(c => c.Identifier.Text == "Architecture"
-                                  && c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build")))
-                    return doc;
-            }
-        }
-        return null;
-    }
+    public Document? FindArchitectureDocument() => ModelFilesOf(_workspace.CurrentSolution).Primary;
 
     /// <summary>
     /// Returns every document under the workspace's `Architecture/` folder that contains a
     /// `static class XYZ { Build(...) }` method body. Order: primary `Architecture` class first,
     /// then alphabetical by file path.
     /// </summary>
-    public IReadOnlyList<Document> FindArchitectureDocuments()
+    public IReadOnlyList<Document> FindArchitectureDocuments() => ModelFilesOf(_workspace.CurrentSolution).Documents;
+
+    /// <param name="Primary">The first document declaring a `static class Architecture { Build() }`.</param>
+    private sealed record ModelFiles(Solution Solution, IReadOnlyList<Document> Documents, Document? Primary);
+    private ModelFiles? _modelFiles;
+
+    /// <summary>
+    /// The model files of <paramref name="solution"/>, found once per solution. Every operation looked
+    /// for them several times — each a walk of every node of every file under Architecture/ — and
+    /// nothing about them changes until a file does, which makes a new solution.
+    /// </summary>
+    private ModelFiles ModelFilesOf(Solution solution)
     {
+        if (Volatile.Read(ref _modelFiles) is { } known && ReferenceEquals(known.Solution, solution)) return known;
         var matches = new List<Document>();
-        foreach (var project in _workspace.CurrentSolution.Projects)
+        Document? primary = null;
+        foreach (var project in solution.Projects)
         {
             foreach (var doc in project.Documents)
             {
                 if (doc.FilePath is null) continue;
-                if (!doc.FilePath.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!IsModelFile(doc.FilePath)) continue;
                 var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
                 if (root is null) continue;
-                var hasBuild = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
-                    .Any(c => c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build"));
-                if (hasBuild) matches.Add(doc);
+                var builders = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
+                    .Where(c => c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build"))
+                    .ToList();
+                if (builders.Count == 0) continue;
+                matches.Add(doc);
+                if (primary is null && builders.Any(c => c.Identifier.Text == "Architecture")) primary = doc;
             }
         }
-        return matches
+        var files = new ModelFiles(solution, matches
             .OrderBy(d => d.FilePath!.EndsWith("Architecture.cs", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ThenBy(d => d.FilePath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            .ToList(), primary);
+        Volatile.Write(ref _modelFiles, files);
+        return files;
     }
 
-    public async Task<ArchModel.ArchModel?> ReadArchModelAsync(CancellationToken ct = default)
+    public async Task<ArchModel.ArchModel?> ReadArchModelAsync(CancellationToken ct = default) =>
+        (await ReadModelAsync(_workspace.CurrentSolution, ct)).Model;
+
+    /// <param name="DeclaredIn">The model file each element and link id is declared in, the first if more than one.</param>
+    /// <param name="Resolved">Whether every file was read with its compilation, so constants declared in another file are known.</param>
+    private sealed record ModelRead(Solution Solution, ArchModel.ArchModel? Model, IReadOnlyDictionary<string, Document> DeclaredIn, bool Resolved);
+    private ModelRead? _modelRead;
+
+    /// <summary>
+    /// The model of <paramref name="solution"/>, read once per solution. It was read from every model
+    /// file before every operation and again inside most of them, and the canvas reads it after each.
+    /// Read with the compilation when it is built (in the background, after opening), so a constant
+    /// declared in another file is read too; read before that, it is read again once it is.
+    /// </summary>
+    private async Task<ModelRead> ReadModelAsync(Solution solution, CancellationToken ct)
     {
-        var docs = FindArchitectureDocuments();
-        if (docs.Count == 0) return null;
-        if (docs.Count == 1)
-        {
-            var root = await docs[0].GetSyntaxRootAsync(ct);
-            if (root is null) return null;
-            return DslReader.TryRead(docs[0].FilePath!, root);
-        }
-        // Merge multi-file model: aggregate elements/links/tags from every file.
+        var docs = ModelFilesOf(solution).Documents;
+        if (Volatile.Read(ref _modelRead) is { } known && ReferenceEquals(known.Solution, solution)
+            && (known.Resolved || !docs.Any(d => d.Project.TryGetCompilation(out _))))
+            return known;
+
+        // Through the merge even when there is one file: it is also where a second declaration of an
+        // id is dropped, and the read of a past revision (GitHistory) always goes through it. Skipped
+        // for one file, a model compared with itself showed a duplicate the history did not have.
         var partials = new List<ArchModel.ArchModel?>();
+        var declaredIn = new Dictionary<string, Document>(StringComparer.Ordinal);
+        var resolved = true;
         foreach (var doc in docs)
         {
             var root = await doc.GetSyntaxRootAsync(ct);
-            if (root is not null) partials.Add(DslReader.TryRead(doc.FilePath!, root));
+            if (root is null) continue;
+            SemanticModel? semantic = null;
+            if (doc.Project.TryGetCompilation(out var compilation) && await doc.GetSyntaxTreeAsync(ct) is { } tree)
+                semantic = compilation.GetSemanticModel(tree);
+            else resolved = false;
+            var partial = DslReader.TryRead(doc.FilePath!, root, semantic);
+            partials.Add(partial);
+            foreach (var id in partial?.Elements.Select(e => e.Id).Concat(partial.Links.Select(l => l.Id)) ?? [])
+                declaredIn.TryAdd(id, doc);
         }
-        return ArchModelMerge.Merge(docs[0].FilePath ?? "Architecture.cs", partials);
+        // No file with a Build() body to read is no model, as it always was — not an empty one.
+        var model = docs.Count == 0 || partials.All(p => p is null) ? null : ArchModelMerge.Merge(docs[0].FilePath ?? "Architecture.cs", partials);
+        var read = new ModelRead(solution, model, declaredIn, resolved);
+        Volatile.Write(ref _modelRead, read);
+        return read;
     }
 
     /// <summary>
@@ -1219,7 +1486,11 @@ public sealed class StemmaEngine : IAsyncDisposable
     /// </summary>
     public Document? FindDocumentForId(string id)
     {
-        foreach (var doc in FindArchitectureDocuments())
+        var solution = _workspace.CurrentSolution;
+        if (ReadModelAsync(solution, CancellationToken.None).GetAwaiter().GetResult().DeclaredIn.TryGetValue(id, out var declaring))
+            return declaring;
+        // A declaration the model leaves out, because it cannot be read, is still found where it is written.
+        foreach (var doc in ModelFilesOf(solution).Documents)
         {
             var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
             if (root is not null && DslReader.FindDeclaration(doc.FilePath ?? "", root, id) is not null) return doc;
@@ -1248,19 +1519,30 @@ public sealed class StemmaEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// Best-effort namespace name to use for new files (Views, etc.). Picks the namespace of
-    /// the primary Architecture file; falls back to the project name; last resort "Architecture".
+    /// The namespace for a new file (a view): the primary Architecture file's, or else one made from
+    /// the project's name. A model-only project is named after its folder, which need not be a C#
+    /// name — a folder called my-arch wrote <c>namespace my-arch;</c> and the new view was refused as
+    /// breaking the build — so the name is made into one the way MSBuild makes a root namespace.
     /// </summary>
     public string NamespaceForViews()
     {
-        var doc = FindArchitectureDocument();
-        if (doc is null) return _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
-        var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
-        if (root is null) return _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
-        var fsns = root.DescendantNodes().OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
-        if (fsns is not null) return fsns.Name.ToString();
-        var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
-        return ns?.Name.ToString() ?? _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
+        var root = FindArchitectureDocument()?.GetSyntaxRootAsync().GetAwaiter().GetResult();
+        var declared = root?.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault()?.Name.ToString();
+        return declared ?? AsNamespace(_model.Projects.FirstOrDefault()?.Name);
+    }
+
+    /// <summary><paramref name="name"/> as a C# namespace: each character a name cannot hold becomes <c>_</c>.</summary>
+    private static string AsNamespace(string? name)
+    {
+        var segments = new List<string>();
+        foreach (var part in (name ?? "").Split('.'))
+        {
+            var segment = new string(part.Select(c => char.IsLetterOrDigit(c) || c == '_' ? c : '_').ToArray());
+            if (segment.Length == 0) continue;
+            if (char.IsDigit(segment[0]) || SyntaxFacts.GetKeywordKind(segment) != SyntaxKind.None) segment = "_" + segment;
+            segments.Add(segment);
+        }
+        return segments.Count > 0 && segments.All(SyntaxFacts.IsValidIdentifier) ? string.Join('.', segments) : "Architecture";
     }
 
     /// <summary>
@@ -1277,6 +1559,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(opId);
             return await LoggedAsync("SaveView", async () =>
             {
                 await CatchUpWithDiskAsync(ct);
@@ -1311,6 +1594,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(opId);
             return await LoggedAsync("RemoveView", async () =>
             {
                 await CatchUpWithDiskAsync(ct);
@@ -1354,9 +1638,9 @@ public sealed class StemmaEngine : IAsyncDisposable
             await TakeOutAsync(doc, ct);
             changed.Add(doc.FilePath!);
         }
-        foreach (var path in Directory.EnumerateFiles(_model.RootPath, "*.cs", SearchOption.AllDirectories))
+        foreach (var path in ModelWorkspaceLoader.SourcesIn(_model.RootPath))
         {
-            if (heldPaths.Contains(path) || ProjectFor(path) is not { } project) continue;
+            if (heldPaths.Contains(path) || await CompilingProjectAsync(path, ct) is not { } project) continue;
             await TakeInAddedAsync(project, path, ReadFromDisk(path), ct);
             changed.Add(path);
         }
@@ -1370,7 +1654,7 @@ public sealed class StemmaEngine : IAsyncDisposable
     {
         foreach (var doc in _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents))
         {
-            if (doc.FilePath is null || !doc.FilePath.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (doc.FilePath is null || !InFolder(doc.FilePath, "Views")) continue;
             var root = await doc.GetSyntaxRootAsync(ct);
             if (root is not null && ViewsAdapter.TryReadOne(root)?.Id == viewId) return (doc, root);
         }
@@ -1423,7 +1707,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var current = await ReadArchModelAsync(ct) ?? DslReader.TryRead(doc.FilePath!, root);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Architecture.Build() body not found");
 
-        var id = GenerateId(op.ElementKind, current);
+        var id = GenerateId(op.ElementKind, await TakenIdsAsync(current, ct));
         var attrs = new Dictionary<string, string?>();
         if (op.ContextId is not null) attrs["contextId"] = op.ContextId;
         if (op.SystemId is not null) attrs["systemId"] = op.SystemId;
@@ -1445,7 +1729,9 @@ public sealed class StemmaEngine : IAsyncDisposable
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
 
-        var newRoot = DslWriter.RenameElement(root, op.ElementId, op.NewName);
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.RenameElement(root, op.ElementId, op.NewName); }
+        catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
         if (ReferenceEquals(newRoot, root))
             return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
         var oldSolution = _workspace.CurrentSolution;
@@ -1521,7 +1807,10 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
-        var current = DslReader.TryRead(doc.FilePath!, root);
+        // The whole model, as AddElement reads it: an end declared in another model file is an element
+        // like any other, and an id another file declares is taken. Read from this file alone, a link
+        // to Payments.cs was refused, and a new link took an id Payments.cs already had.
+        var current = await ReadArchModelAsync(ct) ?? DslReader.TryRead(doc.FilePath!, root);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
 
         if (!current.Elements.Any(e => e.Id == op.FromId))
@@ -1529,7 +1818,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (!current.Elements.Any(e => e.Id == op.ToId))
             return new OperationFailed(op.OpId, "ToNotFound", op.ToId);
 
-        var id = GenerateLinkId(op.LinkKind, current);
+        var id = GenerateLinkId(op.LinkKind, await TakenIdsAsync(current, ct));
         var attrs = new Dictionary<string, string?>();
         if (op.Payload is not null) attrs["payload"] = op.Payload;
         if (op.Direction is not null) attrs["direction"] = op.Direction;
@@ -1582,9 +1871,28 @@ public sealed class StemmaEngine : IAsyncDisposable
             () => new OperationApplied(op.OpId, []), ct);
     }
 
+    /// <summary>
+    /// The model file a restore writes into: the one it came from, if it is still a model file, and
+    /// otherwise the primary one. Only a model file — the path comes with the operation.
+    /// </summary>
+    private Document? RestoreTarget(string? filePath) =>
+        (filePath is null ? null : FindArchitectureDocuments().FirstOrDefault(d => string.Equals(d.FilePath, filePath, StringComparison.OrdinalIgnoreCase)))
+        ?? FindArchitectureDocument();
+
+    /// <summary>The tag that was removed with a declaration, written back after it.</summary>
+    private static SyntaxNode RestoreTag(SyntaxNode root, string id, ArchLifecycle? lifecycle, ArchOwnership? ownership)
+    {
+        if (lifecycle is not null)
+            root = DslWriter.SetTag(root, id, "lifecycle",
+                [("status", lifecycle.Status), ("phase", lifecycle.Phase), ("validFrom", lifecycle.ValidFrom), ("validUntil", lifecycle.ValidUntil)]);
+        if (ownership is not null)
+            root = DslWriter.SetTag(root, id, "ownership", [("squad", ownership.Squad), ("domain", ownership.Domain)]);
+        return root;
+    }
+
     private async Task<OperationResult> RestoreArchElementAsync(RestoreElementOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = RestoreTarget(op.FilePath);
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
@@ -1596,16 +1904,16 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.Role is not null) attrs["role"] = op.Role;
         if (op.AboutId is not null) attrs["aboutId"] = op.AboutId;
         var element = new ArchModel.ArchElement(op.ElementId, op.Name, op.ElementKind, attrs);
-        var newRoot = DslWriter.AddElement(root, element);
+        var newRoot = RestoreTag(DslWriter.AddElement(root, element), op.ElementId, op.Lifecycle, op.Ownership);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
+            () => new OperationApplied(op.OpId, [new ElementAdded(op.ElementId)]), ct);
     }
 
     private async Task<OperationResult> RestoreArchLinkAsync(RestoreLinkOp op, CancellationToken ct)
     {
-        var doc = FindArchitectureDocument();
+        var doc = RestoreTarget(op.FilePath);
         if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
@@ -1616,11 +1924,11 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.DependencyKind is not null) attrs["kind"] = op.DependencyKind;
         if (op.Label is not null) attrs["label"] = op.Label;
         var link = new ArchModel.ArchLink(op.LinkId, op.FromId, op.ToId, op.LinkKind, attrs);
-        var newRoot = DslWriter.AddLink(root, link);
+        var newRoot = RestoreTag(DslWriter.AddLink(root, link), op.LinkId, op.Lifecycle, op.Ownership);
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
+            () => new OperationApplied(op.OpId, [new LinkAdded(op.LinkId)]), ct);
     }
 
     private Task<OperationResult> SetLifecycleAsync(SetLifecycleOp op, CancellationToken ct) =>
@@ -1651,7 +1959,85 @@ public sealed class StemmaEngine : IAsyncDisposable
         return await CommitAsync(opId, oldSolution, newSolution, () => new OperationApplied(opId, []), ct);
     }
 
-    private static string GenerateId(ArchElementKind kind, ArchModel.ArchModel current)
+    /// <summary>
+    /// Every id something names, which a generated id must not be. Removing an element leaves its
+    /// links, its layout, notes and styles, its comments and the views that list it, on purpose: they
+    /// are references, shown detached. An id free in the declarations alone was given to the next new
+    /// element, and every one of those attached to it — a link left pointing at nothing pointed at the
+    /// new box.
+    ///
+    /// So: what the model declares and every value its declarations and tags hold (link ends, a
+    /// context, a system, what a risk is about — every attribute, since one that is not an id cannot
+    /// collide with one), every view's id and members, and every key and string in the layout sidecar
+    /// and the comments file, where positions, styles, notes, book pages and comments are keyed by id.
+    /// </summary>
+    private async Task<HashSet<string>> TakenIdsAsync(ArchModel.ArchModel current, CancellationToken ct)
+    {
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var e in current.Elements)
+        {
+            taken.Add(e.Id);
+            foreach (var value in e.Attributes.Values) if (value is not null) taken.Add(value);
+        }
+        foreach (var l in current.Links)
+        {
+            taken.Add(l.Id);
+            taken.Add(l.FromId);
+            taken.Add(l.ToId);
+            foreach (var value in l.Attributes.Values) if (value is not null) taken.Add(value);
+        }
+        foreach (var t in current.Tags) taken.Add(t.TargetId);
+        foreach (var doc in _workspace.CurrentSolution.Projects.SelectMany(p => p.Documents))
+        {
+            if (doc.FilePath is null || !InFolder(doc.FilePath, "Views")) continue;
+            if (await doc.GetSyntaxRootAsync(ct) is not { } root || ViewsAdapter.TryReadOne(root) is not { } view) continue;
+            taken.Add(view.Id);
+            taken.UnionWith(view.ElementIds);
+        }
+        AddJsonStrings(LayoutSidecar.PathFor(_model.RootPath), taken);
+        AddJsonStrings(CommentsSidecar.PathFor(_model.RootPath), taken);
+        return taken;
+    }
+
+    /// <summary>Every property name and every string value in the JSON file at <paramref name="path"/>.</summary>
+    private void AddJsonStrings(string path, HashSet<string> into)
+    {
+        if (!File.Exists(path)) return;
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(path),
+                new System.Text.Json.JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = System.Text.Json.JsonCommentHandling.Skip });
+            Walk(json.RootElement);
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+        {
+            // Silent on purpose: a file that cannot be read (a merge left its markers in) names nothing
+            // that can be found, every write to it is refused and says so, and the id is generated from
+            // what can be read.
+        }
+
+        void Walk(System.Text.Json.JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case System.Text.Json.JsonValueKind.Object:
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        into.Add(property.Name);
+                        Walk(property.Value);
+                    }
+                    break;
+                case System.Text.Json.JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray()) Walk(item);
+                    break;
+                case System.Text.Json.JsonValueKind.String:
+                    into.Add(element.GetString()!);
+                    break;
+            }
+        }
+    }
+
+    private static string GenerateId(ArchElementKind kind, IReadOnlySet<string> taken)
     {
         var prefix = kind switch
         {
@@ -1668,15 +2054,14 @@ public sealed class StemmaEngine : IAsyncDisposable
             ArchElementKind.Concept => "con",
             _ => "elem"
         };
-        var existing = current.Elements.Select(e => e.Id).ToHashSet();
         for (var n = 1; ; n++)
         {
             var candidate = $"{prefix}_{n:000}";
-            if (!existing.Contains(candidate)) return candidate;
+            if (!taken.Contains(candidate)) return candidate;
         }
     }
 
-    private static string GenerateLinkId(ArchLinkKind kind, ArchModel.ArchModel current)
+    private static string GenerateLinkId(ArchLinkKind kind, IReadOnlySet<string> taken)
     {
         var prefix = kind switch
         {
@@ -1684,11 +2069,10 @@ public sealed class StemmaEngine : IAsyncDisposable
             ArchLinkKind.Relation => "rel",
             _ => "dep",
         };
-        var existing = current.Links.Select(l => l.Id).ToHashSet();
         for (var n = 1; ; n++)
         {
             var candidate = $"{prefix}_{n:000}";
-            if (!existing.Contains(candidate)) return candidate;
+            if (!taken.Contains(candidate)) return candidate;
         }
     }
 

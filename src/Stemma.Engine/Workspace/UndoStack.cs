@@ -47,22 +47,40 @@ public sealed class UndoStack
         _redo.Clear();
     }
 
-    public Entry? PopUndo()
+    /// <summary>
+    /// The entry an undo would take back. It stays on the stack until <see cref="Undone"/>: an undo
+    /// that failed has not happened, and its entry is still the next one to try. Moved to the redo
+    /// branch before it was applied, a refused undo left it there, and the change on disk that refused
+    /// it discarded the branch — "try again" then undid the edit before it.
+    /// </summary>
+    public Entry? PeekUndo() => _undo.Last?.Value;
+
+    /// <summary>The entry a redo would put back; it stays on the branch until <see cref="Redone"/>.</summary>
+    public Entry? PeekRedo() => _redo.Last?.Value;
+
+    /// <summary><paramref name="entry"/>, the top of the stack, was undone: it moves to the redo branch.</summary>
+    public void Undone(Entry entry)
     {
-        if (_undo.Last is null) return null;
-        var e = _undo.Last.Value;
+        if (!ReferenceEquals(_undo.Last?.Value, entry)) return;
         _undo.RemoveLast();
-        _redo.AddLast(e);
-        return e;
+        _redo.AddLast(entry);
     }
 
-    public Entry? PopRedo()
+    /// <summary><paramref name="entry"/>, the top of the redo branch, was redone: it moves back onto the stack.</summary>
+    public void Redone(Entry entry)
     {
-        if (_redo.Last is null) return null;
-        var e = _redo.Last.Value;
+        if (!ReferenceEquals(_redo.Last?.Value, entry)) return;
         _redo.RemoveLast();
-        _undo.AddLast(e);
-        return e;
+        _undo.AddLast(entry);
+    }
+
+    /// <summary>
+    /// A redo that failed is still the next redo — even when the change on disk that refused it
+    /// discarded the rest of the branch, because the refusal says to try again.
+    /// </summary>
+    public void RedoFailed(Entry entry)
+    {
+        if (!ReferenceEquals(_redo.Last?.Value, entry)) _redo.AddLast(entry);
     }
 
     public void OnExternalChange()
@@ -77,7 +95,9 @@ public sealed class UndoStack
     /// This is the fallback, not the undo: it is used only when the file no longer matches what the
     /// edit wrote, so it has to re-create what was there without depending on where it was.
     /// </summary>
-    public static OperationBase? BuildInverse(OperationBase op, ArchModel.ArchModel? archBefore)
+    /// <param name="declaredIn">The model file that declared what a removal removes, so the fallback
+    /// puts it back there rather than in the primary file.</param>
+    public static OperationBase? BuildInverse(OperationBase op, ArchModel.ArchModel? archBefore, string? declaredIn = null)
     {
         switch (op)
         {
@@ -100,11 +120,10 @@ public sealed class UndoStack
                 prior.Attributes.TryGetValue("kind", out var ckind);
                 prior.Attributes.TryGetValue("role", out var role);
                 prior.Attributes.TryGetValue("aboutId", out var about);
-                // The inverse re-adds the element; engine handles the regenerated ID gracefully
-                // because new elements get a fresh id. To preserve the original id we use a
-                // dedicated RestoreElementOp that bypasses id generation (declared below).
+                // Re-declared with its own id, in its own file, with the tag that went with it.
+                var tag = archBefore.Tags.FirstOrDefault(t => t.TargetId == prior.Id);
                 return new RestoreElementOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.Name, prior.Kind,
-                    ctx, sys, ckind, role, about);
+                    ctx, sys, ckind, role, about, declaredIn, tag?.Lifecycle, tag?.Ownership);
             }
 
             case AddLinkOp:
@@ -118,8 +137,9 @@ public sealed class UndoStack
                 prior.Attributes.TryGetValue("direction", out var direction);
                 prior.Attributes.TryGetValue("kind", out var kind);
                 prior.Attributes.TryGetValue("label", out var label);
+                var tag = archBefore.Tags.FirstOrDefault(t => t.TargetId == prior.Id);
                 return new RestoreLinkOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.FromId, prior.ToId, prior.Kind,
-                    payload, direction, kind, label);
+                    payload, direction, kind, label, declaredIn, tag?.Lifecycle, tag?.Ownership);
             }
 
             case SetLinkAttributeOp set when archBefore is not null:
@@ -170,6 +190,10 @@ public sealed class UndoStack
 /// Internal op used by the undo stack to restore a removed element with its original id.
 /// Behaves identically to AddElement but skips id generation.
 /// </summary>
+/// <param name="FilePath">The model file to declare it in; the primary one when null, or when no model
+/// file has that path.</param>
+/// <param name="Lifecycle">The lifecycle its tag had, written back with it.</param>
+/// <param name="Ownership">The squad and domain its tag had, written back with it.</param>
 public sealed record RestoreElementOp(
     string OpId,
     string ElementId,
@@ -179,10 +203,14 @@ public sealed record RestoreElementOp(
     string? SystemId = null,
     string? ContainerKind = null,
     string? Role = null,
-    string? AboutId = null) : OperationBase(OpId);
+    string? AboutId = null,
+    string? FilePath = null,
+    ArchLifecycle? Lifecycle = null,
+    ArchOwnership? Ownership = null) : OperationBase(OpId);
 
 /// <summary>
-/// Internal op used by the undo stack to restore a removed link with its original id.
+/// Internal op used by the undo stack to restore a removed link with its original id; see
+/// <see cref="RestoreElementOp"/> for the file and the tag.
 /// </summary>
 public sealed record RestoreLinkOp(
     string OpId,
@@ -193,7 +221,10 @@ public sealed record RestoreLinkOp(
     string? Payload = null,
     string? Direction = null,
     string? DependencyKind = null,
-    string? Label = null) : OperationBase(OpId);
+    string? Label = null,
+    string? FilePath = null,
+    ArchLifecycle? Lifecycle = null,
+    ArchOwnership? Ownership = null) : OperationBase(OpId);
 
 /// <summary>What one write did to one file: its syntax tree before, and the exact text it left.</summary>
 /// <param name="Before">Null when the write created the file.</param>

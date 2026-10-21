@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.Extensions.Logging;
 using FluentAssertions;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Operations;
@@ -255,6 +256,89 @@ public sealed class OutsideEditTests
             (await EngineHasSeenAsync(engine, file, "\"Sales\"")).Should().BeTrue();
             (await EngineHasSeenAsync(engine, first, "\"Pulled twice\"")).Should().BeTrue();
             (await EngineHasSeenAsync(engine, second, "\"Second twice\"")).Should().BeTrue();
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Nothing_is_taken_in_or_announced_once_the_engine_is_disposed()
+    {
+        // An outside save noticed just before closing was still being debounced when the engine was
+        // disposed; half a second later it was taken into a workspace that was gone, and announced.
+        var (root, file) = await CreateModelOnlyAsync();
+        var provider = new RecordingLoggerProvider(LogLevel.Information);
+        var logger = LoggerFactory.Create(b => { b.SetMinimumLevel(LogLevel.Information); b.AddProvider(provider); }).CreateLogger<StemmaEngine>();
+        try
+        {
+            var engine = await StemmaEngine.OpenAsync(root, default, logger);
+            engine.StartWatching();
+            var disposed = false;
+            var lateAnnouncements = 0;
+            engine.ExternalChange += _ => { if (Volatile.Read(ref disposed)) Interlocked.Increment(ref lateAnnouncements); };
+            await Task.Delay(TimeSpan.FromSeconds(1));
+
+            await File.WriteAllTextAsync(file, Source.Replace("\"Ordering\"", "\"Sales\""));
+            await Task.Delay(TimeSpan.FromMilliseconds(150));
+            await engine.DisposeAsync();
+            Volatile.Write(ref disposed, true);
+            await Task.Delay(TimeSpan.FromSeconds(2));
+
+            lateAnnouncements.Should().Be(0);
+            provider.Records.Where(r => r.EventId.Id is 1301 or 1302).Should().BeEmpty("nothing is attempted on a workspace that is gone");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Disposing_waits_for_an_edit_in_flight_to_finish()
+    {
+        var (root, file) = await CreateModelOnlyAsync();
+        try
+        {
+            var engine = await StemmaEngine.OpenAsync(root);
+            var edit = engine.ApplyAsync(new AddElementOp("op", ArchElementKind.Module, "Pricing"));
+            await engine.DisposeAsync();
+
+            (await edit).Should().BeOfType<OperationApplied>();
+            (await File.ReadAllTextAsync(file)).Should().Contain("new Module(\"mod_001\", \"Pricing\")");
+            (await engine.ApplyAsync(new AddElementOp("op2", ArchElementKind.Module, "Shipping"))).Should().BeOfType<OperationFailed>()
+                .Which.Reason.Should().Be("WorkspaceClosed");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task An_edit_to_a_file_deleted_outside_is_refused_and_does_not_bring_it_back()
+    {
+        // The check before writing skipped a file that was no longer there, and the write then
+        // recreated it: a model file deleted by a pull came back with the edit in it.
+        var (root, file) = await CreateModelOnlyAsync();
+        var payments = Path.Combine(root, "Architecture", "Payments.cs");
+        await File.WriteAllTextAsync(payments, """
+            using Stemma.Model;
+
+            namespace Scratch;
+
+            public static class PaymentsArchitecture
+            {
+                public static Model Build()
+                {
+                    var modPay = new Module("mod_pay", "Pay");
+                    return Model.Of(modPay);
+                }
+            }
+            """);
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            File.Delete(payments);
+
+            var refused = await engine.ApplyAsync(new RenameElementOp("op", "mod_pay", "Payments"));
+
+            refused.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("ChangedOnDisk");
+            File.Exists(payments).Should().BeFalse("a file deleted outside stays deleted");
+            (await engine.ReadArchModelAsync())!.Elements.Should().NotContain(e => e.Id == "mod_pay", "and leaves the model");
+            (await File.ReadAllTextAsync(file)).Should().Be(Source);
         }
         finally { Directory.Delete(root, recursive: true); }
     }
