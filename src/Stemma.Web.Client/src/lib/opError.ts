@@ -37,6 +37,15 @@ const FRIENDLY: Record<string, string> = {
   NotALiteral: 'That value is written in the code as an expression, not as text, so Stemma leaves it alone. Change it in the code.',
   InvalidText: 'That text holds a broken character (often half of an emoji), so it was not saved.',
   TooDeep: 'That change is nested too deeply to be saved.',
+  WorkspaceClosed: 'The workspace was closed, so nothing changed.',
+  NothingToUndo: 'There is nothing left to undo.',
+  NothingToRedo: 'There is nothing to redo.',
+  ViewNotFound: 'That view is no longer in Views/. It may have been removed outside Stemma.',
+  ContextNotFound: 'That bounded context is no longer in the model — try refreshing.',
+  NotNestable: 'Only modules and capabilities can sit inside a bounded context.',
+  RemoveFailed: "That couldn't be removed from the file.",
+  UnreadableView: 'That view file is written in a form Stemma can’t edit. Change it in the code.',
+  AmbiguousType: 'More than one type has that name. Use its full name, with the namespace.',
 };
 
 /** A human-readable message for a failed operation. Falls back to the engine message. */
