@@ -192,18 +192,34 @@ public static class DslReader
         return null;
     }
 
+    /// <summary>
+    /// The body of the file's <c>static Model Build()</c>: the one in the class named
+    /// <c>Architecture</c> when there is one, otherwise the first. The reader and the writer both
+    /// find the model here, so what is read is what is edited.
+    ///
+    /// Multi-file workspaces have further <c>static class XxxArchitecture { static Model Build() }</c>
+    /// files, each contributing part of the model. Any method called Build used to do: a helper
+    /// declared above the model was read as the model, and an edit would have been written into its
+    /// body.
+    /// </summary>
     internal static BlockSyntax? FindBuildMethodBody(SyntaxNode root)
     {
-        // Multi-file workspaces have additional `static class XxxArchitecture { Build() }` files;
-        // we accept any class that exposes a Build method body (the convention is: one class per
-        // file, each contributing a partial Model).
+        BlockSyntax? first = null;
         foreach (var cls in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
         {
-            var build = cls.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(m => m.Identifier.Text == "Build");
-            if (build?.Body is not null) return build.Body;
+            var build = cls.Members.OfType<MethodDeclarationSyntax>().FirstOrDefault(IsModelBuilder);
+            if (build?.Body is null) continue;
+            if (cls.Identifier.Text == "Architecture") return build.Body;
+            first ??= build.Body;
         }
-        return null;
+        return first;
     }
+
+    private static bool IsModelBuilder(MethodDeclarationSyntax method) =>
+        method.Identifier.Text == "Build"
+        && method.ParameterList.Parameters.Count == 0
+        && method.Modifiers.Any(SyntaxKind.StaticKeyword)
+        && GetSimpleTypeName(method.ReturnType) == "Model";
 
     internal static string? ExtractTypeName(BaseObjectCreationExpressionSyntax oc, TypeSyntax declaredType)
     {

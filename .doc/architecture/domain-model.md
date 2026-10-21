@@ -72,7 +72,10 @@ Links render in a view when **both** endpoints are present.
   *not* check these — a typo creates a dangling reference (a missing node/edge). Validate when
   generating samples.
 - The Architecture entry point is `public static Model Build()`; view entry points are `public
-  static View Define()`. The engine reads exactly those names.
+  static View Define()`. The engine reads exactly those names. In a file with more than one class,
+  the model is the `static Model Build()` of the class named `Architecture`; a further model file
+  (`static class FlowsArchitecture`) has one of its own. A helper's `Build` that is not static, or
+  does not return `Model`, is never taken for the model.
 - Keep the model **structural**. No method bodies, no behavior. Decisions/risks/assumptions express
   *intent*, not logic.
 
