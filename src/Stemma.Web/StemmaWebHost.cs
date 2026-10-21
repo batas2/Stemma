@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Stemma.Engine.ArchModel;
@@ -68,11 +70,11 @@ public static class StemmaWebHost
         // served the app from a loopback port the OS picked — the page's own origin was refused on
         // every request. Harmless to a same-origin fetch, and one "CORS policy execution failed"
         // record per asset, which buries the log the shell points the user at when something is
-        // genuinely wrong. Kestrel only ever binds loopback here, so an origin that can reach it is
-        // already running on this machine and gains nothing from being refused.
-        builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
-            .SetIsOriginAllowed(IsDevOrigin)
-            .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+        // genuinely wrong. So the policy is worked out per request: the origin the request was
+        // addressed to, whatever port it is, and the dev server. Any other origin on this machine is
+        // another app, and is not let in (the guard below refuses it outright on the API).
+        builder.Services.AddCors();
+        builder.Services.Replace(ServiceDescriptor.Transient<ICorsPolicyProvider, OwnOriginCorsPolicy>());
         // A server on loopback is still reachable from any page the user's browser opens, by a name that
         // resolves to 127.0.0.1 (DNS rebinding): that page is then "same origin" and the whole API is
         // its. Only requests addressed to a loopback name are answered. Set here rather than in
@@ -735,4 +737,20 @@ internal sealed record LayoutPatch(List<LayoutPatch.Change> Changes, string? Roo
 internal sealed record CommentChanges(List<CommentChanges.Change> Changes)
 {
     internal sealed record Change(string? Op, string? Id, JsonElement? Comment, JsonElement? Reply, bool? Resolved);
+}
+
+/// <summary>
+/// The CORS policy for one request: the page this server served — its origin is the host the request
+/// was addressed to — and the dev server, and no one else.
+/// </summary>
+internal sealed class OwnOriginCorsPolicy : ICorsPolicyProvider
+{
+    public Task<CorsPolicy?> GetPolicyAsync(HttpContext context, string? policyName)
+    {
+        var host = context.Request.Host;
+        return Task.FromResult<CorsPolicy?>(new CorsPolicyBuilder()
+            .SetIsOriginAllowed(origin => StemmaWebHost.IsAllowedOrigin(origin, host))
+            .AllowAnyHeader().AllowAnyMethod().AllowCredentials()
+            .Build());
+    }
 }

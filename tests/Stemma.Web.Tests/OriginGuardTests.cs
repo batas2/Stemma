@@ -96,6 +96,8 @@ public sealed class OriginGuardTests : IAsyncLifetime
     {
         var own = await _http.SendAsync(From(HttpMethod.Get, "/api/workspace/snapshot", _base.TrimEnd('/')));
         own.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Allowed by CORS too, so the desktop window's requests are not logged as refused one per asset.
+        own.Headers.GetValues("Access-Control-Allow-Origin").Should().Contain(_base.TrimEnd('/'));
         var dev = await _http.SendAsync(From(HttpMethod.Get, "/api/workspace/snapshot", "http://localhost:5173"));
         dev.StatusCode.Should().Be(HttpStatusCode.OK);
     }
