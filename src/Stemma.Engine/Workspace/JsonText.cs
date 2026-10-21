@@ -124,6 +124,68 @@ internal static class JsonText
     /// <summary>The text being read, for a refusal that names a line.</summary>
     private sealed record Source(byte[] Bytes, string File);
 
+    private const string HalfACharacter = "half of a character, such as an emoji cut in two";
+
+    /// <summary>
+    /// The string at the reader, or a refusal with its line. Text holding half of a UTF-16 surrogate
+    /// pair cannot be read as a string; it threw where every caller expects a refusal, so a read of the
+    /// file answered 500 rather than saying what to fix.
+    /// </summary>
+    private static string ReadString(ref Utf8JsonReader reader, Source source)
+    {
+        try { return reader.GetString()!; }
+        catch (InvalidOperationException)
+        {
+            throw Unreadable(source.File,
+                $"has text that is not valid Unicode at line {LineOf(source.Bytes, (int)reader.TokenStartIndex)} ({HalfACharacter})");
+        }
+    }
+
+    /// <summary>
+    /// Refuse a change whose text is not valid Unicode, before anything is written. Writing it threw,
+    /// which the endpoint answered with a 500, and the canvas, which sends a failed change again with
+    /// the next, failed every save after it. As a refusal it is a bad change, said once.
+    /// </summary>
+    internal static void RefuseInvalidText(JsonElement value, string what)
+    {
+        try
+        {
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var property in value.EnumerateObject())
+                    {
+                        _ = property.Name;
+                        RefuseInvalidText(property.Value, what);
+                    }
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in value.EnumerateArray()) RefuseInvalidText(item, what);
+                    break;
+                case JsonValueKind.String:
+                    _ = value.GetString();
+                    break;
+            }
+        }
+        catch (InvalidOperationException e) when (e is not SidecarPatchRefusedException)
+        {
+            throw InvalidText(what);
+        }
+    }
+
+    /// <inheritdoc cref="RefuseInvalidText(JsonElement, string)"/>
+    internal static void RefuseInvalidText(string text, string what)
+    {
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) i++;
+            else if (char.IsSurrogate(text[i])) throw InvalidText(what);
+        }
+    }
+
+    private static SidecarPatchRefusedException InvalidText(string what) =>
+        new("InvalidText", $"{what} holds text that is not valid Unicode ({HalfACharacter}), so it was not saved.");
+
     private static JObject ReadObject(ref Utf8JsonReader reader, Source source)
     {
         var obj = new JObject((int)reader.TokenStartIndex);
@@ -134,7 +196,7 @@ internal static class JsonText
                 obj.Close = (int)reader.TokenStartIndex;
                 return obj;
             }
-            var name = reader.GetString()!;
+            var name = ReadString(ref reader, source);
             var nameStart = (int)reader.TokenStartIndex;
             reader.Read();
             var valueStart = (int)reader.TokenStartIndex;
@@ -170,7 +232,7 @@ internal static class JsonText
     {
         JsonTokenType.StartObject => (ReadObject(ref reader, source), null, null),
         JsonTokenType.StartArray => (null, ReadArray(ref reader, source), null),
-        JsonTokenType.String => (null, null, reader.GetString()),
+        JsonTokenType.String => (null, null, ReadString(ref reader, source)),
         _ => (null, null, null),
     };
 

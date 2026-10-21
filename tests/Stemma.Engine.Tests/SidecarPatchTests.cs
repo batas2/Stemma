@@ -300,6 +300,42 @@ public sealed class SidecarPatchTests
     }
 
     [Fact]
+    public void A_change_holding_half_an_emoji_is_refused_as_a_bad_change()
+    {
+        // A note cut off in the middle of an emoji: reading the value threw, which is not a refusal,
+        // so the endpoint answered 500, and since the canvas sends a failed change again with every
+        // save, every later save failed too.
+        var halves = new[]
+        {
+            Set("\"Ship it \\ud83d\"", "notes", "cnt_cli"),
+            Set("{\"a\\udc00\": 1}", "palettes", "custom"),
+            Set("[\"fine\", \"\\ud83d\"]", "palettes", "list"),
+            new SidecarChange(["notes", "cnt\ud83d"], JsonDocument.Parse("\"x\"").RootElement.Clone()),
+        };
+        foreach (var change in halves)
+        {
+            var refuse = () => SidecarPatch.Apply(Written, [Set("2", "version"), change]);
+            var refused = refuse.Should().Throw<SidecarPatchRefusedException>().Which;
+            refused.Reason.Should().Be("InvalidText");
+            refused.Message.Should().Contain("not valid Unicode");
+        }
+
+        // A whole emoji, escaped as a pair, is text like any other.
+        SidecarPatch.Apply(Written, [Set("\"Ship it \\ud83d\\ude80\"", "notes", "cnt_cli")]).Should().Contain("cnt_cli");
+    }
+
+    [Fact]
+    public void A_file_holding_half_an_emoji_is_refused_with_its_line_when_it_is_read()
+    {
+        // What GET does: it threw where PATCH, behind its own catch, refused.
+        const string text = "{\n  \"notes\": {\n    \"a\": \"cut \\ud83d\"\n  }\n}\n";
+        var read = () => SidecarPatch.Apply(text, []);
+        var refused = read.Should().Throw<SidecarPatchRefusedException>().Which;
+        refused.Reason.Should().Be("UnreadableSidecar");
+        refused.Message.Should().Contain("line 3").And.Contain("not valid Unicode");
+    }
+
+    [Fact]
     public void A_file_with_a_key_twice_in_one_object_is_refused_naming_the_key()
     {
         // An edit changed the first copy, the browser's JSON.parse kept the last, so the edit looked

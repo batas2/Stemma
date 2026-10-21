@@ -36,7 +36,13 @@ public static class SidecarPatch
     {
         var bytes = Encoding.UTF8.GetBytes(text);
         JsonText.Parse(bytes, File); // refuse an unreadable file before anything, even when there is nothing to change
-        foreach (var change in changes)
+        var list = changes.ToList();
+        foreach (var change in list)
+        {
+            foreach (var key in change.Path) JsonText.RefuseInvalidText(key, "A change");
+            if (change.Value is { } value) JsonText.RefuseInvalidText(value, "A change");
+        }
+        foreach (var change in list)
         {
             if (change.Path.Count == 0) throw new SidecarPatchRefusedException("EmptyPath", "A change must name a key.");
             bytes = change.Value is { } value ? Set(bytes, change.Path, value) : Remove(bytes, change.Path);
