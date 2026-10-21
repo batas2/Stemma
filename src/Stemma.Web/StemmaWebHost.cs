@@ -771,10 +771,10 @@ public static class StemmaWebHost
         foreach (var doc in engine.Solution.Projects.SelectMany(p => p.Documents).OrderBy(d => d.FilePath, StringComparer.Ordinal))
         {
             // The same test ViewsAdapter makes, made first so no other file is parsed for nothing.
-            if (doc.FilePath is not { } path || !path.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (doc.FilePath is not { } path || !ViewsAdapter.IsViewFile(engine.RootPath, path)) continue;
             if (await doc.GetSyntaxRootAsync(ct) is { } root) docs.Add((path, root));
         }
-        return ViewsAdapter.ReadAllFrom(docs);
+        return ViewsAdapter.ReadAllFrom(engine.RootPath, docs);
     }
 
     // Positions live in the committed sidecar under the view's key. Read straight off it rather than

@@ -49,7 +49,7 @@ public sealed class AuroraRailSampleTests
     {
         var docs = Directory.EnumerateFiles(Path.Combine(SampleRoot(), "Views"), "*.cs")
             .Select(p => (FilePath: p, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(p)).GetRoot()));
-        return ViewsAdapter.ReadAllFrom(docs);
+        return ViewsAdapter.ReadAllFrom(SampleRoot(), docs);
     }
 
     [Fact]

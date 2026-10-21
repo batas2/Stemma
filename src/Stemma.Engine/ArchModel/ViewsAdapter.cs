@@ -34,13 +34,26 @@ public sealed record ArchView(
 
 public static class ViewsAdapter
 {
-    public static IReadOnlyList<ArchView> ReadAllFrom(IEnumerable<(string FilePath, SyntaxNode Root)> docs)
+    /// <summary>
+    /// Whether <paramref name="path"/> is in a folder called Views inside the workspace, at any depth —
+    /// counted from <paramref name="workspaceRoot"/>, never from the top of the disk: looked for in the
+    /// absolute path, a workspace kept in ~/Views/shop took every file in it for a view file.
+    /// </summary>
+    public static bool IsViewFile(string workspaceRoot, string path)
+    {
+        var relative = Path.GetRelativePath(workspaceRoot, path);
+        if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative)) return false;
+        return relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).SkipLast(1)
+            .Contains("Views", StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static IReadOnlyList<ArchView> ReadAllFrom(string workspaceRoot, IEnumerable<(string FilePath, SyntaxNode Root)> docs)
     {
         var views = new List<ArchView>();
         foreach (var (filePath, root) in docs)
         {
             if (filePath is null) continue;
-            if (!filePath.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!IsViewFile(workspaceRoot, filePath)) continue;
             var v = TryReadOne(root);
             if (v is not null) views.Add(v);
         }

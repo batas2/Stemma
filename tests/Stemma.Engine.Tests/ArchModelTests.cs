@@ -562,7 +562,7 @@ public class ArchModelTests
 
         // Round-trip: parse the rendered C# and recover the view.
         var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content);
-        var roundTripped = ViewsAdapter.ReadAllFrom(new[] { ("/tmp/Views/BuyerJourney.cs", (Microsoft.CodeAnalysis.SyntaxNode)tree.GetRoot()) });
+        var roundTripped = ViewsAdapter.ReadAllFrom("/tmp", new[] { ("/tmp/Views/BuyerJourney.cs", (Microsoft.CodeAnalysis.SyntaxNode)tree.GetRoot()) });
         roundTripped.Should().HaveCount(1);
         roundTripped[0].Id.Should().Be("view_abc");
         roundTripped[0].Name.Should().Be("Buyer Journey");
@@ -607,6 +607,17 @@ public class ArchModelTests
         mermaid.Should().Contain("subgraph n1[\"📦 Buyer\"]");
         mermaid.Should().Contain("n2[\"A\"]");
         mermaid.Should().Contain("n2 -->|Event| n3");
+    }
+
+    [Fact]
+    public void A_file_is_a_view_by_a_Views_folder_inside_the_workspace_not_above_it()
+    {
+        // A workspace kept in ~/Views/shop: its model file is not a view file, its own Views/ files are.
+        var root = Path.Combine(Path.GetTempPath(), "Views", "shop");
+        ViewsAdapter.IsViewFile(root, Path.Combine(root, "Architecture", "Architecture.cs")).Should().BeFalse();
+        ViewsAdapter.IsViewFile(root, Path.Combine(root, "Views", "Checkout.cs")).Should().BeTrue();
+        ViewsAdapter.IsViewFile(root, Path.Combine(root, "src", "Views", "Nested.cs")).Should().BeTrue();
+        ViewsAdapter.IsViewFile(root, Path.Combine(Path.GetTempPath(), "Views", "Other.cs")).Should().BeFalse();
     }
 }
 

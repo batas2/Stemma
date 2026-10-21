@@ -122,7 +122,7 @@ public sealed class ViewWriteTests
             Applied(await engine.SaveViewAsync("op", new ArchView("view_new", "What ships", "all", ["mod_c"])));
 
             (await File.ReadAllTextAsync(Path.Combine(root, "Views", "WhatShips.cs"))).Should().Be(whatShips);
-            var views = ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync());
+            var views = ViewsAdapter.ReadAllFrom(engine.RootPath, await engine.CollectAllDocumentsAsync());
             views.Select(v => v.Id).Should().BeEquivalentTo(["view_shape", "view_new"]);
             views.Single(v => v.Id == "view_new").ElementIds.Should().Equal("mod_c");
         }
@@ -186,7 +186,7 @@ public sealed class ViewWriteTests
 
         (await File.ReadAllTextAsync(projectFile)).Should().Be(csproj);
         File.Exists(Path.Combine(ws.RootPath, "Views", "CheckoutPath.cs")).Should().BeTrue();
-        ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync()).Should().ContainSingle(v => v.Id == "view_new");
+        ViewsAdapter.ReadAllFrom(engine.RootPath, await engine.CollectAllDocumentsAsync()).Should().ContainSingle(v => v.Id == "view_new");
     }
 
     [Fact]
@@ -292,7 +292,7 @@ public sealed class ViewWriteTests
 
             (await File.ReadAllTextAsync(existingPath)).Should().Be(existing);
             File.Exists(Path.Combine(projectDir, "Views", "Checkout2.cs")).Should().BeTrue();
-            ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync()).Select(v => v.Id)
+            ViewsAdapter.ReadAllFrom(engine.RootPath, await engine.CollectAllDocumentsAsync()).Select(v => v.Id)
                 .Should().Contain(["view_checkout", "view_new"]);
         }
         finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
@@ -308,7 +308,7 @@ public sealed class ViewWriteTests
             const string name = "Before \"the split\" on C:\\ drive";
             Applied(await engine.SaveViewAsync("op", new ArchView("view_q", name, "all", ["mod_a"])));
 
-            var views = ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync());
+            var views = ViewsAdapter.ReadAllFrom(engine.RootPath, await engine.CollectAllDocumentsAsync());
             views.Single().Name.Should().Be(name);
         }
         finally { Directory.Delete(root, recursive: true); }
@@ -324,7 +324,7 @@ public sealed class ViewWriteTests
             Applied(await engine.SaveViewAsync("op1", new ArchView("view_shape", "What ships", "all", [])));
             Applied(await engine.SaveViewAsync("op2", new ArchView("view_shape", "What ships", "all", ["mod_c"])));
 
-            var views = ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync());
+            var views = ViewsAdapter.ReadAllFrom(engine.RootPath, await engine.CollectAllDocumentsAsync());
             views.Single().ElementIds.Should().Equal("mod_c");
             (await File.ReadAllTextAsync(Path.Combine(root, "Views", "Shape.cs"))).Should()
                 .Contain("/// What ships. Deliberately the smallest view in the workspace.");
@@ -376,7 +376,7 @@ public sealed class ViewWriteTests
 
             Applied(await engine.SaveViewAsync("op", new ArchView("view_new", "My view", "all", ["mod_a"])));
 
-            ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync()).Should().ContainSingle(v => v.Id == "view_new");
+            ViewsAdapter.ReadAllFrom(engine.RootPath, await engine.CollectAllDocumentsAsync()).Should().ContainSingle(v => v.Id == "view_new");
         }
         finally { Directory.Delete(parent, recursive: true); }
     }

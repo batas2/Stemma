@@ -17,9 +17,9 @@ internal static class WorkspaceViews
     {
         var root = Path.GetFullPath(workspaceRoot);
         return ModelWorkspaceLoader.SourcesIn(root)
-            .Where(f => ("/" + Path.GetRelativePath(root, f).Replace('\\', '/')).Contains("/Views/", StringComparison.OrdinalIgnoreCase))
+            .Where(f => ViewsAdapter.IsViewFile(root, f))
             .Order(StringComparer.Ordinal)
-            .SelectMany(f => ViewsAdapter.ReadAllFrom([(f, CSharpSyntaxTree.ParseText(File.ReadAllText(f), path: f).GetRoot())])
+            .SelectMany(f => ViewsAdapter.ReadAllFrom(root, [(f, CSharpSyntaxTree.ParseText(File.ReadAllText(f), path: f).GetRoot())])
                 .Select(view => (f, view)))
             .ToList();
     }
