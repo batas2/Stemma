@@ -43,6 +43,24 @@ describe('report bundle', () => {
     expect(b.positions.moduleMap.mod_a).toEqual({ x: 0, y: 0 });
     expect(b.meta.exportedAt).toBe('2026-06-10T12:00:00.000Z');
   });
+
+  // The report is sent to people outside the team. It carried the absolute folder it was exported
+  // from — a home directory, a user name — in its metadata and in the model file's path.
+  it('names the workspace by its folder, and nothing above it', () => {
+    const at = '/home/someone/code/acme';
+    const b = buildReportBundle({ ...inputs(), rootPath: at, model: { ...model, filePath: `${at}/Architecture/Architecture.cs` } });
+    expect(b.meta.rootPath).toBe('acme');
+    expect(b.model.filePath).toBe('Architecture/Architecture.cs');
+    expect(JSON.stringify(b)).not.toContain('/home/someone');
+  });
+
+  it('does so for a Windows folder too', () => {
+    const at = 'C:\\Users\\someone\\acme\\';
+    const b = buildReportBundle({ ...inputs(), rootPath: at, model: { ...model, filePath: 'C:\\Users\\someone\\acme\\Architecture\\Architecture.cs' } });
+    expect(b.meta.rootPath).toBe('acme');
+    expect(b.model.filePath).toBe('Architecture/Architecture.cs');
+    expect(JSON.stringify(b)).not.toContain('someone');
+  });
 });
 
 describe('report books', () => {

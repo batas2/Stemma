@@ -62,6 +62,7 @@ export interface ReportBook {
 }
 
 export interface ReportBundle {
+  /** `rootPath` is the workspace's folder name only: the report goes to people outside the team. */
   meta: { workspace: string; rootPath: string; exportedAt: string; generator: string };
   model: ArchModel;
   views: ReportView[];
@@ -98,6 +99,21 @@ export interface ReportInputs {
   /** Reads a view's shapes by view key — injected, like positions. */
   readShapes?: (viewKey: string) => unknown[];
   now?: Date;
+}
+
+/** The last folder of a path, as either platform writes it: `acme` for `/home/someone/code/acme` or `C:\code\acme\`. */
+export function folderName(path: string): string {
+  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
+}
+
+/**
+ * `filePath` from the workspace's folder, with forward slashes, when it is inside it; else its file
+ * name. The report travels outside the team, and an absolute path names a machine and a person.
+ */
+function inWorkspace(filePath: string, rootPath: string): string {
+  const file = filePath.replace(/\\/g, '/');
+  const root = rootPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  return file.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? file.slice(root.length + 1) : folderName(file);
 }
 
 export function buildReportBundle(i: ReportInputs): ReportBundle {
@@ -139,11 +155,12 @@ export function buildReportBundle(i: ReportInputs): ReportBundle {
   return {
     meta: {
       workspace: i.workspaceName,
-      rootPath: i.rootPath,
+      // The viewer keys its drafts by it; the absolute path is not the reader's business.
+      rootPath: folderName(i.rootPath),
       exportedAt: (i.now ?? new Date()).toISOString(),
       generator: 'Stemma',
     },
-    model: i.model,
+    model: { ...i.model, filePath: inWorkspace(i.model.filePath, i.rootPath) },
     views,
     positions,
     waypoints,
@@ -182,7 +199,7 @@ export async function collectReportBundle(rootPath: string): Promise<ReportBundl
     const n = allNotes[e.id];
     if (typeof n === 'string' && n.trim()) notes[e.id] = n;
   }
-  const workspaceName = rootPath.replace(/\/+$/, '').split('/').pop() || rootPath;
+  const workspaceName = folderName(rootPath);
   return buildReportBundle({
     rootPath,
     workspaceName,
