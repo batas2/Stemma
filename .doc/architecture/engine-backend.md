@@ -123,7 +123,8 @@ Saved and deleted through `PUT` / `DELETE /api/workspace/views`, which call
 `StemmaEngine.SaveViewAsync` / `RemoveViewAsync`. A view is found by reading the id its `Define()`
 declares, never by searching file text. Saving edits the name, the lens and the member ids in place
 — in whatever form the file writes them — and keeps the file and class names; a new view gets a file
-no other file or class is named after. Refuses `ViewNotFound`, `UnreadableView`. Not on the undo
+no other file or class is named after, in the namespace `Architecture.cs` declares — or, when it declares
+none, the project's name made into a C# one (`my-arch` → `my_arch`). Refuses `ViewNotFound`, `UnreadableView`. Not on the undo
 stack: the client keeps the views list and would not hear about an undo.
 
 ### The sidecar (`stemma.layout.json`)

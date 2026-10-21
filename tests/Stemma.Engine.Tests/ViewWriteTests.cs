@@ -300,4 +300,27 @@ public sealed class ViewWriteTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Theory]
+    // The folder name was the namespace when the model declares none, and a folder called my-arch
+    // wrote `namespace my-arch…;`: the save was refused as breaking the build.
+    [InlineData("my-arch")]
+    [InlineData("2026 model")]
+    [InlineData("class")]
+    public async Task A_new_view_in_a_model_without_a_namespace_compiles_whatever_the_folder_is_called(string folder)
+    {
+        var parent = Path.Combine(Path.GetTempPath(), $"stemma-views-{Guid.NewGuid():N}");
+        var root = Path.Combine(parent, folder);
+        Directory.CreateDirectory(Path.Combine(root, "Architecture"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"), Model.Replace("namespace Scratch;\n\n", ""));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            Applied(await engine.SaveViewAsync("op", new ArchView("view_new", "My view", "all", ["mod_a"])));
+
+            ViewsAdapter.ReadAllFrom(await engine.CollectAllDocumentsAsync()).Should().ContainSingle(v => v.Id == "view_new");
+        }
+        finally { Directory.Delete(parent, recursive: true); }
+    }
 }

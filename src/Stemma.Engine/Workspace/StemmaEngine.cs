@@ -1264,19 +1264,30 @@ public sealed class StemmaEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// Best-effort namespace name to use for new files (Views, etc.). Picks the namespace of
-    /// the primary Architecture file; falls back to the project name; last resort "Architecture".
+    /// The namespace for a new file (a view): the primary Architecture file's, or else one made from
+    /// the project's name. A model-only project is named after its folder, which need not be a C#
+    /// name — a folder called my-arch wrote <c>namespace my-arch;</c> and the new view was refused as
+    /// breaking the build — so the name is made into one the way MSBuild makes a root namespace.
     /// </summary>
     public string NamespaceForViews()
     {
-        var doc = FindArchitectureDocument();
-        if (doc is null) return _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
-        var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
-        if (root is null) return _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
-        var fsns = root.DescendantNodes().OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
-        if (fsns is not null) return fsns.Name.ToString();
-        var ns = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
-        return ns?.Name.ToString() ?? _model.Projects.FirstOrDefault()?.Name ?? "Architecture";
+        var root = FindArchitectureDocument()?.GetSyntaxRootAsync().GetAwaiter().GetResult();
+        var declared = root?.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault()?.Name.ToString();
+        return declared ?? AsNamespace(_model.Projects.FirstOrDefault()?.Name);
+    }
+
+    /// <summary><paramref name="name"/> as a C# namespace: each character a name cannot hold becomes <c>_</c>.</summary>
+    private static string AsNamespace(string? name)
+    {
+        var segments = new List<string>();
+        foreach (var part in (name ?? "").Split('.'))
+        {
+            var segment = new string(part.Select(c => char.IsLetterOrDigit(c) || c == '_' ? c : '_').ToArray());
+            if (segment.Length == 0) continue;
+            if (char.IsDigit(segment[0]) || SyntaxFacts.GetKeywordKind(segment) != SyntaxKind.None) segment = "_" + segment;
+            segments.Add(segment);
+        }
+        return segments.Count > 0 && segments.All(SyntaxFacts.IsValidIdentifier) ? string.Join('.', segments) : "Architecture";
     }
 
     /// <summary>
