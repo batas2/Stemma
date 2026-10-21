@@ -108,6 +108,30 @@ public sealed class MultiFileModelTests
     }
 
     [Fact]
+    public async Task A_constant_declared_in_another_file_is_read_once_the_workspace_is_compiled()
+    {
+        var root = await CreateAsync(("Architecture.cs", Primary.Replace("new Module(\"mod_a\", \"A\")", "new Module(\"mod_a\", \"A\", Ids.Ordering)")));
+        Directory.CreateDirectory(Path.Combine(root, "Domain"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Domain", "Ids.cs"), "public static class Ids\n{\n    public const string Ordering = \"ctx_001\";\n}\n");
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            engine.StartWatching();
+
+            string? context = null;
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            while (context is null && DateTime.UtcNow < deadline)
+            {
+                (await engine.ReadArchModelAsync())!.Elements.Single(e => e.Id == "mod_a").Attributes.TryGetValue("contextId", out context);
+                if (context is null) await Task.Delay(100);
+            }
+
+            context.Should().Be("ctx_001", "the compilation is built in the background, and the model is read again with it");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task A_link_can_end_at_an_element_declared_in_another_model_file()
     {
         var root = await CreateAsync(("Architecture.cs", Primary), ("Payments.cs", Payments));

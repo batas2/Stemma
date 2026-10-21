@@ -90,7 +90,16 @@ public sealed class WorkspaceLoader(ILogger? log = null)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    public static async Task<WorkspaceModel> BuildModelAsync(string rootPath, Solution solution, CancellationToken ct = default)
+    public static Task<WorkspaceModel> BuildModelAsync(string rootPath, Solution solution, CancellationToken ct = default) =>
+        BuildModelAsync(rootPath, solution, read: null, ct);
+
+    /// <param name="read">
+    /// The types already read out of each syntax tree. A document an edit did not touch keeps its tree,
+    /// so its types are not read again: rebuilt for every document after every edit, the type model
+    /// cost more than the edit at a few thousand files.
+    /// </param>
+    internal static async Task<WorkspaceModel> BuildModelAsync(
+        string rootPath, Solution solution, System.Runtime.CompilerServices.ConditionalWeakTable<SyntaxTree, List<TypeModel>>? read, CancellationToken ct)
     {
         var projects = new List<ProjectModel>();
         foreach (var project in solution.Projects)
@@ -105,7 +114,13 @@ public sealed class WorkspaceLoader(ILogger? log = null)
                 if (path.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase)) continue;
                 var tree = await doc.GetSyntaxTreeAsync(ct);
                 if (tree is null) continue;
+                if (read is not null && read.TryGetValue(tree, out var known))
+                {
+                    types.AddRange(known);
+                    continue;
+                }
                 var root = await tree.GetRootAsync(ct);
+                var first = types.Count;
 
                 foreach (var typeDecl in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
                 {
@@ -170,6 +185,7 @@ public sealed class WorkspaceLoader(ILogger? log = null)
                         Methods: methods,
                         BaseTypes: baseTypes));
                 }
+                read?.AddOrUpdate(tree, types.GetRange(first, types.Count - first));
             }
             projects.Add(new ProjectModel(
                 Name: project.Name,

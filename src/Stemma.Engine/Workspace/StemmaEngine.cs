@@ -57,8 +57,31 @@ public sealed class StemmaEngine : IAsyncDisposable
         _log = log ?? NullLogger<StemmaEngine>.Instance;
         _layout = new SidecarFile(LayoutSidecar.PathFor(model.RootPath), NewSidecar);
         _comments = new SidecarFile(CommentsSidecar.PathFor(model.RootPath), CommentsSidecar.Empty);
+        RememberTypesRead(workspace.CurrentSolution, model);
     }
 
+    /// <summary>
+    /// The loader has just read every document's types into <paramref name="model"/>, from the trees the
+    /// solution now holds: remembered, so the first edit's reload reads only what it changed.
+    /// </summary>
+    private void RememberTypesRead(Solution solution, WorkspaceModel model)
+    {
+        // The loader builds one project model per project, in the solution's order.
+        foreach (var (project, projectModel) in solution.Projects.Zip(model.Projects))
+        {
+            var byPath = projectModel.Types.GroupBy(t => t.FilePath, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+            foreach (var doc in project.Documents)
+            {
+                if (doc.FilePath is not { } path || !doc.TryGetSyntaxTree(out var tree)) continue;
+                _typesRead.AddOrUpdate(tree, byPath.GetValueOrDefault(path) ?? []);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Watch the workspace for changes made outside Stemma — which is what an engine serving someone
+    /// editing does — and, in the background, build what their first edit would otherwise wait for.
+    /// </summary>
     public void StartWatching()
     {
         _layout.Remember();
@@ -66,6 +89,31 @@ public sealed class StemmaEngine : IAsyncDisposable
         _watcher?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _watcher = new ExternalWatcher(_model.RootPath, ShouldWatch, _log);
         _watcher.Changed += OnExternalChange;
+        _ = Task.Run(WarmUpAsync);
+    }
+
+    /// <summary>
+    /// Compile every project once, ahead of the first edit, and keep its errors as that edit's
+    /// baseline. Built on demand, the compilation made the first edit after opening wait a second or
+    /// more. Neither holds the engine's lock nor delays opening; an edit that arrives first shares the
+    /// compile already under way rather than starting another.
+    /// </summary>
+    private async Task WarmUpAsync()
+    {
+        try
+        {
+            foreach (var project in _workspace.CurrentSolution.Projects)
+                await ErrorsOfAsync(project, _lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Closed before it finished: nothing is waiting for it.
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            // Silent on purpose: warming is only ever ahead of time. Whatever failed here fails again,
+            // and is reported, when an edit compiles for itself.
+        }
     }
 
     private bool ShouldWatch(string path)
@@ -571,8 +619,11 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     public async Task ReloadAsync(CancellationToken ct = default)
     {
-        _model = await WorkspaceLoader.BuildModelAsync(_model.RootPath, _workspace.CurrentSolution, ct);
+        _model = await WorkspaceLoader.BuildModelAsync(_model.RootPath, _workspace.CurrentSolution, _typesRead, ct);
     }
+
+    /// <summary>The types read out of each syntax tree; a tree no edit replaced is not read again.</summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SyntaxTree, List<TypeModel>> _typesRead = new();
 
     /// <summary>
     /// Close the workspace: stop watching first, so nothing new starts; then wait for whatever holds
@@ -1317,34 +1368,30 @@ public sealed class StemmaEngine : IAsyncDisposable
     /// Locate the primary document whose root contains a `static class Architecture { Build() {...} }`.
     /// Returns null if the workspace is not a model workspace.
     /// </summary>
-    public Document? FindArchitectureDocument()
-    {
-        foreach (var project in _workspace.CurrentSolution.Projects)
-        {
-            foreach (var doc in project.Documents)
-            {
-                if (doc.FilePath is null) continue;
-                if (!IsModelFile(doc.FilePath)) continue;
-                var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
-                if (root is null) continue;
-                if (root.DescendantNodes().OfType<ClassDeclarationSyntax>()
-                        .Any(c => c.Identifier.Text == "Architecture"
-                                  && c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build")))
-                    return doc;
-            }
-        }
-        return null;
-    }
+    public Document? FindArchitectureDocument() => ModelFilesOf(_workspace.CurrentSolution).Primary;
 
     /// <summary>
     /// Returns every document under the workspace's `Architecture/` folder that contains a
     /// `static class XYZ { Build(...) }` method body. Order: primary `Architecture` class first,
     /// then alphabetical by file path.
     /// </summary>
-    public IReadOnlyList<Document> FindArchitectureDocuments()
+    public IReadOnlyList<Document> FindArchitectureDocuments() => ModelFilesOf(_workspace.CurrentSolution).Documents;
+
+    /// <param name="Primary">The first document declaring a `static class Architecture { Build() }`.</param>
+    private sealed record ModelFiles(Solution Solution, IReadOnlyList<Document> Documents, Document? Primary);
+    private ModelFiles? _modelFiles;
+
+    /// <summary>
+    /// The model files of <paramref name="solution"/>, found once per solution. Every operation looked
+    /// for them several times — each a walk of every node of every file under Architecture/ — and
+    /// nothing about them changes until a file does, which makes a new solution.
+    /// </summary>
+    private ModelFiles ModelFilesOf(Solution solution)
     {
+        if (Volatile.Read(ref _modelFiles) is { } known && ReferenceEquals(known.Solution, solution)) return known;
         var matches = new List<Document>();
-        foreach (var project in _workspace.CurrentSolution.Projects)
+        Document? primary = null;
+        foreach (var project in solution.Projects)
         {
             foreach (var doc in project.Documents)
             {
@@ -1352,33 +1399,67 @@ public sealed class StemmaEngine : IAsyncDisposable
                 if (!IsModelFile(doc.FilePath)) continue;
                 var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
                 if (root is null) continue;
-                var hasBuild = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
-                    .Any(c => c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build"));
-                if (hasBuild) matches.Add(doc);
+                var builders = root.DescendantNodes().OfType<ClassDeclarationSyntax>()
+                    .Where(c => c.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "Build"))
+                    .ToList();
+                if (builders.Count == 0) continue;
+                matches.Add(doc);
+                if (primary is null && builders.Any(c => c.Identifier.Text == "Architecture")) primary = doc;
             }
         }
-        return matches
+        var files = new ModelFiles(solution, matches
             .OrderBy(d => d.FilePath!.EndsWith("Architecture.cs", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ThenBy(d => d.FilePath, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            .ToList(), primary);
+        Volatile.Write(ref _modelFiles, files);
+        return files;
     }
 
-    public async Task<ArchModel.ArchModel?> ReadArchModelAsync(CancellationToken ct = default)
+    public async Task<ArchModel.ArchModel?> ReadArchModelAsync(CancellationToken ct = default) =>
+        (await ReadModelAsync(_workspace.CurrentSolution, ct)).Model;
+
+    /// <param name="DeclaredIn">The model file each element and link id is declared in, the first if more than one.</param>
+    /// <param name="Resolved">Whether every file was read with its compilation, so constants declared in another file are known.</param>
+    private sealed record ModelRead(Solution Solution, ArchModel.ArchModel? Model, IReadOnlyDictionary<string, Document> DeclaredIn, bool Resolved);
+    private ModelRead? _modelRead;
+
+    /// <summary>
+    /// The model of <paramref name="solution"/>, read once per solution. It was read from every model
+    /// file before every operation and again inside most of them, and the canvas reads it after each.
+    /// Read with the compilation when it is built (in the background, after opening), so a constant
+    /// declared in another file is read too; read before that, it is read again once it is.
+    /// </summary>
+    private async Task<ModelRead> ReadModelAsync(Solution solution, CancellationToken ct)
     {
-        var docs = FindArchitectureDocuments();
-        if (docs.Count == 0) return null;
+        var docs = ModelFilesOf(solution).Documents;
+        if (Volatile.Read(ref _modelRead) is { } known && ReferenceEquals(known.Solution, solution)
+            && (known.Resolved || !docs.Any(d => d.Project.TryGetCompilation(out _))))
+            return known;
+
         // Through the merge even when there is one file: it is also where a second declaration of an
         // id is dropped, and the read of a past revision (GitHistory) always goes through it. Skipped
         // for one file, a model compared with itself showed a duplicate the history did not have.
         var partials = new List<ArchModel.ArchModel?>();
+        var declaredIn = new Dictionary<string, Document>(StringComparer.Ordinal);
+        var resolved = true;
         foreach (var doc in docs)
         {
             var root = await doc.GetSyntaxRootAsync(ct);
-            if (root is not null) partials.Add(DslReader.TryRead(doc.FilePath!, root));
+            if (root is null) continue;
+            SemanticModel? semantic = null;
+            if (doc.Project.TryGetCompilation(out var compilation) && await doc.GetSyntaxTreeAsync(ct) is { } tree)
+                semantic = compilation.GetSemanticModel(tree);
+            else resolved = false;
+            var partial = DslReader.TryRead(doc.FilePath!, root, semantic);
+            partials.Add(partial);
+            foreach (var id in partial?.Elements.Select(e => e.Id).Concat(partial.Links.Select(l => l.Id)) ?? [])
+                declaredIn.TryAdd(id, doc);
         }
         // No file with a Build() body to read is no model, as it always was — not an empty one.
-        if (partials.All(p => p is null)) return null;
-        return ArchModelMerge.Merge(docs[0].FilePath ?? "Architecture.cs", partials);
+        var model = docs.Count == 0 || partials.All(p => p is null) ? null : ArchModelMerge.Merge(docs[0].FilePath ?? "Architecture.cs", partials);
+        var read = new ModelRead(solution, model, declaredIn, resolved);
+        Volatile.Write(ref _modelRead, read);
+        return read;
     }
 
     /// <summary>
@@ -1405,7 +1486,11 @@ public sealed class StemmaEngine : IAsyncDisposable
     /// </summary>
     public Document? FindDocumentForId(string id)
     {
-        foreach (var doc in FindArchitectureDocuments())
+        var solution = _workspace.CurrentSolution;
+        if (ReadModelAsync(solution, CancellationToken.None).GetAwaiter().GetResult().DeclaredIn.TryGetValue(id, out var declaring))
+            return declaring;
+        // A declaration the model leaves out, because it cannot be read, is still found where it is written.
+        foreach (var doc in ModelFilesOf(solution).Documents)
         {
             var root = doc.GetSyntaxRootAsync().GetAwaiter().GetResult();
             if (root is not null && DslReader.FindDeclaration(doc.FilePath ?? "", root, id) is not null) return doc;

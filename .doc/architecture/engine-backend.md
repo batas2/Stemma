@@ -30,6 +30,16 @@ for the catalog and wire format). The engine maps each to a targeted source rewr
 Undo/redo is an operation stack (`UndoStack`) for the session; Git is the durable history. What
 undo guarantees is in [the catalog](#what-undo-guarantees) below.
 
+What an operation costs, on a workspace of thousands of files: the model files and the model read
+from them are found once per solution (a Roslyn solution is a snapshot, so a new one means a file
+changed), and a document's types are read again only when its syntax tree is new. The compile check
+compiles only the projects the edit changed and those that depend on them, and keeps each project's
+errors for its version, so the errors after one edit are the baseline of the next. Once the engine
+starts watching — that is, once it serves someone editing — it compiles every project in the
+background, without holding its lock, so the first edit does not wait for the compilation. The
+watcher's one-second poll never enters `bin`, `obj`, `node_modules`, `.git` or a dot-folder, and never
+overlaps itself. Each compile for the check is recorded at `Trace` (event 1104).
+
 ## The fidelity contract (the most important constraint)
 
 > For every operation applied to a source file `F`, the resulting `F'` differs from `F` **only** in
