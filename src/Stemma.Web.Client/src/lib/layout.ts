@@ -27,8 +27,61 @@ function ensureSidecar(rootPath: string): SidecarShape {
     // rest of the file.
     primedRoot = null;
     sidecarBase = null;
+    heldBack = null;
   }
   return sidecarCache.sidecar;
+}
+
+/** What an edit makes of the value at its path: the value to put there, or undefined to remove it. */
+type Edit = (current: unknown) => unknown;
+
+function valueAt(target: unknown, path: string[]): unknown {
+  let node = target;
+  for (const key of path) {
+    if (!isPlainObject(node)) return undefined;
+    node = node[key];
+  }
+  return node;
+}
+
+/**
+ * Put what `edit` makes of the value at `path` there, or remove it when that is undefined. Each
+ * object on the way is copied rather than changed, so a map handed out earlier — a view's offsets,
+ * a section — stays as it was when it was handed out.
+ */
+function applyEdit(target: Record<string, unknown>, path: string[], edit: Edit): void {
+  const current = valueAt(target, path);
+  const next = edit(current);
+  if (next === undefined && current === undefined) return;
+  let node = target;
+  for (let i = 0; i < path.length - 1; i++) {
+    const child = node[path[i]];
+    const copy = isPlainObject(child) ? { ...child } : {};
+    node[path[i]] = copy;
+    node = copy;
+  }
+  const last = path[path.length - 1];
+  if (next === undefined) delete node[last];
+  else node[last] = next;
+}
+
+/**
+ * Hold an edit made before the sidecar has been read, to make again on the file once it has. Held
+ * as what it changed rather than as the window's copy: that copy holds only what the window drew,
+ * so laid over the file it put a whole map in place of the file's — every other arrow of the view,
+ * the committed shapes, the committed positions — and its removals could not be said at all.
+ */
+function hold(rootPath: string, path: string[], edit: Edit): void {
+  if (isSidecarPrimed(rootPath)) return;
+  if (heldBack?.rootPath !== rootPath) heldBack = { rootPath, edits: [] };
+  heldBack.edits.push({ path, edit });
+}
+
+/** Make an edit to the copy, hold it if the file has not been read yet, and schedule the write. */
+function editSidecar(rootPath: string, path: string[], edit: Edit): void {
+  applyEdit(ensureSidecar(rootPath) as Record<string, unknown>, path, edit);
+  hold(rootPath, path, edit);
+  scheduleSidecarWrite(rootPath);
 }
 
 function scheduleSidecarWrite(rootPath: string): void {
@@ -148,6 +201,7 @@ export function forgetLayoutSidecar(): void {
   sidecarCache = null;
   sidecarBase = null;
   primedRoot = null;
+  heldBack = null;
 }
 
 /**
@@ -199,15 +253,11 @@ export function cachedSection<T>(rootPath: string, section: SidecarSection, cach
   try { const raw = localStorage.getItem(cacheKey); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
 }
 
-/** Set (or delete, when value is undefined) one entry in a pass-through section and schedule a PUT. */
+/** Set (or delete, when value is undefined) one entry in a pass-through section and schedule the write. */
 export function sidecarSet(rootPath: string, section: SidecarSection, key: string, value: unknown): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(rootPath);
-  const map = ((s as Record<string, unknown>)[section] as Record<string, unknown> | undefined) ?? {};
-  if (value === undefined || value === null) delete map[key];
-  else map[key] = value;
-  (s as Record<string, unknown>)[section] = map;
-  scheduleSidecarWrite(rootPath);
+  const next = value === undefined || value === null ? undefined : structuredClone(value);
+  editSidecar(rootPath, [section, key], () => next);
 }
 
 /**
@@ -280,10 +330,37 @@ export function loadViewShapes<T = unknown>(rootPath: string, viewKey: string): 
 
 export function saveViewShapes(rootPath: string, viewKey: string, shapes: unknown[]): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(rootPath);
-  s.views = s.views ?? {};
-  s.views[viewKey] = { ...s.views[viewKey], shapes };
-  scheduleSidecarWrite(rootPath);
+  const path = ['views', viewKey, 'shapes'];
+  if (isSidecarPrimed(rootPath)) {
+    const next = structuredClone(shapes);
+    editSidecar(rootPath, path, () => next);
+    return;
+  }
+  // Before the read the window draws only the shapes added since, so the list it saves is not the
+  // view's: each shape added, changed or removed is held as that, by its id, and the file's own
+  // shapes stay.
+  const drawn = loadViewShapes(rootPath, viewKey);
+  const drawnById = new Map(drawn.map((shape) => [shapeId(shape), shape] as const));
+  for (const shape of shapes) {
+    const id = shapeId(shape);
+    if (id !== null && JSON.stringify(drawnById.get(id)) === JSON.stringify(shape)) continue;
+    const item = structuredClone(shape);
+    editSidecar(rootPath, path, (current) => {
+      const list = Array.isArray(current) ? [...current] : [];
+      const at = id === null ? -1 : list.findIndex((s) => shapeId(s) === id);
+      if (at >= 0) list[at] = item; else list.push(item);
+      return list;
+    });
+  }
+  const kept = new Set(shapes.map(shapeId));
+  for (const id of drawnById.keys()) {
+    if (id === null || kept.has(id)) continue;
+    editSidecar(rootPath, path, (current) => (Array.isArray(current) ? current.filter((s) => shapeId(s) !== id) : current));
+  }
+}
+
+function shapeId(shape: unknown): string | null {
+  return isPlainObject(shape) && typeof shape.id === 'string' ? shape.id : null;
 }
 
 /**
@@ -305,10 +382,7 @@ export function loadViewLayoutModes(rootPath: string): Record<string, string> {
 
 export function saveViewLayoutMode(rootPath: string, viewKey: string, mode: string): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(rootPath);
-  s.views = s.views ?? {};
-  s.views[viewKey] = { ...s.views[viewKey], layoutMode: mode };
-  scheduleSidecarWrite(rootPath);
+  editSidecar(rootPath, ['views', viewKey, 'layoutMode'], () => mode);
 }
 
 /**
@@ -325,12 +399,8 @@ export function loadViewConstraint(rootPath: string, viewKey: string): LayoutCon
 
 export function saveViewConstraint(rootPath: string, viewKey: string, constraint: LayoutConstraint | null): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(rootPath);
-  s.views = s.views ?? {};
-  const view = { ...s.views[viewKey] };
-  if (constraint) view.layout = constraint; else delete view.layout;
-  s.views[viewKey] = view;
-  scheduleSidecarWrite(rootPath);
+  const next = constraint ? structuredClone(constraint) : undefined;
+  editSidecar(rootPath, ['views', viewKey, 'layout'], () => next);
 }
 
 /** Per-node nudges against the solved constraint. Empty when the view has no constraint. */
@@ -341,25 +411,15 @@ export function loadViewOffsets(rootPath: string, viewKey: string): LayoutOffset
 
 export function saveViewOffset(rootPath: string, viewKey: string, nodeId: string, offset: SavedPosition | null): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(rootPath);
-  s.views = s.views ?? {};
-  const view = { ...s.views[viewKey] };
-  const offsets = { ...(view.offsets ?? {}) };
   // A nudge of zero is the absence of a nudge; keeping it would grow the file for nothing.
-  if (!offset || (offset.x === 0 && offset.y === 0)) delete offsets[nodeId];
-  else offsets[nodeId] = offset;
-  view.offsets = offsets;
-  s.views[viewKey] = view;
-  scheduleSidecarWrite(rootPath);
+  const next = !offset || (offset.x === 0 && offset.y === 0) ? undefined : { ...offset };
+  editSidecar(rootPath, ['views', viewKey, 'offsets', nodeId], () => next);
 }
 
 /** Drop every nudge on a view, returning it to the pure solved arrangement. */
 export function clearViewOffsets(rootPath: string, viewKey: string): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(rootPath);
-  s.views = s.views ?? {};
-  s.views[viewKey] = { ...s.views[viewKey], offsets: {} };
-  scheduleSidecarWrite(rootPath);
+  editSidecar(rootPath, ['views', viewKey, 'offsets'], () => ({}));
 }
 
 /** Test seam: inject the shared sidecar cache without going through fetch. */
@@ -391,29 +451,8 @@ let sendQueue: Promise<void> = Promise.resolve();
 // Workspace the committed sidecar has already been fetched for. Once set, the in-memory cache is
 // authoritative for the session and we never re-fetch (re-fetching clobbers unflushed local edits).
 let primedRoot: string | null = null;
-
-/** Combine the on-disk sidecar with in-memory edits made before the first fetch resolved. Local
- *  wins per entry, so a position/style changed during load is never lost to the slower disk read. */
-function mergeSidecar(server: SidecarShape, local: SidecarShape): SidecarShape {
-  const mergeViews = (a: SidecarShape['views'] = {}, b: SidecarShape['views'] = {}) => {
-    const out: NonNullable<SidecarShape['views']> = { ...a };
-    for (const k of Object.keys(b)) out[k] = { ...a[k], ...b[k] };
-    return out;
-  };
-  // Starts from the file, so a section this client has no merge rule for — `$schema`, a key added
-  // by hand — is kept; leaving it out of the copy would send its removal with the next edit.
-  return {
-    ...server,
-    version: local.version ?? server.version ?? 1,
-    views: mergeViews(server.views, local.views),
-    nodeStyles: { ...server.nodeStyles, ...local.nodeStyles },
-    edgeStyles: { ...server.edgeStyles, ...local.edgeStyles },
-    notes: { ...server.notes, ...local.notes },
-    customProps: { ...server.customProps, ...local.customProps },
-    annotations: { ...server.annotations, ...local.annotations },
-    ...(server.books || local.books ? { books: { ...server.books, ...local.books } } : {}),
-  };
-}
+// Edits made before the sidecar was read, in the order they were made (see `hold`).
+let heldBack: { rootPath: string; edits: { path: string[]; edit: Edit }[] } | null = null;
 
 export function loadLayout(workspaceRoot: string, view: ViewKind | string): Record<string, SavedPosition> {
   if (typeof window === 'undefined') return {};
@@ -440,13 +479,30 @@ export function loadLayout(workspaceRoot: string, view: ViewKind | string): Reco
 
 export function saveLayout(workspaceRoot: string, view: ViewKind | string, positions: Record<string, SavedPosition>): void {
   if (typeof window === 'undefined') return;
+  const primed = isSidecarPrimed(workspaceRoot);
+  // What the window drew from, before this save: the measure of what the save changed.
+  const drawn = primed ? null : loadLayout(workspaceRoot, view);
   // Localstorage as the durable in-browser cache.
   try { localStorage.setItem(key(workspaceRoot, view), JSON.stringify(positions)); } catch { /* ignore */ }
 
-  // Update in-memory cache, and a debounced PUT to stemma.layout.json.
-  const s = ensureSidecar(workspaceRoot);
-  s.views = s.views ?? {};
-  s.views[view] = { ...s.views[view], nodes: positions };
+  const path = ['views', String(view), 'nodes'];
+  const whole = structuredClone(positions);
+  if (primed) {
+    editSidecar(workspaceRoot, path, () => whole);
+    return;
+  }
+  // Before the read the window draws what it has, and saves every card on the view: the ones it
+  // had no position for are at default slots, and on a fresh clone that is all of them. A card it
+  // had a position for and that moved is held as moved; one it had none for only fills a gap the
+  // file leaves, so a default slot never replaces a committed position. (The first drag on a fresh
+  // clone is a default slot too, as far as anyone can tell from here: if the file places that card,
+  // the file wins.) A card missing from the save is not removed: the file says what is on the view.
+  applyEdit(ensureSidecar(workspaceRoot) as Record<string, unknown>, path, () => whole);
+  for (const [id, position] of Object.entries(whole)) {
+    const was = drawn![id];
+    if (was === undefined) hold(workspaceRoot, [...path, id], (current) => current ?? position);
+    else if (JSON.stringify(was) !== JSON.stringify(position)) hold(workspaceRoot, [...path, id], () => position);
+  }
   scheduleSidecarWrite(workspaceRoot);
 }
 
@@ -483,17 +539,18 @@ export function saveEdgeWaypoints(
   waypoints: SavedPosition[]
 ): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(workspaceRoot);
-  s.views = s.views ?? {};
-  const v = s.views[view] ?? {};
-  const edges = v.edges ?? {};
-  if (waypoints.length === 0) {
-    delete edges[edgeId];
-  } else {
-    edges[edgeId] = { ...(edges[edgeId] as object | undefined), waypoints };
-  }
-  s.views[view] = { ...v, edges };
-  scheduleSidecarWrite(workspaceRoot);
+  const next = structuredClone(waypoints);
+  // Only the bends: the dot each end is docked to is kept when they are cleared.
+  editSidecar(workspaceRoot, ['views', String(view), 'edges', edgeId], (current) =>
+    withEntryKey(current, 'waypoints', next.length > 0 ? next : undefined));
+}
+
+/** An edge's entry with `key` set (or removed, when `value` is undefined); undefined once nothing is left in it. */
+function withEntryKey(entry: unknown, key: string, value: unknown): Record<string, unknown> | undefined {
+  const next: Record<string, unknown> = isPlainObject(entry) ? { ...entry } : {};
+  if (value === undefined) delete next[key];
+  else next[key] = value;
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 /** Which connection dot each end of a relationship is anchored to (see lib/edgeDock DockId). */
@@ -520,20 +577,8 @@ export function saveEdgeHandles(
   handles: EdgeHandlePair | null
 ): void {
   if (typeof window === 'undefined') return;
-  const s = ensureSidecar(workspaceRoot);
-  s.views = s.views ?? {};
-  const v = s.views[view] ?? {};
-  const edges = v.edges ?? {};
-  const prev = (edges[edgeId] as Record<string, unknown> | undefined) ?? {};
-  if (!handles || (!handles.source && !handles.target)) {
-    const { handles: _omit, ...rest } = prev as { handles?: unknown };
-    if (Object.keys(rest).length === 0) delete edges[edgeId];
-    else edges[edgeId] = rest;
-  } else {
-    edges[edgeId] = { ...prev, handles };
-  }
-  s.views[view] = { ...v, edges };
-  scheduleSidecarWrite(workspaceRoot);
+  const next = handles && (handles.source || handles.target) ? { ...handles } : undefined;
+  editSidecar(workspaceRoot, ['views', String(view), 'edges', edgeId], (current) => withEntryKey(current, 'handles', next));
 }
 
 /**
@@ -559,9 +604,11 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
     if (primedRoot === workspaceRoot) return;
     // What the file says, before anything below adds to the copy: the measure of what to send.
     sidecarBase = { rootPath: workspaceRoot, sidecar: structuredClone(raw) };
-    // Preserve any in-memory edits made before this first fetch resolved (local wins).
-    const pending = sidecarCache?.rootPath === workspaceRoot ? sidecarCache.sidecar : null;
-    const sidecar: SidecarShape = pending ? mergeSidecar(raw, pending) : raw;
+    // Edits made while it loaded, made again on the file as read, in the order they were made.
+    const held = heldBack?.rootPath === workspaceRoot ? heldBack.edits : [];
+    heldBack = null;
+    const sidecar: SidecarShape = raw;
+    for (const { path, edit } of held) applyEdit(sidecar as Record<string, unknown>, path, edit);
     sidecarCache = { rootPath: workspaceRoot, sidecar };
     // Marked only after a successful read, so a failed fetch retries on the next call. From here on
     // the session holds the whole sidecar, and may write it.
@@ -601,9 +648,9 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
       }
       localStorage.setItem(migratedKey(workspaceRoot), '1');
     }
-    // Edits made while it loaded were held back (see scheduleSidecarWrite); they go out with the
-    // migration, over what the file had.
-    if (touched || pending) void flushSidecar(workspaceRoot);
+    // Edits made while it loaded were held back (see `hold`); they go out with the migration, as
+    // what they changed in the file.
+    if (touched || held.length > 0) void flushSidecar(workspaceRoot);
     // Tell the store/canvas to re-hydrate styles/notes/props from the now-loaded committed sidecar.
     window.dispatchEvent(new CustomEvent('stemma:sidecar-primed', { detail: { rootPath: workspaceRoot } }));
   } catch {

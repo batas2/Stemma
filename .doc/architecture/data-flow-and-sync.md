@@ -71,7 +71,11 @@ Frontend rules that keep it correct:
 3. **One shared cache** routes node styles, edge styles, notes, custom props, and shapes — they must
    not keep separate caches that clobber each other on save.
 4. **Write nothing before it has been read.** Until then there is nothing to measure the edits
-   against. Edits made while it loads are held back and sent once it has been read.
+   against. Edits made while it loads are held back as what each one changed — these bends of that
+   arrow, this shape, that card moved — and made again on the file once it has been read. Never as
+   the window's maps: they hold only what the window drew, and laid over the file they replaced
+   every arrow, shape and position the window had not drawn. A position the window had none for (a
+   default slot) only fills a gap in the file; it never replaces a committed one.
 5. **The browser's copy is a cache, never a source.** `localStorage` keeps what was drawn last, so
    the canvas has something to show before the sidecar arrives. Once it has, the sidecar *replaces*
    that copy; it is not merged with it, because an entry only the browser has is one the repository
