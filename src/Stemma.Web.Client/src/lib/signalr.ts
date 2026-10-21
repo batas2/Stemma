@@ -10,9 +10,13 @@ const sidecarListeners = new Set<() => void>();
 const commentsListeners = new Set<() => void>();
 const presenterStateListeners = new Set<(state: unknown) => void>();
 const presenterCommandListeners = new Set<(command: unknown) => void>();
+const reconnectListeners = new Set<() => void>();
+let everConnected = false;
 
 export async function ensureConnection(): Promise<signalR.HubConnection> {
   if (connection?.state === signalR.HubConnectionState.Connected) return connection;
+  // Made again after one that was up gave up: whatever was announced in between was missed.
+  const again = everConnected;
   if (connection) {
     try { await connection.stop(); } catch { /* ignore */ }
   }
@@ -27,7 +31,10 @@ export async function ensureConnection(): Promise<signalR.HubConnection> {
   connection.on('CommentsChanged', () => commentsListeners.forEach(l => l()));
   connection.on('PresenterState', (state: unknown) => presenterStateListeners.forEach(l => l(state)));
   connection.on('PresenterCommand', (command: unknown) => presenterCommandListeners.forEach(l => l(command)));
+  connection.onreconnected(() => reconnectListeners.forEach(l => l()));
   await connection.start();
+  everConnected = true;
+  if (again) reconnectListeners.forEach(l => l());
   return connection;
 }
 
@@ -51,6 +58,16 @@ export function onSidecarChanged(cb: () => void) {
 export function onCommentsChanged(cb: () => void) {
   commentsListeners.add(cb);
   return () => commentsListeners.delete(cb);
+}
+
+/**
+ * The live connection is back after a drop — reconnected on its own, or made again after it gave
+ * up. What was announced meanwhile (operations, outside changes, layout and comment saves) is not
+ * sent again, so whoever shows any of it reads it afresh.
+ */
+export function onReconnected(cb: () => void) {
+  reconnectListeners.add(cb);
+  return () => { reconnectListeners.delete(cb); };
 }
 
 /** The presenter's console and the presenting window, relayed by the hub to every other window (F-019). */

@@ -123,6 +123,9 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
   engine has not yet seen is refused as `ChangedOnDisk` rather than written over it.
 - The client merges deltas **without clobbering in-flight local edits** — the same discipline as the
   sidecar cache.
+- **After a drop, catch up.** What was announced while the live connection was down is not sent
+  again, so when it comes back (`onReconnected` in `lib/signalr.ts`: reconnected on its own, or made
+  again after it gave up) the window reads the model, the views, the layout and the comments afresh.
 
 ## Why no database
 

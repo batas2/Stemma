@@ -12,7 +12,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, applyOperation } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, onReconnected, applyOperation } from './lib/signalr';
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
 import { removeShape, saveShapes } from './lib/shapes';
@@ -98,7 +98,14 @@ export default function App() {
     });
     // The comments changed outside: whichever panel is open reads them again.
     const offComments = onCommentsChanged(() => window.dispatchEvent(new Event('stemma:comments-changed')));
-    return () => { offOp(); offExt(); offSidecar(); offComments(); };
+    // Back after a drop: nothing announced meanwhile is announced again, so read all of it afresh.
+    const offReconnect = onReconnected(() => {
+      void refresh();
+      const root = useApp.getState().workspace?.rootPath;
+      if (root) rereadLayoutSidecar(root).catch(reportFailure('Sidecar', ClientEvent.RequestFailed, 'Reading the layout sidecar after reconnecting'));
+      window.dispatchEvent(new Event('stemma:comments-changed'));
+    });
+    return () => { offOp(); offExt(); offSidecar(); offComments(); offReconnect(); };
   }, [setWs, setArch, setViolations]);
 
   // Load the active workspace's model + presentation whenever the workspace changes — on the
