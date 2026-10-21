@@ -74,10 +74,25 @@ public sealed class StemmaEngine : IAsyncDisposable
         // Watch Architecture/, every file the workspace holds, and every file it would hold if it
         // were opened now — which is what a file added by a pull is.
         if (path.Replace('\\', '/').Contains("/Architecture/", StringComparison.OrdinalIgnoreCase)) return true;
-        return _workspace.CurrentSolution.Projects
-            .SelectMany(p => p.Documents)
-            .Any(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase))
-            || ProjectFor(path) is not null;
+        return HeldPaths().Contains(path) || ProjectFor(path) is not null;
+    }
+
+    private sealed record Held(Solution Solution, HashSet<string> Paths);
+    private Held? _held;
+
+    /// <summary>
+    /// The paths of the documents the workspace holds, kept for as long as the solution is the same.
+    /// The poller asks about every file every second; finding each in the documents one by one was
+    /// files × documents comparisons a second — nine million at 3,000 files.
+    /// </summary>
+    private HashSet<string> HeldPaths()
+    {
+        var solution = _workspace.CurrentSolution;
+        if (Volatile.Read(ref _held) is { } held && ReferenceEquals(held.Solution, solution)) return held.Paths;
+        var paths = solution.Projects.SelectMany(p => p.Documents).Select(d => d.FilePath).OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Volatile.Write(ref _held, new Held(solution, paths));
+        return paths;
     }
 
     /// <summary>
@@ -542,6 +557,7 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await _lifetime.CancelAsync();
         if (_watcher is not null) await _watcher.DisposeAsync();
         _workspace.Dispose();
         EngineLog.WorkspaceClosed(_log);
@@ -615,7 +631,8 @@ public sealed class StemmaEngine : IAsyncDisposable
         // First, because it is the slow part: a whole compile. Between checking the files against
         // the disk and writing them there must be nothing that takes time, or a save made in it is
         // written over — which is what the check is there to prevent.
-        var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, ct);
+        var affected = AffectedProjects(changes, newSolution);
+        var baselineErrors = await CollectErrorSignaturesAsync(oldSolution, affected, ct);
         var projectFiles = await SnapshotProjectFilesAsync(oldSolution, ct);
 
         // Now every file the edit touches, read once: the bytes are what a failure puts back — BOM,
@@ -673,7 +690,7 @@ public sealed class StemmaEngine : IAsyncDisposable
                 return new OperationFailed(opId, "ApplyFailed", "TryApplyChanges returned false");
             await RestoreProjectFilesAsync(projectFiles, settled);
 
-            var introduced = await CollectIntroducedErrorsAsync(baselineErrors, settled);
+            var introduced = await CollectIntroducedErrorsAsync(baselineErrors, affected, settled);
             if (introduced.Count > 0)
             {
                 await RollBackAsync(raw, projectFiles);
@@ -1159,44 +1176,92 @@ public sealed class StemmaEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// Location-independent signatures of every compile error in a solution, used to tell
+    /// The projects an edit can have broken: the ones it changed, and every project that depends on one
+    /// of them. No other project's compilation can differ, so none other is checked.
+    /// </summary>
+    private static IReadOnlyList<ProjectId> AffectedProjects(SolutionChanges changes, Solution newSolution)
+    {
+        var graph = newSolution.GetProjectDependencyGraph();
+        var affected = new HashSet<ProjectId>();
+        foreach (var id in changes.GetProjectChanges().Select(c => c.ProjectId))
+        {
+            affected.Add(id);
+            affected.UnionWith(graph.GetProjectsThatTransitivelyDependOnThisProject(id));
+        }
+        return [.. affected];
+    }
+
+    /// <summary>
+    /// Location-independent signatures of the compile errors in <paramref name="projects"/>, used to tell
     /// errors the current op introduced apart from ones that were already present.
     /// </summary>
-    private static async Task<HashSet<string>> CollectErrorSignaturesAsync(Solution solution, CancellationToken ct)
+    private async Task<HashSet<string>> CollectErrorSignaturesAsync(Solution solution, IReadOnlyList<ProjectId> projects, CancellationToken ct)
     {
         var signatures = new HashSet<string>();
-        foreach (var project in solution.Projects)
+        foreach (var id in projects)
         {
-            var compilation = await project.GetCompilationAsync(ct);
-            if (compilation is null) continue;
-            foreach (var d in compilation.GetDiagnostics(ct))
-            {
-                if (d.Severity == DiagnosticSeverity.Error)
-                    signatures.Add($"{project.Name}|{d.Id}|{d.GetMessage()}");
-            }
+            if (solution.GetProject(id) is not { } project) continue;
+            foreach (var d in await ErrorsOfAsync(project, ct))
+                signatures.Add($"{project.Name}|{d.Id}|{d.GetMessage()}");
         }
         return signatures;
     }
 
     /// <summary>
-    /// Errors in the current workspace solution that are NOT in <paramref name="baseline"/> —
-    /// the ones the just-applied op introduced. Returned with source locations for diagnostics.
+    /// Errors in <paramref name="projects"/> of the current workspace solution that are NOT in
+    /// <paramref name="baseline"/> — the ones the just-applied op introduced. Returned with source
+    /// locations for diagnostics.
     /// </summary>
-    private async Task<IReadOnlyList<string>> CollectIntroducedErrorsAsync(HashSet<string> baseline, CancellationToken ct)
+    private async Task<IReadOnlyList<string>> CollectIntroducedErrorsAsync(HashSet<string> baseline, IReadOnlyList<ProjectId> projects, CancellationToken ct)
     {
         var introduced = new List<string>();
-        foreach (var project in _workspace.CurrentSolution.Projects)
+        var solution = _workspace.CurrentSolution;
+        foreach (var id in projects)
         {
-            var compilation = await project.GetCompilationAsync(ct);
-            if (compilation is null) continue;
-            foreach (var d in compilation.GetDiagnostics(ct))
+            if (solution.GetProject(id) is not { } project) continue;
+            foreach (var d in await ErrorsOfAsync(project, ct))
             {
-                if (d.Severity != DiagnosticSeverity.Error) continue;
                 if (baseline.Contains($"{project.Name}|{d.Id}|{d.GetMessage()}")) continue;
                 introduced.Add($"{project.Name}: {d.Id} {d.GetMessage()} at {d.Location.GetLineSpan()}");
             }
         }
         return introduced;
+    }
+
+    /// <summary>
+    /// Each project's compile errors, for the version of the project and everything it depends on that
+    /// they were found in. The errors after one edit are the errors before the next, so a check that
+    /// compiled the whole workspace twice per edit now compiles what the edit changed, once. Held as a
+    /// task so that two callers — an edit, and the warm-up after opening — share one compile.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ProjectId, (VersionStamp Version, Lazy<Task<IReadOnlyList<Diagnostic>>> Errors)> _errors = new();
+
+    /// <summary>Cancelled when the engine is disposed: a compile nobody will read stops.</summary>
+    private readonly CancellationTokenSource _lifetime = new();
+
+    private async Task<IReadOnlyList<Diagnostic>> ErrorsOfAsync(Project project, CancellationToken ct)
+    {
+        var version = await project.GetDependentVersionAsync(ct);
+        var entry = _errors.AddOrUpdate(project.Id,
+            _ => (version, new(() => CompileForErrorsAsync(project))),
+            (_, known) => known.Version == version && !(known.Errors.IsValueCreated && known.Errors.Value is { IsFaulted: true } or { IsCanceled: true })
+                ? known
+                : (version, new(() => CompileForErrorsAsync(project))));
+        return await entry.Errors.Value.WaitAsync(ct);
+    }
+
+    private async Task<IReadOnlyList<Diagnostic>> CompileForErrorsAsync(Project project)
+    {
+        // Not the caller's token: the result is shared, and one caller giving up must not fail it for
+        // the others.
+        await Task.Yield();
+        var started = Stopwatch.GetTimestamp();
+        var compilation = await project.GetCompilationAsync(_lifetime.Token);
+        IReadOnlyList<Diagnostic> errors = compilation is null
+            ? []
+            : compilation.GetDiagnostics(_lifetime.Token).Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        EngineLog.CompileChecked(_log, project.Name, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, errors.Count);
+        return errors;
     }
 
     private static string ToVisibilityKeyword(Visibility v) => v switch

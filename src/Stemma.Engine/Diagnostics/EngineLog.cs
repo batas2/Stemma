@@ -52,6 +52,10 @@ internal static partial class EngineLog
         Message = "Could not snapshot the model before {OperationType}; undo will not be available for this operation")]
     public static partial void UndoSnapshotUnavailable(ILogger logger, string operationType, Exception exception);
 
+    [LoggerMessage(EventId = 1104, Level = LogLevel.Trace,
+        Message = "Compiled {ProjectName} for the compile check in {ElapsedMs} ms ({ErrorCount} errors)")]
+    public static partial void CompileChecked(ILogger logger, string projectName, long elapsedMs, int errorCount);
+
     // ---- Stemma.Engine.Fidelity — 1200–1299 ----------------------------------------------------
 
     [LoggerMessage(EventId = 1201, Level = LogLevel.Debug,

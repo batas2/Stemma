@@ -31,6 +31,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
     // Whether the mtimes have been seen once. After that, a path the poller has not seen before is a
     // file that was added, and is reported like any other change.
     private bool _seeded;
+    private int _polling;
 
     public event Action<string>? Changed;
 
@@ -93,10 +94,11 @@ public sealed class ExternalWatcher : IAsyncDisposable
         if (!Directory.Exists(_root)) yield break;
         foreach (var sidecar in new[] { LayoutSidecar.PathFor(_root), CommentsSidecar.PathFor(_root) })
             if (File.Exists(sidecar) && _shouldWatch(sidecar)) yield return sidecar;
-        foreach (var path in Directory.EnumerateFiles(_root, "*.cs", SearchOption.AllDirectories))
+        // Never into bin, obj, node_modules, .git or another dot-folder: walked and filtered afterwards,
+        // they were most of what every poll did.
+        foreach (var path in ModelWorkspaceLoader.EnumerateFiles(_root, "*.cs"))
         {
-            if (path.Contains("/bin/", StringComparison.OrdinalIgnoreCase) || path.Contains("/obj/", StringComparison.OrdinalIgnoreCase) || path.Contains(".g.cs", StringComparison.OrdinalIgnoreCase))
-                continue;
+            if (path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)) continue;
             if (!_shouldWatch(path)) continue;
             yield return path;
         }
@@ -111,6 +113,9 @@ public sealed class ExternalWatcher : IAsyncDisposable
 
     private void PollOnce()
     {
+        // One poll at a time. The timer does not wait for a callback to finish, so a poll that took
+        // longer than its second had the next one start beside it, and on a large tree they piled up.
+        if (Interlocked.CompareExchange(ref _polling, 1, 0) != 0) return;
         try
         {
             var current = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -139,6 +144,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
         {
             EngineLog.ExternalChangeFailed(_log, e);
         }
+        finally { Volatile.Write(ref _polling, 0); }
     }
 
     private void ScheduleEmit(string path)
