@@ -28,7 +28,10 @@ beforeAll(() => {
     readHandles: () => ({}),
     nodeStyles: {},
     edgeStyles: {},
-    notes: { mod_a: '**the edge store** · typed `IsSupplierOf`\n- one\n- two' },
+    notes: {
+      mod_a: '**the edge store** · typed `IsSupplierOf`\n- one\n- two',
+      mod_b: 'An <u>underlined</u> word, a <mark>highlight</mark>, <span style="color:#ef4444">red</span>, ~~gone~~ and [the spec](https://example.com/spec).\n\n| Owner | Status |\n| --- | --- |\n| Core | live |\n\n---\n\n- [x] shipped\n- [ ] next\n\n<img src=x onerror="window.pwnedNote=1"> [bad](javascript:alert(1))',
+    },
     customProps: {},
     books: [{
       id: 'book_a', name: 'A walk', audience: 'engineering',
@@ -52,6 +55,25 @@ const title = () => document.querySelector('.vr-book-title')?.textContent;
 const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key }));
 
 describe('a note in the report', () => {
+  it('draws what the notes editor writes, and still nothing else as markup', () => {
+    const notes = document.querySelectorAll('.vrn-notes')[1]!;
+    expect(notes.querySelector('u')?.textContent).toBe('underlined');
+    expect(notes.querySelector('mark')?.textContent).toBe('highlight');
+    expect((notes.querySelector('span[style]') as HTMLElement | null)?.style.color).toBe('#ef4444');
+    expect(notes.querySelector('s')?.textContent).toBe('gone');
+    expect(notes.querySelector('a')?.getAttribute('href')).toBe('https://example.com/spec');
+    expect([...notes.querySelectorAll('th')].map((c) => c.textContent)).toEqual(['Owner', 'Status']);
+    expect([...notes.querySelectorAll('td')].map((c) => c.textContent)).toEqual(['Core', 'live']);
+    expect(notes.querySelector('hr')).not.toBeNull();
+    expect([...notes.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['☑ shipped', '☐ next']);
+    expect(notes.textContent).not.toContain('<u>');
+    expect(notes.textContent).not.toContain('| ---');
+    // Markup that is not the editor's stays text, and a link that is not http(s) is not a link.
+    expect(notes.querySelector('img')).toBeNull();
+    expect((window as unknown as { pwnedNote?: number }).pwnedNote).toBeUndefined();
+    expect(notes.querySelectorAll('a')).toHaveLength(1);
+  });
+
   it('shows its bold, code and list, built from text rather than read as markup', () => {
     const notes = document.querySelector('.vrn-notes')!;
     expect(notes.querySelector('strong')?.textContent).toBe('the edge store');

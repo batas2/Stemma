@@ -399,6 +399,11 @@ input, textarea { font: inherit; color: var(--vr-text); }
 .vrn-notes p, .vr-notes p, .vr-concern .body p { margin: 0 0 4px; }
 .vrn-notes ul, .vrn-notes ol, .vr-notes ul, .vr-notes ol { margin: 0 0 4px; padding-left: 16px; }
 .vrn-notes p:last-child, .vr-notes p:last-child { margin-bottom: 0; }
+/* What the notes editor writes beyond markdown: a table, a rule, a highlight. */
+.vrn-notes table, .vr-notes table { border-collapse: collapse; margin: 0 0 4px; white-space: normal; }
+.vrn-notes th, .vrn-notes td, .vr-notes th, .vr-notes td { border: 1px solid var(--vr-border); padding: 1px 5px; text-align: left; }
+.vrn-notes hr, .vr-notes hr { border: 0; border-top: 1px solid var(--vr-border); margin: 4px 0; }
+.vrn-notes mark, .vr-notes mark { background: color-mix(in srgb, #facc15 45%, transparent); color: inherit; border-radius: 2px; }
 
 /* ---------- F-014: a view's header, its legend, and annotations ---------- */
 .vr-canvas-wrap.has-header { display: flex; flex-direction: column; }
