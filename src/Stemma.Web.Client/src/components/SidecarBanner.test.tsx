@@ -56,8 +56,16 @@ describe('SidecarBanner', () => {
     say(CONFLICT);
     const status = host.querySelector('[role="status"]')!;
     expect(status.getAttribute('aria-live')).toBe('polite');
-    expect(status.textContent).toContain(
-      'stemma.layout.json can\'t be read — stemma.layout.json cannot be read at line 3: \'<\' is an invalid start of a value. Layout changes are kept in this window until it\'s fixed.',
+    // The server's reason, without saying twice that the file cannot be read.
+    expect(status.textContent).toBe(
+      'stemma.layout.json can\'t be read — at line 3: \'<\' is an invalid start of a value. Layout changes are kept in this window until it\'s fixed.Try again',
+    );
+  });
+
+  it('gives any other reason as the server says it', () => {
+    say({ ...CONFLICT, message: 'stemma.layout.json is not UTF-8 text, so it is not changed. Save it as UTF-8, then try again.' });
+    expect(host.querySelector('p')?.textContent).toBe(
+      'stemma.layout.json can\'t be read — stemma.layout.json is not UTF-8 text, so it is not changed. Save it as UTF-8, then try again. Layout changes are kept in this window until it\'s fixed.',
     );
   });
 

@@ -4,6 +4,14 @@ import { onSidecarProblem, retryLayoutSidecar, sidecarProblem } from '@/lib/layo
 import { reportFailure, ClientEvent } from '@/lib/log';
 
 /**
+ * The server's reason, without the words the banner already says: it begins "stemma.layout.json
+ * cannot be read" when the file does not parse, which beside the headline read twice.
+ */
+function reason(message: string): string {
+  return message.replace(/^stemma\.layout\.json cannot be read\s*/i, '').replace(/\.\s*$/, '').trim();
+}
+
+/**
  * Says, for as long as it lasts, that stemma.layout.json cannot be read — a merge left its markers
  * in, a hand edit is half done — and that layout edits are kept in this window meanwhile. The file
  * used to be refused without a word, and a reload lost every edit of the session. It goes as soon
@@ -38,7 +46,7 @@ export function SidecarBanner() {
           <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" aria-hidden />
           <p id={messageId} className="flex-1 min-w-0 leading-relaxed">
             <span className="font-medium">stemma.layout.json can't be read</span>
-            {problem.message ? ` — ${problem.message.replace(/\.\s*$/, '')}.` : '.'}
+            {reason(problem.message) ? ` — ${reason(problem.message)}.` : '.'}
             {' '}Layout changes are kept in this window until it's fixed.
           </p>
           <button
