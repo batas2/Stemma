@@ -246,10 +246,20 @@ export function forgetLayoutSidecar(): void {
  * forbidden, because the copy it replaced held edits not yet sent; laying those over the new copy is
  * what makes it safe, and not reading it meant the next edit wrote the stale copy over the change.
  */
-export async function rereadLayoutSidecar(workspaceRoot: string): Promise<void> {
-  if (typeof window === 'undefined') return;
+export function rereadLayoutSidecar(workspaceRoot: string): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
   // Never read because it could not be: the change may be the fix, so try the first read again.
   if (!isSidecarPrimed(workspaceRoot) && problem?.rootPath === workspaceRoot) return primeLayoutSidecar(workspaceRoot);
+  // In line with the sends, after the one on its way. Read beside it, the file could be served
+  // from before that save and answered after it: the save was then recorded as written, so not
+  // laid over what was read, and the window went back to the old value while the file had the new.
+  // Behind it, a save that landed is in what is read, and one that failed is still unsent.
+  const next = sendQueue.then(() => reread(workspaceRoot));
+  sendQueue = next.catch(() => undefined);
+  return next;
+}
+
+async function reread(workspaceRoot: string): Promise<void> {
   // Not read yet: priming will read the file as it is now.
   if (!isSidecarPrimed(workspaceRoot) || sidecarBase?.rootPath !== workspaceRoot) return;
   let raw: SidecarShape | null;

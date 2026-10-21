@@ -131,6 +131,55 @@ describe('a change made outside', () => {
     expect(sent(s)).toEqual([{ path: ['views', 'moduleMap', 'nodes', 'mod_1', 'x'], value: 15 }]);
   });
 
+  // The read used to go out while a save was still on its way: the server answered with the file
+  // from before the save, the save landed, and the window then showed the old note while the file
+  // held the new one — and wrote the old one back with its next edit to it.
+  it('is read only once the save on its way has landed', async () => {
+    const s = await session();
+    const disk = onDisk() as Record<string, unknown>;
+    // Served as the file is when the request arrives, answered a moment later.
+    s.api.fetchLayout.mockImplementation(() => {
+      const served = structuredClone(disk);
+      return new Promise((resolve) => setTimeout(() => resolve(served), 50));
+    });
+    let land!: () => void;
+    s.api.patchLayoutSidecar.mockImplementationOnce((changes) => new Promise((resolve) => {
+      land = () => { s.layout.applySidecarChanges(disk, changes); resolve(null); };
+    }));
+    s.layout.saveLayout(ROOT, 'moduleMap', { mod_1: { x: 15, y: 20 }, mod_2: { x: 300, y: 20 } });
+    s.layout.sidecarSet(ROOT, 'notes', 'mod_1', 'Sent, not yet landed.');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(s.api.patchLayoutSidecar).toHaveBeenCalledTimes(1);
+
+    const reread = s.layout.rereadLayoutSidecar(ROOT);
+    await vi.advanceTimersByTimeAsync(0);
+    land();
+    await vi.advanceTimersByTimeAsync(100);
+    await reread;
+
+    const { loadNote } = await import('./elementNotes');
+    expect(loadNote(ROOT, 'mod_1')).toBe('Sent, not yet landed.');
+    expect(s.layout.loadLayout(ROOT, 'moduleMap').mod_1).toEqual({ x: 15, y: 20 });
+    await flush();
+    expect(s.api.patchLayoutSidecar).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an edit made while it is being read', async () => {
+    const s = await session();
+    let answer!: (file: unknown) => void;
+    s.api.fetchLayout.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const reread = s.layout.rereadLayoutSidecar(ROOT);
+    await vi.advanceTimersByTimeAsync(0);
+    s.layout.sidecarSet(ROOT, 'notes', 'mod_1', 'Typed during the read.');
+    answer({ ...onDisk(), notes: { mod_1: 'Changed by a pull.' } });
+    await reread;
+
+    const { loadNote } = await import('./elementNotes');
+    expect(loadNote(ROOT, 'mod_1')).toBe('Typed during the read.');
+    await flush();
+    expect(sent(s)).toEqual([{ path: ['notes', 'mod_1'], value: 'Typed during the read.' }]);
+  });
+
   it('that arrives before the sidecar was first read waits for that read', async () => {
     vi.resetModules();
     const api = vi.mocked(await import('./api'));

@@ -65,7 +65,8 @@ Frontend rules that keep it correct:
 2. **Never re-read over unsent edits.** Re-reading on every refresh overwrote not-yet-flushed local
    edits — the root cause of the "drag snaps back / routing reverts / canvas blinks" bugs. The file
    is read again only when the engine says someone else changed it (`SidecarChanged`), and this
-   session's unsent edits are laid over what it now says (`rereadLayoutSidecar`). Not reading it
+   session's unsent edits are laid over what it now says (`rereadLayoutSidecar`). The read waits
+   in line behind any save on its way, so what it brings back already has that save in it. Not reading it
    at all meant the next edit wrote the stale copy over a pull
    ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)). Someone else
    includes another window: each save names the window it came from (`X-Stemma-Connection`, its
