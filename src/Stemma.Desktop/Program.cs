@@ -46,7 +46,10 @@ else window.Center();
 
 var bridge = new ShellBridge(
     (title, defaultPath) => window.ShowOpenFolder(title, defaultPath, multiSelect: false)?.FirstOrDefault(),
-    window.SendWebMessage);
+    window.SendWebMessage,
+    // The presenter's console (F-019) opens in the system browser, on the laptop's screen.
+    url => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })?.Dispose(),
+    () => starting.IsCompletedSuccessfully ? new Uri(starting.Result) : null);
 
 window
     .RegisterWebMessageReceivedHandler((_, message) => bridge.Receive(message))

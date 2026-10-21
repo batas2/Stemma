@@ -8,6 +8,8 @@ const opListeners = new Set<(r: OperationResult) => void>();
 const externalListeners = new Set<() => void>();
 const sidecarListeners = new Set<() => void>();
 const commentsListeners = new Set<() => void>();
+const presenterStateListeners = new Set<(state: unknown) => void>();
+const presenterCommandListeners = new Set<(command: unknown) => void>();
 
 export async function ensureConnection(): Promise<signalR.HubConnection> {
   if (connection?.state === signalR.HubConnectionState.Connected) return connection;
@@ -23,6 +25,8 @@ export async function ensureConnection(): Promise<signalR.HubConnection> {
   connection.on('ExternalChange', () => externalListeners.forEach(l => l()));
   connection.on('SidecarChanged', () => sidecarListeners.forEach(l => l()));
   connection.on('CommentsChanged', () => commentsListeners.forEach(l => l()));
+  connection.on('PresenterState', (state: unknown) => presenterStateListeners.forEach(l => l(state)));
+  connection.on('PresenterCommand', (command: unknown) => presenterCommandListeners.forEach(l => l(command)));
   await connection.start();
   return connection;
 }
@@ -47,6 +51,22 @@ export function onSidecarChanged(cb: () => void) {
 export function onCommentsChanged(cb: () => void) {
   commentsListeners.add(cb);
   return () => commentsListeners.delete(cb);
+}
+
+/** The presenter's console and the presenting window, relayed by the hub to every other window (F-019). */
+export function onPresenterState(cb: (state: unknown) => void) {
+  presenterStateListeners.add(cb);
+  return () => { presenterStateListeners.delete(cb); };
+}
+
+export function onPresenterCommand(cb: (command: unknown) => void) {
+  presenterCommandListeners.add(cb);
+  return () => { presenterCommandListeners.delete(cb); };
+}
+
+export async function sendPresenter(kind: 'PresenterState' | 'PresenterCommand', payload: unknown): Promise<void> {
+  const conn = await ensureConnection();
+  await conn.invoke(kind, payload);
 }
 
 /**

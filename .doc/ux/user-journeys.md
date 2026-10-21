@@ -133,7 +133,10 @@ comparing writes nothing, and a ghost is never a position in the sidecar.
    hides, Enter walks it. *Point the page at these* keeps the answer as the page on screen's focus.
 3. **Present.** ▶ in the panel or the editor. The window becomes the diagram: arrows, Space or a
    clicker turn pages; on one view a page turn is a camera move, so context to detail is a zoom.
-   N hides the narrative when you would rather talk, B blanks the screen, Esc stops.
+   N hides the narrative when you would rather talk, B blanks the screen, Esc stops. With a
+   projector, **With notes** (or P while presenting) opens the presenter view
+   ([F-019](../features/F-019-presenter-view.md)) on your screen — now, next, the page list, the
+   time — and the projector shows the picture alone; either screen turns the page.
 4. **Leave it behind.** The HTML report carries every book as a chapter, and *PDF* in the editor
    makes the deck — one landscape page per page, as presented — for whoever was not there.
 5. **Keep it true.** The book is in `stemma.layout.json`, reviewed with the model. A renamed

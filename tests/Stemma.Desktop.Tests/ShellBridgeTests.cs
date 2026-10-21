@@ -124,4 +124,47 @@ public class ShellBridgeTests
 
         receive.Should().NotThrow();
     }
+
+    // ---- openInBrowser (F-019): the presenter's console, and nothing but this app's own pages.
+
+    private readonly List<string> _opened = [];
+
+    private ShellBridge Opener(string origin = "http://127.0.0.1:41234/") => new(
+        (_, _) => null,
+        _replies.Add,
+        _opened.Add,
+        () => new Uri(origin));
+
+    [Fact]
+    public void Opens_its_own_presenter_page_in_the_browser()
+    {
+        Opener().Receive("""{"id":"1","type":"openInBrowser","url":"http://127.0.0.1:41234/?presenter=1"}""");
+
+        _opened.Should().Equal("http://127.0.0.1:41234/?presenter=1");
+        LastReply().GetProperty("ok").GetBoolean().Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("https://example.com/")]
+    [InlineData("http://127.0.0.1:9999/")]
+    [InlineData("file:///etc/passwd")]
+    [InlineData("http://user@127.0.0.1:41234/")]
+    [InlineData("http://192.168.0.10:41234/")]
+    [InlineData("not a url")]
+    public void Refuses_to_open_anything_that_is_not_one_of_its_own_pages(string url)
+    {
+        Opener().Receive($$"""{"id":"2","type":"openInBrowser","url":"{{url}}"}""");
+
+        _opened.Should().BeEmpty();
+        var reply = LastReply();
+        reply.GetProperty("ok").GetBoolean().Should().BeFalse();
+        reply.GetProperty("id").GetString().Should().Be("2");
+    }
+
+    [Fact]
+    public void Says_so_when_it_has_no_browser_to_open()
+    {
+        Bridge().Receive("""{"id":"3","type":"openInBrowser","url":"http://127.0.0.1:41234/"}""");
+        LastReply().GetProperty("ok").GetBoolean().Should().BeFalse();
+    }
 }

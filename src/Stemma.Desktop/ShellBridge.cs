@@ -6,19 +6,31 @@ namespace Stemma.Desktop;
 /// The only thing the page can ask the window for.
 ///
 /// The web app is the same build that runs in a browser tab, so it cannot depend on the shell being
-/// there; everything here is a request the page makes optionally and degrades from. Today that is
-/// one request — the OS folder picker, which is the capability a tab genuinely cannot have and the
-/// reason F-002 exists at all.
+/// there; everything here is a request the page makes optionally and degrades from. Two requests: the
+/// OS folder picker, which is the capability a tab genuinely cannot have and the reason F-002 exists
+/// at all, and opening one of the app's own pages in the system browser — the presenter's console
+/// (F-019), which belongs on the laptop while this window is on the projector.
 ///
 /// The bridge takes its picker and its reply channel as delegates rather than reaching for a window,
 /// which is what makes the protocol testable without a webview.
 /// </summary>
-public sealed class ShellBridge(ShellBridge.FolderPicker pickFolder, Action<string> respond)
+public sealed class ShellBridge(
+    ShellBridge.FolderPicker pickFolder,
+    Action<string> respond,
+    Action<string>? openInBrowser = null,
+    Func<Uri?>? ownOrigin = null)
 {
     /// <summary>Returns the chosen folder, or null when the user cancelled.</summary>
     public delegate string? FolderPicker(string title, string defaultPath);
 
     public const string PickFolder = "pickFolder";
+
+    /// <summary>
+    /// Open one of this app's own pages in the system browser (F-019): the presenter's console, which
+    /// belongs on the laptop's screen while the window is on the projector. Only this backend's own
+    /// loopback address is opened, so the page cannot use the shell to open anything else.
+    /// </summary>
+    public const string OpenInBrowser = "openInBrowser";
 
     /// <summary>
     /// Handle one message from the page. Never throws: this runs on the native message callback, and
@@ -50,6 +62,14 @@ public sealed class ShellBridge(ShellBridge.FolderPicker pickFolder, Action<stri
                     Reply(new { id, type, ok = chosen is not null, path = chosen });
                     break;
 
+                case OpenInBrowser:
+                    var url = Text(root, "url");
+                    if (openInBrowser is null) { Fail(id, type, "the shell cannot open a browser here"); break; }
+                    if (!IsOwnPage(url, ownOrigin?.Invoke())) { Fail(id, type, "only this app's own pages can be opened"); break; }
+                    openInBrowser(url!);
+                    Reply(new { id, type, ok = true });
+                    break;
+
                 default:
                     Fail(id, type, $"the shell does not handle '{type}'");
                     break;
@@ -63,6 +83,18 @@ public sealed class ShellBridge(ShellBridge.FolderPicker pickFolder, Action<stri
         {
             Fail(id, "error", e.Message);
         }
+    }
+
+    /// <summary>An http URL on this backend's own loopback host and port — nothing else.</summary>
+    public static bool IsOwnPage(string? url, Uri? origin)
+    {
+        if (url is null || origin is null) return false;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var target)) return false;
+        return target.Scheme == Uri.UriSchemeHttp
+            && target.IsLoopback
+            && string.Equals(target.Host, origin.Host, StringComparison.OrdinalIgnoreCase)
+            && target.Port == origin.Port
+            && string.IsNullOrEmpty(target.UserInfo);
     }
 
     private void Fail(string? id, string type, string message)

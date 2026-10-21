@@ -3,9 +3,9 @@
  *
  * The same bundle runs in a browser tab and inside the Photino window (ADR-0017), so nothing here
  * may be required for the app to work — every call degrades to "no shell" and the browser path
- * stays exactly as it was. Today the shell offers one capability, and it is the one a tab genuinely
- * cannot have: the OS folder picker, which is why opening a workspace used to mean typing an
- * absolute path.
+ * stays exactly as it was. The shell offers two capabilities a tab cannot have: the OS folder picker,
+ * which is why opening a workspace used to mean typing an absolute path, and opening the app's own
+ * presenter console in the system browser (F-019).
  */
 
 /** What Photino injects into the page. Absent in a browser. */
@@ -94,6 +94,29 @@ export function pickFolder(title: string, defaultPath = ''): Promise<string | nu
       clearTimeout(timer);
       pending.delete(id);
       resolve(null);
+    }
+  });
+}
+
+/**
+ * Ask the shell to open one of this app's own pages in the system browser (F-019: the presenter's
+ * console, for the laptop's screen while the window is on the projector). False when there is no
+ * shell or it refused; the shell opens only its own loopback address.
+ */
+export function openInBrowser(url: string): Promise<boolean> {
+  const shell = channel();
+  if (!shell) return Promise.resolve(false);
+  listen(shell);
+  const id = String(++nextId);
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => { pending.delete(id); resolve(false); }, 10_000);
+    pending.set(id, (reply) => { clearTimeout(timer); resolve(!!reply.ok); });
+    try {
+      shell.sendMessage(JSON.stringify({ id, type: 'openInBrowser', url }));
+    } catch {
+      clearTimeout(timer);
+      pending.delete(id);
+      resolve(false);
     }
   });
 }

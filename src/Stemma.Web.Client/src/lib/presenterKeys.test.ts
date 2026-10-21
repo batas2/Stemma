@@ -25,6 +25,7 @@ describe('presenterAction', () => {
     expect(press('b')).toBe('blank');
     expect(press('.')).toBe('blank');
     expect(press('f')).toBe('fullscreen');
+    expect(press('p')).toBe('console');
   });
 
   it('leaves chords to the browser and the system', () => {

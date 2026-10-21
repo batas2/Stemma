@@ -47,6 +47,11 @@ The frontend's building blocks, what they own, and the rules for changing them. 
 - **`BookPresenter.tsx`** — the full-screen overlay while presenting: the narrative card, page
   count and progress, a black screen, and the presenter's keys (`lib/presenterKeys.ts`). App hides
   every other piece of chrome while it is up, and the canvas is read-only.
+- **`PresenterConsole.tsx`** ([F-019](../features/F-019-presenter-view.md)) — the presenter view,
+  the app opened at `/?presenter=1` (mounted by `main.tsx` instead of the editor): now, next, the
+  page list, elapsed time and the clock, Previous / Next / Blank / End. Dark by design. Talks to the
+  presenting window through the hub (`lib/presenterLink.ts`); P or ⧉ opens it, *With notes* in the
+  book editor opens it and presents.
 - The canvas applies a page through `lib/bookFrame.ts`: what stays lit, and an animated `fitView`
   to the page's frame, immediate under `prefers-reduced-motion`.
 

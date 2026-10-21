@@ -7,7 +7,7 @@
  * works with no setup.
  */
 
-export type PresenterAction = 'next' | 'prev' | 'first' | 'last' | 'exit' | 'narrative' | 'blank' | 'fullscreen';
+export type PresenterAction = 'next' | 'prev' | 'first' | 'last' | 'exit' | 'narrative' | 'blank' | 'fullscreen' | 'console';
 
 export interface PresenterKey {
   key: string;
@@ -36,6 +36,8 @@ export function presenterAction(e: PresenterKey): PresenterAction | null {
     // `.` is what most clickers send for their "black screen" button.
     case 'b': case 'B': case '.': return 'blank';
     case 'f': case 'F': return 'fullscreen';
+    // P for the presenter's console (F-019), on another screen.
+    case 'p': case 'P': return 'console';
     default: return null;
   }
 }

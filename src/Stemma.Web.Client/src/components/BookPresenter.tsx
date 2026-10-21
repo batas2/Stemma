@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, TriangleAlert, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MonitorSpeaker, TriangleAlert, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp, activeBook, activePage, pageViewIds } from '@/lib/store';
 import { describeProblems, pageProblems, reflowNarrative } from '@/lib/books';
 import { renderNotes } from '@/lib/notesMarkdown';
 import { isTextTarget, presenterAction } from '@/lib/presenterKeys';
+import { onPresenterCommand, sendPresenter } from '@/lib/signalr';
+import { commandIsFor, isConsoleCommand, openConsole, type PresenterState } from '@/lib/presenterLink';
+import { BUILTIN_NAMES } from '@/lib/navigation';
 
 /**
  * Presenting a book (F-013 AC7): the canvas fills the window, the page's words sit over it, and the
@@ -21,6 +24,11 @@ export function BookPresenter() {
   const [narrativeShown, setNarrativeShown] = useState(true);
   const [blank, setBlank] = useState(false);
   const [idle, setIdle] = useState(false);
+  // The presenter's console (F-019): one session per presentation, so a console left open from an
+  // earlier one cannot steer this one; and whether a console has said hello.
+  const session = useRef(`pres_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`);
+  const startedAt = useRef(Date.now());
+  const [consoleOn, setConsoleOn] = useState(false);
   // Whether this presentation took the screen, so that leaving full screen (Esc, which the browser
   // keeps for itself) is taken as stopping, and a presentation that never had it is not stopped.
   const ownsFullscreen = useRef(false);
@@ -68,6 +76,7 @@ export function BookPresenter() {
       if (!action) return;
       e.preventDefault();
       setIdle(false);
+      if (action === 'console') { void showConsole(); return; }
       if (action === 'blank') { setBlank((b) => !b); return; }
       if (action === 'exit') { useApp.getState().stopPresenting(); return; }
       // A key on a blank screen brings the picture back before it moves on.
@@ -103,6 +112,76 @@ export function BookPresenter() {
     window.addEventListener('mousemove', onMove);
     return () => { clearTimeout(timer); window.removeEventListener('mousemove', onMove); };
   }, []);
+
+  // Tell the console where the presentation is, whenever that changes.
+  const consoleState = useMemo<PresenterState | null>(() => {
+    if (!book) return null;
+    const views = pageViewIds({ customViews });
+    const elements = new Set(arch?.elements.map((e) => e.id) ?? []);
+    return {
+      type: 'state',
+      session: session.current,
+      book: { name: book.name, audience: book.audience },
+      pages: book.pages.map((p) => {
+        const probs = pageProblems(p, { views, elements });
+        return {
+          title: p.title,
+          narrative: p.narrative,
+          viewName: customViews.find((v) => v.id === p.view)?.name ?? BUILTIN_NAMES[p.view as keyof typeof BUILTIN_NAMES] ?? p.view,
+          focus: p.focus.length,
+          problem: probs.length ? describeProblems(probs, p) : null,
+        };
+      }),
+      index: Math.max(0, index),
+      step: null,
+      startedAt: startedAt.current,
+      blank,
+    };
+  }, [book, index, blank, customViews, arch]);
+  const stateRef = useRef(consoleState);
+  stateRef.current = consoleState;
+  useEffect(() => {
+    if (consoleState) void sendPresenter('PresenterState', consoleState).catch(() => {});
+  }, [consoleState]);
+  useEffect(() => {
+    const id = session.current;
+    return () => { void sendPresenter('PresenterState', { type: 'ended', session: id }).catch(() => {}); };
+  }, []);
+
+  // And do what it asks.
+  useEffect(() => onPresenterCommand((raw) => {
+    if (!isConsoleCommand(raw) || !commandIsFor(raw, session.current)) return;
+    const st = useApp.getState();
+    switch (raw.action) {
+      case 'hello':
+        // The words are on the console now; the room gets the picture alone. N brings them back.
+        setConsoleOn(true);
+        setNarrativeShown(false);
+        requestAnimationFrame(() => window.dispatchEvent(new Event('stemma:book-reframe')));
+        if (stateRef.current) void sendPresenter('PresenterState', stateRef.current).catch(() => {});
+        break;
+      case 'next': setBlank(false); st.stepPage(1); break;
+      case 'prev': setBlank(false); st.stepPage(-1); break;
+      case 'first': setBlank(false); st.edgePage('first'); break;
+      case 'last': setBlank(false); st.edgePage('last'); break;
+      case 'goto': {
+        const target = activeBook(st)?.pages[raw.index ?? -1];
+        if (target) { setBlank(false); st.showPage(target.id); }
+        break;
+      }
+      case 'blank': setBlank((b) => !b); break;
+      case 'exit': st.stopPresenting(); break;
+    }
+  }), []);
+
+  async function showConsole() {
+    // A browser leaves full screen when a page opens a window. That is not the presenter stopping.
+    ownsFullscreen.current = false;
+    const opened = await openConsole();
+    useApp.getState().setToast(opened
+      ? { kind: 'info', text: 'Presenter view opened. Put this window on the projector and press F for full screen.' }
+      : { kind: 'error', text: 'The presenter view could not open — allow pop-ups for Stemma, then press P again.' });
+  }
 
   if (!book || !page) return null;
   const announcement = `Page ${index + 1} of ${pages.length}: ${page.title || 'Untitled page'}`;
@@ -158,7 +237,15 @@ export function BookPresenter() {
         <button onClick={() => stepPage(1)} disabled={index >= pages.length - 1} aria-label="Next page" className="p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800 disabled:opacity-30">
           <ChevronRight className="w-4 h-4" />
         </button>
-        <button onClick={stopPresenting} aria-label="Stop presenting (Esc)" title="Stop presenting (Esc) · N narrative · B blank screen" className="p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800">
+        <button
+          onClick={() => { void showConsole(); }}
+          aria-label="Open the presenter view on another screen (P)"
+          title={consoleOn ? 'The presenter view is open — P opens it again' : 'Presenter view: notes, next page and a timer, on another screen (P)'}
+          className={clsx('p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800', consoleOn && 'text-amber-600 dark:text-amber-300')}
+        >
+          <MonitorSpeaker className="w-4 h-4" />
+        </button>
+        <button onClick={stopPresenting} aria-label="Stop presenting (Esc)" title="Stop presenting (Esc) · N narrative · B blank screen · P presenter view" className="p-2 rounded-full hover:bg-zinc-200/70 dark:hover:bg-zinc-800">
           <X className="w-4 h-4" />
         </button>
       </nav>

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
-  BookOpen, Copy, Crosshair, FileDown, GripVertical, Maximize2, Play, Plus, Trash2, TriangleAlert, X, ZoomIn,
+  BookOpen, Copy, Crosshair, FileDown, GripVertical, Maximize2, MonitorSpeaker, Play, Plus, Trash2, TriangleAlert, X, ZoomIn,
 } from 'lucide-react';
+import { openConsole } from '@/lib/presenterLink';
 import clsx from 'clsx';
 import { useApp, activeBook, activePage, currentViewId, pageViewIds } from '@/lib/store';
 import { describeProblems, pageProblems, type Book, type BookPage } from '@/lib/books';
@@ -96,6 +97,23 @@ function Editor({ book, page }: { book: Book; page: BookPage | null }) {
           title="Present from this page — arrows or a clicker turn pages, Esc stops"
         >
           <Play className="w-3 h-3" /> Present
+        </button>
+        <button
+          onClick={async () => {
+            // The console first, in the click that may open a window; then the presentation, in this
+            // window, ready to be put on the projector and made full screen with F.
+            const opened = await openConsole();
+            st().startPresenting(book.id, page?.id);
+            st().setToast(opened
+              ? { kind: 'info', text: 'Presenter view opened. Put this window on the projector and press F for full screen.' }
+              : { kind: 'error', text: 'The presenter view could not open — allow pop-ups for Stemma. Presenting without it.' });
+          }}
+          disabled={book.pages.length === 0}
+          aria-label="Present with the presenter view on another screen"
+          title="Present with the presenter view: notes, next page and a timer on your screen, the picture on the projector"
+          className="flex items-center gap-1 px-2 py-1 rounded border border-amber-500/60 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-40"
+        >
+          <MonitorSpeaker className="w-3 h-3" /> With notes
         </button>
         <button
           onClick={exportPdf}
