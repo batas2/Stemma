@@ -140,6 +140,10 @@ it was built first.
 - [x] **SDK-free model-only load path** (§3) — done first, and it unblocked F-002 packaging too.
 - [x] Scaffold fixed: no project file at all (so no TFM to be wrong), `.gitignore`, `git init` with
       one commit, workspace `README.md`, and a `STEMMA.md` brief ([F-007](./F-007-sidecar-schema-and-protocol.md) AC6).
+      The commit holds only the files the scaffold wrote, never whatever else the chosen folder
+      held. A folder already inside a Git repository gets no repository of its own and no commit:
+      the files are left for the repository's owner, and `POST /api/workspace/init` answers
+      `committed: false` with the `repositoryRoot` it found, so the window can say so.
 - [x] Default location: `~/stemma/<name>`, so a model is created by *name* and no path is typed.
 - [x] Templates mirror the sample shapes — C4 system + containers, DDD contexts + capabilities, and
       a data flow — each at or under seven boxes, which is the rule every workspace's brief teaches.

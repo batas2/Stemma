@@ -17,7 +17,12 @@ public static class WorkspaceScaffold
 
     public static string PathFor(string name) => Path.Combine(DefaultRoot, Slug(name));
 
-    public sealed record Result(string RootPath, bool GitInitialised, string? GitError);
+    /// <param name="GitInitialised">A repository was created for the model.</param>
+    /// <param name="GitError">What git said when a step failed; the model is usable either way.</param>
+    /// <param name="Committed">The files the scaffold wrote are in a first commit.</param>
+    /// <param name="RepositoryRoot">The repository the folder was already in, when it was in one. The
+    /// files are then left uncommitted, for the repository's owner to commit as they see fit.</param>
+    public sealed record Result(string RootPath, bool GitInitialised, string? GitError, bool Committed = false, string? RepositoryRoot = null);
 
     public static Task<Result> CreateAsync(string name, string? rootPath, CancellationToken ct = default) =>
         CreateAsync(name, rootPath, gitEnvironment: null, ct);
@@ -32,8 +37,10 @@ public static class WorkspaceScaffold
 
         Directory.CreateDirectory(resolved);
         Directory.CreateDirectory(Path.Combine(resolved, "Architecture"));
+        // What this scaffold wrote, and so all it may commit: the folder may have held other files.
+        var written = new List<string>();
 
-        await WriteIfMissingAsync(Path.Combine(resolved, "Architecture", "Architecture.cs"),
+        await WriteIfMissingAsync(written, Path.Combine(resolved, "Architecture", "Architecture.cs"),
             $$"""
               using Stemma.Model;
 
@@ -55,7 +62,7 @@ public static class WorkspaceScaffold
 
         // Without this the first load drops build output into a folder the user just created. It also
         // matters if they later add a project file and move onto the MSBuild path.
-        await WriteIfMissingAsync(Path.Combine(resolved, ".gitignore"),
+        await WriteIfMissingAsync(written, Path.Combine(resolved, ".gitignore"),
             """
             # build output
             obj/
@@ -68,7 +75,7 @@ public static class WorkspaceScaffold
 
             """, ct);
 
-        await WriteIfMissingAsync(Path.Combine(resolved, "README.md"),
+        await WriteIfMissingAsync(written, Path.Combine(resolved, "README.md"),
             $"""
              # {name}
 
@@ -84,10 +91,9 @@ public static class WorkspaceScaffold
 
              """, ct);
 
-        await WriteIfMissingAsync(Path.Combine(resolved, "STEMMA.md"), Brief(name), ct);
+        await WriteIfMissingAsync(written, Path.Combine(resolved, "STEMMA.md"), Brief(name), ct);
 
-        var (initialised, error) = await TryGitInitAsync(resolved, gitEnvironment, ct);
-        return new Result(resolved, initialised, error);
+        return await TryGitAsync(resolved, written, gitEnvironment, ct);
     }
 
     /// <summary>
@@ -160,29 +166,47 @@ public static class WorkspaceScaffold
 
           """;
 
-    private static async Task WriteIfMissingAsync(string path, string content, CancellationToken ct)
+    private static async Task WriteIfMissingAsync(List<string> written, string path, string content, CancellationToken ct)
     {
         if (File.Exists(path)) return;
         // UTF-8 without a BOM: what the C# tooling produces, and what keeps first diffs clean.
         await File.WriteAllTextAsync(path, content, new UTF8Encoding(false), ct);
+        written.Add(path);
     }
 
     /// <summary>
     /// Git-native is the pitch, so a new model starts as a repository with one commit: the first diff
     /// its author reads is then their own first edit (F-003 AC4). Best-effort: a machine without git
     /// still gets a working model, just not a repo.
+    ///
+    /// Only what the scaffold wrote is committed: the folder may already have held files — a `.env`,
+    /// someone's notes — and `git add .` committed them all. A folder already inside a repository is
+    /// that repository's. A second repository inside it would hide the model from it, and when and how
+    /// to commit there is its owner's call, so the files are left for them, and the result says so.
     /// </summary>
-    private static async Task<(bool, string?)> TryGitInitAsync(
-        string root, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct)
+    private static async Task<Result> TryGitAsync(
+        string root, IReadOnlyList<string> written, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct)
     {
-        if (Directory.Exists(Path.Combine(root, ".git"))) return (true, null);
         try
         {
-            var init = await RunGitAsync(root, environment, ct, "init", "--quiet");
-            if (init is not null) return (false, init);
+            // A `.git` that git cannot read is still someone's repository, and is not initialised over.
+            if (Directory.Exists(Path.Combine(root, ".git")) || File.Exists(Path.Combine(root, ".git")))
+                return new Result(root, false, null, Committed: false, RepositoryRoot: root);
+            var inside = await RunGitAsync(root, environment, ct, "rev-parse", "--is-inside-work-tree");
+            if (inside.Error is null && inside.Output.Trim() == "true")
+            {
+                var top = await RunGitAsync(root, environment, ct, "rev-parse", "--show-toplevel");
+                var repository = top.Error is null && top.Output.Trim().Length > 0 ? Path.GetFullPath(top.Output.Trim()) : root;
+                return new Result(root, false, null, Committed: false, RepositoryRoot: repository);
+            }
 
-            var add = await RunGitAsync(root, environment, ct, "add", ".");
-            if (add is not null) return (false, add);
+            var init = await RunGitAsync(root, environment, ct, "init", "--quiet");
+            if (init.Error is not null) return new Result(root, false, init.Error);
+            if (written.Count == 0) return new Result(root, true, null);
+
+            var add = await RunGitAsync(root, environment, ct,
+                ["add", "--", .. written.Select(path => Path.GetRelativePath(root, path))]);
+            if (add.Error is not null) return new Result(root, true, add.Error);
 
             // Git will not commit for someone it cannot name, and on a fresh machine nobody has told
             // it a name yet. That commit is then made in Stemma's name, which is who made it, and
@@ -193,21 +217,24 @@ public static class WorkspaceScaffold
             var commit = await RunGitAsync(root, environment, ct,
                 [.. author, "commit", "--quiet", "-m", "Start architecture model"]);
             // A commit that still fails (a hook, say) leaves a usable repo with the files staged.
-            return (true, commit);
+            return new Result(root, true, commit.Error, Committed: commit.Error is null);
         }
         catch (Exception ex)
         {
-            return (false, ex.Message);
+            return new Result(root, false, ex.Message);
         }
     }
 
     /// <summary>Whether git can name both an author and a committer here, as a commit needs.</summary>
     private static async Task<bool> HasIdentityAsync(
         string root, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct) =>
-        await RunGitAsync(root, environment, ct, "var", "GIT_AUTHOR_IDENT") is null
-        && await RunGitAsync(root, environment, ct, "var", "GIT_COMMITTER_IDENT") is null;
+        (await RunGitAsync(root, environment, ct, "var", "GIT_AUTHOR_IDENT")).Error is null
+        && (await RunGitAsync(root, environment, ct, "var", "GIT_COMMITTER_IDENT")).Error is null;
 
-    private static async Task<string?> RunGitAsync(
+    /// <param name="Error">What git said when it failed; null when it succeeded.</param>
+    private sealed record GitRun(string Output, string? Error);
+
+    private static async Task<GitRun> RunGitAsync(
         string workingDir, IReadOnlyDictionary<string, string?>? environment, CancellationToken ct, params string[] args)
     {
         var psi = new ProcessStartInfo("git")
@@ -225,10 +252,11 @@ public static class WorkspaceScaffold
         }
 
         using var proc = Process.Start(psi);
-        if (proc is null) return "git is not available on PATH";
+        if (proc is null) return new GitRun("", "git is not available on PATH");
+        var stdout = proc.StandardOutput.ReadToEndAsync(ct);
         var stderr = await proc.StandardError.ReadToEndAsync(ct);
         await proc.WaitForExitAsync(ct);
-        return proc.ExitCode == 0 ? null : stderr.Trim();
+        return new GitRun(await stdout, proc.ExitCode == 0 ? null : stderr.Trim());
     }
 
     /// <summary>Folder-safe form of the model name.</summary>

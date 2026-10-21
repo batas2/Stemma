@@ -355,6 +355,10 @@ public static class StemmaWebHost
                     snapshot.RootPath,
                     snapshot.Projects,
                     gitInitialised = created.GitInitialised,
+                    // False with a repositoryRoot: the folder was already in that repository, and the
+                    // new files are left there uncommitted for its owner. The window should say so.
+                    committed = created.Committed,
+                    repositoryRoot = created.RepositoryRoot,
                     gitError = created.GitError,
                 });
             }
