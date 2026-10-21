@@ -3,6 +3,8 @@
 // sends changes naming each comment by id and shows the file the engine answers with, never a copy
 // of its own written back whole (B-018).
 
+import { connectionHeaders } from './api';
+
 export interface CommentReply { author: string; createdAt: string; body: string; }
 
 export interface CommentEntry {
@@ -48,7 +50,8 @@ export async function fetchComments(): Promise<CommentsSidecar> {
 export async function patchComments(changes: CommentChange[]): Promise<CommentsSidecar> {
   const r = await fetch('/api/workspace/comments', {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
+    // Named, so the server tells the other windows and not this one (which shows the answer).
+    headers: { 'content-type': 'application/json', ...connectionHeaders() },
     body: JSON.stringify({ changes }),
   });
   if (r.status === 409) throw await refused(r);

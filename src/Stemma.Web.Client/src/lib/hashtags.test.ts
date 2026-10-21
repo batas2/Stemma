@@ -51,3 +51,21 @@ describe('hashtag autocomplete', () => {
     expect(suggestKeys(['Owner'], ['owner'], 'o')).toEqual(['Owner']);
   });
 });
+
+// A colour the editor writes (`<span style="color:#ef4444">`) and a link to a page section
+// (`…/Page#Owners: Team Blue`) both have a `#` followed by letters. Neither is a tag: one became a
+// chip, the other a custom property nobody wrote.
+describe('what is not a tag', () => {
+  it('a colour\'s hex code', () => {
+    expect(parseHashtags('<span style="color: #ef4444">red</span> and <span style="background-color:#fde68a">hi</span>')).toEqual([]);
+  });
+
+  it('a URL\'s fragment', () => {
+    expect(hashtagProps('see https://wiki.example.com/Page#Owners: Team Blue\nmore')).toEqual({});
+  });
+
+  it('while a tag after either still is', () => {
+    expect(hashtagProps('<span style="color:#ef4444">red</span> #owner: Perform')).toEqual({ owner: 'Perform' });
+    expect(parseHashtags('(#urgent)')).toEqual([{ key: 'urgent', value: '' }]);
+  });
+});

@@ -8,23 +8,14 @@ import { cachedSection, sidecarSet } from './layout';
 
 export type CustomProps = Record<string, string>;
 
-const KEY_PREFIX = 'stemma.customProps';
-
-function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
-
 export function loadCustomProps(rootPath: string): Record<string, CustomProps> {
-  return cachedSection<CustomProps>(rootPath, 'customProps', key(rootPath));
+  return cachedSection<CustomProps>(rootPath, 'customProps');
 }
 
-/** Mirror a node's whole custom-prop map into the committed sidecar (or delete when empty). */
+/** Mirror a node's whole custom-prop map into the committed sidecar (or delete when empty); the browser's copy goes with it. */
 function commitProps(rootPath: string, all: Record<string, CustomProps>, nodeId: string): void {
   const entry = all[nodeId];
   sidecarSet(rootPath, 'customProps', nodeId, entry && Object.keys(entry).length > 0 ? entry : undefined);
-}
-
-export function saveCustomProps(rootPath: string, all: Record<string, CustomProps>): void {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(key(rootPath), JSON.stringify(all)); } catch { /* ignore */ }
 }
 
 export function setCustomProp(
@@ -36,7 +27,6 @@ export function setCustomProp(
   const all = loadCustomProps(rootPath);
   const current = all[nodeId] ?? {};
   all[nodeId] = { ...current, [propKey]: value };
-  saveCustomProps(rootPath, all);
   commitProps(rootPath, all, nodeId);
   return all;
 }
@@ -53,7 +43,6 @@ export function removeCustomProp(
   delete next[propKey];
   if (Object.keys(next).length === 0) delete all[nodeId];
   else all[nodeId] = next;
-  saveCustomProps(rootPath, all);
   commitProps(rootPath, all, nodeId);
   return all;
 }
@@ -73,7 +62,6 @@ export function renameCustomProp(
   delete next[oldKey];
   next[newKey] = value;
   all[nodeId] = next;
-  saveCustomProps(rootPath, all);
   commitProps(rootPath, all, nodeId);
   return all;
 }

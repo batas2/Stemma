@@ -129,6 +129,20 @@ describe('positions', () => {
     await open(s, empty());
     expect(s.layout.loadLayout(ROOT, 'moduleMap')).toEqual({});
   });
+
+  // The view's key was read back from the browser's key by splitting it at every ':', and a Windows
+  // root has one of its own: `C:\repo`'s view `custom:view_a` was moved into the sidecar as
+  // `\repo:custom:view_a`, a view that does not exist.
+  it('a saved view\'s positions move into the sidecar under its own key, whatever the root', async () => {
+    const WINDOWS = 'C:\\Users\\dev\\repo';
+    seed(`stemma.layout:${WINDOWS}:custom:view_a`, { mod_1: { x: 10, y: 20 } });
+    const s = await session();
+    s.api.fetchLayout.mockResolvedValue(empty());
+    await s.layout.primeLayoutSidecar(WINDOWS);
+    await flush();
+
+    expect(sent(s)).toEqual([{ path: ['views', 'custom:view_a'], value: { nodes: { mod_1: { x: 10, y: 20 } } } }]);
+  });
 });
 
 describe('nothing is written to the sidecar before it has been read', () => {

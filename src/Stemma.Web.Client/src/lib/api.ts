@@ -3,6 +3,7 @@ import type { ArchModel, OperationFailed, RecentEntry, Violation, WorkspaceModel
 const BASE = '';
 
 import { correlationHeaders } from './log';
+import { connectionId } from './signalr';
 
 /**
  * Every request goes through here so the correlation header cannot be forgotten on a new endpoint.
@@ -17,6 +18,19 @@ async function request(input: string, init: RequestInit = {}): Promise<Response>
   });
 }
 
+
+/** Names the window a save came from: its live connection to the hub. */
+export const CONNECTION_HEADER = 'X-Stemma-Connection';
+
+/**
+ * The header that says which window a save came from. After a layout or comment save the server
+ * tells every other window, so a second tab sees the change; this window has it already, and is
+ * left out. Without a live connection there is nothing to name, and the header is left out too.
+ */
+export function connectionHeaders(): Record<string, string> {
+  const id = connectionId();
+  return id ? { [CONNECTION_HEADER]: id } : {};
+}
 
 /**
  * What has to reach the open workspace before the server leaves it: layout edits still waiting to be
@@ -160,10 +174,25 @@ export async function listRecents(): Promise<RecentEntry[]> {
   return r.json();
 }
 
-/** The sidecar as the file has it. A file that cannot be read (409) throws: nothing is primed from it. */
+/** The server would not read the sidecar (409): it does not parse — a merge conflict, a half-saved edit. */
+export class LayoutRefused extends Error {
+  constructor(readonly reason: string, message: string) {
+    super(message);
+    this.name = 'LayoutRefused';
+  }
+}
+
+/**
+ * The sidecar as the file has it. A file that cannot be read (409) throws a `LayoutRefused` with the
+ * server's reason, in words meant for whoever opens the file to fix it: nothing is primed from it.
+ */
 export async function fetchLayout(): Promise<unknown> {
   const r = await request(`${BASE}/api/workspace/layout`);
   if (r.status === 404) return null;
+  if (r.status === 409) {
+    const refused = await refusal(r);
+    throw new LayoutRefused(refused.reason, refused.message);
+  }
   if (!r.ok) throw new Error(`Layout fetch failed: ${r.status} ${await r.text()}`);
   return r.json();
 }
@@ -178,7 +207,7 @@ export type SidecarChange = { path: string[]; value: unknown } | { path: string[
 export async function patchLayoutSidecar(changes: SidecarChange[], rootPath: string): Promise<OperationFailed | null> {
   const r = await request(`${BASE}/api/workspace/layout`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...connectionHeaders() },
     body: JSON.stringify({ changes, rootPath }),
   });
   if (r.status === 409) return refusal(r);

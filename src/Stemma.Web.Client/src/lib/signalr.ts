@@ -10,9 +10,13 @@ const sidecarListeners = new Set<() => void>();
 const commentsListeners = new Set<() => void>();
 const presenterStateListeners = new Set<(state: unknown) => void>();
 const presenterCommandListeners = new Set<(command: unknown) => void>();
+const reconnectListeners = new Set<() => void>();
+let everConnected = false;
 
 export async function ensureConnection(): Promise<signalR.HubConnection> {
   if (connection?.state === signalR.HubConnectionState.Connected) return connection;
+  // Made again after one that was up gave up: whatever was announced in between was missed.
+  const again = everConnected;
   if (connection) {
     try { await connection.stop(); } catch { /* ignore */ }
   }
@@ -27,7 +31,10 @@ export async function ensureConnection(): Promise<signalR.HubConnection> {
   connection.on('CommentsChanged', () => commentsListeners.forEach(l => l()));
   connection.on('PresenterState', (state: unknown) => presenterStateListeners.forEach(l => l(state)));
   connection.on('PresenterCommand', (command: unknown) => presenterCommandListeners.forEach(l => l(command)));
+  connection.onreconnected(() => reconnectListeners.forEach(l => l()));
   await connection.start();
+  everConnected = true;
+  if (again) reconnectListeners.forEach(l => l());
   return connection;
 }
 
@@ -51,6 +58,16 @@ export function onSidecarChanged(cb: () => void) {
 export function onCommentsChanged(cb: () => void) {
   commentsListeners.add(cb);
   return () => commentsListeners.delete(cb);
+}
+
+/**
+ * The live connection is back after a drop — reconnected on its own, or made again after it gave
+ * up. What was announced meanwhile (operations, outside changes, layout and comment saves) is not
+ * sent again, so whoever shows any of it reads it afresh.
+ */
+export function onReconnected(cb: () => void) {
+  reconnectListeners.add(cb);
+  return () => { reconnectListeners.delete(cb); };
 }
 
 /** The presenter's console and the presenting window, relayed by the hub to every other window (F-019). */
@@ -77,8 +94,12 @@ export async function applyOperation(op: OperationEnvelope): Promise<OperationRe
   let result: OperationResult;
   try {
     const conn = await ensureConnection();
+    sentOperations.add(op.opId);
+    // A bound, for operations whose announcement never came (the connection dropped meanwhile).
+    if (sentOperations.size > 500) sentOperations.delete(sentOperations.values().next().value!);
     result = await conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
   } catch (error) {
+    sentOperations.delete(op.opId);
     // A refusal like any other, so every caller that says why an edit did not happen says this too —
     // a thrown error reached no one, and the edit silently did not happen.
     reportFailure('Operations', ClientEvent.OperationFailed, describeOperation(op))(error);
@@ -86,7 +107,20 @@ export async function applyOperation(op: OperationEnvelope): Promise<OperationRe
   }
   // Every edit this window makes is a step of its undo history (F-015 AC6), in the order it was made.
   if (!('reason' in result)) history.recordOperation(describeOperation(op));
+  else sentOperations.delete(op.opId); // refused: nothing is announced
   return result;
+}
+
+// Operations this window sent whose announcement (OperationApplied) has not come back yet.
+const sentOperations = new Set<string>();
+
+/**
+ * Whether the operation announced as `opId` is one this window sent — asked once per announcement.
+ * An operation edits the model and nothing else, so a window's own needs only the model read again;
+ * one from another window may come from a workspace that window has just opened on this server.
+ */
+export function isOwnOperation(opId: string): boolean {
+  return sentOperations.delete(opId);
 }
 
 /** What an operation did, in the words an undo toast uses ("Undid Rename"). */
@@ -141,4 +175,9 @@ export async function fetchUndoState(): Promise<UndoState> {
 
 export function getConnectionState(): signalR.HubConnectionState | 'unknown' {
   return connection?.state ?? 'unknown';
+}
+
+/** This window's live connection as the hub knows it, or null while there is none. */
+export function connectionId(): string | null {
+  return connection?.state === signalR.HubConnectionState.Connected ? connection.connectionId ?? null : null;
 }

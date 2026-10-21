@@ -65,24 +65,36 @@ Frontend rules that keep it correct:
 2. **Never re-read over unsent edits.** Re-reading on every refresh overwrote not-yet-flushed local
    edits — the root cause of the "drag snaps back / routing reverts / canvas blinks" bugs. The file
    is read again only when the engine says someone else changed it (`SidecarChanged`), and this
-   session's unsent edits are laid over what it now says (`rereadLayoutSidecar`). Not reading it
+   session's unsent edits are laid over what it now says (`rereadLayoutSidecar`). The read waits
+   in line behind any save on its way, so what it brings back already has that save in it. Not reading it
    at all meant the next edit wrote the stale copy over a pull
-   ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)).
+   ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)). Someone else
+   includes another window: each save names the window it came from (`X-Stemma-Connection`, its
+   hub connection id), and the server tells every other window.
 3. **One shared cache** routes node styles, edge styles, notes, custom props, and shapes — they must
    not keep separate caches that clobber each other on save.
 4. **Write nothing before it has been read.** Until then there is nothing to measure the edits
-   against. Edits made while it loads are held back and sent once it has been read.
+   against. Edits made while it loads are held back as what each one changed — these bends of that
+   arrow, this shape, that card moved — and made again on the file once it has been read. Never as
+   the window's maps: they hold only what the window drew, and laid over the file they replaced
+   every arrow, shape and position the window had not drawn. A position the window had none for (a
+   default slot) only fills a gap in the file; it never replaces a committed one.
 5. **The browser's copy is a cache, never a source.** `localStorage` keeps what was drawn last, so
    the canvas has something to show before the sidecar arrives. Once it has, the sidecar *replaces*
    that copy; it is not merged with it, because an entry only the browser has is one the repository
    no longer has ([B-012](../bugs/B-012-the-browser-outranks-the-repository.md)). The one exception
    is the migration of layout modes from before they were committed, which runs once per workspace.
+   A section's copy (styles, notes, custom props) is written when the sidecar is read and when the
+   section changes, once each — never while it is read: the canvas reads notes once per element,
+   and writing on each read wrote the whole notes section hundreds of times per keystroke.
 6. **Write what changed, never the file** ([ADR-0021](./decisions/0021-sidecar-written-as-changes.md)).
    The client sends the difference between the copy it last read or wrote and its current one, down
    to the smallest value; the engine applies it to the file's text as it is on disk now, so every
    other byte — order, unknown keys, escaping, number spelling, a hand-formatted line — stays, and
    whatever anyone else changed since stays with it. A file that does not parse is refused, never
-   read as empty and written back.
+   read as empty and written back. The canvas says so, in the server's words, in a banner above it
+   (`SidecarBanner`), and keeps every layout edit in the window until a read succeeds — *Try again*,
+   or the fix arriving as a change — then sends them.
 
 ## Comments (`comments.stemma.json`)
 
@@ -92,7 +104,9 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
 
 1. **Changes, by id.** The panel sends what it did — add, reply, resolve, remove — never its copy of
    the file, and shows the file the engine answers with.
-2. **Taken in.** A change made outside (`CommentsChanged`) makes an open panel read the file again.
+2. **Taken in.** A change made outside (`CommentsChanged`) makes an open panel read the file again
+   — a pull, a teammate, or another window, whose save names it (`X-Stemma-Connection`) so that
+   every window but that one is told.
 3. **Refused, never read as empty.** A file that does not parse is said to be, in the panel and in a
    report export, and nothing is written to it until it parses. Reading it as empty is how a merge
    conflict lost every comment ([B-018](../bugs/B-018-comments-written-whole-and-read-as-empty.md)).
@@ -112,6 +126,15 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
   engine has not yet seen is refused as `ChangedOnDisk` rather than written over it.
 - The client merges deltas **without clobbering in-flight local edits** — the same discipline as the
   sidecar cache.
+- **One refresh at a time, newest drawn** (`lib/modelRefresh.ts`). Refreshes that arrive while one
+  is on its way are read once more after it, as one; a paste of ten operations used to send ten
+  refreshes side by side and draw whichever answer came back last. An operation this window sent
+  reads the model and its problems only — an operation never changes a project, a type or a view —
+  unless the model turns out to be another workspace's; one from another window, an undo, an
+  outside change or a reconnect reads the workspace and the views as well.
+- **After a drop, catch up.** What was announced while the live connection was down is not sent
+  again, so when it comes back (`onReconnected` in `lib/signalr.ts`: reconnected on its own, or made
+  again after it gave up) the window reads the model, the views, the layout and the comments afresh.
 
 ## Why no database
 

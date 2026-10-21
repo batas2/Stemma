@@ -40,23 +40,13 @@ export function arrowMarkerUrl(a?: EdgeArrow): string | undefined {
 
 export const DEFAULT_EDGE_STYLE: EdgeStyle = { thickness: 1.5, lineStyle: 'solid' };
 
-const KEY_PREFIX = 'stemma.edgeStyles';
-
-function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
-
 export function loadEdgeStyles(rootPath: string): Record<string, EdgeStyle> {
-  return cachedSection<EdgeStyle>(rootPath, 'edgeStyles', key(rootPath));
-}
-
-export function saveEdgeStyles(rootPath: string, styles: Record<string, EdgeStyle>): void {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(key(rootPath), JSON.stringify(styles)); } catch { /* ignore */ }
+  return cachedSection<EdgeStyle>(rootPath, 'edgeStyles');
 }
 
 export function setEdgeStyle(rootPath: string, edgeId: string, style: EdgeStyle): Record<string, EdgeStyle> {
   const all = loadEdgeStyles(rootPath);
   all[edgeId] = style;
-  saveEdgeStyles(rootPath, all);
   sidecarSet(rootPath, 'edgeStyles', edgeId, style);
   return all;
 }

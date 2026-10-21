@@ -53,24 +53,14 @@ export interface NodeStyle {
 
 export const DEFAULT_NODE_STYLE: NodeStyle = { borderWidth: 1, borderStyle: 'solid' };
 
-const KEY_PREFIX = 'stemma.nodeStyles';
-
-function key(rootPath: string): string { return `${KEY_PREFIX}:${rootPath}`; }
-
 export function loadNodeStyles(rootPath: string): Record<string, NodeStyle> {
-  // The committed sidecar (stemma.layout.json) once primed; localStorage until then.
-  return cachedSection<NodeStyle>(rootPath, 'nodeStyles', key(rootPath));
-}
-
-export function saveNodeStyles(rootPath: string, styles: Record<string, NodeStyle>): void {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(key(rootPath), JSON.stringify(styles)); } catch { /* ignore */ }
+  // The committed sidecar (stemma.layout.json) once primed; the browser's copy until then.
+  return cachedSection<NodeStyle>(rootPath, 'nodeStyles');
 }
 
 export function setNodeStyle(rootPath: string, nodeId: string, style: NodeStyle): Record<string, NodeStyle> {
   const all = loadNodeStyles(rootPath);
   all[nodeId] = style;
-  saveNodeStyles(rootPath, all);                 // offline cache
-  sidecarSet(rootPath, 'nodeStyles', nodeId, style); // committed → travels with the repo
+  sidecarSet(rootPath, 'nodeStyles', nodeId, style); // committed → travels with the repo; the browser's copy with it
   return all;
 }
