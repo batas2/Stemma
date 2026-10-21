@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 
@@ -88,20 +89,24 @@ public static class DrawioExporter
             new XElement("mxCell", new XAttribute("id", "0")),
             new XElement("mxCell", new XAttribute("id", "1"), new XAttribute("parent", "0")));
 
+        var cellIds = new CellIds(elements.Select(e => e.Id).Concat(model.Links.Select(l => l.Id)));
+        var elementCells = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (element, point) in Placed(elements, o.Positions))
         {
             var label = o.LabelKinds ? $"{LabelFor(element.Kind)}: {element.Name}" : element.Name;
+            var id = cellIds.Next(element.Id);
+            elementCells.TryAdd(element.Id, id);
             root.Add(new XElement("mxCell",
-                new XAttribute("id", element.Id),
-                new XAttribute("value", label),
+                new XAttribute("id", id),
+                new XAttribute("value", Html(label)),
                 new XAttribute("style", StyleFor(element.Kind, o.Palette)),
                 new XAttribute("vertex", "1"),
                 new XAttribute("parent", "1"),
                 new XElement("mxGeometry",
-                    new XAttribute("x", point.X.ToString("0")),
-                    new XAttribute("y", point.Y.ToString("0")),
-                    new XAttribute("width", NodeWidth.ToString("0")),
-                    new XAttribute("height", NodeHeight.ToString("0")),
+                    new XAttribute("x", Number(point.X)),
+                    new XAttribute("y", Number(point.Y)),
+                    new XAttribute("width", Number(NodeWidth)),
+                    new XAttribute("height", Number(NodeHeight)),
                     new XAttribute("as", "geometry"))));
         }
 
@@ -109,12 +114,12 @@ public static class DrawioExporter
         {
             if (!nodeIds.Contains(link.FromId) || !nodeIds.Contains(link.ToId)) continue;
             root.Add(new XElement("mxCell",
-                new XAttribute("id", link.Id),
-                new XAttribute("value", LabelFor(link)),
+                new XAttribute("id", cellIds.Next(link.Id)),
+                new XAttribute("value", Html(LabelFor(link))),
                 new XAttribute("style", EdgeStyleFor(link, o.Palette)),
                 new XAttribute("edge", "1"),
-                new XAttribute("source", link.FromId),
-                new XAttribute("target", link.ToId),
+                new XAttribute("source", elementCells[link.FromId]),
+                new XAttribute("target", elementCells[link.ToId]),
                 new XAttribute("parent", "1"),
                 new XElement("mxGeometry", new XAttribute("relative", "1"), new XAttribute("as", "geometry"))));
         }
@@ -129,6 +134,42 @@ public static class DrawioExporter
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
         sb.Append(mxfile.ToString());
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// A number as draw.io reads one, whatever the machine's language: in Swedish the current culture
+    /// writes a negative coordinate with U+2212 instead of a hyphen, and draw.io dropped the element there.
+    /// </summary>
+    private static string Number(double value) => value.ToString("0", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A label as text. The cells are <c>html=1</c>, so draw.io reads a value as HTML, and a name like
+    /// <c>List&lt;Order&gt;</c> arrived as <c>List</c> followed by a tag it did not know. Encoded here
+    /// for HTML, then once more for XML by the attribute; a line break becomes one HTML keeps.
+    /// </summary>
+    private static string Html(string text) => text
+        .Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;")
+        .Replace("\r\n", "<br>").Replace("\n", "<br>").Replace("\r", "<br>");
+
+    /// <summary>
+    /// Cell ids: the model's own id where it is free, so the file still says which element a cell is.
+    /// <c>0</c> and <c>1</c> are draw.io's root cells, and an element and a link may share an id; an
+    /// id that is taken gets a suffix that no other id in the export has.
+    /// </summary>
+    private sealed class CellIds(IEnumerable<string> modelIds)
+    {
+        private readonly HashSet<string> _taken = ["0", "1"];
+        private readonly HashSet<string> _model = modelIds.ToHashSet(StringComparer.Ordinal);
+
+        public string Next(string modelId)
+        {
+            if (_taken.Add(modelId)) return modelId;
+            for (var n = 2; ; n++)
+            {
+                var id = $"{modelId}-{n}";
+                if (!_model.Contains(id) && _taken.Add(id)) return id;
+            }
+        }
     }
 
     /// <summary>
