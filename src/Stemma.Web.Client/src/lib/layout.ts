@@ -761,11 +761,13 @@ export async function primeLayoutSidecar(workspaceRoot: string): Promise<void> {
           }
         } catch { /* ignore corrupt entry */ }
       }
-      // Custom views: enumerate localStorage keys for this workspace.
+      // Custom views: enumerate localStorage keys for this workspace. The view's key is what follows
+      // the workspace's prefix — not what follows the second ':', since a root may hold one (C:\repo).
+      const prefix = `${KEY_PREFIX}:${workspaceRoot}:`;
       for (let i = 0; i < localStorage.length; i++) {
         const lsKey = localStorage.key(i);
-        if (!lsKey?.startsWith(`${KEY_PREFIX}:${workspaceRoot}:custom:`)) continue;
-        const viewKey = lsKey.split(':').slice(2).join(':');
+        if (!lsKey?.startsWith(`${prefix}custom:`)) continue;
+        const viewKey = lsKey.slice(prefix.length);
         const stored = localStorage.getItem(lsKey);
         if (!stored) continue;
         try {
