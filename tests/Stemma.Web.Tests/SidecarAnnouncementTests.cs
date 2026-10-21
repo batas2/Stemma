@@ -33,6 +33,11 @@ public sealed class SidecarAnnouncementTests : IAsyncLifetime
         (await _http.PostAsJsonAsync("/api/workspace/init", new { rootPath = _root, name = "Announce" }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
         await File.WriteAllTextAsync(Path.Combine(_root, "stemma.layout.json"), "{\n  \"version\": 1,\n  \"views\": {}\n}\n");
+        // Opened again with the file in place. Written under an open workspace, it is a change from
+        // outside, which the watcher announces to every window — on a busy machine after the windows
+        // below have connected, where it read as the announcement under test, or as one too many.
+        (await _http.PostAsJsonAsync("/api/workspace/open", new { rootPath = _root }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     public async Task DisposeAsync()
