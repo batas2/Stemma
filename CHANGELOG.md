@@ -71,7 +71,11 @@ keyboard path; none of them adds a file to your repository.
 **Changed**
 
 - **Tab** walks the boxes on the view you are looking at, in name order, instead of every element
-  of the model.
+  of the model — while focus is on the canvas. Anywhere else Tab moves focus, as on any other page,
+  so the toolbar, the panels and a dialog's buttons can be reached from the keyboard. Click a box (or
+  use *Skip to canvas*) to start walking the boxes.
+- **Faster on large models.** An edit redraws only the boxes and arrows it changed, Find keeps up
+  with your typing, and switching views and opening a workspace take about half as long as before.
 - **AddElement and AddLink report the id they created** (`ElementAdded` / `LinkAdded` deltas), for
   anything that goes on to place, style or link what it just added.
 - **Arrows stand still unless you ask them to flow.** Dependencies and relations used to flow by
@@ -101,6 +105,30 @@ keyboard path; none of them adds a file to your repository.
   everything, is one ⌘Z, and is put back if it cannot be moved.
 - **A relation's label is edited as its label.** The inspector showed it as a *Kind* of "uses".
 - **The inspector no longer carries a half-typed value** from one selected box to the next.
+- **Everything you do on the canvas can be undone.** Auto-layout, align, distribute and the arrow-key
+  nudges are one ⌘Z each (a run of nudges is one step), and so are drawing, moving, resizing,
+  restyling and deleting a shape and adding or removing a bend in an arrow. Before, ⌘Z after an
+  auto-layout undid the edit you made before it instead.
+- **Arrow keys nudge every selected box**, not only the one the inspector shows, and they no longer
+  move a box while you pick a value from a list.
+- **Delete removes everything selected**, including a marquee selection, after one question, and one
+  ⌘Z brings it all back.
+- **When an edit cannot be made, Stemma says why.** Rename, Set status and Delete from the right-click
+  menus, a box dropped into a context, and links drawn with the shape tool used to fail silently —
+  for example when the file was read-only, or the engine had stopped.
+- **The two templates** (a bounded context with two modules, a system with a container) land every box
+  where you dropped it, as one undo step, even on a slow machine.
+- **Leaving a field unchanged no longer saves it**, and saving a status keeps the phase and the dates
+  written in code; saving an arrow's squad keeps its domain.
+- **A layout constraint (Row, Column, Grid) arranges the boxes at once**, instead of after a reload.
+- **Selecting a shape on the Dependencies view or a custom view** shows its inspector.
+- **Esc closes the full notes window** while you are typing in it, and focus stays inside it, inside
+  the confirm and the prompt dialogs, and returns where it was when they close. **Return no longer
+  confirms a removal** while focus is on Cancel.
+- **F** fits the view only on its own; **⌘F** no longer refits the view under the Find bar.
+- **Your own view tabs** can be reached with Tab, walked with the arrow keys, opened with Return and
+  closed with Delete; the active tab shows its close button.
+- **Reverse direction** is in an arrow's right-click menu.
 
 - Pressing **Escape** to close a right-click menu also cleared your selection, and the arrow keys
   that move through the menu also nudged the selected box. The menu now keeps the keyboard to itself.
