@@ -194,6 +194,9 @@ interface AppState {
   setCompare: (c: AppState['compare']) => void;
   setCompareDimRest: (b: boolean) => void;
   setHeadModel: (h: AppState['headModel']) => void;
+  /** Find on this view (F-018): whether the bar is open, what it looks for, and what happens to the rest. */
+  find: { open: boolean; query: string; mode: 'dim' | 'hide' };
+  setFind: (patch: Partial<AppState['find']>) => void;
   /** The views visited this session, for Back and Forward (F-016). */
   trail: Trail;
   /** Open a place — a built-in lens or a view from `Views/` — as a visit Back can return from. */
@@ -438,6 +441,8 @@ export const useApp = create<AppState>((set, get) => ({
   capturing: false,
   viewHeaders: {},
   trail: { back: [], forward: [] },
+  find: { open: false, query: '', mode: 'dim' },
+  setFind: (patch) => set((s) => ({ find: { ...s.find, ...patch } })),
   compare: null,
   compareDimRest: true,
   headModel: null,

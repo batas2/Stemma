@@ -175,6 +175,8 @@ export default function App() {
         handler: () => {
           setHelpOpen(false);
           const st = useApp.getState();
+          // The most passing thing goes first: an open find bar, then a comparison, then the selection.
+          if (st.find.open) { st.setFind({ open: false, query: '' }); return; }
           // With nothing selected, Escape ends a comparison (F-017); otherwise it clears the selection first.
           if (st.compare && !st.selectedElementId && !st.selectedLinkId && !st.selectedShapeId && st.canvasSelection === 0) { stopCompare(); return; }
           clearSelection();
@@ -185,6 +187,15 @@ export default function App() {
       { key: '+', primary: true, description: 'Zoom in', handler: () => window.dispatchEvent(new CustomEvent('stemma:zoom', { detail: { dir: 1 } })) },
       { key: '-', primary: true, description: 'Zoom out', handler: () => window.dispatchEvent(new CustomEvent('stemma:zoom', { detail: { dir: -1 } })) },
       { key: '0', primary: true, description: 'Fit view', handler: () => window.dispatchEvent(new CustomEvent('stemma:fit-view')) },
+      // Find on this view (F-018): the bar opens, or takes the focus again when it is open.
+      {
+        key: 'f', primary: true, description: 'Find on this view',
+        handler: () => {
+          if (useApp.getState().view === 'concerns') return;
+          useApp.getState().setFind({ open: true });
+          window.dispatchEvent(new CustomEvent('stemma:find'));
+        },
+      },
       // Back and forward through the views visited (F-016), as in a browser or a file manager.
       { key: '[', primary: true, description: 'Back', handler: () => useApp.getState().goBack() },
       { key: ']', primary: true, description: 'Forward', handler: () => useApp.getState().goForward() },

@@ -128,12 +128,15 @@ comparing writes nothing, and a ghost is never a position in the sidecar.
    point at, *Add page*, write what you will say. The first page is usually the widest view with no
    focus; the next ones point into it, then move to closer views. *Duplicate* makes the next step
    of a zoom.
-2. **Present.** ▶ in the panel or the editor. The window becomes the diagram: arrows, Space or a
+2. **Answer the room.** A question the pages did not foresee — "what does Core own?" — is ⌘F and a
+   chip ([F-018](../features/F-018-find-on-the-view.md)): what matches stays lit, the rest fades or
+   hides, Enter walks it. *Point the page at these* keeps the answer as the page on screen's focus.
+3. **Present.** ▶ in the panel or the editor. The window becomes the diagram: arrows, Space or a
    clicker turn pages; on one view a page turn is a camera move, so context to detail is a zoom.
    N hides the narrative when you would rather talk, B blanks the screen, Esc stops.
-3. **Leave it behind.** The HTML report carries every book as a chapter, and *PDF* in the editor
+4. **Leave it behind.** The HTML report carries every book as a chapter, and *PDF* in the editor
    makes the deck — one landscape page per page, as presented — for whoever was not there.
-4. **Keep it true.** The book is in `stemma.layout.json`, reviewed with the model. A renamed
+5. **Keep it true.** The book is in `stemma.layout.json`, reviewed with the model. A renamed
    element is renamed on its slides; a deleted one marks the page broken, and `stemma validate`
    fails on it.
 

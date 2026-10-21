@@ -211,6 +211,15 @@ export function CommandPalette() {
                 <span>{forwardTo ? `Forward to ${nameOfPlace(forwardTo)}` : 'Forward'}</span>
                 <span className="text-[10px] font-mono text-zinc-500">{SHORTCUT_HINTS.forward}</span>
               </Command.Item>
+              <Command.Item
+                value="find on this view search filter highlight spotlight"
+                disabled={view === 'concerns'}
+                onSelect={() => { close(); useApp.getState().setFind({ open: true }); window.dispatchEvent(new CustomEvent('stemma:find')); }}
+                className={`${item} data-[disabled=true]:opacity-40`}
+              >
+                <span>Find on this view</span>
+                <span className="text-[10px] font-mono text-zinc-500">{SHORTCUT_HINTS.find}</span>
+              </Command.Item>
               {compare ? (
                 <Command.Item value="stop comparing compare done" onSelect={() => { close(); stopCompare(); }} className={item}>
                   <span>Stop comparing with {compare.label}</span>

@@ -23,6 +23,8 @@ const SHORTCUTS: { keys: string; description: string; category: string }[] = [
   { category: 'Navigation', keys: 'Esc', description: 'Clear selection' },
   { category: 'Navigation', keys: '1 / 2 / 3', description: 'Module Map · Dependencies · Concerns view' },
   { category: 'Navigation', keys: '/', description: 'Focus sidebar search' },
+  { category: 'Navigation', keys: SHORTCUT_HINTS.find, description: 'Find on this view — the rest fades; ↩ steps through the matches' },
+  { category: 'Navigation', keys: `${SHORTCUT_HINTS.back} / ${SHORTCUT_HINTS.forward}`, description: 'Back / forward through the views you visited' },
   { category: 'Navigation', keys: '? (Shift+/)', description: 'Toggle this help overlay' },
   { category: 'Layout', keys: '↑ ↓ ← →', description: 'Nudge selected by 10 px' },
   { category: 'Layout', keys: `${shiftKeyLabel}+↑ ↓ ← →`, description: 'Nudge selected by 1 px' },

@@ -14,6 +14,14 @@ The frontend's building blocks, what they own, and the rules for changing them. 
 - **Status bar** (`StatusBar.tsx`) — connection, counts, the open view, and — when there are any —
   how many changes since the last commit, a click from being drawn (F-017).
 
+## Finding on the view ([F-018](../features/F-018-find-on-the-view.md))
+
+- **`FindBar.tsx`** — ⌘F: a `search` landmark floating top centre, below the view's header. A query
+  (`lib/spotlight.ts`: words, `field:value`, `#tag`, "quoted"), the count ("3 of 7", "No matches"),
+  ↑ ↓, *Fade the rest* / *Hide the rest*, ×; under it chips for the statuses, squads and kinds on the
+  view, and — with a book page of this view on screen — *Point the page at these*. While it is open
+  and has matches, its lighting replaces a page's (`lit` / `litHides` in `ArchCanvas`).
+
 ## Comparing ([F-017](../features/F-017-what-changed.md))
 
 - **`CompareMenu.tsx`** — *Compare* in the top bar, beside Export: the last commit, where the branch

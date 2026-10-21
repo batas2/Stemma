@@ -97,6 +97,8 @@ import { history } from '@/lib/history';
 import { viewRendersKind } from '@/lib/lenses';
 import { positionsAt, sizesAt, useCompareDiff } from '@/lib/compare';
 import { kindLabel } from '@/lib/modelDiff';
+import { facets as findFacets, matches as findMatchesCard, parseQuery, spotlightLighting, type CardFacts } from '@/lib/spotlight';
+import { FindBar } from './FindBar';
 import { useApp, activePage } from '@/lib/store';
 import { viewKeyOf } from '@/lib/books';
 import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
@@ -2179,6 +2181,40 @@ function CanvasInner() {
     return () => window.removeEventListener(LAYOUT_ACTION_EVENT, onLayoutAction);
   }, [handleAutoLayout, handleAlign, handleDistribute, handleFitSelection, handleDeleteSelected]);
 
+  // ---- Find on this view (F-018). What matches stays lit and the rest fades, or goes; while the bar is
+  // open it lights the canvas in place of a book page, and while presenting it does not.
+  const find = useApp((s) => s.find);
+  const cardFacts = useMemo<CardFacts[]>(() => {
+    if (!find.open || !arch) return [];
+    const names = new Map(arch.elements.map((e) => [e.id, e.name]));
+    const tags = new Map(arch.tags.map((t) => [t.targetId, t]));
+    return drawn.elements.map((e) => ({
+      element: e,
+      tag: tags.get(e.id),
+      place: names.get(e.attributes.contextId ?? e.attributes.systemId ?? '') ?? null,
+      note: notesById.get(e.id),
+      props: customProps[e.id],
+    }));
+  }, [find.open, arch, drawn.elements, notesById, customProps]);
+  const findTokens = useMemo(() => parseQuery(find.query), [find.query]);
+  const findFound = useMemo(() => {
+    if (!find.open || findTokens.length === 0) return null;
+    const hit = new Set(cardFacts.filter((f) => findMatchesCard(f, findTokens)).map((f) => f.element.id));
+    // Reading order: top to bottom, then left to right, so Enter walks the picture the way an eye does.
+    const at = new Map(nodes.map((n) => [n.id, n.position]));
+    return [...hit].sort((a, b) => {
+      const pa = at.get(a) ?? { x: 0, y: 0 }, pb = at.get(b) ?? { x: 0, y: 0 };
+      return Math.abs(pa.y - pb.y) > 40 ? pa.y - pb.y : pa.x - pb.x;
+    });
+  }, [find.open, findTokens, cardFacts, nodes]);
+  const findFacetList = useMemo(() => (find.open ? findFacets(cardFacts) : []), [find.open, cardFacts]);
+  const spotLit = useMemo(
+    () => (findFound && findFound.length > 0 && !readOnly ? spotlightLighting(findFound, drawn.elements) : null),
+    [findFound, drawn.elements, readOnly],
+  );
+  const lit = spotLit ?? pageLit;
+  const litHides = spotLit ? find.mode === 'hide' : pageHides;
+
   // A Bounded Context that owns modules renders as a container box wrapping them: its position
   // + size are derived from the children's bounding box, it is drawn first (below the modules)
   // so they stay clickable on top, and it is not directly draggable — moving its modules
@@ -2203,7 +2239,7 @@ function CanvasInner() {
       const el = (n.data as { element?: ArchElement }).element;
       if (el?.kind === 'boundedContext') {
         // On a page that hides the rest, a box wraps only what is left in it, or it frames empty space.
-        const kids = childrenByCtx.get(el.id)?.filter((k) => !(pageHides && pageLit && !pageLit.has(k.id)));
+        const kids = childrenByCtx.get(el.id)?.filter((k) => !(litHides && lit && !lit.has(k.id)));
         if (kids && kids.length > 0) {
           const collapsed = collapsedBcs.has(el.id);
           const box = boundingBox(kids);
@@ -2224,7 +2260,7 @@ function CanvasInner() {
     }
     // Containers first so the contained modules paint (and receive clicks) on top of them.
     return [...containers, ...rest];
-  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, pageLit, pageHides]);
+  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, lit, litHides]);
 
   // ---- What changed (F-017). Comparing, a changed card wears a mark, what did not change fades, and
   // what was removed is drawn as a ghost where it used to sit — in the canvas's own coordinates but
@@ -2286,7 +2322,7 @@ function CanvasInner() {
   // in is taken off the nodes and edges themselves: drag, select, resize, rename, notes, label edits,
   // waypoints, arrowheads.
   const renderedNodes = useMemo<Node[]>(() => {
-    if (!pageLit && !readOnly && !revealId && !diff) return nestedNodes;
+    if (!lit && !readOnly && !revealId && !diff) return nestedNodes;
     return nestedNodes.map((n) => {
       let out = n;
       if (n.id === revealId) out = { ...out, data: { ...out.data, revealed: true } };
@@ -2305,15 +2341,15 @@ function CanvasInner() {
           },
         };
       }
-      if (pageLit && !pageLit.has(n.id)) {
-        out = pageHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.2 } };
+      if (lit && !lit.has(n.id)) {
+        out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.2 } };
       }
       return out;
     });
-  }, [nestedNodes, pageLit, pageHides, readOnly, revealId, diff, compareDimRest]);
+  }, [nestedNodes, lit, litHides, readOnly, revealId, diff, compareDimRest]);
 
   const renderedEdges = useMemo<Edge[]>(() => {
-    if (!pageLit && !readOnly && !diff) return allEdges;
+    if (!lit && !readOnly && !diff) return allEdges;
     return allEdges.map((e) => {
       let out = e;
       if (diff) {
@@ -2333,12 +2369,12 @@ function CanvasInner() {
           },
         };
       }
-      if (pageLit && !(pageLit.has(e.source) && pageLit.has(e.target))) {
-        out = pageHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.15 } };
+      if (lit && !(lit.has(e.source) && lit.has(e.target))) {
+        out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.15 } };
       }
       return out;
     });
-  }, [allEdges, pageLit, pageHides, readOnly, diff, compareDimRest]);
+  }, [allEdges, lit, litHides, readOnly, diff, compareDimRest]);
 
   const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected).map((n) => n.id), [nodes]);
   const selectedCount = selectedNodeIds.length;
@@ -2470,6 +2506,14 @@ function CanvasInner() {
           <ViewHeader viewKey={layoutKey} viewName={viewName} drawn={drawn} readOnly={readOnly} presenting={presenting} />
         )}
       </ReactFlow>
+      {find.open && !presenting && !renderMode && (
+        <FindBar
+          matches={findFound}
+          facets={findFacetList}
+          viewId={activeCustomView?.id ?? (view === 'concerns' ? null : view)}
+          onStep={(id) => window.dispatchEvent(new CustomEvent('stemma:focus-node', { detail: { nodeId: id } }))}
+        />
+      )}
       {modelIsEmpty && !presenting && (
         <EmptyCanvasGuide onAdd={(kind) => addElementAt(kind, centreOfCanvas())} />
       )}
