@@ -30,6 +30,9 @@ import { PromptDialog } from './components/PromptDialog';
 import { ToastQueue } from './components/ToastQueue';
 import { TopProgressBar } from './components/LoadingOverlay';
 import { bindShortcuts, hasTextSelection } from './lib/shortcuts';
+import { filterByView } from './lib/viewFilter';
+import { hashFor, readHash, placeOf } from './lib/navigation';
+import { revealElement } from './lib/canvasReveal';
 
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
@@ -162,6 +165,9 @@ export default function App() {
       { key: '+', primary: true, description: 'Zoom in', handler: () => window.dispatchEvent(new CustomEvent('stemma:zoom', { detail: { dir: 1 } })) },
       { key: '-', primary: true, description: 'Zoom out', handler: () => window.dispatchEvent(new CustomEvent('stemma:zoom', { detail: { dir: -1 } })) },
       { key: '0', primary: true, description: 'Fit view', handler: () => window.dispatchEvent(new CustomEvent('stemma:fit-view')) },
+      // Back and forward through the views visited (F-016), as in a browser or a file manager.
+      { key: '[', primary: true, description: 'Back', handler: () => useApp.getState().goBack() },
+      { key: ']', primary: true, description: 'Forward', handler: () => useApp.getState().goForward() },
       { key: '1', description: 'Module Map view', handler: () => useApp.getState().setView('moduleMap') },
       { key: '2', description: 'Dependencies view', handler: () => useApp.getState().setView('dependencyGraph') },
       { key: '3', description: 'Concerns view', handler: () => useApp.getState().setView('concerns') },
@@ -227,14 +233,19 @@ export default function App() {
     aside?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
+  // Tab walks the cards on screen, in reading order by name — not every element of the model, most of
+  // which a given view does not draw.
   function cycleElement(direction: 1 | -1) {
-    const archNow = useApp.getState().arch;
-    if (!archNow || archNow.elements.length === 0) return;
-    const ids = archNow.elements.map((e) => e.id).sort();
-    const cur = useApp.getState().selectedElementId;
+    const st = useApp.getState();
+    if (!st.arch) return;
+    const custom = st.customViews.find((v) => v.id === st.activeCustomViewId) ?? null;
+    const drawn = filterByView(st.arch, st.view, custom).elements;
+    if (drawn.length === 0) return;
+    const ids = [...drawn].sort((a, b) => a.name.localeCompare(b.name)).map((e) => e.id);
+    const cur = st.selectedElementId;
     const idx = cur ? ids.indexOf(cur) : -1;
     const next = ids[((idx + direction) + ids.length) % ids.length];
-    useApp.getState().selectElement(next);
+    st.selectElement(next);
     window.dispatchEvent(new CustomEvent('stemma:focus-node', { detail: { nodeId: next } }));
   }
 
@@ -257,12 +268,48 @@ export default function App() {
 
   // Pick a default view ONCE per workspace open, anchored on rootPath.
   const initialisedFor = useRef<string | null>(null);
+  // Where the address said to go when the page loaded (F-016 AC6), honoured once the model is in.
+  const pendingAddress = useRef(typeof window !== 'undefined' ? readHash(window.location.hash) : { view: null, select: null });
   useEffect(() => {
     if (!ws) { initialisedFor.current = null; return; }
     if (initialisedFor.current === ws.rootPath) return;
     initialisedFor.current = ws.rootPath;
     setView('moduleMap');
+    // Opening is not a visit: there is nothing to go back to yet.
+    useApp.setState({ trail: { back: [], forward: [] } });
   }, [ws]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const arch = useApp((s) => s.arch);
+  const customViews = useApp((s) => s.customViews);
+  useEffect(() => {
+    const wanted = pendingAddress.current;
+    if (!arch || (!wanted.view && !wanted.select)) return;
+    const viewKnown = !wanted.view || ['moduleMap', 'dependencyGraph', 'concerns'].includes(wanted.view) || customViews.some((v) => v.id === wanted.view);
+    // A view from Views/ arrives with the views list, a moment after the model; wait for it.
+    if (!viewKnown && customViews.length === 0) return;
+    pendingAddress.current = { view: null, select: null };
+    if (wanted.view && viewKnown) useApp.getState().goTo(placeOf(wanted.view));
+    useApp.setState({ trail: { back: [], forward: [] } });
+    if (wanted.select && arch.elements.some((e) => e.id === wanted.select)) {
+      const id = wanted.select;
+      setTimeout(() => revealElement(id), 50);
+    }
+  }, [arch, customViews]);
+
+  // The address follows the view and the selection, so a reload comes back to the same place. Replaced,
+  // not pushed: the browser's own history is not where Stemma keeps its trail.
+  useEffect(() => useApp.subscribe((s, prev) => {
+    if (s.view === prev.view && s.activeCustomViewId === prev.activeCustomViewId && s.selectedElementId === prev.selectedElementId) return;
+    if (!s.workspace || s.presenting || currentRenderParams()) return;
+    const next = hashFor({ view: s.view, customViewId: s.activeCustomViewId }, s.selectedElementId);
+    if (window.location.hash !== next) window.history.replaceState(null, '', next);
+  }), []);
+
+  useEffect(() => {
+    const show = () => setHelpOpen(true);
+    window.addEventListener('stemma:show-shortcuts', show);
+    return () => window.removeEventListener('stemma:show-shortcuts', show);
+  }, []);
 
   // Headless render mode strips every affordance meant for a person and reports when the canvas
   // has settled. Declared after all hooks so hook order is identical in both modes.

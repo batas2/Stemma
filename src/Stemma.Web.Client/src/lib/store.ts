@@ -18,6 +18,7 @@ import {
 } from './books';
 import { friendlyOpError } from './opError';
 import { history } from './history';
+import { leave, step, type Place, type Trail } from './navigation';
 import type { Shape, ShapeKind } from './shapes';
 
 /** What the canvas pointer is doing right now. `select` is the default (drag/select model nodes). */
@@ -181,6 +182,12 @@ interface AppState {
   capturing: boolean;
   /** Each view's header (F-014), keyed by view key; read from the sidecar and edited back into it. */
   viewHeaders: Record<string, ViewHeaderSpec>;
+  /** The views visited this session, for Back and Forward (F-016). */
+  trail: Trail;
+  /** Open a place — a built-in lens or a view from `Views/` — as a visit Back can return from. */
+  goTo: (place: Place) => void;
+  goBack: () => void;
+  goForward: () => void;
   setWorkspace: (ws: WorkspaceModel | null) => void;
   rehydratePresentation: () => void;
   /** Give a view a header, if it has none. False, and nothing changed, until the sidecar has been read. */
@@ -268,6 +275,30 @@ function describeStyleChange(before: NodeStyle | undefined, after: NodeStyle): s
   };
   const sized = before?.width !== after.width || before?.height !== after.height;
   return sized && strip(before ?? { ...after, width: undefined, height: undefined }) === strip(after) ? 'Resize' : 'Change appearance';
+}
+
+/** Set while Back or Forward is taking the canvas somewhere, which is not a new visit. */
+let travelling = false;
+
+/** The trail after leaving the current place for `to` — unchanged while travelling or presenting. */
+function visited(s: Pick<AppState, 'trail' | 'view' | 'activeCustomViewId' | 'presenting' | 'capturing'>, to: Place): Trail {
+  if (travelling || s.presenting || s.capturing) return s.trail;
+  return leave(s.trail, { view: s.view, customViewId: s.activeCustomViewId }, to);
+}
+
+function travel(get: () => AppState, set: (partial: Partial<AppState>) => void, direction: 'back' | 'forward'): void {
+  const s = get();
+  const here: Place = { view: s.view, customViewId: s.activeCustomViewId };
+  const exists = (p: Place) => !p.customViewId || s.customViews.some((v) => v.id === p.customViewId);
+  const next = step(s.trail, here, exists, direction);
+  if (!next) return;
+  travelling = true;
+  try {
+    get().goTo(next.to);
+  } finally {
+    travelling = false;
+  }
+  set({ trail: next.trail });
 }
 
 /** The book open in the editor or the presenter, if any. */
@@ -394,6 +425,20 @@ export const useApp = create<AppState>((set, get) => ({
   presenting: false,
   capturing: false,
   viewHeaders: {},
+  trail: { back: [], forward: [] },
+  goTo: (place) => {
+    const s = get();
+    if (place.customViewId) {
+      if (!s.customViews.some((v) => v.id === place.customViewId)) return;
+      // Concerns is a list; a view from Views/ is drawn over a canvas lens.
+      if (s.view === 'concerns') set({ view: 'moduleMap' });
+      if (s.activeCustomViewId !== place.customViewId) get().setActiveCustomView(place.customViewId);
+    } else {
+      get().setView(place.view);
+    }
+  },
+  goBack: () => travel(get, set, 'back'),
+  goForward: () => travel(get, set, 'forward'),
   setWorkspace: (ws) => {
     // Hydrate from localStorage only on first open of a given rootPath. Subsequent refresh()s
     // during the same session should NOT reset activeCustomViewId / selection — the user's
@@ -401,12 +446,12 @@ export const useApp = create<AppState>((set, get) => ({
     const previous = get().workspace;
     set({ workspace: ws });
     if (!ws) {
-      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {} });
+      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {}, trail: { back: [], forward: [] } });
       return;
     }
     if (previous?.rootPath === ws.rootPath) return;
     // Another workspace's books and headers are not this one's; they arrive with its sidecar.
-    set({ books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {} });
+    set({ books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {}, trail: { back: [], forward: [] } });
     const views = loadViews(ws.rootPath);
     const active = loadActiveView(ws.rootPath);
     const persistedOpen = loadOpenViews(ws.rootPath);
@@ -467,7 +512,7 @@ export const useApp = create<AppState>((set, get) => ({
   setView: (v) => {
     const s = get();
     if (v === s.view && s.activeCustomViewId === null) return;
-    set({ view: v, activeCustomViewId: null, selectedElementId: null });
+    set({ view: v, activeCustomViewId: null, selectedElementId: null, trail: visited(s, { view: v, customViewId: null }) });
   },
   setCustomViews: (vs) => {
     set({ customViews: vs });
@@ -499,7 +544,8 @@ export const useApp = create<AppState>((set, get) => ({
   setActiveCustomView: (id) => {
     // Activating a saved view also opens it as a bottom tab (closing later only hides the tab).
     const open = id && !get().openViewIds.includes(id) ? [...get().openViewIds, id] : get().openViewIds;
-    set({ activeCustomViewId: id, selectedElementId: null, openViewIds: open });
+    const s = get();
+    set({ activeCustomViewId: id, selectedElementId: null, openViewIds: open, trail: visited(s, { view: s.view, customViewId: id }) });
     const ws = get().workspace;
     if (ws) {
       saveActiveView(ws.rootPath, id);
@@ -511,7 +557,11 @@ export const useApp = create<AppState>((set, get) => ({
     // Close the tab only — the view itself is untouched and stays in the Sidebar list.
     const nextOpen = get().openViewIds.filter((x) => x !== id);
     const wasActive = get().activeCustomViewId === id;
-    set({ openViewIds: nextOpen, ...(wasActive ? { activeCustomViewId: null, view: 'moduleMap', selectedElementId: null } : {}) });
+    const s = get();
+    set({
+      openViewIds: nextOpen,
+      ...(wasActive ? { activeCustomViewId: null, view: 'moduleMap', selectedElementId: null, trail: visited(s, { view: 'moduleMap', customViewId: null }) } : {}),
+    });
     const ws = get().workspace;
     if (ws) {
       saveOpenViews(ws.rootPath, nextOpen);

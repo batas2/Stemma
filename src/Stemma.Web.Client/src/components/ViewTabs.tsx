@@ -1,10 +1,12 @@
-import { Boxes, GitBranch, ClipboardList, Plus, X, Shapes } from 'lucide-react';
+import { Boxes, GitBranch, ClipboardList, Plus, X, Shapes, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import type { ViewKind } from '@/lib/types';
 import { newCustomView } from '@/lib/views';
 import { suggestViewName } from '@/lib/naming';
 import { promptText } from './PromptDialog';
+import { BUILTIN_NAMES, placeOf, type Place } from '@/lib/navigation';
+import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 
 const BUILTINS: { id: ViewKind; label: string; icon: typeof Boxes }[] = [
   { id: 'moduleMap', label: 'Module Map', icon: Boxes },
@@ -20,13 +22,21 @@ export function ViewTabs() {
   const setView = useApp((s) => s.setView);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
-  const setActive = useApp((s) => s.setActiveCustomView);
   const upsert = useApp((s) => s.upsertCustomView);
   const closeView = useApp((s) => s.closeCustomView);
   const openViewIds = useApp((s) => s.openViewIds);
   const setToast = useApp((s) => s.setToast);
+  const trail = useApp((s) => s.trail);
+  const goTo = useApp((s) => s.goTo);
+  const goBack = useApp((s) => s.goBack);
+  const goForward = useApp((s) => s.goForward);
 
   if (!ws) return null;
+
+  const nameOf = (p: Place | undefined) =>
+    !p ? null : p.customViewId ? customViews.find((v) => v.id === p.customViewId)?.name ?? null : BUILTIN_NAMES[p.view];
+  const backName = nameOf(trail.back[trail.back.length - 1]);
+  const forwardName = nameOf(trail.forward[trail.forward.length - 1]);
 
   // Only the views the user has opened show as tabs; deleting lives in the Sidebar.
   const openViews = customViews.filter((v) => openViewIds.includes(v.id));
@@ -36,7 +46,7 @@ export function ViewTabs() {
     if (!name) return;
     const v = newCustomView(name, 'all');
     upsert(v);
-    setActive(v.id);
+    goTo(placeOf(v.id));
     setToast({ kind: 'success', text: `Created view "${name}"` });
   }
   async function rename(id: string, current: string) {
@@ -47,7 +57,29 @@ export function ViewTabs() {
   }
 
   return (
-    <div role="tablist" aria-label="Views" className="h-9 shrink-0 border-t border-default bg-zinc-100/80 dark:bg-zinc-900/70 flex items-stretch gap-0.5 px-2 overflow-x-auto scrollbar-thin">
+    <div className="h-9 shrink-0 border-t border-default bg-zinc-100/80 dark:bg-zinc-900/70 flex items-stretch">
+    {/* Back and forward through the views visited (F-016 AC4), named where they lead. */}
+    <nav aria-label="View history" className="flex items-center gap-0.5 pl-2 pr-1 border-r border-default shrink-0">
+      <button
+        onClick={goBack}
+        disabled={!backName}
+        aria-label={backName ? `Back to ${backName}` : 'Back'}
+        title={backName ? `Back to ${backName} (${SHORTCUT_HINTS.back})` : `Back (${SHORTCUT_HINTS.back}) — nowhere to go back to yet`}
+        className="p-1 rounded text-muted hover:text-body hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:hover:bg-transparent"
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={goForward}
+        disabled={!forwardName}
+        aria-label={forwardName ? `Forward to ${forwardName}` : 'Forward'}
+        title={forwardName ? `Forward to ${forwardName} (${SHORTCUT_HINTS.forward})` : `Forward (${SHORTCUT_HINTS.forward})`}
+        className="p-1 rounded text-muted hover:text-body hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 disabled:opacity-30 disabled:hover:bg-transparent"
+      >
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </nav>
+    <div role="tablist" aria-label="Views" className="flex-1 min-w-0 flex items-stretch gap-0.5 px-2 overflow-x-auto scrollbar-thin">
       {BUILTINS.map((b) => {
         const Icon = b.icon;
         const active = view === b.id && !activeId;
@@ -78,7 +110,7 @@ export function ViewTabs() {
             key={v.id}
             role="tab"
             aria-selected={active}
-            onClick={() => setActive(v.id)}
+            onClick={() => goTo(placeOf(v.id))}
             onDoubleClick={() => rename(v.id, v.name)}
             title="Click to open · double-click to rename"
             className={clsx(
@@ -104,6 +136,7 @@ export function ViewTabs() {
       <button onClick={newView} title="New view" aria-label="New view" className="flex items-center px-2 text-muted hover:text-body shrink-0">
         <Plus className="w-4 h-4" />
       </button>
+    </div>
     </div>
   );
 }

@@ -12,6 +12,14 @@ states that must be handled (cross-reference [`states-and-interactions.md`](./st
 2. **Loading state** while the engine parses with Roslyn and primes the sidecar.
 3. Land on the default **Module Map** view: bounded contexts as lanes, modules nested, links drawn.
 4. Switch views via the bottom tab bar (Module Map · Dependencies · saved custom views).
+5. **Find anything** ([F-016](../features/F-016-go-anywhere.md)): ⌘K, a few letters of an element, a
+   view or a book, Enter. An element is shown on a view that draws it — the one on screen if it can,
+   else the Module Map, else a view that names it — selected, centred and ringed once; the toast says
+   when the view changed. The inspector's *Appears in* lists every view that draws the element and
+   every book page that points at it.
+6. **Find the way back**: ⌘[ / ⌘] or ‹ › beside the tabs go back and forward through the views
+   visited, and each view opens at the pan and zoom it was left at. The address keeps the view and
+   the selection, so a reload lands in the same place.
 
 **Must-handle:** empty workspace (no model) → an empty state that explains how to add the first
 element; a custom view persisted as active must not trap the user — clicking a built-in view always

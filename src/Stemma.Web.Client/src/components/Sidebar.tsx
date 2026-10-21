@@ -8,6 +8,8 @@ import { BooksPanel } from './BooksPanel';
 import type { ShapeKind } from '@/lib/shapes';
 import { Square, Circle, Triangle, ArrowRight, Type, Image as ImageIcon, MousePointer2 } from 'lucide-react';
 import clsx from 'clsx';
+import { revealElement } from '@/lib/canvasReveal';
+import { placeOf } from '@/lib/navigation';
 import { useApp } from '@/lib/store';
 import { newCustomView } from '@/lib/views';
 import { applyOperation } from '@/lib/signalr';
@@ -85,10 +87,10 @@ export function Sidebar() {
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
   const setActive = useApp((s) => s.setActiveCustomView);
+  const goTo = useApp((s) => s.goTo);
   const upsert = useApp((s) => s.upsertCustomView);
   const remove = useApp((s) => s.removeCustomView);
   const removeElementFromActiveView = useApp((s) => s.removeElementFromActiveView);
-  const selectElement = useApp((s) => s.selectElement);
   const setToast = useApp((s) => s.setToast);
   const canvasMode = useApp((s) => s.canvasMode);
   const setCanvasMode = useApp((s) => s.setCanvasMode);
@@ -460,7 +462,7 @@ export function Sidebar() {
                             <li
                               key={e.id}
                               draggable
-                              onClick={() => { selectElement(e.id); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('stemma:focus-node', { detail: { nodeId: e.id } })); }}
+                              onClick={() => revealElement(e.id)}
                               onDragStart={(ev) => onElementDragStart(ev, e.id, e.name)}
                               title={`Click to select & center · drag to canvas${activeView ? ` to add to "${activeView.name}"` : ''}`}
                               className={clsx(
@@ -533,7 +535,7 @@ export function Sidebar() {
                         : 'hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300'
                     )}
                   >
-                    <button onClick={() => setActive(v.id)} className="flex-1 text-left truncate">
+                    <button onClick={() => goTo(placeOf(v.id))} className="flex-1 text-left truncate">
                       {v.name}
                     </button>
                     <span title="Freeform — supports shapes & manual layout" className="text-violet-500/80 shrink-0">

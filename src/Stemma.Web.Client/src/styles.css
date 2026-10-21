@@ -377,3 +377,16 @@
   color: var(--pub-text) !important;
   padding: 0 3px !important;
 }
+
+/* F-016 — the card a search or a link has just brought on screen: one soft ring that spreads and
+   fades, so the eye lands on it. Selection still marks it afterwards; the ring is only the arrival. */
+@keyframes stemma-reveal-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(99 102 241 / 0.6), 0 0 0 0 rgb(99 102 241 / 0.35); }
+  60%  { box-shadow: 0 0 0 10px rgb(99 102 241 / 0), 0 0 0 22px rgb(99 102 241 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(99 102 241 / 0), 0 0 0 0 rgb(99 102 241 / 0); }
+}
+.stemma-reveal { animation: stemma-reveal-ring 1.2s cubic-bezier(0.22, 1, 0.36, 1) 2; }
+@media (prefers-reduced-motion: reduce) {
+  /* No movement: a steady ring for the same moment instead. */
+  .stemma-reveal { animation: none; box-shadow: 0 0 0 3px rgb(99 102 241 / 0.55); }
+}

@@ -66,6 +66,8 @@ export type ArchNodeData = {
   onCancelEdit?: () => void;
   // Dependency-view extras — Epic 07 architect UX.
   dimmed?: boolean;
+  /** Just arrived at from search or a link: ringed once so the eye finds it (F-016). */
+  revealed?: boolean;
   fanIn?: number;
   fanOut?: number;
   contextName?: string | null;
@@ -278,6 +280,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         onToggle={data.onToggleCollapse}
         onCommit={data.onCommitName}
         onCancel={data.onCancelEdit}
+        revealed={data.revealed}
       />
     );
   }
@@ -323,6 +326,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         className={clsx(
           'relative rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg transition-shadow h-full flex flex-col',
           animClass,
+          data.revealed && 'stemma-reveal',
           data.notesEditing && 'min-h-[160px]',
           !nodeStyle?.width && 'min-w-[180px] max-w-[260px]',
           isPerson && !nodeStyle?.width ? 'rounded-full px-4 py-2.5 min-w-0' : '',
@@ -507,7 +511,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
 /** A context frame's header chip, sized with the frame's `textSize` so it can be read from a room. */
 const BC_CHIP_TEXT: Record<string, string> = { sm: 'text-[10px]', base: 'text-[10px]', lg: 'text-[13px]', xl: 'text-[16px]' };
 
-function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel }: {
+function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel, revealed }: {
+  revealed?: boolean;
   id: string;
   name: string;
   childCount?: number;
@@ -529,6 +534,7 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
         style={{ pointerEvents: 'auto', ...(fill ? { background: fill } : {}), ...(border ? { borderColor: border } : {}) }}
         className={clsx(
           'stemma-bc-header rounded-xl border-2 border-dashed px-3 py-2 inline-flex items-center gap-2 shadow-sm',
+          revealed && 'stemma-reveal',
           !fill && 'bg-violet-500/10 dark:bg-violet-500/15',
           !border && 'border-violet-400/60 dark:border-violet-500/50',
           selected && 'ring-2 ring-violet-500/40',
@@ -559,6 +565,7 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
       style={bodyStyle}
       className={clsx(
         'stemma-bc-frame rounded-2xl border-2 transition-colors',
+        revealed && 'stemma-reveal',
         !nodeStyle?.borderStyle && 'border-dashed',
         !border && (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40'),
         !fill && (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]'),

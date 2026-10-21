@@ -7,9 +7,10 @@ The frontend's building blocks, what they own, and the rules for changing them. 
 
 - **Topbar** (`Topbar.tsx`) — workspace title, theme toggle, inspector show/hide, global actions.
 - **Sidebar** (`Sidebar.tsx`) — navigation / "add new" palette / saved views list.
-- **View tabs** (`ViewTabs.tsx`) — bottom, draw.io-style: built-in views (Module Map · Dependencies ·
-  Concerns) + open custom views; click to switch, double-click to rename. (Clicking a built-in view
-  must always switch to it, even when a custom view is active.)
+- **View tabs** (`ViewTabs.tsx`) — bottom, draw.io-style: ‹ › for back and forward through the views
+  visited (F-016, named in their tooltips, greyed at either end), then the built-in views (Module Map
+  · Dependencies · Concerns) + open custom views; click to switch, double-click to rename. (Clicking
+  a built-in view must always switch to it, even when a custom view is active.)
 - **Status bar** (`StatusBar.tsx`).
 
 ## Books ([F-013](../features/F-013-books.md))
@@ -66,7 +67,9 @@ are in `lib/templates.ts` as scripts of ordinary operations, never a stored form
 `ArchInspector.tsx` is an **icon rail** that opens one panel at a time:
 
 - **Panels:** Properties, Appearance, Text & attributes, Lifecycle, Ownership, Custom properties,
-  Comments — plus **Layout** (always available, no selection needed).
+  Comments — plus **Layout** (always available, no selection needed). Properties opens with
+  *Appears in* (F-016): the views that draw the element as chips — the one on screen marked — and the
+  book pages that point at it, each one click from being on screen.
 - **Behavior:** selecting an element opens Appearance; deselecting collapses to the rail; opening a
   panel with nothing selected shows a "pick an element" prompt; selecting 2+ jumps to Layout.
 - **Appearance** uses collapsible **sub-sections** (Presets · Style · Animation), not tabs.
@@ -88,7 +91,12 @@ selected). Drives the canvas via the `stemma:layout-action` event.
   `rich` "turbo" toolbar in the full editor; `#tag` autocomplete from the element's attributes.
 - **`NotesModal.tsx`** — the full-screen editor (fills the popup, turbo toolbar).
 - **`MarkerSelect.tsx`** — edge end-marker dropdown with SVG previews.
-- **Dialogs** — `ConfirmDialog`, `PromptDialog`; **`CommandPalette.tsx`**; **`ContextMenu.tsx`**;
+- **`CommandPalette.tsx`** (⌘K, F-016) — Views (all of them, with counts), Books, Elements (kind and
+  where each lives; found by name, id, kind, context or squad), Add element, and Go (back, forward,
+  shortcuts, theme). Choosing an element calls `revealElement` (`lib/canvasReveal.ts`), the one way
+  anything in the app takes a person to an element: open a view that draws it, select it, glide to it,
+  ring it once (`.stemma-reveal`, a steady ring under reduced motion).
+- **Dialogs** — `ConfirmDialog`, `PromptDialog`; **`ContextMenu.tsx`**;
   **toasts** via the store. An open context menu takes every key (capture phase) until it closes.
 - **Copy & paste** ([F-015](../features/F-015-copy-paste-duplicate.md)) — no surface of its own: the
   gestures are window events (`stemma:copy`, `stemma:paste`, `stemma:duplicate`, `stemma:copy-style`,

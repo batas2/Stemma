@@ -200,6 +200,9 @@ function bcAtPoint(boxes: Map<string, Box>, p: { x: number; y: number }): string
   return null;
 }
 
+/** Each view's last pan and zoom this session, keyed by workspace and view (F-016 AC5). */
+const viewportMemory = new Map<string, { x: number; y: number; zoom: number }>();
+
 function CanvasInner() {
   const arch = useApp((s) => s.arch);
   const view = useApp((s) => s.view);
@@ -907,6 +910,19 @@ function CanvasInner() {
   // because the model can arrive after the view is chosen — the Module Map on a fresh load used to
   // open unfitted, at whatever zoom the canvas started with.
   const fittedFor = useRef<string | null>(null);
+  // F-016: an element being revealed — the open's fit must not fight the move to it — and the card
+  // that wears the ring for a moment once it is there.
+  const revealPending = useRef<string | null>(null);
+  const [revealId, setRevealId] = useState<string | null>(null);
+  const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(revealTimer.current), []);
+  // F-016 AC5: each view keeps its pan and zoom for the session, so looking elsewhere for a moment
+  // does not lose the framing someone set up. Saved as a view is left, restored when it is opened.
+  const memoryKey = `${workspace?.rootPath ?? ''}|${layoutKey}`;
+  useEffect(() => {
+    const key = memoryKey;
+    return () => { if (!useApp.getState().presenting) viewportMemory.set(key, getViewport()); };
+  }, [memoryKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const [positionsRead, setPositionsRead] = useState(() => !!workspace && isSidecarPrimed(workspace.rootPath));
   useEffect(() => {
     if (workspace && isSidecarPrimed(workspace.rootPath)) setPositionsRead(true);
@@ -922,9 +938,13 @@ function CanvasInner() {
     const wait = positionsRead ? 80 : 1500;
     const id = setTimeout(() => {
       fittedFor.current = fitFor;
+      // An element on its way to being revealed decides where the canvas goes.
+      if (revealPending.current || bookPageApplies.current) return;
+      const remembered = viewportMemory.get(memoryKey);
+      if (remembered) { setViewport(remembered, { duration: 0 }); return; }
       // At once rather than animated: a view should open where it is going to stay, and an animated
       // fit flies out and back in under a pointer that may already be reaching for a card.
-      if (!bookPageApplies.current) fitWholeView(paddingUnderHeader(0.2), 0);
+      fitWholeView(paddingUnderHeader(0.2), 0);
     }, wait);
     return () => clearTimeout(id);
   }, [fitFor, hasCards, positionsRead]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1213,11 +1233,29 @@ function CanvasInner() {
     }
     function focusNode(ev: Event) {
       const detail = (ev as CustomEvent).detail as { nodeId: string };
-      setNodes((current) => current.map((n) => ({ ...n, selected: n.id === detail.nodeId })));
-      // Pan/zoom to bring the element into view.
-      setTimeout(() => {
-        try { fitView({ nodes: [{ id: detail.nodeId }], padding: 0.45, duration: 400, maxZoom: 1.2 }); } catch { /* not on canvas */ }
-      }, 30);
+      // F-016: the element may be on a view that is only now opening. Hold off the open's own fit, and
+      // wait for the card to be drawn and measured before moving to it.
+      revealPending.current = detail.nodeId;
+      let tries = 0;
+      const attempt = () => {
+        if (revealPending.current !== detail.nodeId) return;
+        const node = getNodes().find((n) => n.id === detail.nodeId);
+        if (!node?.measured?.width) {
+          if (tries++ < 40) setTimeout(attempt, 50);
+          else revealPending.current = null;
+          return;
+        }
+        setNodes((current) => current.map((n) => (n.selected === (n.id === detail.nodeId) ? n : { ...n, selected: n.id === detail.nodeId })));
+        try {
+          fitView({ nodes: [{ id: detail.nodeId }], padding: 0.45, duration: prefersReducedMotion() ? 0 : 450, maxZoom: 1.2 });
+        } catch { /* not on canvas */ }
+        // Kept a little past the move, so a view's fit-on-open that was about to fire stands down.
+        setTimeout(() => { if (revealPending.current === detail.nodeId) revealPending.current = null; }, 700);
+        setRevealId(detail.nodeId);
+        clearTimeout(revealTimer.current);
+        revealTimer.current = setTimeout(() => setRevealId(null), 1600);
+      };
+      setTimeout(attempt, 30);
     }
     // Epic 13 — the stencil library opens from the sidebar "Add new" palette now.
     function openStencils() { setStencilOpen(true); }
@@ -2186,9 +2224,10 @@ function CanvasInner() {
   // in is taken off the nodes and edges themselves: drag, select, resize, rename, notes, label edits,
   // waypoints, arrowheads.
   const renderedNodes = useMemo<Node[]>(() => {
-    if (!pageLit && !readOnly) return nestedNodes;
+    if (!pageLit && !readOnly && !revealId) return nestedNodes;
     return nestedNodes.map((n) => {
       let out = n;
+      if (n.id === revealId) out = { ...out, data: { ...out.data, revealed: true } };
       if (readOnly) {
         out = {
           ...out, draggable: false, selectable: false, selected: false,
@@ -2204,7 +2243,7 @@ function CanvasInner() {
       }
       return out;
     });
-  }, [nestedNodes, pageLit, pageHides, readOnly]);
+  }, [nestedNodes, pageLit, pageHides, readOnly, revealId]);
 
   const renderedEdges = useMemo<Edge[]>(() => {
     if (!pageLit && !readOnly) return allEdges;

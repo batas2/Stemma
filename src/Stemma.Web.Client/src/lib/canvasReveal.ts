@@ -8,6 +8,7 @@
 
 import { useApp } from './store';
 import { lensForKind, viewRendersKind } from './lenses';
+import { BUILTIN_NAMES, placeFor, placeId, samePlace, type Place } from './navigation';
 import { loadLayout, saveLayout } from './layout';
 import type { ArchElementKind, ViewKind } from './types';
 
@@ -95,4 +96,33 @@ export function revealToast(r: RevealResult): string {
   return r.switched
     ? `Added ${r.name} · showing in ${label}`
     : `Added ${r.name} — rename in the inspector`;
+}
+
+/**
+ * Take the person to an element (F-016 AC2): the open view when it draws the element, otherwise the
+ * view that does, and then select it, glide to it and ring it once. Says so when the view changed, so
+ * the jump is never a mystery; says so too when no view draws it yet.
+ */
+export function revealElement(id: string): void {
+  const st = useApp.getState();
+  const el = st.arch?.elements.find((e) => e.id === id);
+  if (!el) return;
+  const here: Place = { view: st.view, customViewId: st.activeCustomViewId };
+  const target = placeFor(el, st.customViews, here);
+  if (!target) {
+    st.selectElement(id);
+    st.setToast({ kind: 'info', text: `${el.name} is not drawn on any view yet — drag it from Elements onto a view` });
+    return;
+  }
+  const moved = !samePlace(target, here);
+  if (moved) st.goTo(target);
+  // After the move: opening a view clears the selection.
+  useApp.getState().selectElement(id);
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('stemma:focus-node', { detail: { nodeId: id } }));
+  if (moved) {
+    const name = target.customViewId
+      ? st.customViews.find((v) => v.id === target.customViewId)?.name ?? placeId(target)
+      : BUILTIN_NAMES[target.view];
+    st.setToast({ kind: 'info', text: `Showing ${el.name} in ${name}` });
+  }
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
-import { X, Edit3, Trash2, Activity, Paintbrush, PaintBucket, Workflow, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Plus, Maximize2, Info, FileText, Palette, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
+import { X, Edit3, Trash2, Activity, Paintbrush, PaintBucket, Shapes, BookOpen, Workflow, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Plus, Maximize2, Info, FileText, Palette, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { InspectorActions } from './InspectorActions';
@@ -22,6 +22,8 @@ import { RichTextEditor } from './RichTextEditor';
 import { NotesModal } from './NotesModal';
 import { loadNote, saveNote } from '@/lib/elementNotes';
 import { heldStyleFor, subscribeHeldStyle } from '@/lib/clipboard';
+import { placeOf, viewsShowing } from '@/lib/navigation';
+import type { ArchElement } from '@/lib/types';
 import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { hashtagProps } from '@/lib/hashtags';
 
@@ -361,6 +363,10 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
             {Object.entries(e.attributes).filter(([k]) => k !== 'external').map(([k, v]) =>
               v ? <Field key={k} label={k} value={v} mono /> : null
             )}
+          </SubSection>
+
+          <SubSection title="Appears in" defaultOpen>
+            <AppearsIn element={e} />
           </SubSection>
 
           <SubSection title="Custom properties" defaultOpen>
@@ -1006,6 +1012,68 @@ function SubSection({ title, defaultOpen = true, children }: { title: string; de
         {open ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
       </button>
       {open && <div className="px-2.5 pb-2.5 pt-2 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Every view that draws this element, and every book page that points at it (F-016 AC3) — each one
+ * click from being on screen. The view on screen now is marked rather than offered.
+ */
+function AppearsIn({ element }: { element: ArchElement }) {
+  const customViews = useApp((s) => s.customViews);
+  const view = useApp((s) => s.view);
+  const activeCustomViewId = useApp((s) => s.activeCustomViewId);
+  const books = useApp((s) => s.books);
+  const here = activeCustomViewId ?? view;
+  const views = viewsShowing(element, customViews);
+  const pages = books.flatMap((b) => b.pages
+    .map((p, i) => ({ book: b, page: p, index: i }))
+    .filter(({ page }) => page.focus.includes(element.id)));
+
+  function open(viewId: string) {
+    const st = useApp.getState();
+    st.goTo(placeOf(viewId));
+    if (viewId === 'concerns') return;
+    st.selectElement(element.id);
+    window.dispatchEvent(new CustomEvent('stemma:focus-node', { detail: { nodeId: element.id } }));
+  }
+
+  const chip = 'inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-full border text-[11px] transition-colors';
+  return (
+    <div className="flex flex-col gap-2">
+      {views.length === 0 ? (
+        <p className="text-[11px] text-faint leading-snug">No view draws it yet. Drag it from Elements onto a view to put it in one.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5" aria-label="Views that draw it">
+          {views.map((v) => v.id === here ? (
+            <span key={v.id} aria-current="page" className={clsx(chip, 'border-indigo-500/50 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300')} title="On screen now">
+              {v.custom ? <Shapes className="w-3 h-3 shrink-0" aria-hidden /> : <LayoutDashboard className="w-3 h-3 shrink-0" aria-hidden />}
+              <span className="truncate">{v.name}</span>
+            </span>
+          ) : (
+            <button key={v.id} onClick={() => open(v.id)} title={`Open ${v.name} and show it there`} className={clsx(chip, 'border-default text-muted hover:text-body hover:border-indigo-400')}>
+              {v.custom ? <Shapes className="w-3 h-3 shrink-0" aria-hidden /> : <LayoutDashboard className="w-3 h-3 shrink-0" aria-hidden />}
+              <span className="truncate">{v.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {pages.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" aria-label="Book pages that point at it">
+          {pages.map(({ book, page, index }) => (
+            <button
+              key={`${book.id}:${page.id}`}
+              onClick={() => { const st = useApp.getState(); st.openBook(book.id); st.showPage(page.id); }}
+              title={`Open the book "${book.name}" at page ${index + 1}`}
+              className={clsx(chip, 'border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10')}
+            >
+              <BookOpen className="w-3 h-3 shrink-0" aria-hidden />
+              <span className="truncate">{book.name} · {index + 1}. {page.title || 'Untitled page'}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
