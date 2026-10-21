@@ -235,6 +235,8 @@
 /* Relationship flow-animation speed overrides (edge className). */
 .react-flow__edge.stemma-edge-slow path { animation-duration: 1.1s; }
 .react-flow__edge.stemma-edge-fast path { animation-duration: 0.25s; }
+/* A flowing relationship stands still, its dashes kept, for someone who asked for less motion. */
+@media (prefers-reduced-motion: reduce) { .react-flow__edge.animated path { animation: none !important; } }
 
 /* Free-form shape motion (Shape inspector → Animation). SVG-friendly. */
 @keyframes stemma-shape-march { to { stroke-dashoffset: -12; } }

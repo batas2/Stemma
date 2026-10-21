@@ -5,11 +5,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Reversing a relationship, driven through the app on a scratch copy of the self-model.
+ * Relationships on the canvas, driven through the app on a scratch copy of the self-model.
  *
  * Reversing is the link removed and added again, and it once added "a dependency" whatever it had been:
  * a Relation came back as `new Dependency(…, "uses")`, its label gone. The reversed link is the same
  * relationship pointing the other way, and one ⌘Z puts every byte back.
+ *
+ * And a picture at rest is still: every dependency and relation once flowed by default, which redrew
+ * the whole canvas each frame.
  */
 
 const SAMPLE = fileURLToPath(new URL('../../../../samples/StemmaArchitecture', import.meta.url));
@@ -67,4 +70,11 @@ test('reversing a relation keeps it a relation, with its label — and one undo 
   await page.keyboard.press('Escape');
   await page.keyboard.press(`${mod}+z`);
   await expect.poll(async () => (await readFile(join(root, ARCH))).equals(original), { timeout: 20_000 }).toBe(true);
+});
+
+test('a view at rest is still: no relationship flows unless it was asked to', async ({ page }) => {
+  await page.getByRole('tab', { name: 'Dependencies' }).click();
+  await expect(page.locator('.react-flow__edge').first()).toBeAttached({ timeout: 20_000 });
+  expect(await page.locator('.react-flow__edge').count()).toBeGreaterThan(10);
+  await expect(page.locator('.react-flow__edge.animated')).toHaveCount(0);
 });

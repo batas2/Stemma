@@ -540,7 +540,6 @@ function CanvasInner() {
   }, [setToast]);
 
   const edges = useMemo<Edge[]>(() => filtered.links.filter((l) => !hiddenIds.has(l.fromId) && !hiddenIds.has(l.toId)).map((l) => {
-    const isDataFlow = l.kind === 'dataFlow';
     const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
     // While a draft edit is in flight (inline editor or inspector), the label shows it live.
     const draftValue = linkDraft && linkDraft.linkId === l.id ? linkDraft.value : null;
@@ -550,7 +549,9 @@ function CanvasInner() {
     // Dim edges that connect dimmed nodes in focus mode. Both endpoints have to be in
     // the focus set for the edge to stay lit — otherwise it's irrelevant to the selection.
     const dimmed = focusSet !== null && !(focusSet.has(l.fromId) && focusSet.has(l.toId));
-    const animated = userStyle.animated ?? (!isDataFlow && userStyle.lineStyle === 'solid' && (!waypoints || waypoints.length === 0));
+    // Still unless asked for: flowing dashes on every dependency and relation by default redrew the
+    // whole picture each frame (8 fps at 330 arrows), and the inspector's toggle said "off" meanwhile.
+    const animated = userStyle.animated === true;
     const arrowEnd = userStyle.arrowEnd ?? userStyle.arrow ?? 'closed';
     const arrowStart = userStyle.arrowStart ?? 'none';
     const dock = edgeHandles[l.id] ?? autoDocks[l.id];
