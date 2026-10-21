@@ -40,11 +40,14 @@ public sealed class ScaffoldCommitTests : IDisposable
         };
     }
 
-    private string RunGit(IReadOnlyDictionary<string, string?> environment, params string[] args)
+    private string RunGit(IReadOnlyDictionary<string, string?> environment, params string[] args) =>
+        RunGitIn(Root, environment, args);
+
+    private static string RunGitIn(string directory, IReadOnlyDictionary<string, string?> environment, params string[] args)
     {
         var psi = new ProcessStartInfo("git")
         {
-            WorkingDirectory = Root,
+            WorkingDirectory = directory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -112,5 +115,46 @@ public sealed class ScaffoldCommitTests : IDisposable
         // so the user's own first commit is refused until they say who they are, as git intends.
         RunGit(git, "config", "--local", "--get", "user.name").Should().BeEmpty();
         RunGit(git, "config", "--local", "--get", "user.email").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task In_a_folder_that_already_has_files_only_the_model_is_committed()
+    {
+        // Choosing an existing folder for a new model committed everything in it, a `.env` included.
+        if (!GitAvailable()) return;
+        var git = Git("[user]\n\tname = Ada Lovelace\n\temail = ada@example.com\n");
+        Directory.CreateDirectory(Root);
+        File.WriteAllText(Path.Combine(Root, ".env"), "API_KEY=secret\n");
+        File.WriteAllText(Path.Combine(Root, "notes.txt"), "mine\n");
+
+        var created = await WorkspaceScaffold.CreateAsync("Payments", Root, git);
+
+        created.Committed.Should().BeTrue();
+        RunGit(git, "ls-files").Split('\n').Should().BeEquivalentTo(
+            ".gitignore", "Architecture/Architecture.cs", "README.md", "STEMMA.md");
+        RunGit(git, "status", "--porcelain").Split('\n').Should().BeEquivalentTo("?? .env", "?? notes.txt");
+    }
+
+    [Fact]
+    public async Task Inside_a_repository_the_model_is_added_to_it_and_left_for_its_owner_to_commit()
+    {
+        // It created a repository inside the outer one, which then saw `?? model/` and nothing else.
+        if (!GitAvailable()) return;
+        var git = Git("[user]\n\tname = Ada Lovelace\n\temail = ada@example.com\n");
+        var project = Directory.CreateDirectory(Path.Combine(_dir, "project")).FullName;
+        RunGitIn(project, git, "init", "--quiet");
+        RunGitIn(project, git, "commit", "--quiet", "--allow-empty", "-m", "The project");
+        var model = Path.Combine(project, "model");
+
+        var created = await WorkspaceScaffold.CreateAsync("Payments", model, git);
+
+        Directory.Exists(Path.Combine(model, ".git")).Should().BeFalse("a repository inside a repository hides the model from it");
+        created.GitInitialised.Should().BeFalse();
+        created.Committed.Should().BeFalse("whether and how to commit to someone's repository is theirs to decide");
+        created.RepositoryRoot.Should().Be(project);
+        created.GitError.Should().BeNull();
+        RunGitIn(project, git, "log", "--format=%s").Should().Be("The project");
+        RunGitIn(project, git, "status", "--porcelain", "--untracked-files=all").Split('\n').Should().BeEquivalentTo(
+            "?? model/.gitignore", "?? model/Architecture/Architecture.cs", "?? model/README.md", "?? model/STEMMA.md");
     }
 }

@@ -68,9 +68,11 @@ Frontend rules that keep it correct:
    session's unsent edits are laid over what it now says (`rereadLayoutSidecar`). The read waits
    in line behind any save on its way, so what it brings back already has that save in it. Not reading it
    at all meant the next edit wrote the stale copy over a pull
-   ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)). Someone else
-   includes another window: each save names the window it came from (`X-Stemma-Connection`, its
-   hub connection id), and the server tells every other window.
+   ([B-014](../bugs/B-014-the-sidecar-is-written-whole-from-a-stale-copy.md)).
+   Another window is someone else too. The engine does not announce its own writes, so after a
+   `PATCH /api/workspace/layout` the server sends `SidecarChanged` to every other hub connection.
+   The window that made the change names its connection in the `X-Stemma-Connection` header and is
+   not told; a request without the header is announced to every window.
 3. **One shared cache** routes node styles, edge styles, notes, custom props, and shapes — they must
    not keep separate caches that clobber each other on save.
 4. **Write nothing before it has been read.** Until then there is nothing to measure the edits
@@ -104,9 +106,9 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
 
 1. **Changes, by id.** The panel sends what it did — add, reply, resolve, remove — never its copy of
    the file, and shows the file the engine answers with.
-2. **Taken in.** A change made outside (`CommentsChanged`) makes an open panel read the file again
-   — a pull, a teammate, or another window, whose save names it (`X-Stemma-Connection`) so that
-   every window but that one is told.
+2. **Taken in.** A change made outside (`CommentsChanged`) makes an open panel read the file again.
+   So does one made in another window: after `PATCH /api/workspace/comments` the server announces
+   `CommentsChanged` to every hub connection but the one named in `X-Stemma-Connection`.
 3. **Refused, never read as empty.** A file that does not parse is said to be, in the panel and in a
    report export, and nothing is written to it until it parses. Reading it as empty is how a merge
    conflict lost every comment ([B-018](../bugs/B-018-comments-written-whole-and-read-as-empty.md)).
@@ -115,9 +117,16 @@ same rules as the sidecar ([ADR-0021](./decisions/0021-sidecar-written-as-change
 
 - On open: REST returns the model snapshot + the engine primes the sidecar; the client hydrates
   presentation once (`stemma:sidecar-primed` → `rehydratePresentation`).
+- Opening another workspace loads it before letting go of the open one. Until it has loaded, the
+  open workspace goes on answering and taking edits; a load that fails leaves it open and the error
+  is reported; a request that stops waiting does not stop the load. The workspace replaced — or
+  closed with `/close` — is closed once the work already running on it has finished, and no new
+  work starts on it (`EngineHost`).
 - Views are read from `Views/*.cs` on open and on every refresh, and the browser's list is a cache
   of that. A save or delete still on its way is laid over it until the engine answers, so a refresh
-  in between does not take the change away.
+  in between does not take the change away. The list is the views the engine holds — every file in a
+  folder named `Views`, subfolders included, never build output — which are the files it saves and
+  deletes a view in, and the ones `stemma validate` checks.
 - During a session: model edits broadcast as **deltas** over SignalR; the client merges them.
   External file edits (git pull, IDE) are picked up by the engine and broadcast too — once per change,
   and without the engine writing the file in reply. Files added and deleted outside are taken in the

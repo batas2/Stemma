@@ -49,19 +49,8 @@ public sealed class HostProcess : IAsyncDisposable
         var port = FreePort();
         var baseUrl = $"http://127.0.0.1:{port}";
 
-        var psi = SiblingProgram.StartInfo(hostDll);
-        psi.RedirectStandardOutput = true;
-        psi.RedirectStandardError = true;
-        psi.ArgumentList.Add("--urls");
-        psi.ArgumentList.Add(baseUrl);
-        // Without this the content root is the *caller's* working directory, so `wwwroot` resolves
-        // to wherever the render happened to be run from and the SPA 404s. The symptom is an opaque
-        // navigation failure, so it is worth being explicit rather than relying on the default.
-        psi.ArgumentList.Add("--contentRoot");
-        psi.ArgumentList.Add(contentRoot);
-        psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
-
-        var process = Process.Start(psi) ?? throw new InvalidOperationException("could not start the Stemma host");
+        var process = Process.Start(StartInfo(hostDll, contentRoot, baseUrl))
+            ?? throw new InvalidOperationException("could not start the Stemma host");
         // Drained so a chatty host cannot fill its pipe buffer and deadlock.
         _ = Task.Run(async () => { try { await process.StandardOutput.ReadToEndAsync(ct); } catch { /* going away */ } }, ct);
         _ = Task.Run(async () => { try { await process.StandardError.ReadToEndAsync(ct); } catch { /* going away */ } }, ct);
@@ -77,6 +66,27 @@ public sealed class HostProcess : IAsyncDisposable
             throw;
         }
         return host;
+    }
+
+    /// <summary>How the host is started: on <paramref name="baseUrl"/>, serving <paramref name="contentRoot"/>.</summary>
+    public static ProcessStartInfo StartInfo(string hostDll, string contentRoot, string baseUrl)
+    {
+        var psi = SiblingProgram.StartInfo(hostDll);
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError = true;
+        psi.ArgumentList.Add("--urls");
+        psi.ArgumentList.Add(baseUrl);
+        // Without this the content root is the *caller's* working directory, so `wwwroot` resolves
+        // to wherever the render happened to be run from and the SPA 404s. The symptom is an opaque
+        // navigation failure, so it is worth being explicit rather than relying on the default.
+        psi.ArgumentList.Add("--contentRoot");
+        psi.ArgumentList.Add(contentRoot);
+        // The workspace is opened for a render nobody watches; it is not one the person opened, and
+        // has no place at the top of their recent list.
+        psi.ArgumentList.Add("--recents");
+        psi.ArgumentList.Add("off");
+        psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        return psi;
     }
 
     private async Task WaitUntilServingAsync(TimeSpan timeout, CancellationToken ct)

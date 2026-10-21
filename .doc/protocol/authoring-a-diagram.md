@@ -438,18 +438,26 @@ Each render writes a sibling `<name>.manifest.json` with a fingerprint of everyt
 what the picture looks like. `--check` re-computes it and exits non-zero when the image no longer
 matches the model — which is the whole "a diagram cannot lie" claim, extended past the app window.
 
-Rendering runs a short-lived backend of its own, so it never disturbs a workspace you have open.
+Rendering runs a short-lived backend of its own, so it never disturbs a workspace you have open,
+and it leaves the app's list of recent workspaces alone. (Any backend started with `--recents off`,
+or with `STEMMA_RECENTS=off` in its environment, does the same.)
 
 ---
 
 ## 7. Checking your work
 
 ```
-stemma validate --workspace <path> [--json] [--strict]
+stemma validate [<path>] [--json] [--strict]       # or --workspace <path>; default: the current directory
 ```
 
 Exit `0` when nothing is broken, `1` on an error (or a warning under `--strict`), `2` on a bad
-command line. `--json` is the form to act on programmatically.
+command line or a workspace that does not exist, `3` when the check could not run at all (a file it
+could not read) and so has no verdict. `--json` is the form to act on programmatically.
+
+It checks the model the app reads: every C# file in a folder named `Architecture` (subfolders
+included, build output left out), merged, so a link from `Architecture.cs` to an element declared in
+`Architecture/Payments.cs` is not dangling. An id declared in two files is a duplicate. `render`
+fingerprints the same merged model, so `--check` notices a change in any of the files.
 
 What it catches, in rough order of how often it bites:
 
@@ -457,7 +465,8 @@ What it catches, in rough order of how often it bites:
 |---|---|---|
 | `link/dangling-endpoint`, `element/dangling-reference`, `view/dangling-member` | error | A string id nothing else checks. The node or edge silently vanishes. |
 | `view/empty` | error | The render will report `empty`; better to know now. |
-| `model/duplicate-id` | error | Which one wins is arbitrary. |
+| `model/duplicate-id`, `link/duplicate-id` | error | An element or a link id declared twice, in one file or two. Which one wins is arbitrary. |
+| `view/duplicate-id` | error | Two view files with one id. The app opens and saves whichever it reads first. |
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |
 | `book/missing-view`, `book/dangling-focus` | error | A page that shows a view that is gone, or points at an element that is: a slide that outlived what it was about. |
 | `book/focus-outside-view` | warning | The page points at an element its view does not draw, so nothing lights up. |
@@ -465,6 +474,7 @@ What it catches, in rough order of how often it bites:
 | `book/dangling-order`, `book/malformed` | warning | A hand edit or a merge left the book's order or shape wrong; it presents what it can. |
 | `book/legacy-file` | warning | `Concepts/view-book.stemma.yaml` is no longer read; its books have to move to `books`. |
 | `sidecar/unreadable` | warning | The canvas silently ignores it — every position in it is already lost. |
+| `sidecar/malformed` | warning | A value of the wrong kind — `views` as a list, a shape that is a number, an id that is not text. Named by its path; the canvas skips it. |
 | `view/busy` | warning | Past seven boxes a diagram has usually stopped answering one question. |
 | `view/mixed-register` | warning | Half the boxes claim something about a system and half claim nothing. |
 | `view/half-link` | info | One endpoint in the view, so the relationship is not drawn. Often deliberate. |

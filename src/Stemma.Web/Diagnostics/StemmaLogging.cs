@@ -34,10 +34,19 @@ public static class StemmaLogging
     public const int MaxFiles = 10;
     public const int RetainedDays = 14;
 
-    public sealed record Options(LogEventLevel MinimumLevel, string Format, bool FileSink, string Directory)
+    /// <param name="Categories">The categories `Logging:LogLevel` sets apart from its default.</param>
+    public sealed record Options(LogEventLevel MinimumLevel, string Format, bool FileSink, string Directory,
+        IReadOnlyList<CategoryLevel>? Categories = null)
     {
         public bool IsJson => Format.Equals("json", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// A category configured apart from the default. A quieter one — the framework at Warning — stays at
+    /// least that quiet whatever the level is changed to; a louder one says at least that much. Every
+    /// other category follows the level, including a change made at runtime.
+    /// </summary>
+    public sealed record CategoryLevel(string Category, LogEventLevel Level, bool Quieter);
 
     /// <summary>
     /// Resolve the configuration, low precedence to high: `appsettings.json`, then environment, then
@@ -61,8 +70,27 @@ public static class StemmaLogging
         var fileSink = (Environment.GetEnvironmentVariable("STEMMA_LOG_FILE") ?? "on")
             .Equals("on", StringComparison.OrdinalIgnoreCase);
 
-        return new Options(ParseLevel(level), format, fileSink, DefaultLogDirectory);
+        // Serilog's provider lets every record past the framework's own per-category filters, so the
+        // levels in `Logging:LogLevel` are given to Serilog itself, or nothing honours them.
+        var configuredDefault = ParseLevel(config["Logging:LogLevel:Default"] ?? "Information");
+        var configured = config.GetSection("Logging:LogLevel").GetChildren()
+            .Where(c => !c.Key.Equals("Default", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(c.Value))
+            .Select(c => (Category: c.Key, Level: ParseLevel(c.Value)))
+            .ToList();
+        // The framework writes several records for every request, which in a file the diagnostics
+        // bundle keeps the last 500 of is noise. appsettings.json says so, but not every package
+        // ships it, so the same is assumed when nothing is said.
+        if (!configured.Any(c => c.Category.Equals(FrameworkCategory, StringComparison.OrdinalIgnoreCase)))
+            configured.Add((FrameworkCategory, LogEventLevel.Warning));
+        var categories = configured
+            .Where(c => c.Level != configuredDefault)
+            .Select(c => new CategoryLevel(c.Category, c.Level, Quieter: c.Level > configuredDefault))
+            .ToList();
+
+        return new Options(ParseLevel(level), format, fileSink, DefaultLogDirectory, categories);
     }
+
+    private const string FrameworkCategory = "Microsoft.AspNetCore";
 
     /// <summary>An unrecognised level is a typo, not a reason to refuse to start.</summary>
     public static LogEventLevel ParseLevel(string? raw) => raw?.Trim().ToLowerInvariant() switch
@@ -95,6 +123,15 @@ public static class StemmaLogging
             .MinimumLevel.ControlledBy(levelSwitch)
             .Enrich.FromLogContext();
 
+        // Each category set apart has a switch of its own, kept in step with the main one so a level
+        // changed at runtime still reaches it — within the bound its configuration sets.
+        foreach (var category in options.Categories ?? [])
+        {
+            var categorySwitch = new Serilog.Core.LoggingLevelSwitch(Effective(category, levelSwitch.MinimumLevel));
+            levelSwitch.MinimumLevelChanged += (_, e) => categorySwitch.MinimumLevel = Effective(category, e.NewLevel);
+            config = config.MinimumLevel.Override(category.Category, categorySwitch);
+        }
+
         if (options.IsJson)
             config = config.WriteTo.Console(new CompactJsonFormatter());
         else
@@ -117,4 +154,10 @@ public static class StemmaLogging
 
         return config.CreateLogger();
     }
+
+    /// <summary>The level a category logs at while the main level is <paramref name="level"/>. Off is off for every category.</summary>
+    private static LogEventLevel Effective(CategoryLevel category, LogEventLevel level) =>
+        level > LogEventLevel.Fatal ? level
+        : category.Quieter ? (LogEventLevel)Math.Max((int)category.Level, (int)level)
+        : (LogEventLevel)Math.Min((int)category.Level, (int)level);
 }

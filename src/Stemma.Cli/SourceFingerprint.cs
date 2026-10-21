@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.CodeAnalysis.CSharp;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Workspace;
 
@@ -25,18 +24,21 @@ public static class SourceFingerprint
 {
     public sealed record Fingerprint(string Hash, int Elements, int Links, int ViewMembers);
 
-    public static Fingerprint For(string workspaceRoot, string viewId, string profile, string palette)
+    /// <param name="view">What `--view` was given: a view's id or its name, or a lens.</param>
+    public static Fingerprint For(string workspaceRoot, string view, string profile, string palette)
     {
+        // A view is named by its id or its name, and its layout is kept under its id. Resolved first,
+        // so a view checked by name finds its layout, and by either it is the same picture.
+        var views = WorkspaceViews.Read(workspaceRoot).Select(v => v.View).ToList();
+        var match = views.FirstOrDefault(v => v.Id == view) ?? views.FirstOrDefault(v => v.Name == view);
+        var viewId = match?.Id ?? view;
+
         var sb = new StringBuilder();
         sb.Append("profile=").Append(profile).Append(";palette=").Append(palette).Append(";view=").Append(viewId).Append('\n');
 
-        var archPath = Path.Combine(workspaceRoot, "Architecture", "Architecture.cs");
-        ArchModel? model = null;
-        if (File.Exists(archPath))
-        {
-            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(archPath));
-            model = DslReader.TryRead(archPath, tree.GetRoot());
-        }
+        // Every model file, merged as the engine merges them: a rename in Payments.cs is as much a
+        // change to the picture as one in Architecture.cs.
+        var model = ArchModelMerge.ReadFrom(workspaceRoot).Model;
 
         var elements = 0;
         var links = 0;
@@ -56,28 +58,16 @@ public static class SourceFingerprint
         }
 
         var members = 0;
-        foreach (var view in ReadViews(workspaceRoot).Where(v => v.Id == viewId || v.Name == viewId))
+        foreach (var id in match?.ElementIds.OrderBy(x => x, StringComparer.Ordinal) ?? Enumerable.Empty<string>())
         {
-            foreach (var id in view.ElementIds.OrderBy(x => x, StringComparer.Ordinal))
-            {
-                sb.Append("m:").Append(id).Append('\n');
-                members++;
-            }
+            sb.Append("m:").Append(id).Append('\n');
+            members++;
         }
 
-        AppendLayout(sb, workspaceRoot, viewId);
+        AppendLayout(sb, workspaceRoot, match is null ? null : $"custom:{match.Id}", view);
 
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..16];
         return new Fingerprint(hash, elements, links, members);
-    }
-
-    private static IEnumerable<ArchView> ReadViews(string workspaceRoot)
-    {
-        var dir = Path.Combine(workspaceRoot, "Views");
-        if (!Directory.Exists(dir)) return [];
-        var docs = Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
-            .Select(f => (FilePath: f, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()));
-        return ViewsAdapter.ReadAllFrom(docs);
     }
 
     /// <summary>
@@ -85,7 +75,9 @@ public static class SourceFingerprint
     /// Read as raw JSON rather than through the typed sidecar, because `layout` and `offsets` are
     /// pass-through members the engine deliberately does not model.
     /// </summary>
-    private static void AppendLayout(StringBuilder sb, string workspaceRoot, string viewId)
+    /// <param name="customKey">The code view's key under <c>views</c>, when the view is one.</param>
+    /// <param name="lens">What `--view` was given, which is the key when it names a lens.</param>
+    private static void AppendLayout(StringBuilder sb, string workspaceRoot, string? customKey, string lens)
     {
         var path = LayoutSidecar.PathFor(workspaceRoot);
         if (!File.Exists(path)) return;
@@ -93,11 +85,11 @@ public static class SourceFingerprint
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
-            if (!doc.RootElement.TryGetProperty("views", out var views)) return;
+            if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind != System.Text.Json.JsonValueKind.Object) return;
 
-            foreach (var key in new[] { $"custom:{viewId}", viewId })
+            foreach (var key in new[] { customKey, lens }.OfType<string>())
             {
-                if (!views.TryGetProperty(key, out var view)) continue;
+                if (!views.TryGetProperty(key, out var view) || view.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
                 foreach (var member in new[] { "nodes", "layout", "offsets", "layoutMode" })
                     if (view.TryGetProperty(member, out var value))
                         sb.Append(member).Append(':').Append(value.GetRawText()).Append('\n');

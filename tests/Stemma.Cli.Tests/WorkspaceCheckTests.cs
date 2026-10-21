@@ -277,6 +277,120 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().Contain(f => f.Rule == "sidecar/unreadable");
     }
 
+    [Theory]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [42] } } }""", "views.custom:view_v.shapes[0]")]
+    [InlineData("""{ "version": 1, "views": [] }""", "views")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": 7, "kind": "rect" } ] } } }""", "views.custom:view_v.shapes[0].id")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": "sh_1", "kind": ["rect"] } ] } } }""", "views.custom:view_v.shapes[0].kind")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": "sh_1", "kind": "label", "text": 3 } ] } } }""", "views.custom:view_v.shapes[0].text")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": [ { "id": "sh_1", "kind": "arrow", "toAnchor": { "kind": "element", "id": 5 } } ] } } }""", "views.custom:view_v.shapes[0].toAnchor.id")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": "flat" } }""", "views.custom:view_v")]
+    [InlineData("""{ "version": 1, "views": { "custom:view_v": { "shapes": {} } } }""", "views.custom:view_v.shapes")]
+    [InlineData("""[1, 2]""", "the file")]
+    public void A_sidecar_value_of_the_wrong_kind_is_named_rather_than_crashing_the_check(string sidecar, string path)
+    {
+        // Each of these threw out of the check ("requires an element of type 'Object'"), and the CLI
+        // exited 1 — the code that means the workspace has errors — having checked nothing.
+        Model(TwoModules);
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), sidecar);
+
+        var findings = Run();
+
+        findings.Should().Contain(f => f.Rule == "sidecar/malformed" && f.Message.Contains($"`{path}`")
+                                       || f.Rule == "sidecar/malformed" && path == "the file");
+    }
+
+    [Fact]
+    public void No_value_of_any_kind_anywhere_in_the_sidecar_crashes_the_check()
+    {
+        // A hand edit or a merge can leave any value as any kind. Each is replaced in turn by each
+        // kind it is not, and the check has to report, never throw.
+        Model(TwoModules);
+        View("V", """new(Id: "view_v", Name: "V", BaseView: "all", ElementIds: new[] { "mod_a", "mod_b" })""");
+        var rich = System.Text.Json.Nodes.JsonNode.Parse("""
+            {
+              "version": 1,
+              "views": {
+                "custom:view_v": {
+                  "nodes": { "mod_a": { "x": 0, "y": 0 } },
+                  "layout": { "kind": "grid", "columns": [["mod_a"], ["mod_b"]], "gap": [40, 40] },
+                  "header": { "title": "T", "legend": [ { "status": "current" }, { "swatch": { "fill": "#fff" }, "label": "L" } ] },
+                  "shapes": [
+                    { "id": "sh_1", "kind": "label", "text": "Hi" },
+                    { "id": "sh_2", "kind": "arrow", "fromAnchor": { "kind": "element", "id": "mod_a" }, "toAnchor": { "kind": "shape", "id": "sh_1" } }
+                  ]
+                },
+                "moduleMap": { "layout": { "kind": "row", "ids": ["mod_a"], "gap": 10 } }
+              },
+              "books": {
+                "b": { "name": "B", "order": ["p1"], "pages": { "p1": { "title": "P", "view": "view_v", "focus": ["mod_a"], "steps": ["flow_x", { "link": "flow_y" }] } } }
+              }
+            }
+            """)!;
+        var replacements = new Func<System.Text.Json.Nodes.JsonNode?>[]
+        {
+            () => System.Text.Json.Nodes.JsonValue.Create(42),
+            () => System.Text.Json.Nodes.JsonValue.Create("text"),
+            () => new System.Text.Json.Nodes.JsonArray(),
+            () => new System.Text.Json.Nodes.JsonObject(),
+            () => null,
+        };
+
+        var paths = new List<string>();
+        void Collect(System.Text.Json.Nodes.JsonNode? node)
+        {
+            if (node is null) return;
+            if (node.Parent is not null) paths.Add(node.GetPath());
+            if (node is System.Text.Json.Nodes.JsonObject o) foreach (var (_, child) in o) Collect(child);
+            if (node is System.Text.Json.Nodes.JsonArray a) foreach (var child in a) Collect(child);
+        }
+        Collect(rich);
+        paths.Should().HaveCountGreaterThan(40);
+
+        var crashes = new List<string>();
+        foreach (var path in paths)
+        {
+            foreach (var replacement in replacements)
+            {
+                var copy = rich.DeepClone();
+                Replace(copy, path, replacement());
+                File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), copy.ToJsonString());
+                try { Run(); }
+                catch (Exception e) { crashes.Add($"{path} = {replacement()?.ToJsonString() ?? "null"}: {e.Message}"); }
+            }
+        }
+
+        crashes.Should().BeEmpty();
+    }
+
+    /// <summary>Put <paramref name="value"/> at <paramref name="path"/> (as <c>JsonNode.GetPath</c> writes it) in <paramref name="root"/>.</summary>
+    private static void Replace(System.Text.Json.Nodes.JsonNode root, string path, System.Text.Json.Nodes.JsonNode? value)
+    {
+        var target = Find(root, path)!;
+        switch (target.Parent)
+        {
+            case System.Text.Json.Nodes.JsonObject o:
+                o[o.First(kv => ReferenceEquals(kv.Value, target)).Key] = value;
+                break;
+            case System.Text.Json.Nodes.JsonArray a:
+                a[a.IndexOf(target)] = value;
+                break;
+        }
+
+        static System.Text.Json.Nodes.JsonNode? Find(System.Text.Json.Nodes.JsonNode? node, string path)
+        {
+            if (node is null) return null;
+            if (node.GetPath() == path) return node;
+            IEnumerable<System.Text.Json.Nodes.JsonNode?> children = node switch
+            {
+                System.Text.Json.Nodes.JsonObject o => o.Select(kv => kv.Value),
+                System.Text.Json.Nodes.JsonArray a => a,
+                _ => [],
+            };
+            return children.Select(c => Find(c, path)).FirstOrDefault(found => found is not null);
+        }
+    }
+
     [Fact]
     public void A_workspace_with_no_sidecar_is_not_a_finding()
     {
@@ -675,5 +789,150 @@ public sealed class WorkspaceCheckTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), """{ "books": { <<<<<<< HEAD""");
         BookRun().Should().BeEmpty();
         Run().Should().ContainSingle(f => f.Rule == "sidecar/unreadable");
+    }
+
+    // ---- A model in several files (ADR-0016, ADR-0024) -----------------------------------------
+
+    /// <summary>Another model file beside Architecture.cs, as the engine reads and merges them.</summary>
+    private void ModelFile(string relative, string className, string body)
+    {
+        var path = Path.Combine(_root, "Architecture", relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $$"""
+            using Stemma.Model;
+            namespace Probe;
+            public static class {{className}}
+            {
+                public static Model Build()
+                {
+            {{body}}
+                }
+            }
+            """);
+    }
+
+    [Fact]
+    public void A_model_split_over_several_files_is_checked_as_the_one_model_the_engine_reads()
+    {
+        // Only Architecture.cs was read, so a link to an element declared in Payments.cs was reported
+        // as dangling, and validate failed a model the canvas draws perfectly well.
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var flow = new DataFlow("flow_1", "mod_a", "mod_b", "payment");
+                    return Model.Of(a, flow);
+        """);
+        ModelFile("Payments.cs", "Payments", """
+                    var b = new Module("mod_b", "B");
+                    return Model.Of(b);
+        """);
+        ModelFile(Path.Combine("Billing", "Invoicing.cs"), "Invoicing", """
+                    var c = new Module("mod_c", "C");
+                    var flow = new DataFlow("flow_2", "mod_c", "mod_a", "invoice");
+                    return Model.Of(c, flow);
+        """);
+
+        Run().Where(f => f.Severity == CheckSeverity.Error).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_id_declared_in_two_model_files_is_a_duplicate()
+    {
+        Model(TwoModules);
+        ModelFile("Payments.cs", "Payments", """
+                    var b = new Module("mod_b", "B again");
+                    return Model.Of(b);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "model/duplicate-id").Which.ElementId.Should().Be("mod_b");
+    }
+
+    [Fact]
+    public void A_link_id_declared_twice_is_an_error()
+    {
+        // Elements were checked for duplicates and links were not, though the canvas keys an edge by
+        // its id as it keys a box: one of the two arrows is simply not drawn.
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var f1 = new DataFlow("flow_1", "mod_a", "mod_b", "order");
+                    var f2 = new DataFlow("flow_1", "mod_b", "mod_a", "receipt");
+                    return Model.Of(a, b, f1, f2);
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "link/duplicate-id").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.ElementId.Should().Be("flow_1");
+    }
+
+    [Fact]
+    public void A_link_id_declared_in_two_model_files_is_an_error_too()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var f1 = new DataFlow("flow_1", "mod_a", "mod_b", "order");
+                    return Model.Of(a, b, f1);
+        """);
+        ModelFile("Payments.cs", "Payments", """
+                    var f2 = new DataFlow("flow_1", "mod_b", "mod_a", "receipt");
+                    return Model.Of(f2);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "link/duplicate-id");
+    }
+
+    [Fact]
+    public void A_view_id_declared_by_two_files_is_an_error_naming_both()
+    {
+        // A comment said this was reported elsewhere; nothing reported it. The app opens and saves
+        // whichever file it reads first, so the other one's edits go nowhere.
+        Model(TwoModules);
+        View("First", """new(Id: "view_x", Name: "First", BaseView: "all", ElementIds: new[] { "mod_a" })""");
+        View("Second", """new(Id: "view_x", Name: "Second", BaseView: "all", ElementIds: new[] { "mod_b" })""");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/duplicate-id").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.ElementId.Should().Be("view_x");
+        finding.Message.Should().Contain("First.cs").And.Contain("Second.cs");
+    }
+
+    [Fact]
+    public void Views_are_the_ones_the_workspace_holds_and_build_output_is_not_one()
+    {
+        // The app lists every view in a folder named Views, at any depth, and never build output.
+        // validate read everything under the root's Views/, a stale copy in obj/ included.
+        Model(TwoModules);
+        View("Overview", """new(Id: "view_overview", Name: "Overview", BaseView: "all", ElementIds: new[] { "mod_a" })""");
+        var stale = Path.Combine(_root, "Views", "obj", "Stale.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(stale)!);
+        File.WriteAllText(stale, """
+            using Stemma.Model;
+            namespace Probe;
+            public static class Stale { public static View Define() => new(Id: "view_stale", Name: "Stale", BaseView: "all", ElementIds: new[] { "mod_gone" }); }
+            """);
+        var nested = Path.Combine(_root, "Billing", "Views", "Invoices.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(nested)!);
+        File.WriteAllText(nested, """
+            using Stemma.Model;
+            namespace Probe;
+            public static class Invoices { public static View Define() => new(Id: "view_invoices", Name: "Invoices", BaseView: "all", ElementIds: new[] { "mod_missing" }); }
+            """);
+
+        var findings = Run();
+
+        findings.Should().NotContain(f => f.Message.Contains("view_stale"));
+        findings.Should().Contain(f => f.Rule == "view/dangling-member" && f.Message.Contains("view_invoices"));
+    }
+
+    [Fact]
+    public void Build_output_under_Architecture_is_not_part_of_the_model()
+    {
+        Model(TwoModules);
+        ModelFile(Path.Combine("obj", "Debug", "Copy.cs"), "Copy", """
+                    var b = new Module("mod_b", "B");
+                    return Model.Of(b);
+        """);
+
+        Run().Should().NotContain(f => f.Rule == "model/duplicate-id");
     }
 }

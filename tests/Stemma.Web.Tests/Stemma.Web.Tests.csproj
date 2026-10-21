@@ -8,6 +8,8 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.0" />
     <PackageReference Include="FluentAssertions" Version="7.0.0" />
+    <!-- A second window, as a test: what the hub tells each connected window. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Stemma.Web\Stemma.Web.csproj" />

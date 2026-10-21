@@ -7,14 +7,15 @@ public static class ValidateCommand
     public const string Usage = """
         stemma validate — check a workspace for the things the compiler cannot see.
 
-          stemma validate --workspace <path> [--json] [--strict]
+          stemma validate [<path>] [--workspace <path>] [--json] [--strict]
 
         Ids in flows, dependencies, aboutId, views and books are strings. Nothing verifies them at
         build time or at run time: a typo produces a missing node, a missing edge or a page that
         points at nothing, silently.
 
         Options
-          --workspace <path>   Workspace root. Defaults to the current directory.
+          <path>, --workspace <path>
+                               Workspace root, either way. Defaults to the current directory.
           --json               Machine-readable output. An agent can act on this; it cannot act on
                                a node it never sees.
           --strict             Treat warnings as failures too.
@@ -22,7 +23,8 @@ public static class ValidateCommand
         Exit codes
           0  nothing wrong (warnings and notes may still be printed)
           1  at least one error, or a warning under --strict
-          2  the command line was wrong
+          2  the command line was wrong, or the workspace does not exist
+          3  the check could not run (a file it could not read, say), so there is no verdict
         """;
 
     public static Task<int> RunAsync(string[] args)
@@ -33,7 +35,8 @@ public static class ValidateCommand
             return Task.FromResult(0);
         }
 
-        string workspace = Directory.GetCurrentDirectory();
+        string? flagged = null;
+        string? positional = null;
         var json = false;
         var strict = false;
 
@@ -43,24 +46,41 @@ public static class ValidateCommand
             {
                 case "--workspace":
                     if (i + 1 >= args.Length) return Fail("--workspace needs a path");
-                    workspace = args[++i];
+                    flagged = args[++i];
                     break;
                 case "--json": json = true; break;
                 case "--strict": strict = true; break;
                 default:
-                    if (args[i].StartsWith("--", StringComparison.Ordinal)) return Fail($"unknown option '{args[i]}'");
+                    if (args[i].StartsWith('-')) return Fail($"unknown option '{args[i]}'");
+                    // A bare path is the natural way to type this, as it is for `stemma open`. Ignored,
+                    // it had the current directory checked instead, and reported as no workspace.
+                    if (positional is not null) return Fail($"unexpected argument '{args[i]}' — validate checks one workspace");
+                    positional = args[i];
                     break;
             }
         }
 
-        workspace = Path.GetFullPath(workspace);
+        if (flagged is not null && positional is not null && !SameFolder(flagged, positional))
+            return Fail($"two workspaces given, '{positional}' and --workspace '{flagged}' — name one");
+        var workspace = Path.GetFullPath(flagged ?? positional ?? Directory.GetCurrentDirectory());
         if (!Directory.Exists(workspace))
         {
             Console.Error.WriteLine($"stemma validate: no such workspace '{workspace}'");
-            return Task.FromResult(1);
+            return Task.FromResult(2);
         }
 
-        var findings = WorkspaceCheck.Run(workspace);
+        IReadOnlyList<CheckFinding> findings;
+        try
+        {
+            findings = WorkspaceCheck.Run(workspace);
+        }
+        catch (Exception e)
+        {
+            // 1 is the verdict "this workspace has errors", which a build acts on. A check that could
+            // not run has no verdict, and must not be mistaken for one.
+            Console.Error.WriteLine($"stemma validate: could not check '{workspace}': {e.Message}");
+            return Task.FromResult(3);
+        }
         var errors = findings.Count(f => f.Severity == CheckSeverity.Error);
         var warnings = findings.Count(f => f.Severity == CheckSeverity.Warning);
 
@@ -93,6 +113,13 @@ public static class ValidateCommand
         }
 
         return Task.FromResult(errors > 0 || (strict && warnings > 0) ? 1 : 0);
+    }
+
+    private static bool SameFolder(string a, string b)
+    {
+        static string Normal(string p) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(p));
+        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return string.Equals(Normal(a), Normal(b), comparison);
     }
 
     private static Task<int> Fail(string message)

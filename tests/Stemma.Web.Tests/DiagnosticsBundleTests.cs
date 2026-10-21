@@ -133,6 +133,28 @@ public class DiagnosticsBundleTests : IDisposable
     }
 
     [Fact]
+    public void Takes_the_newest_records_when_today_has_fewer_than_the_cap()
+    {
+        // The log rolls daily, so early in a day the newest file is short. Its records were read
+        // first and yesterday's appended after them, so the cap kept yesterday's and dropped the
+        // failure the user had just met.
+        WriteLog("stemma-20260807.log", Enumerable.Range(0, 600).Select(i => Record($"yesterday {i}")).ToArray());
+        WriteLog("stemma-20260808.log", Enumerable.Range(0, 10).Select(i => Record($"today {i}")).ToArray());
+        File.SetLastWriteTimeUtc(Path.Combine(_dir, "stemma-20260807.log"), new DateTime(2026, 8, 7, 23, 0, 0, DateTimeKind.Utc));
+        File.SetLastWriteTimeUtc(Path.Combine(_dir, "stemma-20260808.log"), new DateTime(2026, 8, 8, 9, 0, 0, DateTimeKind.Utc));
+
+        var bundle = DiagnosticsBundle.Build(_dir, new DiagnosticsBundle.Options(IncludeModelContent: true, MaxRecords: 500), NoEnvironment);
+
+        using var doc = JsonDocument.Parse(bundle);
+        var messages = doc.RootElement.GetProperty("records").EnumerateArray()
+            .Select(r => JsonDocument.Parse(r.GetString()!).RootElement.GetProperty("@mt").GetString())
+            .ToList();
+        messages.Should().HaveCount(500);
+        messages[^10..].Should().Equal(Enumerable.Range(0, 10).Select(i => $"today {i}"), "the newest records are the reason the bundle exists");
+        messages[0].Should().Be("yesterday 110", "the rest is the most recent of the day before, oldest first");
+    }
+
+    [Fact]
     public void Says_plainly_whether_it_was_redacted()
     {
         var open = DiagnosticsBundle.Build(_dir, new DiagnosticsBundle.Options(IncludeModelContent: true), NoEnvironment);

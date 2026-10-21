@@ -26,7 +26,9 @@
 - [x] AC1 — Each render writes a sibling `<name>.manifest.json`: view id, element ids drawn, profile,
       palette, scale, per-file dimensions and node counts.
 - [x] AC2 — The manifest carries a fingerprint of the inputs — model, view membership, layout,
-      profile — stable across machines.
+      profile — stable across machines. The model is every model file, merged; a view named by its
+      name is resolved to its id first, so its layout is found and the fingerprint is the same as
+      by id.
 - [x] AC3 — `stemma render --check` re-computes the fingerprint and exits non-zero when it differs,
       without writing anything.
 - [x] AC4 — `--no-manifest` opts out.
