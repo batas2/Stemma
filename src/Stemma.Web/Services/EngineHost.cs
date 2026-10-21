@@ -200,6 +200,25 @@ public sealed class EngineHost : IAsyncDisposable
         await slot.Engine.DisposeAsync();
     }
 
+    /// <summary>
+    /// Tell every window but <paramref name="except"/> — the hub connection of the window that made a
+    /// change — that something changed. Everyone, when the change does not say where it came from.
+    /// </summary>
+    public async Task AnnounceAsync(string message, string? except)
+    {
+        if (_hub is null) return;
+        try
+        {
+            var clients = string.IsNullOrWhiteSpace(except) ? _hub.Clients.All : _hub.Clients.AllExcept(except);
+            await clients.SendAsync(message);
+        }
+        catch (Exception e)
+        {
+            // The change is on disk; a window that was not told shows the old one until it reloads.
+            WebLog.BroadcastFailed(_log, message, e);
+        }
+    }
+
     private bool IsCurrent(StemmaEngine engine) => ReferenceEquals(Volatile.Read(ref _current)?.Engine, engine);
 
     /// <summary>

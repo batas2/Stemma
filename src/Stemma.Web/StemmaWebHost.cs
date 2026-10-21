@@ -36,6 +36,12 @@ public static class StemmaWebHost
     /// </summary>
     public const string DynamicLoopbackUrl = "http://127.0.0.1:0";
 
+    /// <summary>
+    /// The header a window sends its hub connection id in with a layout or comments change, so the
+    /// change is announced to every other window and not back to the one that made it.
+    /// </summary>
+    public const string ConnectionHeader = "X-Stemma-Connection";
+
     /// <summary>Config key (and environment variable) naming a file to write the bound URL into.</summary>
     private const string PortFileKey = "port-file";
     private const string PortFileEnvironmentVariable = "STEMMA_PORT_FILE";
@@ -579,7 +585,7 @@ public static class StemmaWebHost
 
         // Changes, applied to the file as it is on disk — never the canvas's copy of the whole file,
         // which wrote over whatever anyone else had changed since it was read (B-014, ADR-0021).
-        workspaceApi.MapPatch("/layout", async (LayoutPatch patch, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
+        workspaceApi.MapPatch("/layout", async (LayoutPatch patch, EngineHost host, HttpContext context, ILoggerFactory logs, CancellationToken ct) =>
         {
             using var lease = host.Use();
             if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
@@ -598,9 +604,12 @@ public static class StemmaWebHost
             try
             {
                 var result = await engine.PatchSidecarAsync($"layout_{Guid.NewGuid():N}", changes, ct);
-                return result is OperationFailed f
-                    ? Results.Conflict(new { reason = f.Reason, message = f.Message })
-                    : Results.NoContent();
+                if (result is OperationFailed f) return Results.Conflict(new { reason = f.Reason, message = f.Message });
+                // The engine tells its own write from anyone else's and announces only theirs, so the
+                // other windows hear of this one here — and not the window that made it, which already
+                // has it and names itself in the header.
+                await host.AnnounceAsync("SidecarChanged", except: context.Request.Headers[ConnectionHeader].ToString());
+                return Results.NoContent();
             }
             catch (IOException e)
             {
@@ -632,7 +641,7 @@ public static class StemmaWebHost
         // Changes, each naming its comment by id, applied to the file as it is on disk — never the
         // panel's copy of the whole file, which wrote over every comment that arrived after it was
         // read. The answer is the file as it now is, so the panel shows the others' comments too.
-        workspaceApi.MapPatch("/comments", async (CommentChanges request, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
+        workspaceApi.MapPatch("/comments", async (CommentChanges request, EngineHost host, HttpContext context, ILoggerFactory logs, CancellationToken ct) =>
         {
             using var lease = host.Use();
             if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
@@ -658,6 +667,8 @@ public static class StemmaWebHost
             {
                 var result = await engine.PatchCommentsAsync($"comments_{Guid.NewGuid():N}", changes, ct);
                 if (result is OperationFailed f) return Results.Conflict(new { reason = f.Reason, message = f.Message });
+                // As for the layout: every other window hears of it here, the one that made it does not.
+                await host.AnnounceAsync("CommentsChanged", except: context.Request.Headers[ConnectionHeader].ToString());
                 var path = CommentsSidecar.PathFor(engine.RootPath);
                 return Results.Text(File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : CommentsSidecar.Empty, "application/json");
             }
