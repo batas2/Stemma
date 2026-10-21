@@ -3,50 +3,77 @@ using System.Text.Json;
 namespace Stemma.Engine.Workspace;
 
 /// <summary>
-/// Tracks the most recently opened workspaces in a small JSON file under the user's
-/// home directory (`~/.stemma/recent.json`). Used by the topbar dropdown.
+/// Tracks the most recently opened workspaces in a small JSON file, by default under the user's
+/// home directory (`~/.stemma/recent.json`). Used by the topbar dropdown and the start screen.
+///
+/// An entry leaves the list when it is pushed off the end or when its owner removes it — never because
+/// its folder is missing when the list is read. A folder on a drive that is not plugged in, or a
+/// checkout moved for a minute, is still theirs; it is shown as missing, not forgotten.
 /// </summary>
-public static class RecentWorkspaces
+public sealed class RecentWorkspaces(string filePath)
 {
     private const int MaxEntries = 10;
 
     public sealed record Entry(string RootPath, string DisplayName, DateTime LastOpened);
 
-    private static string FilePath
-    {
-        get
-        {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            return Path.Combine(home, ".stemma", "recent.json");
-        }
-    }
+    /// <summary>The list a person's own Stemma keeps, beside the logs in <c>~/.stemma</c>.</summary>
+    public static RecentWorkspaces ForUser() =>
+        new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".stemma", "recent.json"));
+
+    public string FilePath { get; } = filePath;
 
     private static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
 
-    public static IReadOnlyList<Entry> Load()
+    public IReadOnlyList<Entry> Load()
     {
         try
         {
             if (!File.Exists(FilePath)) return [];
-            var text = File.ReadAllText(FilePath);
-            var list = JsonSerializer.Deserialize<List<Entry>>(text, Opts);
-            return list?.Where(e => Directory.Exists(e.RootPath)).Take(MaxEntries).ToList() ?? [];
+            var list = JsonSerializer.Deserialize<List<Entry>>(File.ReadAllText(FilePath), Opts);
+            return list?.Where(e => !string.IsNullOrWhiteSpace(e?.RootPath)).Take(MaxEntries).ToList() ?? [];
         }
-        catch { return []; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // A list that cannot be read is an empty start screen, not a failure to start.
+            return [];
+        }
     }
 
-    public static void Touch(string rootPath, string? displayName = null)
+    public Task TouchAsync(string rootPath, string? displayName = null)
+    {
+        var name = displayName ?? Path.GetFileName(rootPath.TrimEnd('/', '\\'));
+        var rest = Load().Where(e => !SameFolder(e.RootPath, rootPath));
+        return SaveAsync([new Entry(rootPath, name, DateTime.UtcNow), .. rest]);
+    }
+
+    /// <summary>Take <paramref name="rootPath"/> off the list, which only its owner does.</summary>
+    public Task RemoveAsync(string rootPath) => SaveAsync(Load().Where(e => !SameFolder(e.RootPath, rootPath)));
+
+    private async Task SaveAsync(IEnumerable<Entry> entries)
     {
         try
         {
             var dir = Path.GetDirectoryName(FilePath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            var name = displayName ?? Path.GetFileName(rootPath.TrimEnd('/', '\\'));
-            var current = Load().Where(e => !string.Equals(e.RootPath, rootPath, StringComparison.OrdinalIgnoreCase)).ToList();
-            current.Insert(0, new Entry(rootPath, name, DateTime.UtcNow));
-            var trimmed = current.Take(MaxEntries).ToList();
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(trimmed, Opts));
+            // Replaced whole, never emptied and written again in place: a reader in between — the
+            // other window's start screen — would read half a list, and a crash would leave none.
+            await SidecarFile.WriteAtomicallyAsync(FilePath, JsonSerializer.SerializeToUtf8Bytes(entries.Take(MaxEntries).ToList(), Opts));
         }
-        catch { /* best-effort */ }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort: a workspace opens whether or not it could be remembered.
+        }
+    }
+
+    /// <summary>
+    /// The same folder however it is spelled, compared as the file system compares names: two folders
+    /// whose names differ only in case are two folders on Linux, and one on Windows and macOS.
+    /// </summary>
+    private static bool SameFolder(string a, string b)
+    {
+        static string Normal(string p) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(p));
+        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        try { return string.Equals(Normal(a), Normal(b), comparison); }
+        catch (ArgumentException) { return string.Equals(a, b, comparison); }
     }
 }

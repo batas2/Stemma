@@ -50,17 +50,45 @@ export function eventMatches(s: Shortcut, e: Pick<KeyboardEvent, 'key' | 'code' 
   return true;
 }
 
+/** Keys a focused control uses itself: Tab moves focus, arrows move within it, Enter and Space press it. */
+const CONTROL_KEYS = new Set(['tab', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'enter', ' ', 'home', 'end']);
+const CONTROLS = 'button, a[href], select, summary, [role="button"], [role="tab"], [role="tablist"], [role="menu"], [role="menuitem"], [role="option"], [role="listbox"], [role="slider"], [role="switch"], [role="checkbox"], [role="radio"]';
+
+/**
+ * Whether a key belongs to what has focus rather than to the app. A field takes every key (⌘Z undoes
+ * typing, ⌘C copies text); an open dialog takes every key, so nothing changes behind it; a button, a
+ * tab or a menu takes the keys it is operated with. Before this, Tab changed the selected box wherever
+ * focus was — focus never moved, and the dialog's Cancel could not be reached — and the arrows nudged a
+ * box while a list's value was being picked.
+ */
+export function keyBelongsToFocus(e: Pick<KeyboardEvent, 'key' | 'target'>): boolean {
+  const target = e.target as HTMLElement | null;
+  if (!target || typeof target.closest !== 'function') return false;
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return true;
+  if (typeof document !== 'undefined' && document.querySelector('[aria-modal="true"]')) return true;
+  if (target.closest('[role="dialog"], [role="alertdialog"]')) return true;
+  // The canvas is where the app's own keys are meant: a focused box still nudges and Tab still walks.
+  if (target.closest('.react-flow')) return false;
+  return CONTROL_KEYS.has(e.key.toLowerCase()) && !!target.closest(CONTROLS);
+}
+
+/**
+ * Whether focus is on the canvas (a box, an arrow, the canvas itself, or nothing in particular). Tab walks
+ * the boxes only then; anywhere else it moves focus, as it does on every other page.
+ */
+export function focusIsOnCanvas(): boolean {
+  if (typeof document === 'undefined') return false;
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || active === document.body) return false;
+  return active.id === 'stemma-canvas' || !!active.closest?.('.react-flow');
+}
+
 /**
  * Mounts a global key listener for the given shortcuts. Returns a teardown.
  */
 export function bindShortcuts(shortcuts: Shortcut[]): () => void {
   function onKey(e: KeyboardEvent) {
-    // Skip when typing in an input/textarea/contenteditable.
-    const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-      // A field handles its own keys: ⌘Z undoes typing, ⌘C copies text.
-      return;
-    }
+    if (keyBelongsToFocus(e)) return;
     for (const s of shortcuts) {
       if (eventMatches(s, e) && (!s.when || s.when())) {
         e.preventDefault();

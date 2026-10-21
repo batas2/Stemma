@@ -3,21 +3,15 @@
 // Three add entry points (sidebar-palette drop, canvas right-click, command palette) used to
 // (a) find the new element by a fragile name+kind match and (b) leave it wherever the current
 // view's filter put it — which, for a kind the view doesn't render, was nowhere. This module
-// centralizes the reveal: identify the new element by id-diff, switch to a lens that renders
-// its kind, position it, and select + center it.
+// centralizes the reveal: identify the new element by the id the engine says it made, switch to a
+// lens that renders its kind, position it, and select + center it.
 
 import { useApp } from './store';
 import { lensForKind, viewRendersKind } from './lenses';
 import { BUILTIN_NAMES, placeFor, placeId, samePlace, type Place } from './navigation';
 import { loadLayout, saveLayout } from './layout';
-import type { ArchElementKind, ViewKind } from './types';
-
-/** The first element whose id is not in `prevIds` — the one a just-applied AddElement created.
- *  Pure + deterministic, so it unit-tests without timers. */
-export function firstNewId(prevIds: Set<string>, elements: { id: string }[]): string | null {
-  for (const e of elements) if (!prevIds.has(e.id)) return e.id;
-  return null;
-}
+import { addedId } from './signalr';
+import type { ArchElementKind, OperationResult, ViewKind } from './types';
 
 export interface RevealResult {
   id: string; name: string; kind: ArchElementKind; view: ViewKind; switched: boolean;
@@ -26,19 +20,26 @@ export interface RevealResult {
 }
 
 /**
- * Poll for the element added since `prevIds`, then guarantee it's visible: if the current view
- * can't render its kind, switch to the lens that can (respecting an active custom view), drop a
- * layout position (if a drop point was given), and select + center it. Returns null if no new
- * element appeared (op failed / not refreshed) within the budget.
+ * Wait for the element an AddElement made to arrive in the model, then guarantee it's visible: if
+ * the current view can't render its kind, switch to the lens that can (respecting an active custom
+ * view), drop a layout position (if a drop point was given), and select + center it. Returns null
+ * if the operation added nothing, or the element did not arrive (not refreshed) within the budget.
+ *
+ * `added` is the operation's result, which names the id the engine made (`addedId`). Found instead
+ * as the first id the model had not had before, it could be one another window added at the same
+ * moment — placed at this window's drop, selected, and put into the open view.
  */
 export async function revealNewElement(
-  prevIds: Set<string>,
+  added: OperationResult,
   opts: { dropPos?: { x: number; y: number } } = {},
 ): Promise<RevealResult | null> {
+  const wanted = addedId(added);
+  if (!wanted) return null;
+  const arrived = (elements: { id: string }[]) => (elements.some((e) => e.id === wanted) ? wanted : null);
   let newId: string | null = null;
   for (let i = 0; i < 15 && !newId; i++) {
     await new Promise((r) => setTimeout(r, 80));
-    newId = firstNewId(prevIds, useApp.getState().arch?.elements ?? []);
+    newId = arrived(useApp.getState().arch?.elements ?? []);
   }
   if (!newId) return null;
 

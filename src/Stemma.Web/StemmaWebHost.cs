@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.SignalR;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Diagnostics;
 using Stemma.Engine.Operations;
@@ -35,9 +36,22 @@ public static class StemmaWebHost
     /// </summary>
     public const string DynamicLoopbackUrl = "http://127.0.0.1:0";
 
+    /// <summary>
+    /// The header a window sends its hub connection id in with a layout or comments change, so the
+    /// change is announced to every other window and not back to the one that made it.
+    /// </summary>
+    public const string ConnectionHeader = "X-Stemma-Connection";
+
     /// <summary>Config key (and environment variable) naming a file to write the bound URL into.</summary>
     private const string PortFileKey = "port-file";
     private const string PortFileEnvironmentVariable = "STEMMA_PORT_FILE";
+
+    /// <summary>
+    /// Config key (and environment variable) naming where the recent list is kept: <c>off</c> leaves it
+    /// alone; a path keeps it there instead of in <c>~/.stemma/recent.json</c>.
+    /// </summary>
+    private const string RecentsKey = "recents";
+    private const string RecentsEnvironmentVariable = "STEMMA_RECENTS";
 
     /// <summary>
     /// Build the application. Nothing is bound yet: call <see cref="RunAsync"/>, or start it
@@ -59,7 +73,11 @@ public static class StemmaWebHost
         builder.Services.AddSingleton(levelSwitch);
         builder.Services.AddSingleton(logOptions);
 
-        builder.Services.AddSingleton<EngineHost>();
+        // The recent list is the person's: what they opened. A host started for a headless render opens
+        // a workspace nobody chose to open, so it is started with `--recents off` and adds nothing.
+        var recents = Recents(builder.Configuration);
+        builder.Services.AddSingleton(services => new EngineHost(
+            services.GetService<IHubContext<WorkspaceHub>>(), services.GetService<ILoggerFactory>(), recents));
         builder.Services.AddSignalR().AddJsonProtocol(o =>
         {
             o.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -245,6 +263,15 @@ public static class StemmaWebHost
         return string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
     }
 
+    /// <summary>The person's own list unless told otherwise: <c>off</c> for none, or the file to keep it in.</summary>
+    private static RecentWorkspaces? Recents(IConfiguration config)
+    {
+        var value = config[RecentsKey];
+        if (string.IsNullOrWhiteSpace(value)) value = Environment.GetEnvironmentVariable(RecentsEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(value)) return RecentWorkspaces.ForUser();
+        return value.Trim().Equals("off", StringComparison.OrdinalIgnoreCase) ? null : new RecentWorkspaces(Path.GetFullPath(value));
+    }
+
     private static void WritePortFile(string path, string url)
     {
         try
@@ -334,6 +361,10 @@ public static class StemmaWebHost
                     snapshot.RootPath,
                     snapshot.Projects,
                     gitInitialised = created.GitInitialised,
+                    // False with a repositoryRoot: the folder was already in that repository, and the
+                    // new files are left there uncommitted for its owner. The window should say so.
+                    committed = created.Committed,
+                    repositoryRoot = created.RepositoryRoot,
                     gitError = created.GitError,
                 });
             }
@@ -385,8 +416,9 @@ public static class StemmaWebHost
         // model, because a reconstruction that happened to be right would still be a claim.
         workspaceApi.MapGet("/source/{id}", async (string id, EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var declaration = await engine.ReadDeclarationAsync(id, ct);
             return declaration is null ? Results.NotFound() : Results.Ok(declaration);
         });
@@ -410,15 +442,17 @@ public static class StemmaWebHost
         // escape hatch. It now honours the active view and the committed layout.
         workspaceApi.MapGet("/export/drawio", async (string? view, string? palette, bool? labelKinds, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
         {
-            var arch = await host.ReadArchAsync(ct);
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
+            var arch = await engine.ReadArchModelAsync(ct);
             if (arch is null) return Results.NotFound();
-            var engine = host.Engine;
 
             IReadOnlyCollection<string>? elementIds = null;
             var layoutKey = "moduleMap";
-            if (!string.IsNullOrWhiteSpace(view) && engine is not null)
+            if (!string.IsNullOrWhiteSpace(view))
             {
-                var views = await ReadViewsAsync(engine.RootPath, ct);
+                var views = await ReadViewsAsync(engine, ct);
                 var match = views.FirstOrDefault(v => v.Id == view || v.Name == view);
                 if (match is not null)
                 {
@@ -431,7 +465,7 @@ public static class StemmaWebHost
                 }
             }
 
-            var positions = engine is null ? null : ReadPositions(engine.RootPath, layoutKey);
+            var positions = ReadPositions(engine.RootPath, layoutKey);
 
             var xml = DrawioExporter.Export(arch, new DrawioExporter.Options
             {
@@ -473,26 +507,18 @@ public static class StemmaWebHost
 
         workspaceApi.MapGet("/views", async (EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
-            var viewsDir = Path.Combine(engine.RootPath, "Views");
-            if (!Directory.Exists(viewsDir)) return Results.Ok(Array.Empty<ArchView>());
-            var docs = new List<(string, Microsoft.CodeAnalysis.SyntaxNode)>();
-            foreach (var path in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
-            {
-                var content = await File.ReadAllTextAsync(path, ct);
-                var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content);
-                docs.Add((path, tree.GetRoot()));
-            }
-            return Results.Ok(ViewsAdapter.ReadAllFrom(docs));
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            return Results.Ok(await ReadViewsAsync(lease.Engine, ct));
         });
 
         // Both go through the engine, so a view file is edited in place, compile-gated, and found by
         // the id it declares — never rewritten from a template or picked out by a text search (B-010).
         workspaceApi.MapPut("/views", async (ArchView view, EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
             var result = await engine.SaveViewAsync($"view_{Guid.NewGuid():N}", view, ct);
             return result is OperationFailed f
                 ? Results.Conflict(new { reason = f.Reason, message = f.Message })
@@ -501,8 +527,9 @@ public static class StemmaWebHost
 
         workspaceApi.MapDelete("/views/{viewId}", async (string viewId, EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
             var result = await engine.RemoveViewAsync($"view_{Guid.NewGuid():N}", viewId, ct);
             return result switch
             {
@@ -512,12 +539,29 @@ public static class StemmaWebHost
             };
         });
 
-        workspaceApi.MapGet("/recents", () => Results.Ok(RecentWorkspaces.Load()));
+        // A folder that is missing now stays on the list, marked, so the start screen can say so: it
+        // may be on a drive that is not plugged in. Only its owner takes it off.
+        workspaceApi.MapGet("/recents", (EngineHost host) =>
+            Results.Ok((host.Recents?.Load() ?? []).Select(e => new
+            {
+                e.RootPath,
+                e.DisplayName,
+                e.LastOpened,
+                missing = !Directory.Exists(e.RootPath),
+            })));
+
+        workspaceApi.MapDelete("/recents", async (string? rootPath, EngineHost host) =>
+        {
+            if (string.IsNullOrWhiteSpace(rootPath)) return Results.BadRequest(new { error = "rootPath is required" });
+            if (host.Recents is not null) await host.Recents.RemoveAsync(rootPath);
+            return Results.NoContent();
+        });
 
         workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var violations = await engine.RunValidationAsync(ct);
             return Results.Ok(violations);
         });
@@ -527,8 +571,9 @@ public static class StemmaWebHost
         // empty, since the canvas would then write that emptiness back (ADR-0021).
         workspaceApi.MapGet("/layout", (EngineHost host) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var path = LayoutSidecar.PathFor(engine.RootPath);
             if (!File.Exists(path)) return Results.Text("{\n  \"version\": 1,\n  \"views\": {}\n}\n", "application/json");
             var text = File.ReadAllText(path);
@@ -540,24 +585,31 @@ public static class StemmaWebHost
 
         // Changes, applied to the file as it is on disk — never the canvas's copy of the whole file,
         // which wrote over whatever anyone else had changed since it was read (B-014, ADR-0021).
-        workspaceApi.MapPatch("/layout", async (LayoutPatch patch, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
+        workspaceApi.MapPatch("/layout", async (LayoutPatch patch, EngineHost host, HttpContext context, ILoggerFactory logs, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
-            if (patch.Changes.Any(c => c.Path.Length == 0 || (!c.Remove && c.Value is null)))
-                return Results.BadRequest(new { error = "every change needs a path, and a value or remove: true" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
+            // The body is the client's, so nothing in it is assumed to be there: `{}`, a null change or
+            // one without a path each ended in a NullReferenceException and a bare 500.
+            if (patch.Changes is null || patch.Changes.Any(c => c?.Path is not { Length: > 0 } path || path.Any(key => key is null) || (!c.Remove && c.Value is null)))
+                return Results.BadRequest(new { error = "every change needs a path of keys, and a value or remove: true" });
             // A save still on its way when the window opened another workspace, or one from a window
             // still showing the last one, names the workspace it was made in. Written here, it would put
             // one workspace's layout into another's file.
             if (patch.RootPath is not null && !SameFolder(patch.RootPath, engine.RootPath))
                 return Results.Conflict(new { reason = "WorkspaceChanged", message = "This layout change was made in another workspace, so it was not saved into this one." });
-            var changes = patch.Changes.Select(c => new SidecarChange(c.Path, c.Remove ? null : c.Value)).ToList();
+            var changes = patch.Changes.OfType<LayoutPatch.Change>()
+                .Select(c => new SidecarChange(c.Path!, c.Remove ? null : c.Value)).ToList();
             try
             {
                 var result = await engine.PatchSidecarAsync($"layout_{Guid.NewGuid():N}", changes, ct);
-                return result is OperationFailed f
-                    ? Results.Conflict(new { reason = f.Reason, message = f.Message })
-                    : Results.NoContent();
+                if (result is OperationFailed f) return Results.Conflict(new { reason = f.Reason, message = f.Message });
+                // The engine tells its own write from anyone else's and announces only theirs, so the
+                // other windows hear of this one here — and not the window that made it, which already
+                // has it and names itself in the header.
+                await host.AnnounceAsync("SidecarChanged", except: context.Request.Headers[ConnectionHeader].ToString());
+                return Results.NoContent();
             }
             catch (IOException e)
             {
@@ -575,8 +627,9 @@ public static class StemmaWebHost
 
         workspaceApi.MapGet("/comments", (EngineHost host) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.NotFound();
+            using var lease = host.Use();
+            if (lease is null) return Results.NotFound();
+            var engine = lease.Engine;
             var path = CommentsSidecar.PathFor(engine.RootPath);
             if (!File.Exists(path)) return Results.Text(CommentsSidecar.Empty, "application/json");
             var text = File.ReadAllText(path);
@@ -588,14 +641,17 @@ public static class StemmaWebHost
         // Changes, each naming its comment by id, applied to the file as it is on disk — never the
         // panel's copy of the whole file, which wrote over every comment that arrived after it was
         // read. The answer is the file as it now is, so the panel shows the others' comments too.
-        workspaceApi.MapPatch("/comments", async (CommentChanges request, EngineHost host, ILoggerFactory logs, CancellationToken ct) =>
+        workspaceApi.MapPatch("/comments", async (CommentChanges request, EngineHost host, HttpContext context, ILoggerFactory logs, CancellationToken ct) =>
         {
-            var engine = host.Engine;
-            if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
+            using var lease = host.Use();
+            if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
+            var engine = lease.Engine;
             var changes = new List<CommentChange>();
+            if (request.Changes is null)
+                return Results.BadRequest(new { error = "changes is required: a list of add, reply, resolve or remove" });
             foreach (var c in request.Changes)
             {
-                CommentChange? change = c.Op switch
+                CommentChange? change = c?.Op switch
                 {
                     "add" when c.Comment is { } comment => new CommentChange.Add(comment),
                     "reply" when c.Id is { Length: > 0 } id && c.Reply is { } reply => new CommentChange.AddReply(id, reply),
@@ -611,6 +667,8 @@ public static class StemmaWebHost
             {
                 var result = await engine.PatchCommentsAsync($"comments_{Guid.NewGuid():N}", changes, ct);
                 if (result is OperationFailed f) return Results.Conflict(new { reason = f.Reason, message = f.Message });
+                // As for the layout: every other window hears of it here, the one that made it does not.
+                await host.AnnounceAsync("CommentsChanged", except: context.Request.Headers[ConnectionHeader].ToString());
                 var path = CommentsSidecar.PathFor(engine.RootPath);
                 return Results.Text(File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : CommentsSidecar.Empty, "application/json");
             }
@@ -686,8 +744,8 @@ public static class StemmaWebHost
                 ["os"] = Environment.OSVersion.ToString(),
                 ["dotnet"] = Environment.Version.ToString(),
                 ["processors"] = Environment.ProcessorCount.ToString(),
-                ["workspaceId"] = WorkspaceIdentity.For(host.Engine?.RootPath),
-                ["workspaceOpen"] = (host.Engine is not null).ToString(),
+                ["workspaceId"] = WorkspaceIdentity.For(host.Snapshot()?.RootPath),
+                ["workspaceOpen"] = (host.Snapshot() is not null).ToString(),
             };
             var json = DiagnosticsBundle.Build(options.Directory,
                 new DiagnosticsBundle.Options(includeModelContent ?? false), environment);
@@ -697,15 +755,20 @@ public static class StemmaWebHost
 
     // ---------------- Helpers ----------------
 
-    private static async Task<IReadOnlyList<ArchView>> ReadViewsAsync(string root, CancellationToken ct)
+    /// <summary>
+    /// The views the engine holds: the documents it saves and deletes a view in, so the list cannot
+    /// name a view the engine cannot find, or miss one it can. That is every file in a folder named
+    /// Views, at any depth — the list once read only the top of the root's Views/ — and never build
+    /// output, which the workspace does not hold.
+    /// </summary>
+    private static async Task<IReadOnlyList<ArchView>> ReadViewsAsync(StemmaEngine engine, CancellationToken ct)
     {
-        var viewsDir = Path.Combine(root, "Views");
-        if (!Directory.Exists(viewsDir)) return [];
         var docs = new List<(string, Microsoft.CodeAnalysis.SyntaxNode)>();
-        foreach (var path in Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.TopDirectoryOnly))
+        foreach (var doc in engine.Solution.Projects.SelectMany(p => p.Documents).OrderBy(d => d.FilePath, StringComparer.Ordinal))
         {
-            var content = await File.ReadAllTextAsync(path, ct);
-            docs.Add((path, Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(content).GetRoot()));
+            // The same test ViewsAdapter makes, made first so no other file is parsed for nothing.
+            if (doc.FilePath is not { } path || !path.Replace('\\', '/').Contains("/Views/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (await doc.GetSyntaxRootAsync(ct) is { } root) docs.Add((path, root));
         }
         return ViewsAdapter.ReadAllFrom(docs);
     }
@@ -725,16 +788,16 @@ public static class StemmaWebHost
 /// removes it. <c>RootPath</c> names the workspace the changes were made in; when it is not the open
 /// one, nothing is written.
 /// </summary>
-internal sealed record LayoutPatch(List<LayoutPatch.Change> Changes, string? RootPath = null)
+internal sealed record LayoutPatch(List<LayoutPatch.Change?>? Changes, string? RootPath = null)
 {
-    internal sealed record Change(string[] Path, JsonElement? Value, bool Remove);
+    internal sealed record Change(string[]? Path, JsonElement? Value, bool Remove);
 }
 
 /// <summary>
 /// The body of <c>PATCH /api/workspace/comments</c>: each change adds a comment, replies to one,
 /// resolves one or removes one, naming it by id.
 /// </summary>
-internal sealed record CommentChanges(List<CommentChanges.Change> Changes)
+internal sealed record CommentChanges(List<CommentChanges.Change?>? Changes)
 {
     internal sealed record Change(string? Op, string? Id, JsonElement? Comment, JsonElement? Reply, bool? Resolved);
 }

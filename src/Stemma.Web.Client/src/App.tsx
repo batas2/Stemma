@@ -12,9 +12,11 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, applyOperation } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, onReconnected, applyOperation, isOwnOperation } from './lib/signalr';
+import { modelRefresh, type RefreshScope } from './lib/modelRefresh';
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
+import { confirmAndRemoveElements } from './components/removeElements';
 import { removeShape, saveShapes } from './lib/shapes';
 import { archModel, listViolations, snapshot } from './lib/api';
 import { primeLayoutSidecar, rereadLayoutSidecar } from './lib/layout';
@@ -30,13 +32,14 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { PromptDialog } from './components/PromptDialog';
 import { ToastQueue } from './components/ToastQueue';
 import { TopProgressBar } from './components/LoadingOverlay';
-import { bindShortcuts, hasTextSelection } from './lib/shortcuts';
+import { bindShortcuts, focusIsOnCanvas, hasTextSelection } from './lib/shortcuts';
 import { filterByView } from './lib/viewFilter';
 import { hashFor, readHash, placeOf } from './lib/navigation';
 import { revealElement } from './lib/canvasReveal';
 import { refreshHeadModel, stopCompare } from './lib/compare';
 import { CompareBar } from './components/CompareBar';
 import { WhatsNew } from './components/WhatsNew';
+import { SidecarBanner } from './components/SidecarBanner';
 
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
@@ -47,9 +50,11 @@ function ArchOrShapeInspector() {
   const workspace = useApp((s) => s.workspace);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
+  const view = useApp((s) => s.view);
   if (selectedShapeId && workspace) {
     const activeCustomView = customViews.find((v) => v.id === activeId);
-    const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : 'moduleMap';
+    // The view on screen, as the canvas keys it: a shape on Dependencies is not on the Module Map.
+    const layoutKey = activeCustomView ? `custom:${activeCustomView.id}` : view;
     return <ShapeInspector viewKey={layoutKey} workspaceRoot={workspace.rootPath} />;
   }
   return <ArchInspector />;
@@ -68,26 +73,11 @@ export default function App() {
   useEffect(() => {
     ensureConnection().catch(reportFailure('Signalr', ClientEvent.ConnectionLost, 'Opening the live connection'));
     snapshot().then((s) => { if (s) setWs(s); }).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Reading the workspace snapshot'));
-    // A transient archModel() failure must NOT clobber a previously good arch — use a sentinel
-    // so refresh() can preserve the prior in-memory model on a 404 / network blip.
-    const PRESERVE = Symbol('preserve');
-    async function refresh() {
-      const [s, a, v] = await Promise.all([
-        snapshot(),
-        archModel().catch(() => PRESERVE as unknown as null),
-        listViolations().catch(() => []),
-      ]);
-      if (s) {
-        setWs(s);
-        primeLayoutSidecar(s.rootPath).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
-        // A view file added or deleted outside Stemma — a pull, an IDE — shows now, not on reopen.
-        void useApp.getState().syncViews();
-      }
-      if ((a as unknown) !== PRESERVE) setArch(a);
-      setViolations(v);
-    }
+    // One read at a time, newest drawn (lib/modelRefresh). An operation this window sent changed the
+    // model and nothing else; one from another window, or an undo, may come with more.
+    const refresh = (scope: RefreshScope = 'workspace') => modelRefresh.refresh(scope);
     configureHistory();
-    const offOp = onOperationApplied(refresh);
+    const offOp = onOperationApplied((r) => { void refresh(isOwnOperation(r.opId) ? 'model' : 'workspace'); });
     // An edit from outside makes the engine forget what could be redone; so does the journal.
     const offExt = onExternalChange(() => { history.dropRedo(); void refresh(); });
     // A pull or a hand edit changed the sidecar: read it again, with this session's unsent edits laid over it.
@@ -97,8 +87,15 @@ export default function App() {
     });
     // The comments changed outside: whichever panel is open reads them again.
     const offComments = onCommentsChanged(() => window.dispatchEvent(new Event('stemma:comments-changed')));
-    return () => { offOp(); offExt(); offSidecar(); offComments(); };
-  }, [setWs, setArch, setViolations]);
+    // Back after a drop: nothing announced meanwhile is announced again, so read all of it afresh.
+    const offReconnect = onReconnected(() => {
+      void refresh();
+      const root = useApp.getState().workspace?.rootPath;
+      if (root) rereadLayoutSidecar(root).catch(reportFailure('Sidecar', ClientEvent.RequestFailed, 'Reading the layout sidecar after reconnecting'));
+      window.dispatchEvent(new Event('stemma:comments-changed'));
+    });
+    return () => { offOp(); offExt(); offSidecar(); offComments(); offReconnect(); };
+  }, [setWs]);
 
   // Load the active workspace's model + presentation whenever the workspace changes — on the
   // initial snapshot, but also when one is opened from Recents / by path / via Init. Previously
@@ -120,10 +117,12 @@ export default function App() {
     return () => window.removeEventListener('focus', onFocus);
   }, [wsRoot]);
   useEffect(() => {
+    // This workspace's turn: a refresh still on its way for the last one is not drawn over it.
+    const current = modelRefresh.claim();
     if (!wsRoot) { setArch(null); return; }
     primeLayoutSidecar(wsRoot).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
-    archModel().then((a) => setArch(a)).catch(() => setArch(null));
-    listViolations().then((v) => setViolations(v)).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading violations'));
+    archModel().then((a) => { if (current()) setArch(a); }).catch(() => { if (current()) setArch(null); });
+    listViolations().then((v) => { if (current()) setViolations(v); }).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading violations'));
   }, [wsRoot, setArch, setViolations]);
 
   const setPaletteOpen = useApp((s) => s.setPaletteOpen);
@@ -163,8 +162,8 @@ export default function App() {
       { key: 'v', code: 'KeyV', primary: true, alt: true, description: 'Paste style', handler: () => fire('stemma:paste-style') },
       { key: '/', description: 'Focus search', handler: () => focusSidebarSearch() },
       { key: '?', shift: true, description: 'Show keyboard shortcuts', handler: () => setHelpOpen((v) => !v) },
-      { key: 'tab', description: 'Cycle elements', handler: () => cycleElement(1) },
-      { key: 'tab', shift: true, description: 'Cycle elements (back)', handler: () => cycleElement(-1) },
+      { key: 'tab', description: 'Cycle elements', when: focusIsOnCanvas, handler: () => cycleElement(1) },
+      { key: 'tab', shift: true, description: 'Cycle elements (back)', when: focusIsOnCanvas, handler: () => cycleElement(-1) },
       { key: 'arrowup', description: 'Nudge up', handler: () => nudgeSelected(0, -10) },
       { key: 'arrowdown', description: 'Nudge down', handler: () => nudgeSelected(0, 10) },
       { key: 'arrowleft', description: 'Nudge left', handler: () => nudgeSelected(-10, 0) },
@@ -222,7 +221,7 @@ export default function App() {
       const viewKey = st.activeCustomViewId ? `custom:${st.activeCustomViewId}` : st.view;
       const next = removeShape(st.shapes[viewKey] ?? [], st.selectedShapeId);
       st.setShapesFor(viewKey, next);
-      saveShapes(st.workspace.rootPath, viewKey, next);
+      saveShapes(st.workspace.rootPath, viewKey, next, 'Delete shape');
       st.selectShape(null);
       st.setToast({ kind: 'info', text: 'Shape removed' });
       return;
@@ -236,20 +235,9 @@ export default function App() {
       else { st.setToast({ kind: 'success', text: 'Relationship removed' }); useApp.getState().selectLink(null); }
       return;
     }
-    if (st.selectedElementId) {
-      const el = st.arch?.elements.find((x) => x.id === st.selectedElementId);
-      if (!el) return;
-      const ok = await confirmAction({
-        title: `Remove ${el.name}?`,
-        body: 'This element will be removed from the model. Linked relationships and decisions will be detached.',
-        confirmLabel: 'Remove',
-        destructive: true,
-      });
-      if (!ok) return;
-      const r = await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: el.id });
-      if ('reason' in r) st.setToast({ kind: 'error', text: friendlyOpError(r) });
-      else { st.setToast({ kind: 'success', text: 'Removed' }); useApp.getState().selectElement(null); }
-    }
+    // Every selected box — a marquee selects without the inspector showing one — or the one shown.
+    const ids = st.canvasSelectedIds.length > 0 ? st.canvasSelectedIds : st.selectedElementId ? [st.selectedElementId] : [];
+    if (ids.length > 0) await confirmAndRemoveElements(ids);
   }
 
   function clearSelection() {
@@ -370,7 +358,8 @@ export default function App() {
         {ws ? (
           <>
             {!bare && <Sidebar />}
-            <main id="stemma-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
+            <main id="stemma-canvas" tabIndex={-1} role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
+              {!bare && <SidecarBanner />}
               <div className="flex-1 min-h-0 relative">
                 {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
                 {view !== 'concerns' && <CompareBar />}

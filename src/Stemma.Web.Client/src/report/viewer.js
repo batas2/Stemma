@@ -185,30 +185,75 @@
     render();
   }
   /** Inline **bold** and `code`, built as elements so no narrative text is ever parsed as HTML. */
-  function inlineNodes(text) {
-    var out = [];
-    text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/).forEach(function (part) {
+  // What the notes editor writes beyond markdown (lib/markdownDom RAW_INLINE): underline, highlight,
+  // sub- and superscript, a colour or a highlight colour, a line break. Read as tags and built as
+  // elements; anything else that looks like markup stays text.
+  var RAW_TAG = /<(\/?)(u|mark|sub|sup)>|<span style="((?:\s*(?:color|background-color)\s*:\s*(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\(\s*[\d.\s,%]+\))\s*;?)+)">|<\/span>|<br\s*\/?>/gi;
+  function markdownInline(text, into) {
+    text.split(/(\*\*[^*]+\*\*|`[^`]+`|~~[^~]+~~|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|\*[^*\n]+\*)/).forEach(function (part) {
       if (!part) return;
-      if (/^\*\*[^*]+\*\*$/.test(part)) out.push(h('strong', { text: part.slice(2, -2) }));
-      else if (/^`[^`]+`$/.test(part)) out.push(h('code', { text: part.slice(1, -1) }));
-      else if (/^\*[^*\n]+\*$/.test(part)) out.push(h('em', { text: part.slice(1, -1) }));
-      else out.push(document.createTextNode(part));
+      var link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(part);
+      if (/^\*\*[^*]+\*\*$/.test(part)) into.appendChild(h('strong', { text: part.slice(2, -2) }));
+      else if (/^`[^`]+`$/.test(part)) into.appendChild(h('code', { text: part.slice(1, -1) }));
+      else if (/^~~[^~]+~~$/.test(part)) into.appendChild(h('s', { text: part.slice(2, -2) }));
+      else if (link) into.appendChild(h('a', { href: link[2], target: '_blank', rel: 'noopener noreferrer', text: link[1] }));
+      else if (/^\*[^*\n]+\*$/.test(part)) into.appendChild(h('em', { text: part.slice(1, -1) }));
+      else into.appendChild(document.createTextNode(part));
     });
-    return out;
+  }
+  function inlineNodes(text) {
+    var root = h('span'), stack = [root], last = 0, m;
+    RAW_TAG.lastIndex = 0;
+    while ((m = RAW_TAG.exec(text)) !== null) {
+      markdownInline(text.slice(last, m.index), stack[stack.length - 1]);
+      last = RAW_TAG.lastIndex;
+      var top = stack[stack.length - 1];
+      if (/^<br/i.test(m[0])) { top.appendChild(h('br')); continue; }
+      var closing = m[1] === '/' || /^<\/span>$/i.test(m[0]);
+      if (closing) { if (stack.length > 1) stack.pop(); continue; }
+      var el = h(m[2] ? m[2].toLowerCase() : 'span');
+      if (m[3]) m[3].split(';').forEach(function (decl) {
+        var kv = decl.split(':');
+        if (kv.length !== 2) return;
+        var prop = kv[0].trim().toLowerCase(), value = kv[1].trim();
+        if (prop === 'color') el.style.color = value;
+        else if (prop === 'background-color') el.style.backgroundColor = value;
+      });
+      top.appendChild(el);
+      stack.push(el);
+    }
+    markdownInline(text.slice(last), stack[stack.length - 1]);
+    return Array.prototype.slice.call(root.childNodes);
+  }
+  function tableCells(line) {
+    var t = line.trim();
+    if (t.charAt(0) === '|') t = t.slice(1);
+    if (t.charAt(t.length - 1) === '|') t = t.slice(0, -1);
+    return t.split('|').map(function (c) { return c.trim(); });
   }
   /**
    * Paragraphs, lists (numbered or not), headings, quotes and code fences. A line break inside a
    * paragraph is the editor's wrap, not the author's. Built from elements and text only.
    */
   function narrativeNodes(md) {
-    var blocks = [], para = null, list = null, fence = null;
-    md.replace(/\r\n?/g, '\n').split('\n').forEach(function (line) {
+    var blocks = [], para = null, list = null, fence = null, table = null;
+    var lines = md.replace(/\r\n?/g, '\n').split('\n');
+    lines.forEach(function (line, i) {
+      if (table) {
+        if (/\|/.test(line) && line.trim()) { table.rows.push(tableCells(line)); return; }
+        table = null;
+      }
       if (fence) {
         if (/^\s*```/.test(line)) fence = null; else fence.lines.push(line);
         return;
       }
       if (/^\s*```/.test(line)) { para = null; list = null; fence = { fence: true, lines: [] }; blocks.push(fence); return; }
       if (!line.trim()) { para = null; list = null; return; }
+      // A table, as the editor writes one: a row of cells, then a row of dashes.
+      if (/\|/.test(line) && i + 1 < lines.length && /^[\s|:-]+$/.test(lines[i + 1]) && /-/.test(lines[i + 1])) {
+        para = null; list = null; table = { head: tableCells(line), rows: [] }; blocks.push(table); return;
+      }
+      if (/^\s*(?:---|\*\*\*|___)\s*$/.test(line)) { para = null; list = null; blocks.push({ rule: true }); return; }
       var heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
       if (heading) { para = null; list = null; blocks.push({ heading: heading[1] }); return; }
       var quote = /^\s*>\s?(.*)$/.exec(line);
@@ -223,7 +268,9 @@
         para = null;
         var ordered = !item[1];
         if (!list || list.ordered !== ordered) { list = { items: [], ordered: ordered }; blocks.push(list); }
-        list.items.push(item[2]);
+        // A task: its box as the editor shows it, ticked or not.
+        var task = !ordered && /^\[([ xX])\]\s+(.*)$/.exec(item[2]);
+        list.items.push(task ? (task[1] === ' ' ? '☐ ' : '☑ ') + task[2] : item[2]);
         return;
       }
       if (list) { list.items[list.items.length - 1] += ' ' + line.trim(); return; }
@@ -231,6 +278,15 @@
     });
     return blocks.map(function (b) {
       if (b.fence) return h('pre', {}, [h('code', { text: b.lines.join('\n') })]);
+      if (b.rule) return h('hr');
+      if (b.head) {
+        // The delimiter row is the first row read after the head; it is not a row of the table.
+        var body = b.rows.slice(1);
+        return h('table', {}, [
+          h('thead', {}, [h('tr', {}, b.head.map(function (c) { return h('th', {}, inlineNodes(c)); }))]),
+          h('tbody', {}, body.map(function (r) { return h('tr', {}, r.map(function (c) { return h('td', {}, inlineNodes(c)); })); })),
+        ]);
+      }
       if (b.heading !== undefined) return h('h3', {}, inlineNodes(b.heading));
       if (b.items) return h(b.ordered ? 'ol' : 'ul', {}, b.items.map(function (t) { return h('li', {}, inlineNodes(t)); }));
       return h(b.quote ? 'blockquote' : 'p', {}, inlineNodes(b.text));

@@ -8,7 +8,8 @@
 
 import { history, setHistoryDriver, type HistoryStep, type PresentationChange } from './history';
 import { layoutUndo } from './layoutUndo';
-import { loadLayout, saveLayout, sidecarSet } from './layout';
+import { loadLayout, saveEdgeWaypoints, saveLayout, saveViewShapes, sidecarSet } from './layout';
+import type { Shape } from './shapes';
 import { fetchUndoState, redoOperation, undoOperation } from './signalr';
 import { friendlyOpError } from './opError';
 import { reportFailure, ClientEvent } from './log';
@@ -78,7 +79,15 @@ function applyPresentation(changes: PresentationChange[], which: 'before' | 'aft
   if (!root) return;
   for (const c of changes) {
     const value = which === 'before' ? c.before : c.after;
-    if (c.section === 'viewMembers') {
+    if (c.section === 'waypoints') {
+      saveEdgeWaypoints(root, c.view as ViewKind, c.id, Array.isArray(value) ? (value as { x: number; y: number }[]) : []);
+      window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: c.view } }));
+    } else if (c.section === 'shapes') {
+      const shapes = Array.isArray(value) ? (value as Shape[]) : [];
+      saveViewShapes(root, c.id, shapes);
+      st.setShapesFor(c.id, shapes);
+      if (st.selectedShapeId && !shapes.some((x) => x.id === st.selectedShapeId)) st.selectShape(null);
+    } else if (c.section === 'viewMembers') {
       // A view from Views/ names its elements in code; the change is a save of that view, as any is.
       const view = st.customViews.find((v) => v.id === c.id);
       if (view && Array.isArray(value)) st.upsertCustomView({ ...view, elementIds: value as string[] });

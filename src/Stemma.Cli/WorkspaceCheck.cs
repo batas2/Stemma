@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.CodeAnalysis.CSharp;
 using Stemma.Engine.ArchModel;
 using Stemma.Engine.Workspace;
 
@@ -32,26 +31,30 @@ public static class WorkspaceCheck
     {
         var findings = new List<CheckFinding>();
 
-        var archPath = Path.Combine(workspaceRoot, "Architecture", "Architecture.cs");
-        if (!File.Exists(archPath))
+        // Every model file under Architecture/, merged, as the engine reads them (ADR-0016, ADR-0024).
+        // Reading only Architecture.cs reported links into the other files as dangling.
+        var read = ArchModelMerge.ReadFrom(workspaceRoot);
+        if (read.Files.Count == 0)
         {
             findings.Add(new(CheckSeverity.Error, "workspace/no-model",
-                $"no model at {Path.Combine("Architecture", "Architecture.cs")} — is this a Stemma workspace?"));
+                "no model files in Architecture/ — is this a Stemma workspace?"));
             return findings;
         }
 
-        var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(archPath));
-        var model = DslReader.TryRead(archPath, tree.GetRoot());
+        var model = read.Model;
         if (model is null)
         {
             findings.Add(new(CheckSeverity.Error, "model/unreadable",
-                "Architecture.cs has no parseable `public static Model Build()` — the engine reads exactly that name."));
+                "no file in Architecture/ has a parseable `public static Model Build()` — the engine reads exactly that name."));
             return findings;
         }
 
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
-        var views = ReadViews(workspaceRoot);
-        findings.AddRange(DuplicateIds(model));
+        var viewFiles = WorkspaceViews.Read(workspaceRoot);
+        var views = viewFiles.Select(v => v.View).ToList();
+        findings.AddRange(DuplicateIds(read.Partials));
+        findings.AddRange(DuplicateLinkIds(read.Partials));
+        findings.AddRange(DuplicateViewIds(workspaceRoot, viewFiles));
         findings.AddRange(DanglingLinkEndpoints(model, ids));
         findings.AddRange(DanglingAttributeReferences(model, ids));
         findings.AddRange(RegisterFindings(model));
@@ -63,17 +66,6 @@ public static class WorkspaceCheck
         findings.AddRange(LegacyBookFindings(workspaceRoot));
 
         return findings;
-    }
-
-    /// <summary>The views declared in <c>Views/*.cs</c>, read once for every check that names them.</summary>
-    private static IReadOnlyList<ArchView> ReadViews(string workspaceRoot)
-    {
-        var viewsDir = Path.Combine(workspaceRoot, "Views");
-        if (!Directory.Exists(viewsDir)) return [];
-
-        var docs = Directory.EnumerateFiles(viewsDir, "*.cs", SearchOption.AllDirectories)
-            .Select(f => (FilePath: f, Root: (Microsoft.CodeAnalysis.SyntaxNode)CSharpSyntaxTree.ParseText(File.ReadAllText(f)).GetRoot()));
-        return ViewsAdapter.ReadAllFrom(docs);
     }
 
     /// <summary>
@@ -126,7 +118,7 @@ public static class WorkspaceCheck
                 yield break;
             }
 
-            // A view declared twice is already reported elsewhere as arbitrary; the first one stands.
+            // A view declared twice is reported as `view/duplicate-id`; here the first one stands.
             var viewMembers = views
                 .GroupBy(v => v.Id, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First().ElementIds.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
@@ -396,6 +388,7 @@ public static class WorkspaceCheck
 
         using (doc)
         {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) yield break;   // reported by ShapeFindings
             if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind != JsonValueKind.Object)
                 yield break;
 
@@ -513,26 +506,66 @@ public static class WorkspaceCheck
 
         using (doc)
         {
-            if (!doc.RootElement.TryGetProperty("views", out var views)) yield break;
+            // The structure every sidecar check walks, reported here and only here; the other checks
+            // skip what is not the shape they read. A value of the wrong kind used to throw out of the
+            // whole check, which exited with the code that means "this workspace has errors".
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                yield return new(CheckSeverity.Warning, "sidecar/malformed",
+                    "stemma.layout.json is not a JSON object, so the canvas reads nothing from it — every position and annotation in it is lost");
+                yield break;
+            }
+            if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind == JsonValueKind.Null) yield break;
+            if (views.ValueKind != JsonValueKind.Object)
+            {
+                yield return Malformed("views", "an object keyed by view", "no view has a layout");
+                yield break;
+            }
 
             foreach (var view in views.EnumerateObject())
             {
-                if (!view.Value.TryGetProperty("shapes", out var shapes) || shapes.ValueKind != JsonValueKind.Array) continue;
+                var where = $"views.{view.Name}";
+                if (view.Value.ValueKind != JsonValueKind.Object)
+                {
+                    yield return Malformed(where, "an object", "the view has no layout");
+                    continue;
+                }
+                if (!view.Value.TryGetProperty("shapes", out var shapes) || shapes.ValueKind == JsonValueKind.Null) continue;
+                if (shapes.ValueKind != JsonValueKind.Array)
+                {
+                    yield return Malformed($"{where}.shapes", "a list", "the view draws none of its shapes");
+                    continue;
+                }
 
                 var all = shapes.EnumerateArray().ToList();
                 var shapeIds = all
-                    .Select(s => s.TryGetProperty("id", out var id) ? id.GetString() : null)
-                    .Where(id => id is not null).Select(id => id!)
+                    .Select(s => TryText(s, "id", out var id) ? id : null)
+                    .OfType<string>()
                     .ToHashSet(StringComparer.Ordinal);
 
                 if (all.Count > MaxShapesPerView)
                     yield return new(CheckSeverity.Warning, "shape/too-many",
                         $"view '{view.Name}' has {all.Count} shapes; the canvas stops drawing past {MaxShapesPerView}");
 
-                foreach (var shape in all)
+                for (var index = 0; index < all.Count; index++)
                 {
-                    var id = shape.TryGetProperty("id", out var i) ? i.GetString() : null;
-                    var kind = shape.TryGetProperty("kind", out var k) ? k.GetString() : null;
+                    var shape = all[index];
+                    var at = $"{where}.shapes[{index}]";
+                    if (shape.ValueKind != JsonValueKind.Object)
+                    {
+                        yield return Malformed(at, "an object", "the canvas skips it");
+                        continue;
+                    }
+                    if (!TryText(shape, "id", out var id))
+                    {
+                        yield return Malformed($"{at}.id", "text", "the shape cannot be selected, styled or removed");
+                        continue;
+                    }
+                    if (!TryText(shape, "kind", out var kind))
+                    {
+                        yield return Malformed($"{at}.kind", "text", "the canvas does not draw the shape");
+                        continue;
+                    }
 
                     if (id is null)
                     {
@@ -546,15 +579,28 @@ public static class WorkspaceCheck
                             $"shape '{id}' has kind '{kind ?? "(none)"}', which the canvas does not draw (known: {string.Join(", ", ShapeKinds.Order())})", id);
                         continue;
                     }
-                    if (kind == "label" && string.IsNullOrWhiteSpace(shape.TryGetProperty("text", out var txt) ? txt.GetString() : null))
-                        yield return new(CheckSeverity.Warning, "shape/empty-label",
-                            $"label '{id}' has no text, so it draws nothing", id);
+                    if (kind == "label")
+                    {
+                        if (!TryText(shape, "text", out var text))
+                            yield return Malformed($"{at}.text", "text", "the label draws nothing");
+                        else if (string.IsNullOrWhiteSpace(text))
+                            yield return new(CheckSeverity.Warning, "shape/empty-label",
+                                $"label '{id}' has no text, so it draws nothing", id);
+                    }
 
                     foreach (var end in new[] { "fromAnchor", "toAnchor" })
                     {
                         if (!shape.TryGetProperty(end, out var anchor) || anchor.ValueKind != JsonValueKind.Object) continue;
-                        var anchorKind = anchor.TryGetProperty("kind", out var ak) ? ak.GetString() : null;
-                        var target = anchor.TryGetProperty("id", out var tid) ? tid.GetString() : null;
+                        if (!TryText(anchor, "kind", out var anchorKind))
+                        {
+                            yield return Malformed($"{at}.{end}.kind", "text", "the arrow's end is not anchored");
+                            continue;
+                        }
+                        if (!TryText(anchor, "id", out var target))
+                        {
+                            yield return Malformed($"{at}.{end}.id", "text", "the arrow's end is not anchored");
+                            continue;
+                        }
                         if (anchorKind is null or "free" || target is null) continue;
 
                         var known = anchorKind == "element" ? elementIds.Contains(target) : shapeIds.Contains(target);
@@ -565,6 +611,25 @@ public static class WorkspaceCheck
                 }
             }
         }
+    }
+
+    /// <summary>A value in the sidecar that is not the kind the canvas reads, named by its path.</summary>
+    private static CheckFinding Malformed(string path, string expected, string consequence) =>
+        new(CheckSeverity.Warning, "sidecar/malformed",
+            $"`{path}` in stemma.layout.json is not {expected}, so {consequence}");
+
+    /// <summary>
+    /// A text property of <paramref name="value"/>: the text, or null when it is absent or null. False
+    /// when the property is there and is not text — or when <paramref name="value"/> is not an object.
+    /// </summary>
+    private static bool TryText(JsonElement value, string name, out string? text)
+    {
+        text = null;
+        if (value.ValueKind != JsonValueKind.Object) return false;
+        if (!value.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null) return true;
+        if (property.ValueKind != JsonValueKind.String) return false;
+        text = property.GetString();
+        return true;
     }
 
     /// <summary>
@@ -583,11 +648,37 @@ public static class WorkspaceCheck
                 $"{concepts} of {model.Elements.Count} elements are Concepts — this is a figure rather than an architecture, which is a fine thing to be");
     }
 
-    private static IEnumerable<CheckFinding> DuplicateIds(ArchModel model)
+    /// <summary>
+    /// Read off each file before the files are merged: the merge keeps the first of an id and drops
+    /// the rest, which is the duplicate this is here to report.
+    /// </summary>
+    private static IEnumerable<CheckFinding> DuplicateIds(IReadOnlyList<ArchModel> partials)
     {
-        foreach (var group in model.Elements.GroupBy(e => e.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        foreach (var group in partials.SelectMany(m => m.Elements).GroupBy(e => e.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
             yield return new(CheckSeverity.Error, "model/duplicate-id",
                 $"id '{group.Key}' is declared {group.Count()} times; whichever wins is arbitrary", group.Key);
+    }
+
+    /// <summary>A link id twice over: the canvas keys an edge by its id, so one of the two is not drawn.</summary>
+    private static IEnumerable<CheckFinding> DuplicateLinkIds(IReadOnlyList<ArchModel> partials)
+    {
+        foreach (var group in partials.SelectMany(m => m.Links).GroupBy(l => l.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
+            yield return new(CheckSeverity.Error, "link/duplicate-id",
+                $"link id '{group.Key}' is declared {group.Count()} times; only one of them is drawn, and which is arbitrary", group.Key);
+    }
+
+    /// <summary>
+    /// Two view files declaring one id. The app opens, saves and deletes a view by its id, so it
+    /// reaches whichever file it read first, and an edit meant for the other goes into this one.
+    /// </summary>
+    private static IEnumerable<CheckFinding> DuplicateViewIds(string workspaceRoot, IReadOnlyList<(string File, ArchView View)> views)
+    {
+        foreach (var group in views.GroupBy(v => v.View.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        {
+            var files = string.Join(", ", group.Select(v => Path.GetRelativePath(workspaceRoot, v.File).Replace('\\', '/')));
+            yield return new(CheckSeverity.Error, "view/duplicate-id",
+                $"view id '{group.Key}' is declared by {group.Count()} files ({files}); the app opens and saves whichever it reads first, so give each its own id", group.Key);
+        }
     }
 
     private static IEnumerable<CheckFinding> DanglingLinkEndpoints(ArchModel model, HashSet<string> ids)

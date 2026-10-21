@@ -91,6 +91,46 @@ public class ValidationTests
         violations.Should().Contain(v => v.RuleId == "no-circular-dataflows");
     }
 
+    private static ArchModel.ArchModel Flows(params (string Id, string From, string To)[] flows) => new(
+        "Architecture.cs",
+        flows.SelectMany(f => new[] { f.From, f.To }).Distinct()
+            .Select(id => new ArchElement(id, id, ArchElementKind.Module, new Dictionary<string, string?>())).ToList(),
+        flows.Select(f => new ArchLink(f.Id, f.From, f.To, ArchLinkKind.DataFlow, new Dictionary<string, string?> { ["payload"] = "x" })).ToList(),
+        []);
+
+    [Fact]
+    public void NoCircularDataFlows_reports_the_flows_on_the_cycle_and_not_the_way_into_it()
+    {
+        // a → b → c → b: the cycle is b → c → b. The flow from a only leads into it, and was reported
+        // with it, so the list named a flow nobody had to change.
+        var violations = new NoCircularDataFlows().Check(Flows(("f_ab", "a", "b"), ("f_bc", "b", "c"), ("f_cb", "c", "b"))).ToList();
+
+        violations.Should().ContainSingle().Which.LinkIds.Should().BeEquivalentTo(["f_bc", "f_cb"]);
+    }
+
+    [Fact]
+    public void NoCircularDataFlows_reports_each_cycle_on_its_own_and_a_flow_on_itself()
+    {
+        var violations = new NoCircularDataFlows().Check(Flows(
+            ("f_ab", "a", "b"), ("f_ba", "b", "a"),
+            ("f_bc", "b", "c"),
+            ("f_cd", "c", "d"), ("f_dc", "d", "c"),
+            ("f_ee", "e", "e"))).ToList();
+
+        violations.Select(v => v.LinkIds.Order().ToArray()).Should().BeEquivalentTo(new[]
+        {
+            new[] { "f_ab", "f_ba" },
+            new[] { "f_cd", "f_dc" },
+            new[] { "f_ee" },
+        });
+    }
+
+    [Fact]
+    public void NoCircularDataFlows_is_quiet_when_nothing_comes_back()
+    {
+        new NoCircularDataFlows().Check(Flows(("f_ab", "a", "b"), ("f_bc", "b", "c"), ("f_ac", "a", "c"))).Should().BeEmpty();
+    }
+
     [Fact]
     public async Task DeprecatedElementHasNoIncomingFlows_flags_incoming_to_deprecated()
     {

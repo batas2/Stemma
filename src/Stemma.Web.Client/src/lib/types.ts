@@ -81,7 +81,11 @@ export interface ArchModel {
   tags: ArchTagInfo[];
 }
 
-export interface RecentEntry { rootPath: string; displayName: string; lastOpened: string; }
+export interface RecentEntry {
+  rootPath: string; displayName: string; lastOpened: string;
+  /** The folder is not there now — unplugged, renamed, moved. Kept on the list rather than forgotten. */
+  missing?: boolean;
+}
 
 export type Severity = 'info' | 'warning' | 'error';
 export interface Violation {

@@ -2,14 +2,26 @@
 // `#Flag`. The `#Key` form (no space after `#`) is deliberately distinct from a markdown
 // heading (`# text`, with a space), so the two never collide.
 
-const TAG = /#([A-Za-z][\w-]*)(?::[ \t]*([^\n#]*))?/g;
+import { RAW_INLINE } from './markdownDom';
+
+/**
+ * Where a tag may start: not inside a word, a URL or a colour. `…/Page#Owners: Team Blue` is a link
+ * to a section and `color:#ef4444` a colour; read as tags, one became a custom property nobody wrote
+ * and the other a chip.
+ */
+export const TAG_START = '(?<![\\w/:#.=?&-])';
+
+const TAG = new RegExp(`${TAG_START}#([A-Za-z][\\w-]*)(?::[ \\t]*([^\\n#]*))?`, 'g');
 
 /** Every hashtag in the text → its value (empty string for a bare `#Flag`). */
 export function parseHashtags(text: string): { key: string; value: string }[] {
   const out: { key: string; value: string }[] = [];
   const re = new RegExp(TAG.source, 'g');
+  // The editor's raw tags are markup, not text: a colour's hex code is not a tag, and a value
+  // written in a colour is the words, not the tags around them.
+  const plain = text.replace(RAW_INLINE, '');
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(plain)) !== null) {
     out.push({ key: m[1], value: (m[2] ?? '').trim() });
   }
   return out;

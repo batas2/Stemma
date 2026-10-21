@@ -129,6 +129,20 @@ describe('positions', () => {
     await open(s, empty());
     expect(s.layout.loadLayout(ROOT, 'moduleMap')).toEqual({});
   });
+
+  // The view's key was read back from the browser's key by splitting it at every ':', and a Windows
+  // root has one of its own: `C:\repo`'s view `custom:view_a` was moved into the sidecar as
+  // `\repo:custom:view_a`, a view that does not exist.
+  it('a saved view\'s positions move into the sidecar under its own key, whatever the root', async () => {
+    const WINDOWS = 'C:\\Users\\dev\\repo';
+    seed(`stemma.layout:${WINDOWS}:custom:view_a`, { mod_1: { x: 10, y: 20 } });
+    const s = await session();
+    s.api.fetchLayout.mockResolvedValue(empty());
+    await s.layout.primeLayoutSidecar(WINDOWS);
+    await flush();
+
+    expect(sent(s)).toEqual([{ path: ['views', 'custom:view_a'], value: { nodes: { mod_1: { x: 10, y: 20 } } } }]);
+  });
 });
 
 describe('nothing is written to the sidecar before it has been read', () => {
@@ -241,6 +255,25 @@ describe('views are what Views/*.cs declares', () => {
     await s.useApp.getState().syncViews();
 
     expect(ids(s)).toEqual(['view_a']);
+  });
+
+  it('a refresh that finds the views as they were keeps the same objects, so nothing is drawn again', async () => {
+    const s = await session();
+    await open(s, empty(), [A, B]);
+    s.api.listServerViews.mockResolvedValue([A, B]);
+    await s.useApp.getState().syncViews();
+    const before = s.useApp.getState().customViews;
+
+    s.api.listServerViews.mockResolvedValue([A, { ...B }]);
+    await s.useApp.getState().syncViews();
+    expect(s.useApp.getState().customViews).toBe(before);
+
+    s.api.listServerViews.mockResolvedValue([A, { ...B, name: 'Billing and refunds' }]);
+    await s.useApp.getState().syncViews();
+    const after = s.useApp.getState().customViews;
+    expect(after).not.toBe(before);
+    expect(after[0]).toBe(before[0]);
+    expect(after[1].name).toBe('Billing and refunds');
   });
 
   it('a refresh while a save is on its way does not take the view away', async () => {

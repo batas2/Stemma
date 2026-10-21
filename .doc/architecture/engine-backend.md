@@ -82,13 +82,13 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 |---|---|---|
 | `AddElement` | a new `var x = new Kind(...)` before `return`; `x` appended to `Model.Of(...)`. `x` is the id in camelCase (`mod_001` → `mod001`, `order-service` → `orderService`), with a suffix when `Build()` already declares it | — |
 | `AddLink` | the same, for a `DataFlow` / `Dependency` / `Relation`; its ends may be declared in any model file | `FromNotFound`, `ToNotFound` — an id no model file declares |
-| `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound`, `NotAnElement` (a link has no name) |
-| `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable, and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
-| `SetElementContext` | the `contextId` argument of a Module or Capability | `ElementNotFound`, `NotNestable`, `ContextNotFound`, `AttributeRequired`, `RewriteFailed` |
-| `SetElementAttribute` | one constructor argument the kind has (`aboutId` on a Risk, `role` on a Person) | `ElementNotFound`, `UnknownAttribute`, `AttributeRequired`, `RewriteFailed` |
-| `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`) | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `RewriteFailed` |
-| `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For`; a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it | `SetTagFailed`, `UnreadableTag` |
-| `SetOwnership` | `Squad` and `Domain` inside `new Ownership(...)`. RAPID roles are not part of the operation and are not touched | `SetTagFailed`, `UnreadableTag` |
+| `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound`, `NotAnElement` (a link has no name), `NotALiteral` |
+| `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable (and the `Model.Of` entry of a local holding one), and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
+| `SetElementContext` | the `contextId` argument of a Module or Capability | `ElementNotFound`, `NotNestable`, `ContextNotFound`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
+| `SetElementAttribute` | one constructor argument the kind has (`aboutId` on a Risk, `role` on a Person) | `ElementNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
+| `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`) | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
+| `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For` — a statement of its own, or a local's value (`var tag = Tag.For(...)`); a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it, a local's `Model.Of` entry included | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
+| `SetOwnership` | `Squad` and `Domain` inside `new Ownership(...)`. RAPID roles are not part of the operation and are not touched | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
 | `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, and the redo of an add, re-declaring it with its own id before `return` — in the model file it came from, with its lifecycle, squad and domain, under a variable name nothing else declares | — |
 
 An id `AddElement` or `AddLink` generates (`mod_001`, `flow_001`) is one nothing names: no model file
@@ -104,6 +104,11 @@ every parameter is nullable, it becomes `null` instead, and the `null` goes once
 cleared too; a part left with nothing but `null`s is removed. `UnknownAttribute`: the kind has no such
 parameter; nothing is written. A named-argument declaration (`new Module(Id: "m", Name: "M")`) is read
 and edited like a positional one, and an argument added to it is named too.
+`NotALiteral`: the argument is written as something other than a literal — a constant, a
+concatenation, `nameof`. The reader reads it as the string it stands for, but an edit does not
+replace it with that string or remove it, since that would undo the author's choice of a constant;
+setting it to what it already says changes nothing. A declaration whose id is a constant is found
+and edited like any other.
 
 ### Type operations (any `.cs` file in the workspace)
 
@@ -146,10 +151,21 @@ file's text: a changed value's span is replaced; an object set onto an object ch
 differs inside it; a new key goes after its object's last one, laid out like it — on its line when
 the object is written on one line, otherwise with that member's indentation and the file's indent
 unit, line ending and escaping; a removed key takes its lines and one comma, and the last one out
-leaves `{}`. The BOM, or its absence, survives. Refuses `UnreadableSidecar` (the file does not parse:
-a merge conflict is never read as empty and written back), `NotAnObject`, `EmptyPath`. A workspace
-without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.
-Not on the undo stack; layout undo lives in the client.
+leaves `{}`. A `null` on the way to a key is taken as nothing there yet. A batch is applied in order
+to one reading of the file and written in one pass, with the file's layout as it was read; a key
+added and removed in the same batch leaves the file as it was, the objects made to hold it
+included. The BOM, or its absence, survives. Refuses `UnreadableSidecar` (the file does not parse:
+a merge conflict is never read as empty and written back; or an object has the same key twice, which
+an edit and the browser would each read differently — the refusal names the key and both lines),
+`NotAnObject`, `EmptyPath`, `TooDeep` (a value nested past the 64 levels the file is read to), and
+`InvalidText` — a change holding text that is not valid Unicode, such
+as half of an emoji, refused before anything is written; it is the change that is wrong, not the
+file, and resending it will not help. A file holding such text is unreadable, with its line. A
+workspace without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.
+Not on the undo stack; layout undo lives in the client. `LayoutSidecar.Read`, the typed reading the
+draw.io export takes positions from, refuses an unreadable file the same way, naming the line or the
+value it could not read, rather than reading it as empty; a `null` written by hand where a section, a
+view or a position would be reads as nothing there.
 
 ### What the model was (read only)
 
@@ -178,7 +194,8 @@ applies each to the file's text with the span reader and layout it shares with `
 | `remove` | the comment, its lines and one comma; the last one out leaves `[]` | nothing if it is gone |
 
 A file that does not parse, or whose `comments` is not a list, is refused `UnreadableSidecar` with
-the line to look at. The BOM survives; a workspace without the file gets one only when a change
+the line to look at; a comment or a reply holding text that is not valid Unicode is refused
+`InvalidText`. The BOM survives; a workspace without the file gets one only when a change
 changes something. `GET` returns the file as it is, and `PATCH` answers with it.
 
 ### Layout: what "only the target" means

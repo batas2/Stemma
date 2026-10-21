@@ -73,7 +73,7 @@ public static class DslWriter
     {
         var declaration = FindDeclaration(root, id) ?? throw new InvalidOperationException($"No declaration with id {id}");
         var varName = declaration.Variable.Identifier.Text;
-        while (FindTag(root, varName) is { } tag) root = RemoveStatement(root, tag);
+        while (FindTag(root, varName) is { } tag) root = RemoveTag(root, tag);
         root = RemoveStatement(root, FindDeclaration(root, id)!.Value.Statement);
         return RemoveFromReturn(root, varName);
     }
@@ -116,11 +116,11 @@ public static class DslWriter
             var arg = args[at];
             if (value is not null)
             {
-                if (arg.Expression is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.StringLiteralExpression) && lit.Token.ValueText == value)
-                    return null;
+                if (DslReader.AlreadySays(arg.Expression, value, $"{attribute} of this {typeName}")) return null;
                 return list.WithArguments(args.Replace(arg, arg.WithExpression(Literal(value).WithTriviaFrom(arg.Expression))));
             }
 
+            DslReader.RefuseUnlessLiteral(arg.Expression, $"{attribute} of this {typeName}");
             if (arg.NameColon is null && args.Skip(at + 1).Any(a => a.NameColon is null))
             {
                 if (!nullablePlaceholder)
@@ -163,6 +163,7 @@ public static class DslWriter
         if (nameAt < 0) return root;
 
         var nameExpression = args[nameAt].Expression;
+        DslReader.RefuseUnlessLiteral(nameExpression, "name");
         var renamed = creation.ReplaceNode(nameExpression, Literal(newName).WithTriviaFrom(nameExpression));
 
         // The variable follows the name, so the C# keeps reading like the diagram — unless the new
@@ -210,7 +211,7 @@ public static class DslWriter
             return root.ReplaceNode(build, InsertStatement(build, build.Statements.IndexOf(decl) + 1, stmt, lineLike: decl));
         }
 
-        var invocation = (InvocationExpressionSyntax)tag.Expression;
+        var invocation = tag.Invocation;
         var args = invocation.ArgumentList.Arguments;
         var at = IndexOfTagPart(args, part);
         if (at < 0)
@@ -238,7 +239,7 @@ public static class DslWriter
         if (edited.Arguments.Count > 0 && !edited.Arguments.All(IsNull)) return root.ReplaceNode(partArgs, edited);
 
         // Nothing left in this part: it goes, and a tag with no other part goes with it.
-        if (args.Count <= 2) return RemoveStatement(root, tag);
+        if (args.Count <= 2) return RemoveTag(root, tag);
         var (open, rest) = SeparatedEdits.RemoveAt(invocation.ArgumentList.OpenParenToken, args, at);
         return root.ReplaceNode(invocation.ArgumentList, invocation.ArgumentList.WithOpenParenToken(open).WithArguments(rest));
     }
@@ -314,13 +315,18 @@ public static class DslWriter
         return null;
     }
 
-    private static ExpressionStatementSyntax? FindTag(SyntaxNode root, string varName) =>
-        DslReader.FindBuildMethodBody(root)?.Statements.OfType<ExpressionStatementSyntax>()
-            .FirstOrDefault(s => s.Expression is InvocationExpressionSyntax
-            {
-                Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "For", Expression: IdentifierNameSyntax { Identifier.Text: "Tag" } },
-                ArgumentList.Arguments: [{ Expression: IdentifierNameSyntax target }, ..],
-            } && target.Identifier.Text == varName);
+    private static TagSite? FindTag(SyntaxNode root, string varName) =>
+        DslReader.FindBuildMethodBody(root) is { } build
+            ? DslReader.TagsIn(build).FirstOrDefault(t =>
+                t.Invocation.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax target && target.Identifier.Text == varName)
+            : null;
+
+    /// <summary>A tag's statement, and when it is kept in a local, that local's entry in <c>Model.Of(...)</c>.</summary>
+    private static SyntaxNode RemoveTag(SyntaxNode root, TagSite tag)
+    {
+        root = RemoveStatement(root, tag.Statement);
+        return tag.Variable is null ? root : RemoveFromReturn(root, tag.Variable);
+    }
 
     private static InvocationExpressionSyntax? FindModelOf(SyntaxNode root) =>
         DslReader.FindBuildMethodBody(root)?.Statements.OfType<ReturnStatementSyntax>().FirstOrDefault()?.Expression as InvocationExpressionSyntax;

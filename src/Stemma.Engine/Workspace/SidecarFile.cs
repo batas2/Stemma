@@ -62,14 +62,9 @@ internal sealed class SidecarFile(string path, string created)
 
             string patched;
             try { patched = apply(text); }
+            // Half an emoji in the file or in a change is refused where it is found, as an unreadable file
+            // (with its line) or as a bad change (InvalidText), so a read through GET says the same.
             catch (SidecarPatchRefusedException e) { return new OperationFailed(opId, e.Reason, e.Message); }
-            catch (InvalidOperationException e)
-            {
-                // System.Text.Json throws this for a lone UTF-16 surrogate in a string (half an emoji). As a
-                // 500 it failed every later save of the session; as a refusal it is said and survivable.
-                return new OperationFailed(opId, "UnreadableSidecar",
-                    $"{Path.GetFileName(path)}, or the change to it, holds text that is not valid Unicode: {e.Message}");
-            }
             if (patched == text) return new OperationApplied(opId, []);
 
             _seen = patched;

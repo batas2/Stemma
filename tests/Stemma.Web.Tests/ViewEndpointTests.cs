@@ -71,4 +71,38 @@ public sealed class ViewEndpointTests : IAsyncLifetime
         File.Exists(file).Should().BeFalse();
         (await _http.DeleteAsync("/api/workspace/views/view_a")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    private void ViewFile(string relative, string id)
+    {
+        var path = Path.Combine(_root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var name = Path.GetFileNameWithoutExtension(path);
+        File.WriteAllText(path, $$"""
+            using Stemma.Model;
+            namespace Views;
+            public static class {{name}}
+            {
+                public static View Define() => new(Id: "{{id}}", Name: "{{name}}", BaseView: "all", ElementIds: new[] { "ctx_x" });
+            }
+            """);
+    }
+
+    [Fact]
+    public async Task The_list_has_every_view_the_workspace_holds_in_a_subfolder_too()
+    {
+        // The list read only the top of Views/, while the engine — which saves and deletes a view —
+        // and validate read its subfolders too: a view in Views/Billing/ was checked and could be
+        // deleted, and never appeared in the list.
+        ViewFile(Path.Combine("Views", "Overview.cs"), "view_overview");
+        ViewFile(Path.Combine("Views", "Billing", "Invoices.cs"), "view_invoices");
+        ViewFile(Path.Combine("Views", "obj", "Copy.cs"), "view_copy");
+        (await _http.PostAsJsonAsync("/api/workspace/open", new { rootPath = _root })).EnsureSuccessStatusCode();
+
+        var views = await _http.GetFromJsonAsync<List<ListedView>>("/api/workspace/views");
+
+        views!.Select(v => v.Id).Should().BeEquivalentTo(["view_overview", "view_invoices"],
+            "build output is never part of the workspace");
+    }
+
+    private sealed record ListedView(string Id, string Name);
 }

@@ -49,6 +49,17 @@ export function ViewTabs() {
     goTo(placeOf(v.id));
     setToast({ kind: 'success', text: `Created view "${name}"` });
   }
+  // The arrow keys walk the tabs, Home and End go to the first and last, as in any tab bar.
+  function moveBetweenTabs(e: React.KeyboardEvent<HTMLDivElement>) {
+    const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const at = tabs.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    const to = e.key === 'ArrowRight' ? at + 1 : e.key === 'ArrowLeft' ? at - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    tabs[(to + tabs.length) % tabs.length]?.focus();
+  }
+
   async function rename(id: string, current: string) {
     const next = await promptText({ title: `Rename "${current}"`, initialValue: current, confirmLabel: 'Rename' });
     if (!next || next === current) return;
@@ -79,7 +90,7 @@ export function ViewTabs() {
         <ChevronRight className="w-3.5 h-3.5" />
       </button>
     </nav>
-    <div role="tablist" aria-label="Views" className="flex-1 min-w-0 flex items-stretch gap-0.5 px-2 overflow-x-auto scrollbar-thin">
+    <div role="tablist" aria-label="Views" onKeyDown={moveBetweenTabs} className="flex-1 min-w-0 flex items-stretch gap-0.5 px-2 overflow-x-auto scrollbar-thin">
       {BUILTINS.map((b) => {
         const Icon = b.icon;
         const active = view === b.id && !activeId;
@@ -110,11 +121,17 @@ export function ViewTabs() {
             key={v.id}
             role="tab"
             aria-selected={active}
+            // Reachable from the keyboard like the built-in tabs: Return or Space opens it, Delete closes it.
+            tabIndex={0}
             onClick={() => goTo(placeOf(v.id))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(placeOf(v.id)); }
+              else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); closeView(v.id); }
+            }}
             onDoubleClick={() => rename(v.id, v.name)}
-            title="Click to open · double-click to rename"
+            title="Click to open · double-click to rename · Delete closes the tab"
             className={clsx(
-              'group flex items-center gap-1.5 pl-3 pr-1.5 text-xs border-b-2 -mb-px whitespace-nowrap cursor-pointer transition-colors',
+              'group flex items-center gap-1.5 pl-3 pr-1.5 text-xs border-b-2 -mb-px whitespace-nowrap cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500',
               active
                 ? 'border-violet-500 text-violet-700 dark:text-violet-300 bg-white/70 dark:bg-zinc-950/40'
                 : 'border-transparent text-muted hover:text-body hover:bg-zinc-200/50 dark:hover:bg-zinc-800/40',
@@ -124,8 +141,13 @@ export function ViewTabs() {
             <span className="truncate max-w-[140px]">{v.name}</span>
             <button
               onClick={(e) => { e.stopPropagation(); closeView(v.id); }}
+              tabIndex={-1}
+              aria-label={`Close ${v.name}`}
               title="Close tab — the view stays in the sidebar"
-              className="p-0.5 rounded opacity-0 group-hover:opacity-100 text-faint hover:text-zinc-900 dark:hover:text-zinc-100"
+              className={clsx(
+                'p-0.5 rounded text-faint hover:text-zinc-900 dark:hover:text-zinc-100 group-hover:opacity-100 group-focus-visible:opacity-100',
+                active ? 'opacity-70' : 'opacity-0',
+              )}
             >
               <X className="w-3 h-3" />
             </button>

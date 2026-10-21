@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
+import { useDialogFocus } from './useDialogFocus';
 
 export interface ConfirmRequest {
   title: string;
@@ -41,6 +42,8 @@ export function ConfirmDialog() {
     return () => { listeners.delete(l); };
   }, []);
 
+  const panel = useRef<HTMLDivElement>(null);
+  useDialogFocus(panel, !!req);
   const cancel = useCallback(() => settle(false), []);
   const ok = useCallback(() => settle(true), []);
 
@@ -49,7 +52,10 @@ export function ConfirmDialog() {
     confirmBtnRef.current?.focus();
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-      if (e.key === 'Enter') { e.preventDefault(); ok(); }
+      // Return confirms — unless focus is on another button, which Return presses: with focus moved to
+      // Cancel, Return used to confirm the removal anyway.
+      const onOther = e.target instanceof HTMLButtonElement && e.target !== confirmBtnRef.current;
+      if (e.key === 'Enter' && !onOther) { e.preventDefault(); ok(); }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -66,6 +72,7 @@ export function ConfirmDialog() {
       onClick={cancel}
     >
       <div
+        ref={panel}
         onClick={(e) => e.stopPropagation()}
         className="surface-overlay rounded-lg p-5 w-[440px] max-w-[90vw]"
       >

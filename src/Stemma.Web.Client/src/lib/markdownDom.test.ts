@@ -117,4 +117,20 @@ describe('a note is text, never code', () => {
   it('never makes a tag out of angle brackets in text', () => {
     expect(parse('<img src=x onerror=alert(1)>').querySelector('img')).toBeNull();
   });
+
+  // The editor's raw tags were set aside under a fixed marker, \u0001<n>\u0001, and put back by
+  // number. Text holding that marker — pasted from a terminal, written by a tool — showed as
+  // "undefined", or took the place of the note's underline.
+  it('keeps text that looks like the marker the raw tags are set aside under', () => {
+    expect(parse('a \u00011\u0001 b').textContent).toBe('a \u00011\u0001 b');
+    const host = parse('<u>under</u> and \u00010\u0001');
+    expect(host.querySelectorAll('u')).toHaveLength(1);
+    expect(host.textContent).toBe('under and \u00010\u0001');
+  });
+
+  it('keeps a private-use character too, whatever marker is chosen', () => {
+    const host = parse('<u>x</u> \ue0000\ue000 y');
+    expect(host.querySelector('u')?.textContent).toBe('x');
+    expect(host.textContent).toBe('x \ue0000\ue000 y');
+  });
 });

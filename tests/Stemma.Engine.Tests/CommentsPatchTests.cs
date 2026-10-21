@@ -381,8 +381,7 @@ public sealed class CommentsPatchTests
         // Whoever reads this is about to open the file and fix a merge: the line is what helps.
         var refused = () => Apply("{\n<<<<<<< HEAD\n  \"version\": 1\n}\n", new CommentChange.Add(Basket));
         refused.Should().Throw<SidecarPatchRefusedException>().Which.Message
-            .Should().StartWith("comments.stemma.json cannot be read at line 2: ")
-            .And.NotContain("LineNumber").And.NotContain("..");
+            .Should().Be("comments.stemma.json has merge conflict markers at line 2; resolve the conflict and save it.");
     }
 
     [Theory]
@@ -394,6 +393,26 @@ public sealed class CommentsPatchTests
     {
         var refused = () => Apply(Written, new CommentChange.Add(Json(json)));
         refused.Should().Throw<SidecarPatchRefusedException>().Which.Reason.Should().Be("NotAComment");
+    }
+
+    [Fact]
+    public void A_comment_or_reply_holding_half_an_emoji_is_refused_as_a_bad_change()
+    {
+        // Reading it threw, which the endpoint answered with a 500 rather than a refusal.
+        var comment = () => Apply(Written, new CommentChange.Add(Json("""{"id":"cmt_9","targetId":"t","body":"cut \ud83d"}""")));
+        comment.Should().Throw<SidecarPatchRefusedException>().Which.Reason.Should().Be("InvalidText");
+
+        var reply = () => Apply(Written, new CommentChange.AddReply("cmt_1", Json("""{"author":"ada\udc00","body":"ok"}""")));
+        reply.Should().Throw<SidecarPatchRefusedException>().Which.Reason.Should().Be("InvalidText");
+    }
+
+    [Fact]
+    public void A_file_holding_half_an_emoji_is_refused_with_its_line()
+    {
+        var read = () => Apply("{\n  \"version\": 1,\n  \"comments\": [{ \"id\": \"c\\ud83d\" }]\n}\n");
+        var refused = read.Should().Throw<SidecarPatchRefusedException>().Which;
+        refused.Reason.Should().Be("UnreadableSidecar");
+        refused.Message.Should().Contain("line 3");
     }
 
     [Fact]

@@ -256,4 +256,118 @@ public sealed class DslWriterContractTests
         result.Should().BeOfType<OperationApplied>();
         source.Should().Contain("        var mod = new Module(\"mod_001\", \"Checkout\");\n");
     }
+
+    // ---- a tag kept in a local, as domain-model.md writes it ------------------------------------
+
+    [Fact]
+    public async Task A_tag_kept_in_a_local_is_edited_in_place_not_added_twice()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    var tag = Tag.For(mod, lifecycle: new Lifecycle(Status: "current"));
+                    return Model.Of(mod, tag);
+            """, new SetLifecycleOp("op", "mod_001", "target", null, null, null));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().Contain("        var tag = Tag.For(mod, lifecycle: new Lifecycle(Status: \"target\"));\n");
+        source.Split("Tag.For").Should().HaveCount(2, "the one tag is edited, not joined by a second");
+    }
+
+    [Fact]
+    public async Task Emptying_a_tag_kept_in_a_local_removes_it_and_its_place_in_the_model()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    var tag = Tag.For(mod, lifecycle: new Lifecycle(Status: "current"));
+                    return Model.Of(mod, tag);
+            """, new SetLifecycleOp("op", "mod_001", null, null, null, null));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().NotContain("Tag.For").And.Contain("        return Model.Of(mod);\n");
+    }
+
+    [Fact]
+    public async Task Removing_an_element_takes_a_tag_kept_in_a_local_with_it()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    var other = new Module("mod_002", "Other");
+                    var tag = Tag.For(mod, ownership: new Ownership(Squad: "Core"));
+                    return Model.Of(mod, other, tag);
+            """, new RemoveElementOp("op", "mod_001"));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().NotContain("Tag.For").And.Contain("        return Model.Of(other);\n");
+    }
+
+    // ---- arguments written as constants --------------------------------------------------------
+    //
+    // The reader reads `Ids.Ctx` as the context it stands for. An edit must not then treat that
+    // argument as if the literal were written there: replacing the constant with a literal would
+    // quietly undo the author's choice of a constant, and clearing it would remove it.
+
+    private const string WithConstants = """
+                const string Ordering = "ctx_001";
+                const string Api = "cnt_api";
+                var ctxA = new BoundedContext(Ordering, "Ordering");
+                var ctxB = new BoundedContext("ctx_002", "Billing");
+                var mod = new Module("mod_001", "Checkout", Ordering);
+                var api = new Container(Api, "API", "sys_a");
+                return Model.Of(ctxA, ctxB, mod, api);
+        """;
+
+    [Fact]
+    public async Task An_argument_written_as_a_constant_is_not_overwritten_with_a_literal()
+    {
+        var (result, source) = await ApplyAsync(WithConstants, new SetElementContextOp("op", "mod_001", "ctx_002"));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("NotALiteral");
+        source.Should().Contain("        var mod = new Module(\"mod_001\", \"Checkout\", Ordering);\n");
+    }
+
+    [Fact]
+    public async Task An_argument_written_as_a_constant_is_not_cleared()
+    {
+        var (result, source) = await ApplyAsync(WithConstants, new SetElementContextOp("op", "mod_001", null));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("NotALiteral");
+        source.Should().Contain("        var mod = new Module(\"mod_001\", \"Checkout\", Ordering);\n");
+    }
+
+    [Fact]
+    public async Task Setting_a_constant_argument_to_what_it_already_says_changes_nothing()
+    {
+        var (result, source) = await ApplyAsync(WithConstants, new SetElementContextOp("op", "mod_001", "ctx_001"));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("RewriteFailed");
+        source.Should().Contain("        var mod = new Module(\"mod_001\", \"Checkout\", Ordering);\n");
+    }
+
+    [Fact]
+    public async Task A_declaration_whose_id_is_a_constant_is_found_and_its_literals_edited()
+    {
+        var (result, source) = await ApplyAsync(WithConstants, new SetElementAttributeOp("op", "cnt_api", "kind", "worker"));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().Contain("        var api = new Container(Api, \"API\", \"sys_a\", \"worker\");\n");
+    }
+
+    [Fact]
+    public void A_name_written_as_a_constant_is_not_renamed()
+    {
+        var root = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("""
+            using Stemma.Model;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var mod = new Module("mod_001", nameof(Architecture));
+                    return Model.Of(mod);
+                }
+            }
+            """).GetRoot();
+
+        var rename = () => DslWriter.RenameElement(root, "mod_001", "Checkout");
+        rename.Should().Throw<DslEditRefusedException>().Which.Reason.Should().Be("NotALiteral");
+    }
 }

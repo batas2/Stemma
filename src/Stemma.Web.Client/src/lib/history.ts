@@ -23,9 +23,10 @@
 /**
  * A presentation section a step can change: one entry, keyed by element or relationship id — or,
  * for `position`, where an element sits on one view (`view` names it); for `viewMembers`, the elements
- * a view from `Views/` names (`id` is the view's id).
+ * a view from `Views/` names (`id` is the view's id); for `shapes`, a view's free-form shapes, whole
+ * (`id` is the view's key); for `waypoints`, the bends of one relationship on one view (`view` names it).
  */
-export type PresentationSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'position' | 'viewMembers';
+export type PresentationSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'position' | 'viewMembers' | 'shapes' | 'waypoints';
 
 export interface PresentationChange {
   section: PresentationSection;
@@ -114,6 +115,15 @@ export class History {
   recordLayout(description: string): void {
     if (this.replaying) return;
     this.push(step(description, this.now(), { layout: true }));
+  }
+
+  /**
+   * Whether the last step is a move and nothing has been undone since, so the layout stack may fold
+   * another move into it — a run of arrow-key nudges is one step, not forty.
+   */
+  get lastStepIsMove(): boolean {
+    const top = this.undoSteps[this.undoSteps.length - 1];
+    return !this.group && !this.replaying && this.redoSteps.length === 0 && !!top && top.layout && top.ops === 0 && top.presentation.length === 0;
   }
 
   /** An engine operation this window applied. Inside a group it becomes part of the group. */

@@ -80,15 +80,14 @@ export function CommandPalette() {
         if (choice && choice !== '__none__') contextId = choice;
       }
     }
-    const prevIds = new Set((useApp.getState().arch?.elements ?? []).map((e) => e.id));
     const r = await applyOperation({
       kind: 'AddElement', opId: `op_${Date.now()}`,
       elementKind: kind, name, contextId,
     });
     if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return; }
     setOpen(false);
-    // Bulletproof reveal: id-diff select + switch to a lens that renders this kind.
-    const revealed = await revealNewElement(prevIds);
+    // The element the engine says it added, on a lens that renders its kind.
+    const revealed = await revealNewElement(r);
     setToast(revealed
       ? { kind: 'success', text: revealToast(revealed) }
       : { kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` });

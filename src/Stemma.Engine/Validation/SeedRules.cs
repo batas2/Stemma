@@ -67,6 +67,16 @@ public sealed class NoOrphanModules : IRule
     }
 }
 
+/// <summary>
+/// Data that comes back to where it started. Each cycle is reported on its own, naming the flows on
+/// it and nothing else: the search used to report every flow on the path that led to a cycle, so
+/// a → b → c → b named the flow from a, which no one had to change.
+///
+/// A request and its reply are one <c>twoway</c> flow rather than two arrows, so a round trip is
+/// not a cycle. A cycle that is meant can have the rule switched off, or made quieter, in
+/// <c>stemma.rules.json</c>. A per-flow <c>cyclic: ok</c> was once read here, but no DataFlow can be
+/// written with such an argument, so it never applied.
+/// </summary>
 [StemmaRule("no-circular-dataflows", Severity.Warning, "DataFlow links should not form cycles.")]
 public sealed class NoCircularDataFlows : IRule
 {
@@ -76,48 +86,74 @@ public sealed class NoCircularDataFlows : IRule
 
     public IEnumerable<Violation> Check(ArchModel.ArchModel model)
     {
-        var adj = new Dictionary<string, List<(string To, string LinkId)>>();
-        foreach (var l in model.Links.Where(x => x.Kind == ArchLinkKind.DataFlow))
+        var flows = model.Links.Where(x => x.Kind == ArchLinkKind.DataFlow).ToList();
+        var component = StronglyConnected(flows);
+        // A flow lies on a cycle exactly when both its ends are in the same strongly connected
+        // component: that component has a way back from its end to its start.
+        foreach (var cycle in flows
+                     .Where(f => component[f.FromId] == component[f.ToId])
+                     .GroupBy(f => component[f.FromId])
+                     .Where(g => g.Count() > 1 || g.First().FromId == g.First().ToId))
         {
-            // Allow opt-out via attribute `cyclic: ok`.
-            if (l.Attributes.TryGetValue("cyclic", out var c) && c == "ok") continue;
-            if (!adj.TryGetValue(l.FromId, out var list)) adj[l.FromId] = list = [];
-            list.Add((l.ToId, l.Id));
-        }
-        var visiting = new HashSet<string>();
-        var visited = new HashSet<string>();
-        var pathLinks = new Stack<string>();
-        var reported = new HashSet<string>();
-
-        bool Dfs(string node)
-        {
-            if (visiting.Contains(node)) return true;
-            if (visited.Contains(node)) return false;
-            visiting.Add(node);
-            if (adj.TryGetValue(node, out var neighbours))
-            {
-                foreach (var (to, linkId) in neighbours)
-                {
-                    pathLinks.Push(linkId);
-                    if (Dfs(to))
-                    {
-                        foreach (var lid in pathLinks) reported.Add(lid);
-                    }
-                    pathLinks.Pop();
-                }
-            }
-            visiting.Remove(node);
-            visited.Add(node);
-            return false;
-        }
-        foreach (var n in adj.Keys) Dfs(n);
-
-        if (reported.Count > 0)
-        {
+            var elements = cycle.SelectMany(f => new[] { f.FromId, f.ToId }).Distinct().ToList();
             yield return new Violation(Id, DefaultSeverity,
-                $"DataFlow cycle detected involving {reported.Count} link(s)",
-                [], reported.ToList());
+                $"DataFlows form a cycle through {string.Join(", ", elements)}",
+                elements, cycle.Select(f => f.Id).ToList());
         }
+    }
+
+    /// <summary>Tarjan's algorithm, iteratively: each element mapped to its component's number.</summary>
+    private static Dictionary<string, int> StronglyConnected(IReadOnlyList<ArchLink> flows)
+    {
+        var next = flows.GroupBy(f => f.FromId).ToDictionary(g => g.Key, g => g.Select(f => f.ToId).ToList());
+        var nodes = flows.SelectMany(f => new[] { f.FromId, f.ToId }).Distinct().ToList();
+        var index = new Dictionary<string, int>();
+        var low = new Dictionary<string, int>();
+        var component = new Dictionary<string, int>();
+        var stack = new Stack<string>();
+        var onStack = new HashSet<string>();
+        var counter = 0;
+
+        foreach (var start in nodes)
+        {
+            if (index.ContainsKey(start)) continue;
+            var work = new Stack<(string Node, int Edge)>();
+            work.Push((start, 0));
+            index[start] = low[start] = counter++;
+            stack.Push(start);
+            onStack.Add(start);
+            while (work.Count > 0)
+            {
+                var (node, edge) = work.Pop();
+                var targets = next.GetValueOrDefault(node) ?? [];
+                if (edge < targets.Count)
+                {
+                    work.Push((node, edge + 1));
+                    var to = targets[edge];
+                    if (!index.ContainsKey(to))
+                    {
+                        index[to] = low[to] = counter++;
+                        stack.Push(to);
+                        onStack.Add(to);
+                        work.Push((to, 0));
+                    }
+                    else if (onStack.Contains(to)) low[node] = Math.Min(low[node], index[to]);
+                    continue;
+                }
+                if (low[node] == index[node])
+                {
+                    string member;
+                    do
+                    {
+                        member = stack.Pop();
+                        onStack.Remove(member);
+                        component[member] = index[node];
+                    } while (member != node);
+                }
+                if (work.Count > 0) low[work.Peek().Node] = Math.Min(low[work.Peek().Node], low[node]);
+            }
+        }
+        return component;
     }
 }
 
@@ -162,4 +198,22 @@ public sealed class DeprecatedElementNoIncomingFlows : IRule
             }
         }
     }
+}
+
+/// <summary>
+/// What the model files declare that the reader could not read (<see cref="ArchModel.ArchModel.Unreadable"/>).
+/// A declaration whose id was written as a method call used to be missing from the canvas with
+/// nothing anywhere to say so; this is where it is said. An error when a whole declaration is left
+/// out, a warning when one of its arguments is read as empty.
+/// </summary>
+[StemmaRule("model/unreadable-declaration", Severity.Warning, "Every argument Stemma reads should be a string literal or a constant.")]
+public sealed class UnreadableDeclaration : IRule
+{
+    public string Id => "model/unreadable-declaration";
+    public Severity DefaultSeverity => Severity.Warning;
+    public string Description => "Every argument Stemma reads should be a string literal or a constant.";
+
+    public IEnumerable<Violation> Check(ArchModel.ArchModel model) =>
+        model.Unreadable.Select(p => new Violation(Id, p.LeftOut ? Severity.Error : DefaultSeverity, p.Message,
+            p.Id is null ? [] : [p.Id], []));
 }

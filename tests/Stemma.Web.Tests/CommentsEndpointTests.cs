@@ -153,6 +153,10 @@ public sealed class CommentsEndpointTests : IAsyncLifetime
     [InlineData("""{"changes":[{"op":"resolve"}]}""")]
     [InlineData("""{"changes":[{"op":"resolve","id":"cmt_1"}]}""")]
     [InlineData("""{"changes":[{"op":"add"}]}""")]
+    // These three were a NullReferenceException and a bare 500.
+    [InlineData("{}")]
+    [InlineData("""{"changes":null}""")]
+    [InlineData("""{"changes":[null]}""")]
     public async Task A_change_that_does_not_say_what_to_do_is_a_bad_request(string body)
     {
         var response = await _http.PatchAsync("/api/workspace/comments",

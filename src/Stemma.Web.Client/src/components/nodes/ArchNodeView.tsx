@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Box, Circle, Cuboid, Layers, Package, User, Server, Target, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
@@ -10,9 +10,10 @@ import { PublicationNode } from './PublicationNode';
 
 export type TagsByTarget = Record<string, ArchTagInfo>;
 
-/** The 6 connection dots, matching lib/edgeDock DockId. Each is rendered as an overlapping
- *  source+target handle so a relationship can dock either end on any dot and a new connection can
- *  be both started from and dropped onto it (ConnectionMode.Loose). */
+/** The 6 connection dots, matching lib/edgeDock DockId. One source handle each: under
+ *  ConnectionMode.Loose a source handle is also a target, so either end of a relationship docks on any
+ *  dot and a connection can be started from and dropped onto it. A source+target pair per dot meant
+ *  twelve handles per card, each subscribed to the canvas store — 3,240 on a 270-card view. */
 const DOCK_HANDLES: { id: string; position: Position; style?: CSSProperties }[] = [
   { id: 't1', position: Position.Top, style: { left: '33%' } },
   { id: 't2', position: Position.Top, style: { left: '67%' } },
@@ -302,10 +303,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           accent={nodeStyle?.accentColor !== undefined || nodeStyle?.borderColor !== undefined}
         />
         {DOCK_HANDLES.map((h) => (
-          <Fragment key={h.id}>
-            <Handle type="source" id={h.id} position={h.position} style={h.style} />
-            <Handle type="target" id={h.id} position={h.position} style={h.style} />
-          </Fragment>
+          <Handle key={h.id} type="source" id={h.id} position={h.position} style={h.style} />
         ))}
       </>
     );
@@ -512,12 +510,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           </>
         )}
         {/* 6 connection dots — relationships dock to these (see lib/edgeDock); free-form arrows dock
-            to the same points (see ShapeLayer). Each dot is a source+target pair (ConnectionMode.Loose). */}
+            to the same points (see ShapeLayer). A source handle is a target too (ConnectionMode.Loose). */}
         {DOCK_HANDLES.map((d) => (
-          <Fragment key={d.id}>
-            <Handle id={d.id} type="source" position={d.position} style={d.style} />
-            <Handle id={d.id} type="target" position={d.position} style={d.style} />
-          </Fragment>
+          <Handle key={d.id} id={d.id} type="source" position={d.position} style={d.style} />
         ))}
       </div>
     </>

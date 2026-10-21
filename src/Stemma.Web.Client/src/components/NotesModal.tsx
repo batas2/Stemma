@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import { useDialogFocus } from './useDialogFocus';
 import { X } from 'lucide-react';
 import type { ArchElementKind } from '@/lib/types';
 import { RichTextEditor } from './RichTextEditor';
@@ -13,6 +14,11 @@ export function NotesModal({ open, title, value, kind, existingKeys, onChange, o
   onChange: (next: string) => void;
   onClose: () => void;
 }) {
+  const box = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useDialogFocus(box, open);
+  // Escape outside the editor; inside it, the editor's own onClose (below) — it keeps its keys from
+  // reaching the window, which is why "Esc to close" used to do nothing while typing.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
@@ -23,16 +29,16 @@ export function NotesModal({ open, title, value, kind, existingKeys, onChange, o
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-[1180px] max-w-[97vw] h-[90vh] flex flex-col rounded-xl border border-default bg-white dark:bg-zinc-900 shadow-2xl">
+      <div ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onClick={(e) => e.stopPropagation()} className="w-[1180px] max-w-[97vw] h-[90vh] flex flex-col rounded-xl border border-default bg-white dark:bg-zinc-900 shadow-2xl outline-none">
         <div className="px-5 py-3 border-b border-default flex items-center gap-2 shrink-0">
-          <h2 className="text-sm font-semibold flex-1 truncate">{title}</h2>
+          <h2 id={titleId} className="text-sm font-semibold flex-1 truncate">{title}</h2>
           <span className="text-[11px] text-faint hidden sm:inline">Edits save automatically · Esc to close</span>
           <button onClick={onClose} aria-label="Close" className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 text-muted hover:text-body">
             <X className="w-4 h-4" />
           </button>
         </div>
         <div className="px-5 py-4 flex-1 flex flex-col min-h-0">
-          <RichTextEditor value={value} onChange={onChange} kind={kind} existingKeys={existingKeys} autoFocus rich className="flex-1 min-h-0" />
+          <RichTextEditor value={value} onChange={onChange} onClose={onClose} kind={kind} existingKeys={existingKeys} autoFocus rich className="flex-1 min-h-0" />
           <p className="text-[11px] text-faint mt-3 leading-snug shrink-0">
             Tip: <code className="px-1 rounded bg-zinc-100 dark:bg-zinc-800">#owner: ABC</code> sets a custom property you can show on the canvas.
             Type <code className="px-1 rounded bg-zinc-100 dark:bg-zinc-800">#</code> for suggestions, or switch to Markdown source with the toggle.

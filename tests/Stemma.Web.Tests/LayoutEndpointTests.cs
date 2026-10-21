@@ -122,6 +122,24 @@ public sealed class LayoutEndpointTests : IAsyncLifetime
         here.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{ "changes": null }""")]
+    [InlineData("""{ "changes": [null] }""")]
+    [InlineData("""{ "changes": [ { "value": 1 } ] }""")]
+    [InlineData("""{ "changes": [ { "path": null, "value": 1 } ] }""")]
+    [InlineData("""{ "changes": [ { "path": ["views", null], "value": 1 } ] }""")]
+    public async Task A_patch_with_nothing_to_apply_is_a_bad_request_not_a_crash(string body)
+    {
+        // Each was a NullReferenceException and a bare 500, which reads as "the server broke" rather
+        // than "this request says nothing".
+        var response = await _http.PatchAsync("/api/workspace/layout", new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("path");
+        (await File.ReadAllTextAsync(File_)).Should().Be(Sidecar);
+    }
+
     [Fact]
     public async Task The_whole_file_can_no_longer_be_put()
     {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import clsx from 'clsx';
+import { useDialogFocus } from './useDialogFocus';
 
 export interface PromptRequest {
   kind: 'text';
@@ -70,6 +71,8 @@ export function PromptDialog() {
     return () => { listeners.delete(l); };
   }, []);
 
+  const panel = useRef<HTMLDivElement>(null);
+  useDialogFocus(panel, !!req);
   if (!req) return null;
 
   const cancel = () => settle(null);
@@ -83,6 +86,7 @@ export function PromptDialog() {
       onClick={cancel}
     >
       <div
+        ref={panel}
         onClick={(e) => e.stopPropagation()}
         className="surface-overlay rounded-lg p-5 w-[480px] max-w-[90vw]"
       >

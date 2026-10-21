@@ -75,7 +75,9 @@ take outside changes in. The sidecar needs the same contract.
   `Write` for creating a file from nothing. The comments have no typed reader any more; nothing
   but the canvas and the report reads them.
 - **Neutral:** both editors share one span reader and layout (`JsonText`). A file that escapes
-  characters keeps escaping them; one that holds them raw, or has never had one, gets them raw.
+  characters keeps escaping them; one that holds them raw, or has never had one, gets them raw,
+  emoji included. An escape JSON requires (a control character) or one System.Text.Json writes
+  whatever it is told (an emoji's surrogate pair) does not make a file one that escapes.
 
 ## Alternatives considered
 

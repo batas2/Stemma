@@ -603,9 +603,10 @@ public class ArchModelTests
         var arch = await engine.ReadArchModelAsync();
         arch.Should().NotBeNull();
         var mermaid = MermaidExporter.Export(arch!, ArchViewKind.ModuleMap);
-        mermaid.Should().Contain("subgraph ctx_001");
-        mermaid.Should().Contain("mod_001[\"A\"]");
-        mermaid.Should().Contain("mod_001 -->|Event| mod_002");
+        // Node ids are generated in the model's order (ctx_001, mod_001, mod_002), never the model's ids.
+        mermaid.Should().Contain("subgraph n1[\"📦 Buyer\"]");
+        mermaid.Should().Contain("n2[\"A\"]");
+        mermaid.Should().Contain("n2 -->|Event| n3");
     }
 }
 

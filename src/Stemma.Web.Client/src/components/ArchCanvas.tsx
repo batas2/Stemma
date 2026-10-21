@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef, useDeferredValue } from 'react';
 import { reportFailure, ClientEvent } from '@/lib/log';
 import clsx from 'clsx';
 import {
@@ -92,8 +92,8 @@ import {
   pasteOrigin, planPaste, CASCADE, type Clip, type Point,
 } from '@/lib/clipboard';
 import { executePaste } from '@/lib/paste';
-import { SHORTCUT_HINTS } from '@/lib/shortcuts';
-import { history } from '@/lib/history';
+import { focusIsOnCanvas, keyBelongsToFocus, SHORTCUT_HINTS } from '@/lib/shortcuts';
+import { history, type PresentationChange } from '@/lib/history';
 import { viewRendersKind } from '@/lib/lenses';
 import { positionsAt, sizesAt, useCompareDiff } from '@/lib/compare';
 import { kindLabel } from '@/lib/modelDiff';
@@ -102,12 +102,14 @@ import { FindBar } from './FindBar';
 import { useApp, activePage } from '@/lib/store';
 import { stepMark, stepsLit, viewKeyOf } from '@/lib/books';
 import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
-import { applyOperation } from '@/lib/signalr';
+import { addedId, applyOperation, fetchUndoState } from '@/lib/signalr';
 import { friendlyOpError } from '@/lib/opError';
 import { relink } from '@/lib/relink';
+import { applyOrSay } from '@/lib/applyOp';
+import { confirmAndRemoveElements } from './removeElements';
 import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
-import { loadNote, saveNote } from '@/lib/elementNotes';
+import { loadNote, loadNotes, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
 import { layoutUndo, diffPositions, isEmptyDiff } from '@/lib/layoutUndo';
 import {
@@ -133,11 +135,34 @@ function edgeMarkerSpec(a: EdgeArrow | undefined, color?: string): EdgeMarker | 
     default: return undefined; // 'none' / unset
   }
 }
-import type { ArchElement, ArchElementKind, ViewKind } from '@/lib/types';
+import type { ArchElement, ArchElementKind, OperationEnvelope, ViewKind } from '@/lib/types';
 import { filterByView } from '@/lib/viewFilter';
 
 const nodeTypes = { arch: ArchNodeView };
 const edgeTypes = { waypointed: WaypointEdge };
+
+/** Equal by value: a model refresh brings new objects for elements and tags that have not changed. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Whether a rebuilt card says nothing the card on screen does not: same place, state, size and data. */
+function sameNode(a: Node, b: Node): boolean {
+  if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false;
+  if (a.selected !== b.selected || a.draggable !== b.draggable || a.type !== b.type) return false;
+  if (!sameValue(a.style, b.style)) return false;
+  const ad = a.data as Record<string, unknown>;
+  const bd = b.data as Record<string, unknown>;
+  for (const key of Object.keys(bd)) if (!sameValue(ad[key], bd[key])) return false;
+  return Object.keys(ad).length === Object.keys(bd).length;
+}
+
+const LAYOUT_LABEL: Record<LayoutAlgorithm, string> = {
+  hierarchical: 'hierarchical', force: 'force-directed',
+  focused: 'focused', byType: 'architectural (by type)',
+};
 
 function defaultPositions(elements: ArchElement[]): Record<string, SavedPosition> {
   return layoutHierarchical(elements, []);
@@ -214,7 +239,11 @@ function CanvasInner() {
   const view = useApp((s) => s.view);
   const customViews = useApp((s) => s.customViews);
   const activeId = useApp((s) => s.activeCustomViewId);
-  const workspace = useApp((s) => s.workspace);
+  // Only the folder, as an object that stays the same while the folder does. Each refresh after an edit
+  // replaces the store's workspace with a new object, and with it as a dependency every card and every
+  // arrow was rebuilt after every edit — a rename took up to 1.9 s to show on a 300-box model.
+  const rootPath = useApp((s) => s.workspace?.rootPath ?? null);
+  const workspace = useMemo(() => (rootPath ? { rootPath } : null), [rootPath]);
   const theme = useApp((s) => s.theme);
   const snapEnabled = useApp((s) => s.snapEnabled);
   const edgeStyles = useApp((s) => s.edgeStyles);
@@ -419,25 +448,27 @@ function CanvasInner() {
     return () => window.removeEventListener('stemma:layout-changed', refresh);
   }, [workspace, layoutKey, view, activeId]);
 
-  const handleAddWaypoint = useCallback((edgeId: string, point: SavedPosition) => {
+  // The bends as last set, for handlers that change them: written and recorded once per gesture, not
+  // inside a state updater React may run twice.
+  const waypointsNow = useRef(edgeWaypoints);
+  waypointsNow.current = edgeWaypoints;
+  const changeWaypoints = useCallback((edgeId: string, change: (current: SavedPosition[]) => SavedPosition[], description: string) => {
     if (!workspace) return;
-    setEdgeWaypoints((prev) => {
-      const current = prev[edgeId] ?? [];
-      const next = [...current, point];
-      saveEdgeWaypoints(workspace.rootPath, layoutKey as ViewKind, edgeId, next);
-      return { ...prev, [edgeId]: next };
-    });
+    const current = waypointsNow.current[edgeId] ?? [];
+    const next = change(current);
+    waypointsNow.current = { ...waypointsNow.current, [edgeId]: next };
+    setEdgeWaypoints(waypointsNow.current);
+    saveEdgeWaypoints(workspace.rootPath, layoutKey as ViewKind, edgeId, next);
+    history.recordPresentation([{ section: 'waypoints', id: edgeId, view: String(layoutKey), before: current, after: next }], description);
   }, [workspace, layoutKey]);
 
+  const handleAddWaypoint = useCallback((edgeId: string, point: SavedPosition) => {
+    changeWaypoints(edgeId, (current) => [...current, point], 'Add bend');
+  }, [changeWaypoints]);
+
   const handleRemoveWaypoint = useCallback((edgeId: string, index: number) => {
-    if (!workspace) return;
-    setEdgeWaypoints((prev) => {
-      const current = prev[edgeId] ?? [];
-      const next = current.filter((_, i) => i !== index);
-      saveEdgeWaypoints(workspace.rootPath, layoutKey as ViewKind, edgeId, next);
-      return { ...prev, [edgeId]: next };
-    });
-  }, [workspace, layoutKey]);
+    changeWaypoints(edgeId, (current) => current.filter((_, i) => i !== index), 'Remove bend');
+  }, [changeWaypoints]);
 
   // ---- Dock handles: which of the 6 connection dots each relationship anchors to. A user's
   // explicit choice (drawing / reconnecting) is persisted and always wins; otherwise an auto dock
@@ -786,7 +817,10 @@ function CanvasInner() {
   // 1.5s violations poll and other churn. Keeps the canvas light on large graphs.
   const notesById = useMemo(() => {
     const m = new Map<string, string>();
-    if (workspace) for (const el of filtered.elements) { const t = loadNote(workspace.rootPath, el.id); if (t) m.set(el.id, t); }
+    if (!workspace) return m;
+    // The section once, not once per element.
+    const all = loadNotes(workspace.rootPath);
+    for (const el of filtered.elements) { const t = all[el.id]; if (t) m.set(el.id, t); }
     return m;
   }, [workspace, filtered.elements, notesVersion]);
 
@@ -896,7 +930,7 @@ function CanvasInner() {
         const ctxId = e.attributes?.contextId ?? null;
         const ctxName = ctxId ? ctxById.get(ctxId) ?? null : null;
         const noteText = notesById.get(e.id) ?? '';
-        return {
+        const built = {
           id: e.id,
           type: 'arch',
           position: pos,
@@ -930,6 +964,9 @@ function CanvasInner() {
             isDependencyView: view === 'dependencyGraph',
           },
         } satisfies Node;
+        // The same card when nothing about it changed: React Flow then leaves it alone, and only the
+        // boxes an edit touched are drawn again.
+        return existing && sameNode(existing, built) ? existing : built;
       });
     });
   }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick]);
@@ -1237,25 +1274,35 @@ function CanvasInner() {
     };
   }, [getNodes, setViewport, layoutKey, workspace]);
 
+  const arrange = useRef<{ persistPositions: (next: Node[]) => void; recordArrangement: (before: Node[], after: Node[], description: string, key?: string) => void }>({
+    persistPositions: () => {}, recordArrangement: () => {},
+  });
+
   // Re-read layout when an external event (layout undo/redo) signals it changed.
   useEffect(() => {
     function refreshFromLayout() {
       if (!workspace) return;
+      // A view arranged by a constraint is solved again — applying a Row from the Layout panel used to
+      // be written and then shown only after a reload, because only stored positions were read here.
+      if (loadViewConstraint(workspace.rootPath, String(layoutKey))) { setSidecarTick((n) => n + 1); return; }
       const fresh = loadLayout(workspace.rootPath, layoutKey as ViewKind);
       setNodes((current) => current.map((n) => fresh[n.id] ? { ...n, position: fresh[n.id] } : n));
     }
     function nudge(ev: Event) {
       const detail = (ev as CustomEvent).detail as { nodeId: string; dx: number; dy: number };
       if (!workspace) return;
-      setNodes((current) => {
-        const next = current.map((n) => n.id === detail.nodeId
-          ? { ...n, position: { x: n.position.x + detail.dx, y: n.position.y + detail.dy } }
-          : n);
-        const positions: Record<string, SavedPosition> = {};
-        for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
-        saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
-        return next;
-      });
+      // Worked out here rather than in a state updater, which React may run twice: a move is recorded once.
+      const current = getNodes();
+      // Every selected box moves, as a drag of them would; with none selected on the canvas, the one
+      // the inspector shows.
+      const selected = new Set(current.filter((n) => n.selected).map((n) => n.id));
+      if (selected.size === 0) selected.add(detail.nodeId);
+      const next = current.map((n) => selected.has(n.id)
+        ? { ...n, position: { x: n.position.x + detail.dx, y: n.position.y + detail.dy } }
+        : n);
+      setNodes(next);
+      arrange.current.persistPositions(next);
+      arrange.current.recordArrangement(current, next, selected.size === 1 ? 'Nudge' : `Nudge ${selected.size} boxes`, `nudge:${[...selected].sort().join(',')}`);
     }
     // Authoritatively place a just-created node where it was dropped (overrides the default
     // grid slot the arch refresh may have assigned). No-op if the node isn't built yet — the
@@ -1291,6 +1338,11 @@ function CanvasInner() {
           return;
         }
         setNodes((current) => current.map((n) => (n.selected === (n.id === detail.nodeId) ? n : { ...n, selected: n.id === detail.nodeId })));
+        // Keyboard focus goes with the selection while it is on the canvas, so Tab and a screen reader
+        // are on the box that is selected.
+        if (focusIsOnCanvas()) {
+          (document.querySelector(`.react-flow__node[data-id="${CSS.escape(detail.nodeId)}"]`) as HTMLElement | null)?.focus({ preventScroll: true });
+        }
         try {
           fitView({ nodes: [{ id: detail.nodeId }], padding: 0.45, duration: prefersReducedMotion() ? 0 : 450, maxZoom: 1.2 });
         } catch { /* not on canvas */ }
@@ -1531,6 +1583,18 @@ function CanvasInner() {
     saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
   }, [workspace, layoutKey]);
 
+  // An arrangement is a move like a drag: one ⌘Z puts every box back where it was. Before, an auto
+  // layout, an align or a nudge could not be undone, and ⌘Z undid the model edit before it instead.
+  const recordArrangement = useCallback((before: Node[], after: Node[], description: string, key?: string) => {
+    if (!workspace) return;
+    const at = (ns: Node[]) => Object.fromEntries(ns.map((n) => [n.id, { x: n.position.x, y: n.position.y }]));
+    const diff = diffPositions(at(before), at(after));
+    if (isEmptyDiff(diff)) return;
+    layoutUndo.push({ workspaceRoot: workspace.rootPath, viewKey: String(layoutKey), before: diff.before, after: diff.after, description, ts: Date.now(), key });
+  }, [workspace, layoutKey]);
+  // For handlers bound earlier in this component than the two above.
+  arrange.current = { persistPositions, recordArrangement };
+
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
       // Capture pre-drag positions on the first `dragging: true` change of a session.
@@ -1671,7 +1735,7 @@ function CanvasInner() {
               confirmLabel: 'Rename',
             });
             if (!next || next === elem.name) return;
-            await applyOperation({ kind: 'RenameElement', opId: `op_${Date.now()}`, elementId: elem.id, newName: next });
+            await applyOrSay({ kind: 'RenameElement', opId: `op_${Date.now()}`, elementId: elem.id, newName: next });
           },
         },
         { id: 'sep-edit', label: '', onClick: () => {}, separator: true },
@@ -1709,9 +1773,11 @@ function CanvasInner() {
               ],
             });
             if (next === null) return;
-            await applyOperation({
+            // Only the status: the phase and dates already set stay as they are.
+            const life = arch.tags.find((t) => t.targetId === elem.id)?.lifecycle;
+            await applyOrSay({
               kind: 'SetLifecycle', opId: `op_${Date.now()}`,
-              targetId: elem.id, status: next || null, phase: null, validFrom: null, validUntil: null,
+              targetId: elem.id, status: next || null, phase: life?.phase ?? null, validFrom: life?.validFrom ?? null, validUntil: life?.validUntil ?? null,
             });
           },
         },
@@ -1760,7 +1826,7 @@ function CanvasInner() {
           onClick: async () => {
             const ok = await confirmAction({ title: `Remove ${elem.name}?`, confirmLabel: 'Remove', destructive: true });
             if (!ok) return;
-            await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: elem.id });
+            await applyOrSay({ kind: 'RemoveElement', opId: `op_${Date.now()}`, elementId: elem.id }, `Removed ${elem.name}`);
           },
         },
       ],
@@ -1770,6 +1836,7 @@ function CanvasInner() {
   const onEdgeContextMenu = useCallback((e: React.MouseEvent, edge: Edge) => {
     e.preventDefault();
     selectLink(edge.id);
+    const link = useApp.getState().arch?.links.find((l) => l.id === edge.id);
     const fire = (name: string) => () => window.dispatchEvent(new CustomEvent(name));
     setMenu({
       x: e.clientX, y: e.clientY,
@@ -1788,8 +1855,19 @@ function CanvasInner() {
           },
         },
         {
-          id: 'edit-payload', label: 'Edit payload / kind', icon: ContextIcons.Edit3, hint: 'dbl-click',
+          id: 'edit-payload', label: `Edit ${LINK_FIELD_LABEL[linkLabelField(link?.kind ?? 'dependency')].toLowerCase()}`, icon: ContextIcons.Edit3, hint: 'dbl-click',
           onClick: () => startEdgeEdit(edge.id),
+        },
+        {
+          // Found here, where an arrow is acted on, and not only under Appearance → Style.
+          id: 'reverse', label: 'Reverse direction', icon: ContextIcons.ArrowLeftRight, disabled: !link,
+          onClick: async () => {
+            if (!link) return;
+            const { id, error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
+            if (error) setToast({ kind: 'error', text: error });
+            else setToast({ kind: 'success', text: 'Relationship reversed' });
+            selectLink(id);
+          },
         },
         { id: 'sep', label: '', onClick: () => {}, separator: true },
         {
@@ -1797,12 +1875,12 @@ function CanvasInner() {
           onClick: async () => {
             const ok = await confirmAction({ title: 'Remove this relationship?', confirmLabel: 'Remove', destructive: true });
             if (!ok) return;
-            await applyOperation({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: edge.id });
+            await applyOrSay({ kind: 'RemoveLink', opId: `op_${Date.now()}`, linkId: edge.id }, 'Relationship removed');
           },
         },
       ],
     });
-  }, [selectLink, startEdgeEdit]);
+  }, [selectLink, startEdgeEdit, setToast]);
 
   // AC7 — the strip that shows what the first element wrote. Held here rather than in the store
   // because it is a one-off piece of teaching, not application state anything else reads.
@@ -1826,12 +1904,11 @@ function CanvasInner() {
 
   const addElementAt = useCallback(async (kind: ArchElementKind, pos: SavedPosition) => {
     const fresh = useApp.getState().arch;
-    const prevIds = new Set((fresh?.elements ?? []).map((e) => e.id));
-    const elementsBefore = prevIds.size;
+    const elementsBefore = fresh?.elements.length ?? 0;
     const name = suggestElementName(kind, fresh?.elements ?? []);
     const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
     if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return; }
-    const revealed = await revealNewElement(prevIds, { dropPos: pos });
+    const revealed = await revealNewElement(r, { dropPos: pos });
     if (revealed) {
       setToast({ kind: 'success', text: revealToast(revealed) });
       // Land straight in the name field: creating an element is a typing flow, not a menu hunt.
@@ -1843,61 +1920,57 @@ function CanvasInner() {
     else setToast({ kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` });
   }, [setToast, handleStartRename, explainFirstElement]);
 
-  const templateBoundedContextWithModules = useCallback(async (pos: SavedPosition) => {
-    const fresh = useApp.getState().arch;
-    const name = suggestElementName('boundedContext', fresh?.elements ?? []);
-    const r1 = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: 'boundedContext', name });
-    if ('reason' in r1) { setToast({ kind: 'error', text: friendlyOpError(r1) }); return; }
-    setTimeout(async () => {
-      const fresh2 = useApp.getState().arch;
-      const ctx = [...(fresh2?.elements ?? [])].reverse().find((e) => e.kind === 'boundedContext' && e.name === name);
-      if (!ctx || !workspace) return;
-      const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
-      positions[ctx.id] = { x: pos.x, y: pos.y };
-      let mx = pos.x + 240;
-      const my = pos.y;
-      // Two pre-seeded modules with names that won't collide with anything.
-      let modelSnapshot = useApp.getState().arch?.elements ?? [];
-      for (let i = 0; i < 2; i++) {
-        const mn = suggestElementName('module', modelSnapshot);
-        await applyOperation({
-          kind: 'AddElement', opId: `op_${Date.now()}_${mx}`, elementKind: 'module', name: mn, contextId: ctx.id,
-        });
-        await new Promise((r) => setTimeout(r, 80));
-        modelSnapshot = useApp.getState().arch?.elements ?? [];
-        const m = [...modelSnapshot].reverse().find((e) => e.kind === 'module' && e.name === mn);
-        if (m) { positions[m.id] = { x: mx, y: my }; mx += 240; }
+  // A template is several elements added in one go: one step of the undo history, each box placed by
+  // the id the engine gives it. It used to wait 80–200 ms and look the new boxes up by name, so a slow
+  // engine or a name already in use left a box at a default slot, and a refused add went unsaid.
+  const applyTemplate = useCallback(async (description: string, pos: SavedPosition, parts: { op: Omit<OperationEnvelope, 'opId'> | ((ids: string[]) => Omit<OperationEnvelope, 'opId'>); dx: number }[]): Promise<string[] | null> => {
+    if (!workspace) return null;
+    if (!history.beginGroup(description)) { setToast({ kind: 'error', text: 'Another change is still being written. Try again in a moment.' }); return null; }
+    const ids: string[] = [];
+    const placed: PresentationChange[] = [];
+    try {
+      for (const part of parts) {
+        const op = typeof part.op === 'function' ? part.op(ids) : part.op;
+        const r = await applyOperation({ ...op, opId: `op_${Date.now()}_t${ids.length}` } as OperationEnvelope);
+        if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return null; }
+        const id = addedId(r);
+        if (!id) return null;
+        ids.push(id);
+        const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
+        const at = { x: pos.x + part.dx, y: pos.y };
+        saveLayout(workspace.rootPath, layoutKey as ViewKind, { ...positions, [id]: at });
+        placed.push({ section: 'position', view: String(layoutKey), id, before: undefined, after: at });
       }
-      saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+      history.recordPresentation(placed, description);
       window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: layoutKey } }));
-      setToast({ kind: 'success', text: `Template applied: ${name} + 2 modules` });
-    }, 200);
+      return ids;
+    } finally {
+      history.endGroup(await fetchUndoState().then((st) => st.undoTop).catch(() => null));
+    }
   }, [workspace, layoutKey, setToast]);
 
+  const templateBoundedContextWithModules = useCallback(async (pos: SavedPosition) => {
+    const elements = useApp.getState().arch?.elements ?? [];
+    const name = suggestElementName('boundedContext', elements);
+    // Two modules with names that collide with nothing, the second named after the first exists.
+    const first = suggestElementName('module', elements);
+    const second = suggestElementName('module', [...elements, { id: '', kind: 'module', name: first, attributes: {} }]);
+    const ids = await applyTemplate(`Add ${name} with 2 modules`, pos, [
+      { op: { kind: 'AddElement', elementKind: 'boundedContext', name }, dx: 0 },
+      { op: ([ctx]) => ({ kind: 'AddElement', elementKind: 'module', name: first, contextId: ctx }), dx: 240 },
+      { op: ([ctx]) => ({ kind: 'AddElement', elementKind: 'module', name: second, contextId: ctx }), dx: 480 },
+    ]);
+    if (ids) setToast({ kind: 'success', text: `Template applied: ${name} + 2 modules` });
+  }, [applyTemplate, setToast]);
+
   const templateSystemWithContainer = useCallback(async (pos: SavedPosition) => {
-    const fresh = useApp.getState().arch;
-    const name = suggestElementName('softwareSystem', fresh?.elements ?? []);
-    await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: 'softwareSystem', name });
-    setTimeout(async () => {
-      const fresh2 = useApp.getState().arch;
-      const sys = [...(fresh2?.elements ?? [])].reverse().find((e) => e.kind === 'softwareSystem' && e.name === name);
-      if (!sys || !workspace) return;
-      const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
-      positions[sys.id] = { x: pos.x, y: pos.y };
-      const cName = `${name} Service`;
-      await applyOperation({
-        kind: 'AddElement', opId: `op_${Date.now() + 1}`, elementKind: 'container', name: cName,
-        systemId: sys.id, containerKind: 'service',
-      });
-      await new Promise((r) => setTimeout(r, 80));
-      const refreshed = useApp.getState().arch;
-      const cn = [...(refreshed?.elements ?? [])].reverse().find((e) => e.kind === 'container' && e.name === cName);
-      if (cn) positions[cn.id] = { x: pos.x + 240, y: pos.y };
-      saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
-      window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: layoutKey } }));
-      setToast({ kind: 'success', text: `Template applied: ${name} system` });
-    }, 200);
-  }, [workspace, layoutKey, setToast]);
+    const name = suggestElementName('softwareSystem', useApp.getState().arch?.elements ?? []);
+    const ids = await applyTemplate(`Add ${name} with a container`, pos, [
+      { op: { kind: 'AddElement', elementKind: 'softwareSystem', name }, dx: 0 },
+      { op: ([sys]) => ({ kind: 'AddElement', elementKind: 'container', name: `${name} Service`, systemId: sys, containerKind: 'service' }), dx: 240 },
+    ]);
+    if (ids) setToast({ kind: 'success', text: `Template applied: ${name} system` });
+  }, [applyTemplate, setToast]);
 
   // Middle of whatever the user is currently looking at — where a click-to-add element should land.
   const centreOfCanvas = useCallback((): SavedPosition => {
@@ -2035,7 +2108,7 @@ function CanvasInner() {
         try {
           const next = addShape(useApp.getState().shapes[layoutKey] ?? [], shape);
           useApp.getState().setShapesFor(layoutKey, next);
-          saveShapes(workspace.rootPath, layoutKey, next);
+          saveShapes(workspace.rootPath, layoutKey, next, 'Add shape');
           useApp.getState().selectShape(shape.id);
         } catch (err) {
           setToast({ kind: 'error', text: (err as Error).message });
@@ -2055,22 +2128,21 @@ function CanvasInner() {
 
     if (paletteKind) {
       const fresh = useApp.getState().arch;
-      const prevIds = new Set((fresh?.elements ?? []).map((el) => el.id));
       const name = suggestElementName(paletteKind, fresh?.elements ?? []);
       const result = await applyOperation({
         kind: 'AddElement', opId: `op_${Date.now()}`,
         elementKind: paletteKind, name,
       });
       if ('reason' in result) { setToast({ kind: 'error', text: friendlyOpError(result) }); return; }
-      // Bulletproof reveal: select by id-diff and switch to a lens that renders this kind,
-      // so the new element is never silently filtered off-canvas. Offset by ~half a node so
-      // the new box lands centred under the cursor, not down-right of it.
-      const revealed = await revealNewElement(prevIds, { dropPos: { x: dropPos.x - 100, y: dropPos.y - 44 } });
+      // The element the engine says it added, on a lens that renders its kind, so it is never
+      // silently filtered off-canvas. Offset by ~half a node so the new box lands centred under the
+      // cursor, not down-right of it.
+      const revealed = await revealNewElement(result, { dropPos: { x: dropPos.x - 100, y: dropPos.y - 44 } });
       if (!revealed) { setToast({ kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` }); return; }
       // Dropping a new module/capability inside a Bounded Context nests it there.
       if (paletteKind === 'module' || paletteKind === 'capability') {
         const target = bcAtPoint(bcBoxes(nodes), dropPos);
-        if (target) await applyOperation({ kind: 'SetElementContext', opId: `op_${Date.now()}`, elementId: revealed.id, contextId: target });
+        if (target) await applyOrSay({ kind: 'SetElementContext', opId: `op_${Date.now()}`, elementId: revealed.id, contextId: target });
       }
       setToast({ kind: 'success', text: revealToast(revealed) });
       return;
@@ -2126,7 +2198,8 @@ function CanvasInner() {
   }, []);
 
   const handleAutoLayout = useCallback((algo: LayoutAlgorithm) => {
-    setNodes((current) => {
+    {
+      const current = getNodes();
       const seed: Record<string, SavedPosition> = {};
       // Measured sizes from React Flow's rendered DOM — passed into the force layout so
       // its repulsion is AABB-aware, not centre-distance-only. Falls back to per-kind defaults
@@ -2158,28 +2231,25 @@ function CanvasInner() {
         }
       }
       const next = current.map((n) => ({ ...n, position: fresh[n.id] ?? n.position }));
+      setNodes(next);
       persistPositions(next);
+      recordArrangement(current, next, `${LAYOUT_LABEL[algo][0].toUpperCase()}${LAYOUT_LABEL[algo].slice(1)} layout`);
       setTimeout(() => fitWholeView(paddingUnderHeader(0.2), 600), 50);
-      return next;
-    });
+    }
     triggerLayoutAnimation();
-    const label: Record<LayoutAlgorithm, string> = {
-      hierarchical: 'hierarchical', force: 'force-directed',
-      focused: 'focused', byType: 'architectural (by type)',
-    };
-    setToast({ kind: 'success', text: `Applied ${label[algo]} layout` });
-  }, [filtered, persistPositions, fitWholeView, setToast, triggerLayoutAnimation, nodeBounds]);
+    setToast({ kind: 'success', text: `Applied ${LAYOUT_LABEL[algo]} layout` });
+  }, [filtered, getNodes, persistPositions, recordArrangement, fitWholeView, setToast, triggerLayoutAnimation, nodeBounds]);
 
   const handleAlign = useCallback((axis: 'left' | 'right' | 'centerX' | 'top' | 'bottom' | 'centerY') => {
-    setNodes((current) => {
-      const selected = current.filter((n) => n.selected).map((n) => n.id);
-      if (selected.length < 2) return current;
-      const aligned = alignSelected(nodeBounds(current), selected, axis);
-      const next = current.map((n) => ({ ...n, position: aligned[n.id] ?? n.position }));
-      persistPositions(next);
-      return next;
-    });
-  }, [persistPositions, nodeBounds]);
+    const current = getNodes();
+    const selected = current.filter((n) => n.selected).map((n) => n.id);
+    if (selected.length < 2) return;
+    const aligned = alignSelected(nodeBounds(current), selected, axis);
+    const next = current.map((n) => ({ ...n, position: aligned[n.id] ?? n.position }));
+    setNodes(next);
+    persistPositions(next);
+    recordArrangement(current, next, `Align ${selected.length} boxes`);
+  }, [getNodes, persistPositions, recordArrangement, nodeBounds]);
 
   const handleFitSelection = useCallback(() => {
     const selected = nodes.filter((n) => n.selected);
@@ -2193,8 +2263,8 @@ function CanvasInner() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'f' && e.key !== 'F') return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      // F alone: ⌘F is Find, and fitting the view under the find bar moved what was being searched.
+      if (e.metaKey || e.ctrlKey || e.altKey || keyBelongsToFocus(e)) return;
       e.preventDefault();
       handleFitSelection();
     }
@@ -2203,30 +2273,19 @@ function CanvasInner() {
   }, [handleFitSelection]);
 
   const handleDeleteSelected = useCallback(async () => {
-    const selected = nodes.filter((n) => n.selected);
-    if (selected.length === 0) return;
-    const ok = await confirmAction({
-      title: `Remove ${selected.length} element${selected.length === 1 ? '' : 's'}?`,
-      body: 'Linked relationships will be detached.',
-      confirmLabel: 'Remove',
-      destructive: true,
-    });
-    if (!ok) return;
-    for (const n of selected) {
-      await applyOperation({ kind: 'RemoveElement', opId: `op_${Date.now()}_${n.id}`, elementId: n.id });
-    }
-  }, [nodes]);
+    await confirmAndRemoveElements(getNodes().filter((n) => n.selected).map((n) => n.id));
+  }, [getNodes]);
 
   const handleDistribute = useCallback((axis: 'horizontal' | 'vertical') => {
-    setNodes((current) => {
-      const selected = current.filter((n) => n.selected).map((n) => n.id);
-      if (selected.length < 3) return current;
-      const distributed = distributeSelected(nodeBounds(current), selected, axis);
-      const next = current.map((n) => ({ ...n, position: distributed[n.id] ?? n.position }));
-      persistPositions(next);
-      return next;
-    });
-  }, [persistPositions, nodeBounds]);
+    const current = getNodes();
+    const selected = current.filter((n) => n.selected).map((n) => n.id);
+    if (selected.length < 3) return;
+    const distributed = distributeSelected(nodeBounds(current), selected, axis);
+    const next = current.map((n) => ({ ...n, position: distributed[n.id] ?? n.position }));
+    setNodes(next);
+    persistPositions(next);
+    recordArrangement(current, next, `Distribute ${selected.length} boxes`);
+  }, [getNodes, persistPositions, recordArrangement, nodeBounds]);
 
   // The Layout panel (right-hand rail) drives arrange/align/distribute/fit/delete via this event,
   // since it lives outside the canvas component tree and can't call these handlers directly.
@@ -2260,7 +2319,10 @@ function CanvasInner() {
       props: customProps[e.id],
     }));
   }, [find.open, arch, drawn.elements, notesById, customProps]);
-  const findTokens = useMemo(() => parseQuery(find.query), [find.query]);
+  // Matched at React's lower priority: the field takes each keystroke at once, and the canvas catches
+  // up — each key used to rebuild every card and arrow before the next one could be typed.
+  const findQuery = useDeferredValue(find.query);
+  const findTokens = useMemo(() => parseQuery(findQuery), [findQuery]);
   const findFound = useMemo(() => {
     if (!find.open || findTokens.length === 0) return null;
     const hit = new Set(cardFacts.filter((f) => findMatchesCard(f, findTokens)).map((f) => f.element.id));
@@ -2385,9 +2447,22 @@ function CanvasInner() {
   // every box draggable — and a drop onto another bounded context rewrites Architecture.cs. Every way
   // in is taken off the nodes and edges themselves: drag, select, resize, rename, notes, label edits,
   // waypoints, arrowheads.
+  // What each card was turned into last time, by the card it came from and what was applied to it: a
+  // card whose lighting, mark and state did not change is handed back as the same object, so lighting
+  // three matches out of three hundred draws three cards again, not three hundred.
+  const renderedNodeCache = useRef(new WeakMap<Node, { key: string; node: Node }>());
   const renderedNodes = useMemo<Node[]>(() => {
     if (!lit && !readOnly && !revealId && flashIds.size === 0 && !diff) return nestedNodes;
+    const cache = renderedNodeCache.current;
     return nestedNodes.map((n) => {
+      const key = [
+        n.id === revealId || flashIds.has(n.id) ? 'r' : '',
+        diff ? diff.elementChange.get(n.id) ?? (compareDimRest ? 'dim' : '-') : '',
+        readOnly ? 'ro' : '',
+        lit ? (lit.has(n.id) ? 'lit' : litHides ? 'hide' : 'fade') : '',
+      ].join('|');
+      const hit = cache.get(n);
+      if (hit && hit.key === key) return hit.node;
       let out = n;
       if (n.id === revealId || flashIds.has(n.id)) out = { ...out, data: { ...out.data, revealed: true } };
       if (diff) {
@@ -2408,13 +2483,26 @@ function CanvasInner() {
       if (lit && !lit.has(n.id)) {
         out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.2 } };
       }
+      cache.set(n, { key, node: out });
       return out;
     });
   }, [nestedNodes, lit, litHides, readOnly, revealId, flashIds, diff, compareDimRest]);
 
+  const renderedEdgeCache = useRef(new WeakMap<Edge, { key: string; edge: Edge }>());
   const renderedEdges = useMemo<Edge[]>(() => {
     if (!lit && !readOnly && !diff) return allEdges;
+    const cache = renderedEdgeCache.current;
     return allEdges.map((e) => {
+      const step = !spotLit ? stepNumber.get(e.id) : undefined;
+      const key = [
+        diff ? diff.linkChange.get(e.id) ?? (compareDimRest ? 'dim' : '-') : '',
+        readOnly ? 'ro' : '',
+        step !== undefined ? `s${step}${stepState.current?.link === e.id ? '*' : ''}` : stepNumber.size > 0 && !spotLit ? 'flow' : '',
+        lit ? (lit.has(e.source) && lit.has(e.target) ? 'lit' : 'out') : '',
+        litHides ? 'h' : '',
+      ].join('|');
+      const hit = cache.get(e);
+      if (hit && hit.key === key) return hit.edge;
       let out = e;
       if (diff) {
         const change = diff.linkChange.get(e.id);
@@ -2450,6 +2538,7 @@ function CanvasInner() {
       } else if (lit && !(lit.has(e.source) && lit.has(e.target))) {
         out = litHides ? { ...out, hidden: true } : { ...out, style: { ...out.style, opacity: 0.15 } };
       }
+      cache.set(e, { key, edge: out });
       return out;
     });
   }, [allEdges, lit, litHides, readOnly, diff, compareDimRest, spotLit, stepNumber, stepState]);
