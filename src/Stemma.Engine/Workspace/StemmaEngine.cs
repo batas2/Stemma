@@ -227,6 +227,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync();
         try
         {
+            if (_disposed) return;
             // The echo of Stemma's own write is told apart by content, not by time: the file says
             // exactly what the workspace holds, so there is nothing to take in. A window of "writes
             // within 1.5 s are ours" also swallowed a real save made inside it, and the engine then
@@ -431,6 +432,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(op.OpId);
             return await ApplyInternalAsync(op, recordUndo: true, ct);
         }
         finally
@@ -568,20 +570,38 @@ public sealed class StemmaEngine : IAsyncDisposable
         _model = await WorkspaceLoader.BuildModelAsync(_model.RootPath, _workspace.CurrentSolution, ct);
     }
 
+    /// <summary>
+    /// Close the workspace: stop watching first, so nothing new starts; then wait for whatever holds
+    /// the engine's lock — an edit, an undo, an outside change being taken in — to finish, so it is
+    /// never cut off half-written; then let go. Disposed without the lock, a reload the watcher had
+    /// started ran on into a workspace that was gone. Anything asked of the engine afterwards is
+    /// refused as WorkspaceClosed.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
-        await _lifetime.CancelAsync();
         if (_watcher is not null) await _watcher.DisposeAsync();
-        _workspace.Dispose();
-        EngineLog.WorkspaceClosed(_log);
-        await Task.CompletedTask;
+        await _gate.WaitAsync();
+        try
+        {
+            if (_disposed) return;
+            _disposed = true;
+            await _lifetime.CancelAsync();
+            _workspace.Dispose();
+            EngineLog.WorkspaceClosed(_log);
+        }
+        finally { _gate.Release(); }
     }
+
+    private bool _disposed;
+
+    private static OperationFailed Closed(string opId) => new(opId, "WorkspaceClosed", "The workspace has been closed.");
 
     public async Task<OperationResult> UndoAsync(string opId, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(opId);
             var entry = _undo.PeekUndo();
             if (entry is null) return new OperationFailed(opId, "NothingToUndo", "Undo stack is empty");
             // Apply the inverse op without re-pushing onto the undo stack. The entry moves to the redo
@@ -599,6 +619,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(opId);
             var entry = _undo.PeekRedo();
             if (entry is null) return new OperationFailed(opId, "NothingToRedo", "Redo stack is empty");
             var forward = entry.Forward with { OpId = opId };
@@ -1449,6 +1470,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(opId);
             return await LoggedAsync("SaveView", async () =>
             {
                 await CatchUpWithDiskAsync(ct);
@@ -1483,6 +1505,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_disposed) return Closed(opId);
             return await LoggedAsync("RemoveView", async () =>
             {
                 await CatchUpWithDiskAsync(ct);

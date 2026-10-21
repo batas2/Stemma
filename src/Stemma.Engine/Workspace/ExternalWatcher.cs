@@ -32,6 +32,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
     // file that was added, and is reported like any other change.
     private bool _seeded;
     private int _polling;
+    private bool _disposed;
 
     public event Action<string>? Changed;
 
@@ -151,6 +152,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
     {
         lock (_lock)
         {
+            if (_disposed) return;
             _pending.Add(path);
             _debounceCts?.Cancel();
             _debounceCts = new CancellationTokenSource();
@@ -161,6 +163,7 @@ public sealed class ExternalWatcher : IAsyncDisposable
                 string[] paths;
                 lock (_lock)
                 {
+                    if (_disposed) return;
                     paths = [.. _pending];
                     _pending.Clear();
                 }
@@ -177,8 +180,18 @@ public sealed class ExternalWatcher : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Stops watching, and drops what is waiting out the debounce: a change noticed just before the
+    /// workspace closed was otherwise announced half a second later to an engine that was gone.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
+        lock (_lock)
+        {
+            _disposed = true;
+            _debounceCts?.Cancel();
+            _pending.Clear();
+        }
         _watcher.EnableRaisingEvents = false;
         _watcher.Dispose();
         await _poller.DisposeAsync();
