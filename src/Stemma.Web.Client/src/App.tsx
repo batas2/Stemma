@@ -12,14 +12,14 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
-import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, undoOperation, redoOperation, applyOperation } from './lib/signalr';
+import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, applyOperation } from './lib/signalr';
 import { friendlyOpError } from './lib/opError';
 import { confirmAction } from './components/ConfirmDialog';
 import { removeShape, saveShapes } from './lib/shapes';
 import { archModel, listViolations, snapshot } from './lib/api';
-import { primeLayoutSidecar, rereadLayoutSidecar, loadLayout, saveLayout } from './lib/layout';
-import { layoutUndo } from './lib/layoutUndo';
-import type { ViewKind } from './lib/types';
+import { primeLayoutSidecar, rereadLayoutSidecar } from './lib/layout';
+import { configureHistory, redo, undo } from './lib/undo';
+import { history } from './lib/history';
 import { RenderShell } from './components/RenderShell';
 import { currentRenderParams } from './lib/renderMode';
 import { ViolationsPanel } from './components/ViolationsPanel';
@@ -29,7 +29,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { PromptDialog } from './components/PromptDialog';
 import { ToastQueue } from './components/ToastQueue';
 import { TopProgressBar } from './components/LoadingOverlay';
-import { bindShortcuts } from './lib/shortcuts';
+import { bindShortcuts, hasTextSelection } from './lib/shortcuts';
 
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
@@ -79,8 +79,10 @@ export default function App() {
       if ((a as unknown) !== PRESERVE) setArch(a);
       setViolations(v);
     }
+    configureHistory();
     const offOp = onOperationApplied(refresh);
-    const offExt = onExternalChange(refresh);
+    // An edit from outside makes the engine forget what could be redone; so does the journal.
+    const offExt = onExternalChange(() => { history.dropRedo(); void refresh(); });
     // A pull or a hand edit changed the sidecar: read it again, with this session's unsent edits laid over it.
     const offSidecar = onSidecarChanged(() => {
       const root = useApp.getState().workspace?.rootPath;
@@ -125,42 +127,19 @@ export default function App() {
   const capturing = useApp((s) => s.capturing);
   const bare = presenting || capturing;
 
-  function applyLayoutEntry(entry: { workspaceRoot: string; viewKey: string; positions: Record<string, { x: number; y: number }> }) {
-    const current = loadLayout(entry.workspaceRoot, entry.viewKey as ViewKind);
-    const merged = { ...current, ...entry.positions };
-    saveLayout(entry.workspaceRoot, entry.viewKey as ViewKind, merged);
-    window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: entry.viewKey } }));
-  }
-
-  function tryLayoutUndo(): boolean {
-    const entry = layoutUndo.popUndo();
-    if (!entry) return false;
-    applyLayoutEntry({ workspaceRoot: entry.workspaceRoot, viewKey: entry.viewKey, positions: entry.before });
-    return true;
-  }
-
-  function tryLayoutRedo(): boolean {
-    const entry = layoutUndo.popRedo();
-    if (!entry) return false;
-    applyLayoutEntry({ workspaceRoot: entry.workspaceRoot, viewKey: entry.viewKey, positions: entry.after });
-    return true;
-  }
-
   useEffect(() => {
     return bindShortcuts([
-      {
-        key: 'z', primary: true, description: 'Undo',
-        handler: () => { if (!tryLayoutUndo()) undoOperation().catch(reportFailure('Operations', ClientEvent.OperationFailed, 'Undo')); },
-      },
-      {
-        key: 'z', primary: true, shift: true, description: 'Redo',
-        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(reportFailure('Operations', ClientEvent.OperationFailed, 'Redo')); },
-      },
-      {
-        key: 'y', primary: true, description: 'Redo',
-        handler: () => { if (!tryLayoutRedo()) redoOperation().catch(reportFailure('Operations', ClientEvent.OperationFailed, 'Redo')); },
-      },
+      { key: 'z', primary: true, description: 'Undo', handler: () => { void undo(); } },
+      { key: 'z', primary: true, shift: true, description: 'Redo', handler: () => { void redo(); } },
+      { key: 'y', primary: true, description: 'Redo', handler: () => { void redo(); } },
       { key: 'k', primary: true, description: 'Command palette', handler: () => setPaletteOpen(true) },
+      // Copy and paste (F-015). ⌘C leaves selected text to the browser; the ⌥ pair names the key,
+      // because ⌥ changes the letter it types.
+      { key: 'c', primary: true, description: 'Copy', when: () => !hasTextSelection(), handler: () => fire('stemma:copy') },
+      { key: 'v', primary: true, description: 'Paste', handler: () => fire('stemma:paste') },
+      { key: 'd', primary: true, description: 'Duplicate', handler: () => fire('stemma:duplicate') },
+      { key: 'c', code: 'KeyC', primary: true, alt: true, description: 'Copy style', handler: () => fire('stemma:copy-style') },
+      { key: 'v', code: 'KeyV', primary: true, alt: true, description: 'Paste style', handler: () => fire('stemma:paste-style') },
       { key: '/', description: 'Focus search', handler: () => focusSidebarSearch() },
       { key: '?', shift: true, description: 'Show keyboard shortcuts', handler: () => setHelpOpen((v) => !v) },
       { key: 'tab', description: 'Cycle elements', handler: () => cycleElement(1) },
@@ -188,6 +167,8 @@ export default function App() {
       { key: '3', description: 'Concerns view', handler: () => useApp.getState().setView('concerns') },
     ]);
   }, [setPaletteOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function fire(name: string) { window.dispatchEvent(new CustomEvent(name)); }
 
   // Delete whatever is selected: shape (presentation only, no confirm), relationship or element
   // (model operations, confirmed first — same flow as the context menu / inspector).

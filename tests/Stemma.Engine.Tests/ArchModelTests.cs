@@ -83,6 +83,33 @@ public class ArchModelTests
     }
 
     [Fact]
+    public async Task AddElement_and_AddLink_say_the_id_they_made()
+    {
+        // Two new elements with one name: a caller finding "the new one" by name cannot tell them
+        // apart, so the result has to say which id each add made (F-015).
+        await using var ws = await CreateAsync("""
+            var ctx = new BoundedContext("ctx_001", "Buyer");
+        """);
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+
+        var first = await engine.ApplyAsync(new AddElementOp("op1", ArchElementKind.Module, "Twin"));
+        var second = await engine.ApplyAsync(new AddElementOp("op2", ArchElementKind.Module, "Twin"));
+        var firstId = first.Should().BeOfType<Operations.OperationApplied>().Subject
+            .Deltas.Should().ContainSingle().Which.Should().BeOfType<Operations.ElementAdded>().Subject.Id;
+        var secondId = second.Should().BeOfType<Operations.OperationApplied>().Subject
+            .Deltas.Should().ContainSingle().Which.Should().BeOfType<Operations.ElementAdded>().Subject.Id;
+        firstId.Should().NotBe(secondId);
+
+        var link = await engine.ApplyAsync(new AddLinkOp("op3", ArchLinkKind.DataFlow, firstId, secondId, Payload: "Event"));
+        var linkId = link.Should().BeOfType<Operations.OperationApplied>().Subject
+            .Deltas.Should().ContainSingle().Which.Should().BeOfType<Operations.LinkAdded>().Subject.Id;
+
+        var arch = await engine.ReadArchModelAsync();
+        arch!.Elements.Where(e => e.Name == "Twin").Select(e => e.Id).Should().BeEquivalentTo([firstId, secondId]);
+        arch.Links.Should().ContainSingle(l => l.Id == linkId && l.FromId == firstId && l.ToId == secondId);
+    }
+
+    [Fact]
     public async Task An_edit_through_a_project_workspace_does_not_add_a_byte_order_mark()
     {
         await using var ws = await CreateAsync("""

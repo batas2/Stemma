@@ -1,5 +1,6 @@
 import * as signalR from '@microsoft/signalr';
 import { correlationId } from './log';
+import { history } from './history';
 import type { OperationEnvelope, OperationResult } from './types';
 
 let connection: signalR.HubConnection | null = null;
@@ -54,7 +55,36 @@ export function onCommentsChanged(cb: () => void) {
  */
 export async function applyOperation(op: OperationEnvelope): Promise<OperationResult> {
   const conn = await ensureConnection();
-  return conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
+  const result = await conn.invoke<OperationResult>('ApplyOperation', op, correlationId());
+  // Every edit this window makes is a step of its undo history (F-015 AC6), in the order it was made.
+  if (!('reason' in result)) history.recordOperation(describeOperation(op));
+  return result;
+}
+
+/** What an operation did, in the words an undo toast uses ("Undid Rename"). */
+export function describeOperation(op: OperationEnvelope): string {
+  switch (op.kind) {
+    case 'AddElement': return typeof op.name === 'string' ? `Add ${op.name}` : 'Add element';
+    case 'RenameElement': return 'Rename';
+    case 'RemoveElement': return 'Delete';
+    case 'AddLink': return 'Add relationship';
+    case 'RemoveLink': return 'Delete relationship';
+    case 'SetLinkAttribute': return 'Edit relationship';
+    case 'SetLifecycle': return 'Set status';
+    case 'SetOwnership': return 'Set owner';
+    case 'SetElementContext': return 'Move to bounded context';
+    case 'SetElementAttribute': return 'Edit attribute';
+    default: return 'Edit';
+  }
+}
+
+/** The id an AddElement or AddLink made, as the engine says it (F-015) — null for any other result. */
+export function addedId(result: OperationResult): string | null {
+  if ('reason' in result) return null;
+  for (const d of result.deltas as { kind?: string; id?: string }[]) {
+    if ((d.kind === 'ElementAdded' || d.kind === 'LinkAdded') && typeof d.id === 'string') return d.id;
+  }
+  return null;
 }
 
 export async function undoOperation(): Promise<OperationResult | null> {
@@ -67,7 +97,11 @@ export async function redoOperation(): Promise<OperationResult | null> {
   return conn.invoke<OperationResult | null>('Redo');
 }
 
-export interface UndoState { canUndo: boolean; canRedo: boolean; undoDescription: string | null; redoDescription: string | null; }
+export interface UndoState {
+  canUndo: boolean; canRedo: boolean; undoDescription: string | null; redoDescription: string | null;
+  /** How deep the engine's stacks are; a grouped undo checks these before undoing a group together. */
+  undoDepth: number; redoDepth: number;
+}
 
 export async function fetchUndoState(): Promise<UndoState> {
   const conn = await ensureConnection();

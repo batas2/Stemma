@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
+import { primaryKeyLabel, shiftKeyLabel, SHORTCUT_HINTS } from '@/lib/shortcuts';
 
 interface Props {
   open: boolean;
@@ -7,8 +7,13 @@ interface Props {
 }
 
 const SHORTCUTS: { keys: string; description: string; category: string }[] = [
-  { category: 'Editing', keys: `${primaryKeyLabel}Z`, description: 'Undo' },
+  { category: 'Editing', keys: `${primaryKeyLabel}Z`, description: 'Undo the last step — a move, a look, an edit or a whole paste' },
   { category: 'Editing', keys: `${primaryKeyLabel}${shiftKeyLabel}Z`, description: 'Redo' },
+  { category: 'Editing', keys: SHORTCUT_HINTS.copy, description: 'Copy the selected elements (and the relationships between them)' },
+  { category: 'Editing', keys: SHORTCUT_HINTS.paste, description: 'Paste — right-click the canvas to paste somewhere in particular' },
+  { category: 'Editing', keys: SHORTCUT_HINTS.duplicate, description: 'Duplicate the selection in place' },
+  { category: 'Editing', keys: SHORTCUT_HINTS.copyStyle, description: 'Copy the style of the selected element or relationship' },
+  { category: 'Editing', keys: SHORTCUT_HINTS.pasteStyle, description: 'Paste that style onto the selection' },
   { category: 'Editing', keys: `${primaryKeyLabel}K`, description: 'Command palette' },
   { category: 'Editing', keys: 'Del / ⌫', description: 'Delete selected element / relationship / shape' },
   { category: 'Editing', keys: 'F2', description: 'Rename element · edit relationship type in place' },

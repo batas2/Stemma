@@ -86,6 +86,14 @@ import { confirmAction } from './ConfirmDialog';
 import { promptText, pickFromList } from './PromptDialog';
 import { suggestElementName } from '@/lib/naming';
 import { revealNewElement, revealToast } from '@/lib/canvasReveal';
+import {
+  buildClip, clipText, heldClip, heldStyleFor, holdClip, holdStyle, lookOf, nextPasteCount, pasteLook,
+  pasteOrigin, planPaste, CASCADE, type Clip, type Point,
+} from '@/lib/clipboard';
+import { executePaste } from '@/lib/paste';
+import { SHORTCUT_HINTS } from '@/lib/shortcuts';
+import { history } from '@/lib/history';
+import { viewRendersKind } from '@/lib/lenses';
 import { useApp, activePage } from '@/lib/store';
 import { viewKeyOf } from '@/lib/books';
 import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
@@ -1227,6 +1235,168 @@ function CanvasInner() {
     };
   }, [workspace, layoutKey]);
 
+  // ---- Copy, paste, duplicate, and copying a look (F-015). The gestures arrive as window events
+  // from the shortcuts and menus; what a copy holds and where a paste lands are decided in
+  // lib/clipboard, and the operations are carried out by lib/paste.
+
+  /** What is selected on the canvas: the marquee / Ctrl-click set, or the one selected element. */
+  const selectedForCopy = useCallback((): string[] => {
+    const multi = getNodes().filter((n) => n.selected).map((n) => n.id);
+    if (multi.length > 0) return multi;
+    const one = useApp.getState().selectedElementId;
+    return one ? [one] : [];
+  }, [getNodes]);
+
+  const clipOf = useCallback((ids: string[]): Clip | null => {
+    const st = useApp.getState();
+    if (!st.arch || !workspace) return null;
+    const boxes: Record<string, { x: number; y: number; w: number; h: number }> = {};
+    for (const n of getNodes()) {
+      if (n.hidden) continue;
+      const { w, h } = nodeSize(n);
+      boxes[n.id] = { x: n.position.x, y: n.position.y, w: n.measured?.width ?? w, h: n.measured?.height ?? h };
+    }
+    return buildClip(st.arch, ids, {
+      viewKey: String(layoutKey), boxes,
+      nodeStyles: st.nodeStyles, edgeStyles: st.edgeStyles, customProps: st.customProps,
+      note: (id) => loadNote(workspace.rootPath, id),
+    });
+  }, [getNodes, layoutKey, workspace]);
+
+  /** The middle of what is on screen, and whether a box in flow coordinates is on screen at all. */
+  const screenInFlow = useCallback(() => {
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    if (!rect) return { centre: { x: 200, y: 160 }, shows: () => false };
+    const a = screenToFlowPosition({ x: rect.left, y: rect.top });
+    const b = screenToFlowPosition({ x: rect.right, y: rect.bottom });
+    return {
+      centre: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      shows: (p: Point, size: { w: number; h: number }) => p.x < b.x && p.x + size.w > a.x && p.y < b.y && p.y + size.h > a.y,
+    };
+  }, [screenToFlowPosition]);
+
+  const pasteClip = useCallback(async (clip: Clip, at: Point, description: string) => {
+    const st = useApp.getState();
+    if (!st.arch) return;
+    const plan = planPaste(clip, st.arch, {
+      at,
+      contextAt: (p) => bcAtPoint(bcBoxes(getNodes()), p),
+      sizeOf: (id) => { const e = clip.elements.find((x) => x.id === id); return { w: e?.nodeStyle?.width ?? 200, h: e?.nodeStyle?.height ?? 92 }; },
+    });
+    const result = await executePaste(plan, String(layoutKey), description);
+    if (result.created.length > 0) {
+      // The copies are what the next gesture is about: drag them, duplicate again, delete them.
+      if (result.created.length === 1) useApp.getState().selectElement(result.created[0]);
+      else useApp.getState().selectElement(null);
+      window.dispatchEvent(new CustomEvent('stemma:select-nodes', { detail: { ids: result.created } }));
+    }
+    if (result.failed) { setToast({ kind: 'error', text: result.failed }); return; }
+    const kinds = plan.elements.map((e) => e.kind);
+    const unseen = activeCustomView ? 0 : kinds.filter((k) => !viewRendersKind(view, k)).length;
+    setToast({
+      kind: 'success',
+      text: unseen > 0 ? `${description} — ${unseen} not drawn on this lens; they are in the model` : description,
+    });
+  }, [getNodes, layoutKey, setToast, activeCustomView, view]);
+
+  useEffect(() => {
+    function described(verb: string, clip: Clip): string {
+      return clip.elements.length === 1 ? `${verb} ${clip.elements[0].name}` : `${verb} ${clip.elements.length} elements`;
+    }
+    function onCopy() {
+      const clip = clipOf(selectedForCopy());
+      if (!clip) return;
+      holdClip(clip);
+      // The names, as text, for whatever the person pastes into next. Refused on an insecure origin.
+      navigator.clipboard?.writeText(clipText(clip)).catch(reportFailure('Canvas', ClientEvent.Unhandled, 'Copying names as text'));
+      setToast({ kind: 'info', text: clip.elements.length === 1 ? `Copied ${clip.elements[0].name}` : `Copied ${clip.elements.length} elements` });
+    }
+    function onPaste(ev: Event) {
+      const clip = heldClip();
+      if (!clip || history.groupOpen) return;
+      const at = (ev as CustomEvent).detail?.at as { clientX: number; clientY: number } | undefined;
+      const screen = screenInFlow();
+      let origin: Point;
+      if (at) {
+        // Paste here: the copy's corner where the menu was opened.
+        origin = screenToFlowPosition({ x: at.clientX, y: at.clientY });
+      } else {
+        origin = pasteOrigin(clip, {
+          viewKey: String(layoutKey), pasteCount: nextPasteCount(),
+          originalsOnScreen: screen.shows(clip.origin, clip.size), viewportCentre: screen.centre,
+        });
+      }
+      void pasteClip(clip, origin, described('Pasted', clip));
+    }
+    function onDuplicate() {
+      if (history.groupOpen) return;
+      const clip = clipOf(selectedForCopy());
+      if (!clip) return;
+      // In place, a step down and right; the clipboard is left as it was.
+      void pasteClip(clip, { x: clip.origin.x + CASCADE, y: clip.origin.y + CASCADE }, described('Duplicated', clip));
+    }
+    function onCopyStyle() {
+      const st = useApp.getState();
+      if (st.selectedLinkId) {
+        holdStyle({ target: 'edge', style: { ...(st.edgeStyles[st.selectedLinkId] ?? DEFAULT_EDGE_STYLE) } });
+        setToast({ kind: 'info', text: 'Copied the relationship\'s style' });
+        return;
+      }
+      const id = selectedForCopy()[0];
+      if (!id) return;
+      holdStyle({ target: 'node', style: lookOf(st.nodeStyles[id] ?? { borderWidth: 1, borderStyle: 'solid' }) });
+      const name = st.arch?.elements.find((e) => e.id === id)?.name ?? 'the element';
+      setToast({ kind: 'info', text: `Copied ${name}'s style` });
+    }
+    function onPasteStyle() {
+      const st = useApp.getState();
+      if (st.selectedLinkId) {
+        const held = heldStyleFor('edge');
+        if (!held || held.target !== 'edge') { setToast({ kind: 'info', text: 'Copy a relationship\'s style first (⌥⌘C)' }); return; }
+        history.beginGroup('Paste style');
+        st.setEdgeStyleFor(st.selectedLinkId, { ...held.style });
+        history.endGroup();
+        setToast({ kind: 'success', text: 'Pasted the style' });
+        return;
+      }
+      const ids = selectedForCopy();
+      const held = heldStyleFor('node');
+      if (ids.length === 0) return;
+      if (!held || held.target !== 'node') { setToast({ kind: 'info', text: 'Copy an element\'s style first (⌥⌘C)' }); return; }
+      const description = ids.length === 1 ? 'Paste style' : `Paste style to ${ids.length} elements`;
+      history.beginGroup(description);
+      for (const id of ids) st.setNodeStyleFor(id, pasteLook(useApp.getState().nodeStyles[id], held.style));
+      history.endGroup();
+      setToast({ kind: 'success', text: ids.length === 1 ? 'Pasted the style' : `Pasted the style to ${ids.length} elements` });
+    }
+    function onSelectNodes(ev: Event) {
+      const ids = new Set(((ev as CustomEvent).detail?.ids as string[] | undefined) ?? []);
+      if (ids.size === 0) return;
+      // The copies arrive with the model read back after the last operation; wait for them, briefly.
+      let tries = 0;
+      const attempt = () => {
+        const present = getNodes().filter((n) => ids.has(n.id)).length;
+        if (present < ids.size && tries++ < 30) { setTimeout(attempt, 60); return; }
+        setNodes((current) => current.map((n) => ({ ...n, selected: ids.has(n.id) })));
+      };
+      attempt();
+    }
+    window.addEventListener('stemma:copy', onCopy);
+    window.addEventListener('stemma:paste', onPaste);
+    window.addEventListener('stemma:duplicate', onDuplicate);
+    window.addEventListener('stemma:copy-style', onCopyStyle);
+    window.addEventListener('stemma:paste-style', onPasteStyle);
+    window.addEventListener('stemma:select-nodes', onSelectNodes);
+    return () => {
+      window.removeEventListener('stemma:copy', onCopy);
+      window.removeEventListener('stemma:paste', onPaste);
+      window.removeEventListener('stemma:duplicate', onDuplicate);
+      window.removeEventListener('stemma:copy-style', onCopyStyle);
+      window.removeEventListener('stemma:paste-style', onPasteStyle);
+      window.removeEventListener('stemma:select-nodes', onSelectNodes);
+    };
+  }, [clipOf, selectedForCopy, pasteClip, screenInFlow, screenToFlowPosition, layoutKey, setToast, getNodes]);
+
   const persistPositions = useCallback((next: Node[]) => {
     if (!workspace) return;
     const key = String(layoutKey);
@@ -1358,9 +1528,18 @@ function CanvasInner() {
   const onNodeContextMenu = useCallback((e: React.MouseEvent, node: Node) => {
     e.preventDefault();
     select(node.id);
+    // A right-click on a box outside the selection is about that box alone, as in a file browser;
+    // one inside the selection is about all of it.
+    setNodes((current) => current.some((n) => n.id === node.id && n.selected)
+      ? current
+      : current.map((n) => (n.selected === (n.id === node.id) ? n : { ...n, selected: n.id === node.id })));
     if (!arch) return;
     const elem = arch.elements.find((x) => x.id === node.id);
     if (!elem) return;
+    const many = getNodes().filter((n) => n.selected && n.id !== node.id).length;
+    const subject = many > 0 ? `${many + 1} elements` : null;
+    const styleHeld = heldStyleFor('node') !== null;
+    const fire = (name: string) => () => window.dispatchEvent(new CustomEvent(name));
     setMenu({
       x: e.clientX, y: e.clientY,
       items: [
@@ -1377,6 +1556,15 @@ function CanvasInner() {
             await applyOperation({ kind: 'RenameElement', opId: `op_${Date.now()}`, elementId: elem.id, newName: next });
           },
         },
+        { id: 'sep-edit', label: '', onClick: () => {}, separator: true },
+        { id: 'copy', label: subject ? `Copy ${subject}` : 'Copy', icon: ContextIcons.Copy, hint: SHORTCUT_HINTS.copy, onClick: fire('stemma:copy') },
+        { id: 'duplicate', label: subject ? `Duplicate ${subject}` : 'Duplicate', icon: ContextIcons.CopyPlus, hint: SHORTCUT_HINTS.duplicate, onClick: fire('stemma:duplicate') },
+        { id: 'copy-style', label: 'Copy style', icon: ContextIcons.Paintbrush, hint: SHORTCUT_HINTS.copyStyle, onClick: fire('stemma:copy-style') },
+        {
+          id: 'paste-style', label: subject ? `Paste style to ${subject}` : 'Paste style', icon: ContextIcons.PaintBucket,
+          hint: SHORTCUT_HINTS.pasteStyle, disabled: !styleHeld, onClick: fire('stemma:paste-style'),
+        },
+        { id: 'sep-model', label: '', onClick: () => {}, separator: true },
         {
           id: 'copy-id', label: 'Copy id', icon: ContextIcons.Copy, hint: elem.id,
           onClick: () => {
@@ -1459,14 +1647,21 @@ function CanvasInner() {
         },
       ],
     });
-  }, [arch, select, setToast]);
+  }, [arch, select, setToast, getNodes]);
 
   const onEdgeContextMenu = useCallback((e: React.MouseEvent, edge: Edge) => {
     e.preventDefault();
     selectLink(edge.id);
+    const fire = (name: string) => () => window.dispatchEvent(new CustomEvent(name));
     setMenu({
       x: e.clientX, y: e.clientY,
       items: [
+        { id: 'copy-style', label: 'Copy style', icon: ContextIcons.Paintbrush, hint: SHORTCUT_HINTS.copyStyle, onClick: fire('stemma:copy-style') },
+        {
+          id: 'paste-style', label: 'Paste style', icon: ContextIcons.PaintBucket, hint: SHORTCUT_HINTS.pasteStyle,
+          disabled: heldStyleFor('edge') === null, onClick: fire('stemma:paste-style'),
+        },
+        { id: 'sep-style', label: '', onClick: () => {}, separator: true },
         {
           id: 'copy-id', label: 'Copy id', icon: ContextIcons.Copy, hint: edge.id,
           onClick: () => {
@@ -1614,9 +1809,17 @@ function CanvasInner() {
     e.preventDefault();
     const me = e as MouseEvent;
     const dropPos = screenToFlowPosition({ x: me.clientX, y: me.clientY });
+    const clip = heldClip();
     setMenu({
       x: me.clientX, y: me.clientY,
       items: [
+        {
+          id: 'paste-here',
+          label: clip ? (clip.elements.length === 1 ? `Paste ${clip.elements[0].name} here` : `Paste ${clip.elements.length} elements here`) : 'Paste here',
+          icon: ContextIcons.ClipboardPaste, hint: SHORTCUT_HINTS.paste, disabled: !clip,
+          onClick: () => window.dispatchEvent(new CustomEvent('stemma:paste', { detail: { at: { clientX: me.clientX, clientY: me.clientY } } })),
+        },
+        { id: 'sep-paste', label: '', onClick: () => {}, separator: true },
         {
           id: 'add-module', label: 'Add Module here', icon: ContextIcons.Plus,
           onClick: async () => addElementAt('module', dropPos),

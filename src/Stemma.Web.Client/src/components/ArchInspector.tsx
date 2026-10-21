@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, Edit3, Trash2, Activity, Workflow, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Plus, Maximize2, Info, FileText, Palette, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { X, Edit3, Trash2, Activity, Paintbrush, PaintBucket, Workflow, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Plus, Maximize2, Info, FileText, Palette, MessageSquare, Spline, ArrowLeftRight, LayoutDashboard } from 'lucide-react';
 import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import { InspectorActions } from './InspectorActions';
@@ -21,6 +21,8 @@ import { LayoutPanel } from './LayoutPanel';
 import { RichTextEditor } from './RichTextEditor';
 import { NotesModal } from './NotesModal';
 import { loadNote, saveNote } from '@/lib/elementNotes';
+import { heldStyleFor, subscribeHeldStyle } from '@/lib/clipboard';
+import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { hashtagProps } from '@/lib/hashtags';
 
 interface RailTab { id: string; icon: React.ReactNode; label: string; }
@@ -416,6 +418,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
         </Section>
 
         <Section label="Appearance" persistKey="element.appearance" defaultOpen icon={<Palette className="w-3 h-3" />}>
+          <StyleClipboardRow target="node" />
           <SubSection title="Presets — one-click looks" defaultOpen>
             <div className="grid grid-cols-2 gap-2">
               {STYLE_PRESETS.map((p) => (
@@ -881,6 +884,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
         </Section>
 
         <Section label="Appearance" persistKey="link.appearance" defaultOpen icon={<Palette className="w-3 h-3" />}>
+          <StyleClipboardRow target="edge" />
           <SubSection title="Presets — one-click looks" defaultOpen>
             <div className="grid grid-cols-2 gap-2">
               {EDGE_PRESETS.map((p) => (
@@ -1002,6 +1006,35 @@ function SubSection({ title, defaultOpen = true, children }: { title: string; de
         {open ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
       </button>
       {open && <div className="px-2.5 pb-2.5 pt-2 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Copy this look, or put a copied one on what is selected (F-015 AC5). Paste stays visible and
+ * greyed until there is a look of this sort to paste — the same keys work on the canvas.
+ */
+function StyleClipboardRow({ target }: { target: 'node' | 'edge' }) {
+  const held = useSyncExternalStore(subscribeHeldStyle, () => heldStyleFor(target) !== null);
+  const what = target === 'node' ? 'element' : 'relationship';
+  const fire = (name: string) => window.dispatchEvent(new CustomEvent(name));
+  return (
+    <div className="grid grid-cols-2 gap-2 pb-3">
+      <button
+        onClick={() => fire('stemma:copy-style')}
+        title={`Copy this ${what}'s look (${SHORTCUT_HINTS.copyStyle})`}
+        className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-default px-2 py-1.5 text-[11px] text-muted hover:text-body hover:border-indigo-400 transition-colors"
+      >
+        <Paintbrush className="w-3 h-3" aria-hidden /> Copy style
+      </button>
+      <button
+        onClick={() => fire('stemma:paste-style')}
+        disabled={!held}
+        title={held ? `Give this ${what} the copied look (${SHORTCUT_HINTS.pasteStyle})` : `Copy a ${what}'s style first (${SHORTCUT_HINTS.copyStyle})`}
+        className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-default px-2 py-1.5 text-[11px] text-muted hover:text-body hover:border-indigo-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-default disabled:hover:text-muted"
+      >
+        <PaintBucket className="w-3 h-3" aria-hidden /> Paste style
+      </button>
     </div>
   );
 }

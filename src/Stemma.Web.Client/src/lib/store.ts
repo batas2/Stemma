@@ -17,6 +17,7 @@ import {
   updatePage, type Book, type BookPage, type BooksSection, type PagePatch,
 } from './books';
 import { friendlyOpError } from './opError';
+import { history } from './history';
 import type { Shape, ShapeKind } from './shapes';
 
 /** What the canvas pointer is doing right now. `select` is the default (drag/select model nodes). */
@@ -199,6 +200,8 @@ interface AppState {
   openCustomView: (id: string) => void;
   closeCustomView: (id: string) => void;
   addElementToActiveView: (elementId: string) => void;
+  /** Several at once — a paste — written to the view's file in one save. */
+  addElementsToActiveView: (elementIds: string[]) => void;
   removeElementFromActiveView: (elementId: string) => void;
   setSidebarOpen: (b: boolean) => void;
   setInspectorTab: (id: string | null) => void;
@@ -254,6 +257,17 @@ interface AppState {
   startPresenting: (bookId: string, pageId?: string) => void;
   stopPresenting: () => void;
   setCapturing: (b: boolean) => void;
+}
+
+/** "Resize" when only the size changed — what dragging a box's corner does — and "Change appearance" otherwise. */
+function describeStyleChange(before: NodeStyle | undefined, after: NodeStyle): string {
+  const strip = (s: NodeStyle | undefined) => {
+    if (!s) return '';
+    const { width: _w, height: _h, ...rest } = s;
+    return JSON.stringify(rest);
+  };
+  const sized = before?.width !== after.width || before?.height !== after.height;
+  return sized && strip(before ?? { ...after, width: undefined, height: undefined }) === strip(after) ? 'Resize' : 'Change appearance';
 }
 
 /** The book open in the editor or the presenter, if any. */
@@ -517,6 +531,18 @@ export const useApp = create<AppState>((set, get) => ({
     const updated = next.find((v) => v.id === activeCustomViewId);
     if (updated) sendView(get, updated.id, updated);
   },
+  addElementsToActiveView: (elementIds) => {
+    const { activeCustomViewId, customViews, workspace } = get();
+    if (!activeCustomViewId) return;
+    const view = customViews.find((v) => v.id === activeCustomViewId);
+    const fresh = elementIds.filter((id) => !view?.elementIds.includes(id));
+    if (!view || fresh.length === 0) return;
+    const updated = { ...view, elementIds: [...view.elementIds, ...fresh] };
+    const next = customViews.map((v) => (v.id === activeCustomViewId ? updated : v));
+    set({ customViews: next });
+    if (workspace) saveViews(workspace.rootPath, next);
+    sendView(get, updated.id, updated);
+  },
   removeElementFromActiveView: (elementId) => {
     const { activeCustomViewId, customViews, workspace } = get();
     if (!activeCustomViewId) return;
@@ -576,21 +602,26 @@ export const useApp = create<AppState>((set, get) => ({
   setLinkDraft: (d) => set({ linkDraft: d }),
   setEdgeStyleFor: (linkId, style) => {
     const ws = get().workspace;
+    const before = get().edgeStyles[linkId];
     if (!ws) {
       set((s) => ({ edgeStyles: { ...s.edgeStyles, [linkId]: style } }));
       return;
     }
     const all = setEdgeStyle(ws.rootPath, linkId, style);
     set({ edgeStyles: all });
+    // A look is undoable like everything else (F-015 AC6); a run of slider ticks is one step.
+    history.recordPresentation([{ section: 'edgeStyles', id: linkId, before, after: style }], 'Change appearance', `edgeStyles:${linkId}`);
   },
   setNodeStyleFor: (nodeId, style) => {
     const ws = get().workspace;
+    const before = get().nodeStyles[nodeId];
     if (!ws) {
       set((s) => ({ nodeStyles: { ...s.nodeStyles, [nodeId]: style } }));
       return;
     }
     const all = setNodeStyle(ws.rootPath, nodeId, style);
     set({ nodeStyles: all });
+    history.recordPresentation([{ section: 'nodeStyles', id: nodeId, before, after: style }], describeStyleChange(before, style), `nodeStyles:${nodeId}`);
   },
   setCustomProp: (nodeId, k, v) => {
     const ws = get().workspace;

@@ -1,4 +1,5 @@
 import type { SavedPosition } from './layout';
+import { history } from './history';
 
 /**
  * Layout-only undo stack — purely client-side.
@@ -9,8 +10,8 @@ import type { SavedPosition } from './layout';
  * mouse-down → mouse-up sequence is a single undo entry, regardless of how many position
  * deltas xyflow emitted in between.
  *
- * The App-level keyboard handler tries this stack first on `⌘Z`, falling through to the
- * engine's undo only when this one is empty. Symmetric for `⌘⇧Z`.
+ * `⌘Z` reaches it through the undo journal (`history.ts`), which knows when each move happened
+ * relative to the model edits and looks around it, and so undoes them in the order they were done.
  */
 export interface LayoutUndoEntry {
   workspaceRoot: string;
@@ -33,6 +34,8 @@ export class LayoutUndoStack {
     while (this.undo.length > CAPACITY) this.undo.shift();
     this.redo = [];
     this.notify();
+    // The journal keeps the order a move came in among the other kinds of step (F-015 AC6).
+    history.recordLayout(entry.description);
   }
 
   popUndo(): LayoutUndoEntry | undefined {

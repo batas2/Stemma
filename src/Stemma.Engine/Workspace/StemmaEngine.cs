@@ -1327,7 +1327,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
+            () => new OperationApplied(op.OpId, [new ElementAdded(id)]), ct);
     }
 
     private async Task<OperationResult> RenameArchElementAsync(RenameElementOp op, CancellationToken ct)
@@ -1432,7 +1432,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
         return await CommitAsync(op.OpId, oldSolution, newSolution,
-            () => new OperationApplied(op.OpId, []), ct);
+            () => new OperationApplied(op.OpId, [new LinkAdded(id)]), ct);
     }
 
     private async Task<OperationResult> SetLinkAttributeAsync(SetLinkAttributeOp op, CancellationToken ct)

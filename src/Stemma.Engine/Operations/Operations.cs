@@ -73,9 +73,21 @@ public sealed record OperationFailed(string OpId, string Reason, string Message,
 [JsonDerivedType(typeof(TypeRemoved), "TypeRemoved")]
 [JsonDerivedType(typeof(TypeRenamed), "TypeRenamed")]
 [JsonDerivedType(typeof(TypeUpdated), "TypeUpdated")]
+[JsonDerivedType(typeof(ElementAdded), "ElementAdded")]
+[JsonDerivedType(typeof(LinkAdded), "LinkAdded")]
 public abstract record DeltaItem;
 
 public sealed record TypeAdded(TypeModel Type) : DeltaItem;
 public sealed record TypeRemoved(string TypeId) : DeltaItem;
 public sealed record TypeRenamed(string OldId, string NewId, string NewName) : DeltaItem;
 public sealed record TypeUpdated(TypeModel Type) : DeltaItem;
+
+/// <summary>
+/// The id an <c>AddElement</c> generated. Said in the result so a caller that goes on to style, place
+/// or link the new element names it directly, rather than finding it by diffing the model it reads
+/// back — which cannot tell two new elements with the same name apart.
+/// </summary>
+public sealed record ElementAdded(string Id) : DeltaItem;
+
+/// <summary>The id an <c>AddLink</c> generated; see <see cref="ElementAdded"/>.</summary>
+public sealed record LinkAdded(string Id) : DeltaItem;

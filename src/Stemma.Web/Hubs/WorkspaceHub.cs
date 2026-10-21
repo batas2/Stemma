@@ -58,12 +58,17 @@ public sealed class WorkspaceHub(EngineHost host, ILogger<WorkspaceHub> log) : H
     public UndoState GetUndoState()
     {
         var engine = _host.Engine;
-        if (engine is null) return new UndoState(false, false, null, null);
+        if (engine is null) return new UndoState(false, false, null, null, 0, 0);
         var stack = engine.Undo;
-        return new UndoState(stack.CanUndo, stack.CanRedo, stack.PeekUndoDescription(), stack.PeekRedoDescription());
+        return new UndoState(stack.CanUndo, stack.CanRedo, stack.PeekUndoDescription(), stack.PeekRedoDescription(),
+            stack.UndoDepth, stack.RedoDepth);
     }
 
     public Task Subscribe() => Task.CompletedTask;
 }
 
-public sealed record UndoState(bool CanUndo, bool CanRedo, string? UndoDescription, string? RedoDescription);
+/// <param name="UndoDepth">How many steps the engine can undo. The client groups several operations
+/// into one step (a paste) and checks this before undoing them together: a depth it does not expect
+/// means someone else edited since, and it undoes one step instead of guessing.</param>
+public sealed record UndoState(bool CanUndo, bool CanRedo, string? UndoDescription, string? RedoDescription,
+    int UndoDepth, int RedoDepth);

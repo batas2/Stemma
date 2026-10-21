@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Edit3, Trash2, Copy, Tag as TagIcon, Lightbulb, Plus, Workflow, Layers, ChevronRight } from 'lucide-react';
+import { Edit3, Trash2, Copy, CopyPlus, ClipboardPaste, Paintbrush, PaintBucket, Tag as TagIcon, Lightbulb, Plus, Workflow, Layers, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 
 export interface ContextMenuItem {
@@ -70,6 +70,9 @@ export function ContextMenu({ state, onClose }: Props) {
       onClose();
     }
     function onKey(e: KeyboardEvent) {
+      // An open menu has the keyboard to itself, as a menu does: Escape closes it and nothing else —
+      // not the selection behind it — and the arrows move through it rather than the selected box.
+      e.stopPropagation();
       if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
       if (!ref.current) return;
       if (e.key === 'ArrowDown') { e.preventDefault(); moveHighlight(1); }
@@ -100,7 +103,7 @@ export function ContextMenu({ state, onClose }: Props) {
 
     document.addEventListener('mousedown', onMouseDownAway, true);
     document.addEventListener('contextmenu', onContextMenuOutside, true);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     window.addEventListener('blur', dismiss);
     window.addEventListener('resize', dismiss);
     // Canvas wheel/pan events fire on the document — close the menu so it
@@ -109,7 +112,7 @@ export function ContextMenu({ state, onClose }: Props) {
     return () => {
       document.removeEventListener('mousedown', onMouseDownAway, true);
       document.removeEventListener('contextmenu', onContextMenuOutside, true);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       window.removeEventListener('blur', dismiss);
       window.removeEventListener('resize', dismiss);
       window.removeEventListener('wheel', dismiss);
@@ -217,7 +220,7 @@ function nextActive(items: ContextMenuItem[], from: number, delta: number): numb
 }
 
 // Re-export common icons used by callers when constructing items.
-export const ContextIcons = { Edit3, Trash2, Copy, TagIcon, Lightbulb, Plus, Workflow, Layers };
+export const ContextIcons = { Edit3, Trash2, Copy, CopyPlus, ClipboardPaste, Paintbrush, PaintBucket, TagIcon, Lightbulb, Plus, Workflow, Layers };
 
 // Approximate menu height — used by callers if they want to pre-clamp.
 export function approximateMenuHeight(items: ContextMenuItem[]): number {

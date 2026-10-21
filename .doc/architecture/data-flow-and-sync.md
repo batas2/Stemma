@@ -40,7 +40,14 @@ what each one edits exactly, and what it refuses — is the
 
 - is serialized as JSON with a `kind` discriminator and an `opId`;
 - maps to a single targeted Roslyn rewrite preserving trivia;
-- returns either a success (with a delta) or a structured failure reason.
+- returns either a success (with a delta) or a structured failure reason. `AddElement` and `AddLink`
+  say the id they generated — an `ElementAdded` / `LinkAdded` delta — so a caller that goes on to
+  place, style or link the new element names it directly ([F-015](../features/F-015-copy-paste-duplicate.md)).
+
+Undo on the client is one journal (`lib/history.ts`) in front of the engine's stack and the layout
+stack: it records, in order, which stack each step went to and how many operations it was made of,
+so one ⌘Z undoes the last step whatever it was — a move, a look, an edit, or a paste of many
+operations. Model undo is still the engine's; the journal only decides which stack and how many times.
 
 Saving a view is not an operation but goes the same way: `PUT /api/workspace/views` asks the engine,
 which edits the view's file in place rather than writing it from a template.

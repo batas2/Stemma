@@ -5,8 +5,10 @@ import { StemmaLockup } from './Logo';
 import { useApp } from '@/lib/store';
 import { initWorkspace, openWorkspace, listRecents, closeWorkspace } from '@/lib/api';
 import { promptText } from './PromptDialog';
-import { ensureConnection, fetchUndoState, getConnectionState, undoOperation, redoOperation, type UndoState } from '@/lib/signalr';
-import { friendlyOpError } from '@/lib/opError';
+import { ensureConnection, fetchUndoState, getConnectionState, type UndoState } from '@/lib/signalr';
+import { history } from '@/lib/history';
+import { layoutUndo } from '@/lib/layoutUndo';
+import { redo, undo } from '@/lib/undo';
 import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
 import type { RecentEntry } from '@/lib/types';
 import { ExportMenu } from './ExportMenu';
@@ -23,7 +25,21 @@ export function Topbar() {
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
-  const [undoState, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null });
+  const [engineUndo, setUndoState] = useState<UndoState>({ canUndo: false, canRedo: false, undoDescription: null, redoDescription: null, undoDepth: 0, redoDepth: 0 });
+  // What the arrows would do: the journal's last step when it has one, else whatever the stacks hold.
+  const [, setJournalTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setJournalTick((n) => n + 1);
+    const offHistory = history.subscribe(bump);
+    const offLayout = layoutUndo.subscribe(bump);
+    return () => { offHistory(); offLayout(); };
+  }, []);
+  const undoState = {
+    canUndo: history.canUndo || layoutUndo.canUndo || engineUndo.canUndo,
+    canRedo: history.canRedo || layoutUndo.canRedo || engineUndo.canRedo,
+    undoDescription: history.undoDescription ?? (layoutUndo.canUndo ? 'Move' : engineUndo.undoDescription),
+    redoDescription: history.redoDescription ?? (layoutUndo.canRedo ? 'Move' : engineUndo.redoDescription),
+  };
 
   useEffect(() => { listRecents().then(setRecents).catch(reportFailure('Api', ClientEvent.RequestFailed, 'Loading recent workspaces')); }, [ws?.rootPath]);
 
@@ -91,15 +107,9 @@ export function Topbar() {
     }
   }
 
-  async function handleUndo() {
-    const r = await undoOperation();
-    if (r && 'reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
-  }
+  function handleUndo() { void undo(); }
 
-  async function handleRedo() {
-    const r = await redoOperation();
-    if (r && 'reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
-  }
+  function handleRedo() { void redo(); }
 
   async function handleCloseWorkspace() {
     setWsMenuOpen(false);

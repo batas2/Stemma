@@ -89,7 +89,11 @@ selected). Drives the canvas via the `stemma:layout-action` event.
 - **`NotesModal.tsx`** — the full-screen editor (fills the popup, turbo toolbar).
 - **`MarkerSelect.tsx`** — edge end-marker dropdown with SVG previews.
 - **Dialogs** — `ConfirmDialog`, `PromptDialog`; **`CommandPalette.tsx`**; **`ContextMenu.tsx`**;
-  **toasts** via the store.
+  **toasts** via the store. An open context menu takes every key (capture phase) until it closes.
+- **Copy & paste** ([F-015](../features/F-015-copy-paste-duplicate.md)) — no surface of its own: the
+  gestures are window events (`stemma:copy`, `stemma:paste`, `stemma:duplicate`, `stemma:copy-style`,
+  `stemma:paste-style`) handled in `ArchCanvas`; `lib/clipboard.ts` plans, `lib/paste.ts` carries out.
+  The Appearance panel opens with *Copy style* / *Paste style*, Paste greyed until a look is held.
 
 ## Component rules
 

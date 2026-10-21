@@ -46,9 +46,17 @@ Three interactions on the template route, four on the empty one — measured, in
    custom properties).
 3. Draw a relationship from a connection dot to another box; reconnect an endpoint by dragging it.
 4. Each structural edit is an **operation** → a Roslyn rewrite → a delta echoed to all clients.
+5. **Copy, paste, duplicate** ([F-015](../features/F-015-copy-paste-duplicate.md)): ⌘C the selection,
+   ⌘V pastes "*Name* copy" — with its tags, its looks and the relationships between the copies —
+   cascading beside the originals or in the middle of the screen; right-click → *Paste here* puts it
+   somewhere in particular; ⌘D duplicates in place. ⌥⌘C / ⌥⌘V copy a look from one box onto others.
+6. **⌘Z undoes the last step, whatever it was** — a move, a look, an edit, a whole paste — and the
+   toast names it.
 
 **Must-handle:** optimistic application with rollback on failure (a toast explains the reason);
-deselecting collapses the inspector to the rail.
+deselecting collapses the inspector to the rail; a paste refused part-way says which element and
+why, and what landed is one ⌘Z away; an open menu keeps the keyboard to itself (Escape closes the
+menu, not the selection behind it).
 
 ## J3 — Arrange a view (Architect)
 
