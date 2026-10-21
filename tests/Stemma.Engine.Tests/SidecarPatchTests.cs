@@ -274,6 +274,31 @@ public sealed class SidecarPatchTests
         refuse.Should().Throw<SidecarPatchRefusedException>().Which.Reason.Should().Be("UnreadableSidecar");
     }
 
+    [Theory]
+    [InlineData("{\n  \"version\": 1,\n<<<<<<< HEAD\n  \"a\": 1\n=======\n  \"a\": 2\n>>>>>>> theirs\n}\n",
+        "stemma.layout.json has merge conflict markers at line 3; resolve the conflict and save it.")]
+    [InlineData("{\n  \"a\": 1,\n  \"b\": 2,\n}\n",
+        "stemma.layout.json has a comma after its last entry at line 3; JSON does not allow one there.")]
+    [InlineData("{\n  \"a\": [1, 2,]\n}\n",
+        "stemma.layout.json has a comma after its last entry at line 2; JSON does not allow one there.")]
+    [InlineData("{\n  // positions\n  \"a\": 1\n}\n",
+        "stemma.layout.json has a comment at line 2; JSON does not allow comments.")]
+    [InlineData("{\n  \"a\": 1 /* x */\n}\n",
+        "stemma.layout.json has a comment at line 2; JSON does not allow comments.")]
+    [InlineData("{\n  \"a\": {\n    \"b\": 1\n",
+        "stemma.layout.json ends before everything it opens is closed.")]
+    [InlineData("",
+        "stemma.layout.json is empty.")]
+    [InlineData("{\n  \"a\": 1\n  \"b\": 2\n}\n",
+        "stemma.layout.json has '\"' at line 3, column 3, where JSON does not allow it.")]
+    public void A_file_that_cannot_be_read_is_described_in_plain_words(string text, string message)
+    {
+        // The parser's own words reached the person fixing the file: "not supported in this mode.
+        // Change the reader options." for a trailing comma, "'/' is invalid after a value" for a comment.
+        var refuse = () => SidecarPatch.Apply(text, []);
+        refuse.Should().Throw<SidecarPatchRefusedException>().Which.Message.Should().Be(message);
+    }
+
     [Fact]
     public void A_file_with_a_key_twice_in_one_object_is_refused_naming_the_key()
     {

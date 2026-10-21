@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace Stemma.Engine.Workspace;
 
@@ -10,7 +9,7 @@ namespace Stemma.Engine.Workspace;
 /// sits in its bytes, and new text laid out like the text around it. Nothing here re-serializes a
 /// file; every edit is a splice of the span that changed, so every other byte stays where it was.
 /// </summary>
-internal static partial class JsonText
+internal static class JsonText
 {
     // ---------------------------------------------------------------- reading spans
 
@@ -60,25 +59,70 @@ internal static partial class JsonText
         }
         catch (JsonException e)
         {
-            // Said for whoever opens the file to fix it: the line as an editor counts it, and the
-            // parser's reason without its own position suffix.
-            var reason = PositionSuffix().Replace(e.Message, "").TrimEnd('.');
-            var at = e.LineNumber is { } line ? $" at line {line + 1}" : "";
-            throw Unreadable(file, $"cannot be read{at}: {reason}");
+            throw Unreadable(file, Describe(bytes, e));
         }
     }
 
-    [GeneratedRegex(@"\s*(Path: \S*\s*\|\s*)?LineNumber: \d+ \| BytePositionInLine: \d+\.?$")]
-    private static partial Regex PositionSuffix();
+    /// <summary>
+    /// What is wrong with the file, said for whoever opens it to fix it, with the line as an editor
+    /// counts it. The parser's own words used to reach them — "not supported in this mode. Change the
+    /// reader options." for a trailing comma — so the common cases are told apart by what is at the
+    /// place it stopped, and anything else names the character there.
+    /// </summary>
+    private static string Describe(byte[] bytes, JsonException e)
+    {
+        if (ConflictMarker(bytes) is { } marker) return $"has merge conflict markers at line {marker}; resolve the conflict and save it";
+        if (bytes.AsSpan().IndexOfAnyExcept(" \t\r\n"u8) < 0) return "is empty";
+        if (e.LineNumber is not { } line || e.BytePositionInLine is not { } column) return "cannot be read";
+
+        var lineStart = 0;
+        for (var n = 0; n < line && lineStart >= 0; n++)
+        {
+            var next = bytes.AsSpan(lineStart).IndexOf((byte)'\n');
+            lineStart = next < 0 ? -1 : lineStart + next + 1;
+        }
+        var at = lineStart < 0 ? bytes.Length : (int)Math.Min(bytes.Length, lineStart + column);
+        var rest = bytes.AsSpan(at);
+        var skipped = rest.IndexOfAnyExcept(" \t\r\n"u8);
+        if (skipped < 0) return "ends before everything it opens is closed";
+        at += skipped;
+        if (bytes[at] == '/' && at + 1 < bytes.Length && bytes[at + 1] is (byte)'/' or (byte)'*')
+            return $"has a comment at line {LineOf(bytes, at)}; JSON does not allow comments";
+        if (bytes[at] is (byte)'}' or (byte)']')
+        {
+            var before = bytes.AsSpan(0, at).LastIndexOfAnyExcept(" \t\r\n"u8);
+            if (before >= 0 && bytes[before] == ',')
+                return $"has a comma after its last entry at line {LineOf(bytes, before)}; JSON does not allow one there";
+        }
+        var lineText = Encoding.UTF8.GetString(bytes, Math.Max(0, lineStart), at - Math.Max(0, lineStart));
+        var found = Rune.DecodeFromUtf8(bytes.AsSpan(at), out var rune, out _) == System.Buffers.OperationStatus.Done ? rune.ToString() : "?";
+        return $"has '{found}' at line {LineOf(bytes, at)}, column {lineText.Length + 1}, where JSON does not allow it";
+    }
+
+    /// <summary>The line of the first merge conflict marker in the file, if it has one.</summary>
+    private static int? ConflictMarker(byte[] bytes)
+    {
+        var line = 1;
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            if (i == 0 || bytes[i - 1] == '\n')
+            {
+                var rest = bytes.AsSpan(i);
+                if (rest.StartsWith("<<<<<<<"u8) || rest.StartsWith("======="u8) || rest.StartsWith(">>>>>>>"u8) || rest.StartsWith("|||||||"u8))
+                    return line;
+            }
+            if (bytes[i] == '\n') line++;
+        }
+        return null;
+    }
+
+    private static int LineOf(byte[] bytes, int offset) => bytes.AsSpan(0, offset).Count((byte)'\n') + 1;
 
     internal static SidecarPatchRefusedException Unreadable(string file, string what) =>
         new("UnreadableSidecar", $"{file} {what}.");
 
     /// <summary>The text being read, for a refusal that names a line.</summary>
-    private sealed record Source(byte[] Bytes, string File)
-    {
-        public int LineAt(int offset) => Bytes.AsSpan(0, offset).Count((byte)'\n') + 1;
-    }
+    private sealed record Source(byte[] Bytes, string File);
 
     private static JObject ReadObject(ref Utf8JsonReader reader, Source source)
     {
@@ -99,7 +143,7 @@ internal static partial class JsonText
             // the last, and the edit would look lost. Which one is meant is the author's to say.
             if (obj.Add(new Member(name, nameStart, valueStart, (int)reader.BytesConsumed, child, array, text)) is { } first)
                 throw Unreadable(source.File,
-                    $"has the key \"{name}\" twice in one object, at lines {source.LineAt(first.NameStart)} and {source.LineAt(nameStart)}; " +
+                    $"has the key \"{name}\" twice in one object, at lines {LineOf(source.Bytes, first.NameStart)} and {LineOf(source.Bytes, nameStart)}; " +
                     "keep the one that is meant and remove the other");
         }
         throw Unreadable(source.File, "ends inside an object");

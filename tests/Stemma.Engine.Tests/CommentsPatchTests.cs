@@ -381,8 +381,7 @@ public sealed class CommentsPatchTests
         // Whoever reads this is about to open the file and fix a merge: the line is what helps.
         var refused = () => Apply("{\n<<<<<<< HEAD\n  \"version\": 1\n}\n", new CommentChange.Add(Basket));
         refused.Should().Throw<SidecarPatchRefusedException>().Which.Message
-            .Should().StartWith("comments.stemma.json cannot be read at line 2: ")
-            .And.NotContain("LineNumber").And.NotContain("..");
+            .Should().Be("comments.stemma.json has merge conflict markers at line 2; resolve the conflict and save it.");
     }
 
     [Theory]
