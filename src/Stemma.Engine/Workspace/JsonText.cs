@@ -343,12 +343,12 @@ internal static class JsonText
         };
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, options)) write(writer);
-        var text = Encoding.UTF8.GetString(stream.ToArray());
+        var text = layout.Raw(Encoding.UTF8.GetString(stream.ToArray()));
         return indent is null ? text : text.Replace(layout.NewLine, layout.NewLine + indent);
     }
 
     /// <summary>A key as the file writes it, with what follows it before the value.</summary>
-    internal static string Key(string name, Layout layout) => $"\"{JsonEncodedText.Encode(name, layout.Encoder)}\": ";
+    internal static string Key(string name, Layout layout) => $"\"{layout.Raw(JsonEncodedText.Encode(name, layout.Encoder).ToString())}\": ";
 
     /// <summary>
     /// <c>JsonElement.WriteTo</c> copies a string's bytes as they arrived, past the writer's encoder,
@@ -414,6 +414,8 @@ internal static class JsonText
 
     internal sealed record Layout(string NewLine, string Unit, JavaScriptEncoder Encoder)
     {
+        private bool Escaping => Encoder == JavaScriptEncoder.Default;
+
         public static Layout Of(byte[] bytes, JObject root)
         {
             var newLine = bytes.AsSpan().IndexOf("\r\n"u8) >= 0 ? "\r\n" : "\n";
@@ -427,16 +429,75 @@ internal static class JsonText
             return new Layout(newLine, unit, escaping ? JavaScriptEncoder.Default : JavaScriptEncoder.UnsafeRelaxedJsonEscaping);
         }
 
-        /// <summary>Whether a string in the file spells a character as a four-digit escape.</summary>
+        /// <summary>
+        /// Whether a string in the file spells a character as a four-digit escape when it did not have
+        /// to. A control character must be escaped, and System.Text.Json escapes an emoji (a surrogate
+        /// pair) whatever it is told, so neither says how the file is written: counted, one emoji in
+        /// an all-ASCII file made it an escaping file, and every Polish letter, apostrophe, &lt;, &amp;
+        /// and + after it was escaped.
+        /// </summary>
         private static bool HasEscapedCharacter(byte[] bytes)
         {
             for (var i = 0; i < bytes.Length - 1; i++)
             {
                 if (bytes[i] != (byte)'\\') continue;
-                if (bytes[i + 1] == (byte)'u') return true;
+                if (bytes[i + 1] == (byte)'u' && Hex(bytes.AsSpan(i + 2)) is { } c && c >= 0x20 && !char.IsSurrogate((char)c)) return true;
                 i++; // an escaped backslash or quote is not the start of another escape
             }
             return false;
         }
+
+        private static int? Hex(ReadOnlySpan<byte> digits) =>
+            digits.Length >= 4 && int.TryParse(Encoding.ASCII.GetString(digits[..4]), System.Globalization.NumberStyles.AllowHexSpecifier, null, out var c)
+                ? c
+                : null;
+
+        /// <summary>
+        /// New text for a file that holds its characters raw: every four-digit escape the writer made
+        /// that JSON does not require, spelled as the character — an emoji included, which the writer
+        /// escapes even when told not to. A control character, a quote and a backslash stay escaped,
+        /// and so does half of a surrogate pair, which has no character to be.
+        /// </summary>
+        public string Raw(string text)
+        {
+            if (Escaping || !text.Contains("\\u", StringComparison.Ordinal)) return text;
+            var sb = new StringBuilder(text.Length);
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (text[i] != '\\' || i + 1 >= text.Length)
+                {
+                    sb.Append(text[i]);
+                    continue;
+                }
+                if (text[i + 1] != 'u' || Hex16(text, i + 2) is not { } c)
+                {
+                    sb.Append(text, i, 2); // \" \\ \n and the like, whole
+                    i++;
+                    continue;
+                }
+                if (char.IsHighSurrogate(c) && i + 12 <= text.Length && text[i + 6] == '\\' && text[i + 7] == 'u'
+                    && Hex16(text, i + 8) is { } low && char.IsLowSurrogate(low))
+                {
+                    sb.Append(c).Append(low);
+                    i += 11;
+                }
+                else if (c >= 0x20 && c != '"' && c != '\\' && !char.IsSurrogate(c))
+                {
+                    sb.Append(c);
+                    i += 5;
+                }
+                else
+                {
+                    sb.Append(text, i, 6);
+                    i += 5;
+                }
+            }
+            return sb.ToString();
+        }
+
+        private static char? Hex16(string text, int at) =>
+            at + 4 <= text.Length && ushort.TryParse(text.AsSpan(at, 4), System.Globalization.NumberStyles.AllowHexSpecifier, null, out var c)
+                ? (char)c
+                : null;
     }
 }

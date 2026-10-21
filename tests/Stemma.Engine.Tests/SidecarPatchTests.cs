@@ -226,6 +226,31 @@ public sealed class SidecarPatchTests
     }
 
     [Fact]
+    public void An_emoji_is_written_raw_and_does_not_turn_the_file_into_an_escaping_one()
+    {
+        // System.Text.Json escapes an emoji even when told not to escape, so "Ship it 🚀" was written as
+        // `🚀`, and from then on the file counted as one that escapes: Polish letters,
+        // apostrophes, <, & and + were all escaped in every later edit (ADR-0021 says raw).
+        const string ascii = "{\n  \"version\": 1,\n  \"notes\": {}\n}\n";
+        var once = SidecarPatch.Apply(ascii, [Set("\"Ship it 🚀\"", "notes", "a")]);
+        once.Should().Be("{\n  \"version\": 1,\n  \"notes\": {\n    \"a\": \"Ship it 🚀\"\n  }\n}\n");
+        SidecarPatch.Apply(once, [Set("\"Zażółć gęślą jaźń <b> & 'x' + y\"", "notes", "b")])
+            .Should().Contain("\"b\": \"Zażółć gęślą jaźń <b> & 'x' + y\"");
+
+        // A file that an earlier version left holding an escaped emoji is not an escaping file either.
+        const string pair = "{\n  \"notes\": {\n    \"a\": \"Ship it \\ud83d\\ude80\"\n  }\n}\n";
+        SidecarPatch.Apply(pair, [Set("\"Zażółć <b>\"", "notes", "b")]).Should().Contain("\"b\": \"Zażółć <b>\"");
+    }
+
+    [Fact]
+    public void Written_raw_new_text_still_escapes_what_JSON_requires()
+    {
+        const string ascii = "{\n  \"notes\": {}\n}\n";
+        SidecarPatch.Apply(ascii, [Set("\"a \\\"quoted\\\" \\\\ path\\u0001\\n\"", "notes", "a\"b")])
+            .Should().Contain("\"a\\\"b\": \"a \\\"quoted\\\" \\\\ path\\u0001\\n\"");
+    }
+
+    [Fact]
     public void A_handwritten_file_keeps_its_tabs_line_endings_and_compact_lines()
     {
         SidecarPatch.Apply(Handwritten, [Set("5", "views", "moduleMap", "nodes", "mod_a", "y")])
