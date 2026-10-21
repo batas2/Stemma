@@ -275,6 +275,22 @@ public sealed class SidecarPatchTests
     }
 
     [Fact]
+    public void A_file_with_a_key_twice_in_one_object_is_refused_naming_the_key()
+    {
+        // An edit changed the first copy, the browser's JSON.parse kept the last, so the edit looked
+        // lost; and a removal left the second copy standing.
+        const string text = "{\n  \"version\": 1,\n  \"notes\": {\n    \"a\": \"first\",\n    \"a\": \"second\"\n  }\n}\n";
+
+        foreach (var change in new[] { Set("\"edited\"", "notes", "a"), Remove("notes", "a") })
+        {
+            var refuse = () => SidecarPatch.Apply(text, [change]);
+            var refused = refuse.Should().Throw<SidecarPatchRefusedException>().Which;
+            refused.Reason.Should().Be("UnreadableSidecar");
+            refused.Message.Should().Contain("\"a\"").And.Contain("lines 4 and 5");
+        }
+    }
+
+    [Fact]
     public void A_path_through_a_value_that_is_not_an_object_is_refused()
     {
         var refuse = () => SidecarPatch.Apply(Written, [Set("1", "notes", "cnt_web", "x")]);

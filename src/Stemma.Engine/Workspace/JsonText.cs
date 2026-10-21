@@ -16,10 +16,19 @@ internal static partial class JsonText
 
     internal sealed class JObject(int open)
     {
+        private readonly Dictionary<string, Member> _byName = new(StringComparer.Ordinal);
         public int Open { get; } = open;
         public int Close { get; set; }
         public List<Member> Members { get; } = [];
-        public Member? Find(string name) => Members.FirstOrDefault(m => m.Name == name);
+        public Member? Find(string name) => _byName.GetValueOrDefault(name);
+
+        /// <summary>The member, or the one already there by its name.</summary>
+        public Member? Add(Member member)
+        {
+            if (!_byName.TryAdd(member.Name, member)) return _byName[member.Name];
+            Members.Add(member);
+            return null;
+        }
     }
 
     internal sealed class JArray(int open)
@@ -45,7 +54,7 @@ internal static partial class JsonText
             var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { AllowTrailingCommas = false });
             if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                 throw Unreadable(file, "does not hold a JSON object");
-            var root = ReadObject(ref reader, file);
+            var root = ReadObject(ref reader, new Source(bytes, file));
             if (reader.Read()) throw Unreadable(file, "has text after its object");
             return root;
         }
@@ -65,7 +74,13 @@ internal static partial class JsonText
     internal static SidecarPatchRefusedException Unreadable(string file, string what) =>
         new("UnreadableSidecar", $"{file} {what}.");
 
-    private static JObject ReadObject(ref Utf8JsonReader reader, string file)
+    /// <summary>The text being read, for a refusal that names a line.</summary>
+    private sealed record Source(byte[] Bytes, string File)
+    {
+        public int LineAt(int offset) => Bytes.AsSpan(0, offset).Count((byte)'\n') + 1;
+    }
+
+    private static JObject ReadObject(ref Utf8JsonReader reader, Source source)
     {
         var obj = new JObject((int)reader.TokenStartIndex);
         while (reader.Read())
@@ -79,13 +94,18 @@ internal static partial class JsonText
             var nameStart = (int)reader.TokenStartIndex;
             reader.Read();
             var valueStart = (int)reader.TokenStartIndex;
-            var (child, array, text) = ReadValue(ref reader, file);
-            obj.Members.Add(new Member(name, nameStart, valueStart, (int)reader.BytesConsumed, child, array, text));
+            var (child, array, text) = ReadValue(ref reader, source);
+            // Two values for one key: an edit would change the first, JSON.parse in the browser keeps
+            // the last, and the edit would look lost. Which one is meant is the author's to say.
+            if (obj.Add(new Member(name, nameStart, valueStart, (int)reader.BytesConsumed, child, array, text)) is { } first)
+                throw Unreadable(source.File,
+                    $"has the key \"{name}\" twice in one object, at lines {source.LineAt(first.NameStart)} and {source.LineAt(nameStart)}; " +
+                    "keep the one that is meant and remove the other");
         }
-        throw Unreadable(file, "ends inside an object");
+        throw Unreadable(source.File, "ends inside an object");
     }
 
-    private static JArray ReadArray(ref Utf8JsonReader reader, string file)
+    private static JArray ReadArray(ref Utf8JsonReader reader, Source source)
     {
         var array = new JArray((int)reader.TokenStartIndex);
         while (reader.Read())
@@ -96,16 +116,16 @@ internal static partial class JsonText
                 return array;
             }
             var start = (int)reader.TokenStartIndex;
-            var (child, nested, _) = ReadValue(ref reader, file);
+            var (child, nested, _) = ReadValue(ref reader, source);
             array.Items.Add(new Item(start, (int)reader.BytesConsumed, child, nested));
         }
-        throw Unreadable(file, "ends inside a list");
+        throw Unreadable(source.File, "ends inside a list");
     }
 
-    private static (JObject?, JArray?, string?) ReadValue(ref Utf8JsonReader reader, string file) => reader.TokenType switch
+    private static (JObject?, JArray?, string?) ReadValue(ref Utf8JsonReader reader, Source source) => reader.TokenType switch
     {
-        JsonTokenType.StartObject => (ReadObject(ref reader, file), null, null),
-        JsonTokenType.StartArray => (null, ReadArray(ref reader, file), null),
+        JsonTokenType.StartObject => (ReadObject(ref reader, source), null, null),
+        JsonTokenType.StartArray => (null, ReadArray(ref reader, source), null),
         JsonTokenType.String => (null, null, reader.GetString()),
         _ => (null, null, null),
     };

@@ -134,7 +134,9 @@ differs inside it; a new key goes after its object's last one, laid out like it 
 the object is written on one line, otherwise with that member's indentation and the file's indent
 unit, line ending and escaping; a removed key takes its lines and one comma, and the last one out
 leaves `{}`. The BOM, or its absence, survives. Refuses `UnreadableSidecar` (the file does not parse:
-a merge conflict is never read as empty and written back), `NotAnObject`, `EmptyPath`. A workspace
+a merge conflict is never read as empty and written back; or an object has the same key twice, which
+an edit and the browser would each read differently — the refusal names the key and both lines),
+`NotAnObject`, `EmptyPath`. A workspace
 without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.
 Not on the undo stack; layout undo lives in the client. `LayoutSidecar.Read`, the typed reading the
 draw.io export takes positions from, refuses an unreadable file the same way, naming the line or the
