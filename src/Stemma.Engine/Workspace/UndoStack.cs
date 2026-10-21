@@ -47,22 +47,40 @@ public sealed class UndoStack
         _redo.Clear();
     }
 
-    public Entry? PopUndo()
+    /// <summary>
+    /// The entry an undo would take back. It stays on the stack until <see cref="Undone"/>: an undo
+    /// that failed has not happened, and its entry is still the next one to try. Moved to the redo
+    /// branch before it was applied, a refused undo left it there, and the change on disk that refused
+    /// it discarded the branch — "try again" then undid the edit before it.
+    /// </summary>
+    public Entry? PeekUndo() => _undo.Last?.Value;
+
+    /// <summary>The entry a redo would put back; it stays on the branch until <see cref="Redone"/>.</summary>
+    public Entry? PeekRedo() => _redo.Last?.Value;
+
+    /// <summary><paramref name="entry"/>, the top of the stack, was undone: it moves to the redo branch.</summary>
+    public void Undone(Entry entry)
     {
-        if (_undo.Last is null) return null;
-        var e = _undo.Last.Value;
+        if (!ReferenceEquals(_undo.Last?.Value, entry)) return;
         _undo.RemoveLast();
-        _redo.AddLast(e);
-        return e;
+        _redo.AddLast(entry);
     }
 
-    public Entry? PopRedo()
+    /// <summary><paramref name="entry"/>, the top of the redo branch, was redone: it moves back onto the stack.</summary>
+    public void Redone(Entry entry)
     {
-        if (_redo.Last is null) return null;
-        var e = _redo.Last.Value;
+        if (!ReferenceEquals(_redo.Last?.Value, entry)) return;
         _redo.RemoveLast();
-        _undo.AddLast(e);
-        return e;
+        _undo.AddLast(entry);
+    }
+
+    /// <summary>
+    /// A redo that failed is still the next redo — even when the change on disk that refused it
+    /// discarded the rest of the branch, because the refusal says to try again.
+    /// </summary>
+    public void RedoFailed(Entry entry)
+    {
+        if (!ReferenceEquals(_redo.Last?.Value, entry)) _redo.AddLast(entry);
     }
 
     public void OnExternalChange()

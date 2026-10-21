@@ -498,11 +498,14 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
-            var entry = _undo.PopUndo();
+            var entry = _undo.PeekUndo();
             if (entry is null) return new OperationFailed(opId, "NothingToUndo", "Undo stack is empty");
-            // Apply the inverse op without re-pushing onto the undo stack.
+            // Apply the inverse op without re-pushing onto the undo stack. The entry moves to the redo
+            // branch only once it has been undone; refused, it is still the next undo.
             var inverse = entry.Inverse with { OpId = opId };
-            return await ApplyInternalAsync(inverse, recordUndo: false, ct);
+            var result = await ApplyInternalAsync(inverse, recordUndo: false, ct);
+            if (result is OperationApplied) _undo.Undone(entry);
+            return result;
         }
         finally { _gate.Release(); }
     }
@@ -512,10 +515,13 @@ public sealed class StemmaEngine : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
-            var entry = _undo.PopRedo();
+            var entry = _undo.PeekRedo();
             if (entry is null) return new OperationFailed(opId, "NothingToRedo", "Redo stack is empty");
             var forward = entry.Forward with { OpId = opId };
-            return await ApplyInternalAsync(forward, recordUndo: false, ct);
+            var result = await ApplyInternalAsync(forward, recordUndo: false, ct);
+            if (result is OperationApplied) _undo.Redone(entry);
+            else _undo.RedoFailed(entry);
+            return result;
         }
         finally { _gate.Release(); }
     }

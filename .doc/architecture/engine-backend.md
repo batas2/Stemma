@@ -194,8 +194,11 @@ the entry on top is still its own even once the stack is full at 100. Undo puts 
 back, provided each file is still byte-for-byte what the edit wrote — so edit-then-undo is no
 change at all. If a file has changed since (an outside edit), restoring old bytes would erase that
 change, so undo falls back to the inverse operation (re-declare what was removed, put the old value
-back), and with no inverse it is refused as `UndoConflict`. Redo re-applies the edit — an add with the id it generated the first time. A new edit,
-or an outside one, discards the redo branch ([B-007](../bugs/B-007-undo-rebuilds-instead-of-restoring.md)).
+back), and with no inverse it is refused as `UndoConflict`. Redo re-applies the edit — an add with
+the id it generated the first time. A new edit, or an outside one, discards the redo branch
+([B-007](../bugs/B-007-undo-rebuilds-instead-of-restoring.md)). An undo or a redo that is refused
+has not happened, so its entry stays where it was: after `ChangedOnDisk`, trying again tries the same
+entry, on top of the change it just took in.
 
 An outside edit is taken in without being written back
 ([B-008](../bugs/B-008-outside-edit-is-written-back-forever.md)).

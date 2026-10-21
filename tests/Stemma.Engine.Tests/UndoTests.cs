@@ -208,6 +208,60 @@ public sealed class UndoTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task An_undo_refused_for_a_change_on_disk_is_still_the_next_undo()
+    {
+        // The refusal says "try again". The entry had already been moved to the redo branch, which the
+        // change on disk then discarded: trying again undid the edit before it instead.
+        var (root, file) = await CreateAsync();
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            Applied(await engine.ApplyAsync(new AddElementOp("op1", ArchElementKind.Module, "Pricing")));
+            Applied(await engine.ApplyAsync(new AddElementOp("op2", ArchElementKind.Module, "Shipping")));
+            await File.AppendAllTextAsync(file, "// edited outside\n");
+
+            var refused = await engine.UndoAsync("u1");
+            refused.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("ChangedOnDisk");
+            engine.Undo.UndoDepth.Should().Be(2);
+            engine.Undo.PeekUndoDescription().Should().Be("Add Module \"Shipping\"");
+
+            Applied(await engine.UndoAsync("u2"));
+
+            var names = (await engine.ReadArchModelAsync())!.Elements.Select(e => e.Name).ToList();
+            names.Should().Contain("Pricing").And.NotContain("Shipping");
+            (await File.ReadAllTextAsync(file)).Should().EndWith("// edited outside\n");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task A_redo_refused_for_a_change_on_disk_is_still_the_next_redo()
+    {
+        // The entry had already been moved back onto the undo stack, so the edit it describes was on
+        // the undo stack without having been made, and redo had nothing left to try again.
+        var (root, file) = await CreateAsync();
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            Applied(await engine.ApplyAsync(new AddElementOp("op1", ArchElementKind.Module, "Pricing")));
+            Applied(await engine.UndoAsync("u1"));
+            await File.AppendAllTextAsync(file, "// edited outside\n");
+
+            var refused = await engine.RedoAsync("r1");
+            refused.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("ChangedOnDisk");
+            engine.Undo.UndoDepth.Should().Be(0, "nothing was redone");
+            engine.Undo.PeekRedoDescription().Should().Be("Add Module \"Pricing\"");
+
+            Applied(await engine.RedoAsync("r2"));
+
+            (await engine.ReadArchModelAsync())!.Elements.Should().Contain(e => e.Name == "Pricing");
+            (await File.ReadAllTextAsync(file)).Should().Contain("// edited outside\n");
+            engine.Undo.UndoDepth.Should().Be(1);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     /// <summary>
     /// Waits on what the engine believes the file says, not on the watcher's event: the event also
     /// fires for the engine's own write when it arrives late, and is no evidence the edit was seen.
@@ -240,7 +294,7 @@ public sealed class UndoTests
         stack.UndoDepth.Should().Be(UndoStack.Capacity);
         stack.UndoTop.Should().Be(full + 1);
 
-        stack.PopUndo();
+        stack.Undone(stack.PeekUndo()!);
         stack.RedoTop.Should().Be(full + 1);
         stack.UndoTop.Should().Be(full);
     }
