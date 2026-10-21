@@ -1,7 +1,7 @@
 # Roadmap
 
 > Horizon framing, not date commitments. "Now" = built and in the product. "Next" = committed and
-> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-10-17**.
+> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-10-21**.
 
 ## Now — shipped and load-bearing
 
@@ -28,6 +28,17 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Books** ([F-013](../features/F-013-books.md), [ADR-0022](../architecture/decisions/0022-books-in-the-layout-sidecar.md)) — walk an audience through the model from the context down to the detail: pages that show a view, point at elements and frame them, authored from the canvas, kept in `stemma.layout.json`, presented full screen with the keyboard or a clicker, and carried into the report and a PDF deck. Until now books were read from a YAML file nothing wrote, and every edit was lost on reload.
 - **Self-explaining views** ([F-014](../features/F-014-self-explaining-views.md), [ADR-0023](../architecture/decisions/0023-view-headers-in-the-layout-sidecar.md)) — every view can carry its title, the one sentence it should leave in the room, how to read it, and a legend computed from what is drawn; shown on the canvas, presented, in the PDF deck and in the report. Cards readable from the back of a room (`textSize` sizes the whole card, up to `xl`), Markdown in annotations, backdrops that stay behind the cards (B-019), and a Module Map without Concepts (B-020).
 - **Navigation & views clarity** (Epic 13) — faster, more obvious view switching and view management.
+  *Built 2026-10-21:* ⌘K to any view, book or element, revealed on a view that draws it; back and
+  forward through the views visited; each view keeps its pan and zoom; *Appears in* on every element
+  ([F-016](../features/F-016-go-anywhere.md)).
+- **Editing like a drawing tool** (*built 2026-10-21*) — copy, paste, duplicate, copy a look, and
+  one undo history across moves, looks and model edits ([F-015](../features/F-015-copy-paste-duplicate.md)).
+- **Showing a change** (*built 2026-10-21*) — compare the canvas with the last commit, a tag or the
+  branch point, drawn as New / Changed / ghosts; read from Git, kept nowhere
+  ([F-017](../features/F-017-what-changed.md), [ADR-0024](../architecture/decisions/0024-history-read-from-git.md)).
+- **Presenting, finished** (*built 2026-10-21*) — a presenter view on a second screen
+  ([F-019](../features/F-019-presenter-view.md)) and flows played one arrow at a time
+  ([F-020](../features/F-020-flow-steps.md)), the two pieces F-013 deferred.
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
 - **Release follow-ups** ([F-012](../features/F-012-first-release.md) §9, [B-017](../bugs/B-017-new-model-left-uncommitted-where-git-knows-nobody.md)) — the start screen shows nothing when the new model could not be made a repository (`gitInitialised`/`gitError` are returned and ignored); MSBuild loaded from the SDK (`ExcludeAssets="runtime"`) instead of shipped, which clears the NU1903 advisory; packages for macOS and Windows once someone can try the window there; AppImage only if asked for.
 - **Sample gallery** — curated demo workspaces (today `samples/AuroraRail` and `samples/StemmaArchitecture`) that exercise every feature as living documentation.
@@ -38,7 +49,9 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Additional projections** — Mermaid/PlantUML export, a code-preview pane.
 - **Collaboration** — Git-backed sessions (session = branch; save = commit), conflict surfacing on external edits.
 - **Validation depth** — background compilation, richer architecture-rule checks surfaced inline.
-- **Search & filter on the canvas**, deep-linkable views.
+- ~~**Search & filter on the canvas**, deep-linkable views.~~ Built 2026-10-21: ⌘F lights what
+  matches on the view ([F-018](../features/F-018-find-on-the-view.md)); the address keeps the view and
+  the selection ([F-016](../features/F-016-go-anywhere.md)).
 - **Broader vision items** (from the archived `VISION`/`ROADMAP`): heterogeneous storage adapters and a richer projection layer are *aspirational*; the current engine is intentionally lean (single Roslyn adapter + presentation sidecar). Re-open these only when a concrete user need demands them.
 
 ## Commercial direction
