@@ -241,7 +241,7 @@ internal static class JsonText
     /// <summary><paramref name="name"/> as the last member of <paramref name="obj"/>, laid out like the members before it.</summary>
     internal static byte[] AddMember(byte[] bytes, Layout layout, JObject obj, string name, JsonElement value)
     {
-        var key = $"\"{JsonEncodedText.Encode(name, layout.Encoder)}\": ";
+        var key = Key(name, layout);
         if (obj.Members.Count > 0)
         {
             var last = obj.Members[^1];
@@ -301,7 +301,7 @@ internal static class JsonText
     /// Whether the value of <paramref name="member"/> is a list or object with something in it, written
     /// on one line. An empty one says nothing about how its contents are laid out, so it does not count.
     /// </summary>
-    private static bool WrittenOnOneLine(byte[] bytes, Member member) =>
+    internal static bool WrittenOnOneLine(byte[] bytes, Member member) =>
         (member.Array is { Items.Count: > 0 } || member.Object is { Members.Count: > 0 })
         && bytes.AsSpan(member.ValueStart, member.ValueEnd - member.ValueStart).IndexOfAny((byte)'\n', (byte)'\r') < 0;
 
@@ -324,7 +324,11 @@ internal static class JsonText
     /// A value as the file would have it. <paramref name="indent"/> is the indentation of the line the
     /// value starts on; <c>null</c> means a line holding several values, where the value stays compact.
     /// </summary>
-    internal static string Render(JsonElement value, Layout layout, string? indent)
+    internal static string Render(JsonElement value, Layout layout, string? indent) =>
+        Render(writer => Write(writer, value), layout, indent);
+
+    /// <inheritdoc cref="Render(JsonElement, Layout, string?)"/>
+    internal static string Render(Action<Utf8JsonWriter> write, Layout layout, string? indent)
     {
         var options = new JsonWriterOptions
         {
@@ -335,10 +339,13 @@ internal static class JsonText
             IndentSize = Math.Max(1, layout.Unit.Length),
         };
         using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, options)) Write(writer, value);
+        using (var writer = new Utf8JsonWriter(stream, options)) write(writer);
         var text = Encoding.UTF8.GetString(stream.ToArray());
         return indent is null ? text : text.Replace(layout.NewLine, layout.NewLine + indent);
     }
+
+    /// <summary>A key as the file writes it, with what follows it before the value.</summary>
+    internal static string Key(string name, Layout layout) => $"\"{JsonEncodedText.Encode(name, layout.Encoder)}\": ";
 
     /// <summary>
     /// <c>JsonElement.WriteTo</c> copies a string's bytes as they arrived, past the writer's encoder,
@@ -393,7 +400,7 @@ internal static class JsonText
     }
 
     /// <summary>The leading whitespace of the line <paramref name="at"/> is on.</summary>
-    private static string LineIndent(byte[] bytes, int at)
+    internal static string LineIndent(byte[] bytes, int at)
     {
         var lineStart = at;
         while (lineStart > 0 && bytes[lineStart - 1] is not ((byte)'\n' or (byte)'\r')) lineStart--;

@@ -684,4 +684,109 @@ public sealed class SidecarPatchTests
         SidecarPatch.Apply(HandwrittenBooks, [Remove("books", "book_y")])
             .Should().Be(Expect(HandwrittenBooks, (",\r\n\t\t\"book_y\": { \"name\": \"Empty\", \"pages\": {} }", "")));
     }
+
+    // ---- a batch is one pass ------------------------------------------------------------------
+
+    /// <summary>A sidecar the size a long-lived workspace grows to: views of positioned nodes and routed edges.</summary>
+    private static string LargeSidecar(int views, int nodes)
+    {
+        var random = new Random(7);
+        var sb = new System.Text.StringBuilder("{\n  \"version\": 1,\n  \"views\": {\n");
+        for (var v = 0; v < views; v++)
+        {
+            sb.Append($"    \"custom:view_{v}\": {{\n      \"layoutMode\": \"custom\",\n      \"nodes\": {{\n");
+            for (var n = 0; n < nodes; n++)
+                sb.Append($"        \"element_{n:0000}\": {{\n          \"x\": {random.Next(4000)}.5,\n          \"y\": {random.Next(4000)}.25\n        }}{(n < nodes - 1 ? "," : "")}\n");
+            sb.Append("      },\n      \"edges\": {\n");
+            for (var n = 0; n < nodes; n++)
+                sb.Append($"        \"link_{n:0000}\": {{ \"waypoints\": [{{ \"x\": 1.5, \"y\": 2.5 }}, {{ \"x\": 3.5, \"y\": 4.5 }}] }}{(n < nodes - 1 ? "," : "")}\n");
+            sb.Append($"      }}\n    }}{(v < views - 1 ? "," : "")}\n");
+        }
+        return sb.Append("  }\n}\n").ToString();
+    }
+
+    [Fact]
+    public void A_thousand_changes_to_a_large_file_are_one_pass_over_it()
+    {
+        // Every change parsed the whole file again, scanned it for its layout and copied it, all while
+        // holding the file's lock: a thousand changes to 1.5 MB took 13 s, and an object set onto an
+        // object took a pass per property.
+        var text = LargeSidecar(views: 18, nodes: 500);
+        text.Length.Should().BeGreaterThan(1_400_000);
+        var changes = Enumerable.Range(0, 500).SelectMany(n => new[]
+        {
+            Set($"{n * 10}", "views", "custom:view_0", "nodes", $"element_{n:0000}", "x"),
+            Set($"{n * 7}", "views", "custom:view_0", "nodes", $"element_{n:0000}", "y"),
+        }).ToList();
+        var nodes = "{" + string.Join(",", Enumerable.Range(0, 500).Select(n => $"\"element_{n:0000}\":{{\"x\":{n},\"y\":{n}}}")) + "}";
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var leaves = SidecarPatch.Apply(text, changes);
+        var whole = SidecarPatch.Apply(text, [Set(nodes, "views", "custom:view_1", "nodes")]);
+        clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3), "a batch is one pass, however many changes it holds");
+
+        var view0 = JsonDocument.Parse(leaves).RootElement.GetProperty("views").GetProperty("custom:view_0").GetProperty("nodes");
+        view0.GetProperty("element_0123").GetProperty("x").GetInt32().Should().Be(1230);
+        view0.GetProperty("element_0123").GetProperty("y").GetInt32().Should().Be(861);
+        var view1 = JsonDocument.Parse(whole).RootElement.GetProperty("views").GetProperty("custom:view_1").GetProperty("nodes");
+        view1.GetProperty("element_0499").GetProperty("x").GetInt32().Should().Be(499);
+    }
+
+    [Fact]
+    public void A_batch_writes_what_its_changes_write_one_at_a_time()
+    {
+        // The batch is one pass over the file; it must still lay out every change exactly as that
+        // change alone would. Random changes to distinct paths, on files written both ways.
+        var random = new Random(2026);
+        foreach (var file in new[] { Written, Handwritten, LargeSidecar(views: 2, nodes: 6) })
+        {
+            var paths = Paths(JsonDocument.Parse(file).RootElement, []).ToList();
+            for (var round = 0; round < 200; round++)
+            {
+                var batch = new List<SidecarChange>();
+                for (var k = random.Next(1, 8); k > 0; k--)
+                {
+                    var change = RandomChange(random, paths);
+                    if (batch.Any(c => Prefix(c.Path, change.Path) || Prefix(change.Path, c.Path))) continue;
+                    batch.Add(change);
+                }
+                // Values before removals: an object whose members are all removed and replaced in one
+                // batch gets the new ones in their place, as that order leaves it one at a time; the
+                // other order would empty it to `{}` and then open it onto new lines.
+                batch = [.. batch.Where(c => c.Value is not null), .. batch.Where(c => c.Value is null)];
+
+                var oneAtATime = batch.Aggregate(file, (text, change) => SidecarPatch.Apply(text, [change]));
+                SidecarPatch.Apply(file, batch).Should().Be(oneAtATime,
+                    $"the batch [{string.Join("; ", batch.Select(c => $"{string.Join(".", c.Path)} = {c.Value?.GetRawText() ?? "(removed)"}"))}] says so");
+            }
+        }
+    }
+
+    private static bool Prefix(IReadOnlyList<string> a, IReadOnlyList<string> b) => a.Count <= b.Count && a.SequenceEqual(b.Take(a.Count));
+
+    /// <summary>Every path of keys in the file, down to its leaves.</summary>
+    private static IEnumerable<string[]> Paths(JsonElement element, string[] path)
+    {
+        if (path.Length > 0) yield return path;
+        if (element.ValueKind != JsonValueKind.Object) yield break;
+        foreach (var property in element.EnumerateObject())
+            foreach (var inner in Paths(property.Value, [.. path, property.Name])) yield return inner;
+    }
+
+    private static SidecarChange RandomChange(Random random, List<string[]> paths)
+    {
+        var path = paths[random.Next(paths.Count)];
+        // ASCII text only: a batch writes characters the way the file did when it was read, and one at a
+        // time a removal that took the file's last escaped character would change that halfway through.
+        string[] values = ["7", "\"Drawn, not modelled.\"", "{\"x\":1,\"y\":2}", "[1, 2]", "null", "{}", "{\"waypoints\":[{\"x\":1}]}"];
+        var value = values[random.Next(values.Length)];
+        return random.Next(5) switch
+        {
+            0 => Remove(path),
+            1 => Remove([.. path, "missing"]),
+            2 => Set(value, [.. path[..^1], $"new_{random.Next(1000)}"]),
+            3 => Set(value, [.. path[..^1], $"new_{random.Next(1000)}", "deeper", "still"]),
+            _ => Set(value, path),
+        };
+    }
 }
