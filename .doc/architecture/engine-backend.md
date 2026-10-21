@@ -136,7 +136,10 @@ unit, line ending and escaping; a removed key takes its lines and one comma, and
 leaves `{}`. The BOM, or its absence, survives. Refuses `UnreadableSidecar` (the file does not parse:
 a merge conflict is never read as empty and written back), `NotAnObject`, `EmptyPath`. A workspace
 without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.
-Not on the undo stack; layout undo lives in the client.
+Not on the undo stack; layout undo lives in the client. `LayoutSidecar.Read`, the typed reading the
+draw.io export takes positions from, refuses an unreadable file the same way, naming the line or the
+value it could not read, rather than reading it as empty; a `null` written by hand where a section, a
+view or a position would be reads as nothing there.
 
 ### What the model was (read only)
 
