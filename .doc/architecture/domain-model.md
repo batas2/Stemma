@@ -49,6 +49,10 @@ var tag = Tag.For(modRiskAgg,
     ownership: new Ownership(Squad: "Onboard"));
 ```
 
+Stemma reads a tag written as a local like this one (listed in `Model.Of(...)`), or as a statement of
+its own, `Tag.For(modRiskAgg, ...);`, and edits either in place. A `Tag.For` inside another expression
+— an argument of `Model.Of` — is not read, and validation says so (`model/unreadable-declaration`).
+
 ## Views (perspectives)
 
 A `View(Id, Name, BaseView, IReadOnlyList<string> ElementIds)` is a named subset of the model with a

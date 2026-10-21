@@ -199,6 +199,49 @@ public sealed class DslWriterContractTests
         source.Should().Contain("        var mod = new Module(\"mod_001\", \"Checkout\");\n");
     }
 
+    // ---- a tag kept in a local, as domain-model.md writes it ------------------------------------
+
+    [Fact]
+    public async Task A_tag_kept_in_a_local_is_edited_in_place_not_added_twice()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    var tag = Tag.For(mod, lifecycle: new Lifecycle(Status: "current"));
+                    return Model.Of(mod, tag);
+            """, new SetLifecycleOp("op", "mod_001", "target", null, null, null));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().Contain("        var tag = Tag.For(mod, lifecycle: new Lifecycle(Status: \"target\"));\n");
+        source.Split("Tag.For").Should().HaveCount(2, "the one tag is edited, not joined by a second");
+    }
+
+    [Fact]
+    public async Task Emptying_a_tag_kept_in_a_local_removes_it_and_its_place_in_the_model()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    var tag = Tag.For(mod, lifecycle: new Lifecycle(Status: "current"));
+                    return Model.Of(mod, tag);
+            """, new SetLifecycleOp("op", "mod_001", null, null, null, null));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().NotContain("Tag.For").And.Contain("        return Model.Of(mod);\n");
+    }
+
+    [Fact]
+    public async Task Removing_an_element_takes_a_tag_kept_in_a_local_with_it()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var mod = new Module("mod_001", "Checkout");
+                    var other = new Module("mod_002", "Other");
+                    var tag = Tag.For(mod, ownership: new Ownership(Squad: "Core"));
+                    return Model.Of(mod, other, tag);
+            """, new RemoveElementOp("op", "mod_001"));
+
+        result.Should().BeOfType<OperationApplied>();
+        source.Should().NotContain("Tag.For").And.Contain("        return Model.Of(other);\n");
+    }
+
     // ---- arguments written as constants --------------------------------------------------------
     //
     // The reader reads `Ids.Ctx` as the context it stands for. An edit must not then treat that

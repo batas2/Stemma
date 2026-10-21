@@ -103,22 +103,18 @@ public static class DslReader
             }
         }
 
-        // Second pass: Tag.For(...) statements.
-        foreach (var statement in buildBody.Statements.OfType<ExpressionStatementSyntax>())
+        // Second pass: Tag.For(...), as a statement of its own or a local's value.
+        var sites = TagsIn(buildBody).ToList();
+        foreach (var inv in buildBody.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(IsTagFor).Except(sites.Select(s => s.Invocation)))
         {
-            if (statement.Expression is not InvocationExpressionSyntax inv) continue;
-            if (inv.Expression is not MemberAccessExpressionSyntax mae) continue;
-            if (mae.Name.Identifier.Text != "For") continue;
-            if (mae.Expression is not IdentifierNameSyntax tagId || tagId.Identifier.Text != "Tag") continue;
-            if (inv.ArgumentList.Arguments.Count == 0) continue;
-
-            var firstArg = inv.ArgumentList.Arguments[0].Expression;
-            string? targetId = firstArg switch
-            {
-                IdentifierNameSyntax id when varToId.TryGetValue(id.Identifier.Text, out var resolved) => resolved,
-                _ => null
-            };
-            if (targetId is null) continue;
+            var line = LineOf(inv);
+            unreadable.Add(new ArchReadProblem(filePath, line, TargetOf(inv), LeftOut: false,
+                $"{file}:{line}: this Tag.For sits inside another expression, where Stemma does not look for tags, so it is " +
+                "not read. Write it as a statement of its own, or as a local: var tag = Tag.For(...);"));
+        }
+        foreach (var inv in sites.Select(s => s.Invocation))
+        {
+            if (TargetOf(inv) is not { } targetId) continue;
 
             ArchLifecycle? lifecycle = null;
             ArchOwnership? ownership = null;
@@ -144,6 +140,11 @@ public static class DslReader
         }
 
         return new ArchModel(filePath, elements, links, tags) { Unreadable = unreadable };
+
+        string? TargetOf(InvocationExpressionSyntax inv) =>
+            inv.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax id && varToId.TryGetValue(id.Identifier.Text, out var resolved)
+                ? resolved
+                : null;
 
         // The fields of a Lifecycle or an Ownership by name, and each one Stemma reads but cannot, reported.
         Dictionary<string, string?> ReadTagPart(BaseObjectCreationExpressionSyntax part, string typeName, string targetId)
@@ -184,6 +185,35 @@ public static class DslReader
         var text = string.Join(" ", lines.Select(l => l.Trim()));
         return text.Length <= 60 ? text : text[..59] + "…";
     }
+
+    /// <summary>
+    /// Every <c>Tag.For(...)</c> in <paramref name="build"/> that is read and can be edited: a statement
+    /// of its own, or the value of a local, <c>var tag = Tag.For(...)</c>, which is the way the domain
+    /// model writes one. Only the first used to be looked for, so a tag written as the docs show was
+    /// never read, and setting a lifecycle added a second tag beside it. The reader and the writer
+    /// both find tags here.
+    /// </summary>
+    internal static IEnumerable<TagSite> TagsIn(BlockSyntax build)
+    {
+        foreach (var statement in build.Statements)
+        {
+            switch (statement)
+            {
+                case ExpressionStatementSyntax { Expression: InvocationExpressionSyntax inv } when IsTagFor(inv):
+                    yield return new TagSite(statement, inv, null);
+                    break;
+                case LocalDeclarationStatementSyntax { Declaration.Variables: [{ Initializer.Value: InvocationExpressionSyntax inv } local] } when IsTagFor(inv):
+                    yield return new TagSite(statement, inv, local.Identifier.Text);
+                    break;
+            }
+        }
+    }
+
+    private static bool IsTagFor(InvocationExpressionSyntax inv) => inv is
+    {
+        Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "For", Expression: IdentifierNameSyntax { Identifier.Text: "Tag" } },
+        ArgumentList.Arguments.Count: > 0,
+    };
 
     /// <summary>
     /// Which part of a tag an argument of <c>Tag.For</c> is: by its name when it has one
@@ -324,6 +354,12 @@ public static class DslReader
     private static DslEditRefusedException NotALiteral(ExpressionSyntax expression, string what) =>
         new("NotALiteral", $"The {what} is written as `{Quote(expression)}` rather than as a literal, so Stemma does not change it. Edit it in the code.");
 }
+
+/// <summary>
+/// A <c>Tag.For(...)</c> where Stemma reads and edits one: <paramref name="Statement"/> is the statement
+/// it is, or the local declaration whose value it is, and <paramref name="Variable"/> that local's name.
+/// </summary>
+internal sealed record TagSite(StatementSyntax Statement, InvocationExpressionSyntax Invocation, string? Variable);
 
 /// <summary>An argument of a declaration: its name if it has one, and the string it stands for when that can be read.</summary>
 internal readonly record struct DslArgument(string? Name, string? Value, bool Readable, ExpressionSyntax Expression);

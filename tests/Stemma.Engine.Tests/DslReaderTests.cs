@@ -60,6 +60,57 @@ public sealed class DslReaderTests
             """).Should().BeNull();
     }
 
+    // ---- tags -----------------------------------------------------------------------------------
+
+    [Fact]
+    public void A_tag_kept_in_a_local_is_read_the_way_the_domain_model_writes_it()
+    {
+        // `var tag = Tag.For(...)` is the example domain-model.md gives, and only bare `Tag.For(...);`
+        // statements were read: the lifecycle was lost.
+        var model = Read("""
+            using Stemma.Model;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var modRiskAgg = new Module("mod_risk_agg", "Risk aggregation");
+                    var other = new Module("mod_other", "Other");
+                    var tag = Tag.For(modRiskAgg,
+                        lifecycle: new Lifecycle(Status: "target", Phase: "NEW"),
+                        ownership: new Ownership(Squad: "Onboard"));
+                    Tag.For(other, ownership: new Ownership(Squad: "Core"));
+                    return Model.Of(modRiskAgg, other, tag);
+                }
+            }
+            """)!;
+
+        model.Tags.Should().BeEquivalentTo(new[]
+        {
+            new ArchTag("mod_risk_agg", new ArchLifecycle("target", "NEW"), new ArchOwnership("Onboard")),
+            new ArchTag("mod_other", null, new ArchOwnership("Core")),
+        });
+        model.Unreadable.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_tag_written_where_Stemma_does_not_look_for_one_is_reported()
+    {
+        var model = Read("""
+            using Stemma.Model;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var a = new Module("mod_a", "A");
+                    return Model.Of(a, Tag.For(a, lifecycle: new Lifecycle(Status: "target")));
+                }
+            }
+            """)!;
+
+        model.Tags.Should().BeEmpty();
+        model.Unreadable.Should().ContainSingle().Which.Message.Should().Contain("Architecture.cs:7").And.Contain("Tag.For");
+    }
+
     // ---- arguments written as constants ---------------------------------------------------------
 
     [Fact]

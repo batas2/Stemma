@@ -80,11 +80,11 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 | `AddElement` | a new `var x = new Kind(...)` before `return`; `x` appended to `Model.Of(...)` | — |
 | `AddLink` | the same, for a `DataFlow` / `Dependency` / `Relation` | `FromNotFound`, `ToNotFound` |
 | `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound`, `NotALiteral` |
-| `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable, and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
+| `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable (and the `Model.Of` entry of a local holding one), and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
 | `SetElementContext` | the `contextId` argument of a Module or Capability | `ElementNotFound`, `NotNestable`, `ContextNotFound`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
 | `SetElementAttribute` | one constructor argument the kind has (`aboutId` on a Risk, `role` on a Person) | `ElementNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
 | `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`) | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
-| `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For`; a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
+| `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For` — a statement of its own, or a local's value (`var tag = Tag.For(...)`); a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it, a local's `Model.Of` entry included | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
 | `SetOwnership` | `Squad` and `Domain` inside `new Ownership(...)`. RAPID roles are not part of the operation and are not touched | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
 | `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, re-declaring it before `return` | — |
 
