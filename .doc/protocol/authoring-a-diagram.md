@@ -453,6 +453,11 @@ stemma validate --workspace <path> [--json] [--strict]
 Exit `0` when nothing is broken, `1` on an error (or a warning under `--strict`), `2` on a bad
 command line. `--json` is the form to act on programmatically.
 
+It checks the model the app reads: every C# file in a folder named `Architecture` (subfolders
+included, build output left out), merged, so a link from `Architecture.cs` to an element declared in
+`Architecture/Payments.cs` is not dangling. An id declared in two files is a duplicate. `render`
+fingerprints the same merged model, so `--check` notices a change in any of the files.
+
 What it catches, in rough order of how often it bites:
 
 | Rule | Severity | Why it matters |

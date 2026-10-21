@@ -32,26 +32,27 @@ public static class WorkspaceCheck
     {
         var findings = new List<CheckFinding>();
 
-        var archPath = Path.Combine(workspaceRoot, "Architecture", "Architecture.cs");
-        if (!File.Exists(archPath))
+        // Every model file under Architecture/, merged, as the engine reads them (ADR-0016, ADR-0024).
+        // Reading only Architecture.cs reported links into the other files as dangling.
+        var read = ArchModelMerge.ReadFrom(workspaceRoot);
+        if (read.Files.Count == 0)
         {
             findings.Add(new(CheckSeverity.Error, "workspace/no-model",
-                $"no model at {Path.Combine("Architecture", "Architecture.cs")} — is this a Stemma workspace?"));
+                "no model files in Architecture/ — is this a Stemma workspace?"));
             return findings;
         }
 
-        var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(archPath));
-        var model = DslReader.TryRead(archPath, tree.GetRoot());
+        var model = read.Model;
         if (model is null)
         {
             findings.Add(new(CheckSeverity.Error, "model/unreadable",
-                "Architecture.cs has no parseable `public static Model Build()` — the engine reads exactly that name."));
+                "no file in Architecture/ has a parseable `public static Model Build()` — the engine reads exactly that name."));
             return findings;
         }
 
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
         var views = ReadViews(workspaceRoot);
-        findings.AddRange(DuplicateIds(model));
+        findings.AddRange(DuplicateIds(read.Partials));
         findings.AddRange(DanglingLinkEndpoints(model, ids));
         findings.AddRange(DanglingAttributeReferences(model, ids));
         findings.AddRange(RegisterFindings(model));
@@ -583,9 +584,13 @@ public static class WorkspaceCheck
                 $"{concepts} of {model.Elements.Count} elements are Concepts — this is a figure rather than an architecture, which is a fine thing to be");
     }
 
-    private static IEnumerable<CheckFinding> DuplicateIds(ArchModel model)
+    /// <summary>
+    /// Read off each file before the files are merged: the merge keeps the first of an id and drops
+    /// the rest, which is the duplicate this is here to report.
+    /// </summary>
+    private static IEnumerable<CheckFinding> DuplicateIds(IReadOnlyList<ArchModel> partials)
     {
-        foreach (var group in model.Elements.GroupBy(e => e.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        foreach (var group in partials.SelectMany(m => m.Elements).GroupBy(e => e.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
             yield return new(CheckSeverity.Error, "model/duplicate-id",
                 $"id '{group.Key}' is declared {group.Count()} times; whichever wins is arbitrary", group.Key);
     }

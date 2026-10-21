@@ -176,6 +176,33 @@ public sealed class SourceFingerprintTests : IDisposable
     }
 
     [Fact]
+    public void A_change_in_any_model_file_changes_it()
+    {
+        // Only Architecture.cs was read, so renaming an element declared in another model file left
+        // the hash alone and `render --check` called a stale picture current.
+        Baseline();
+        void Payments(string name) => File.WriteAllText(Path.Combine(_root, "Architecture", "Payments.cs"), $$"""
+            using Stemma.Model;
+            namespace Probe;
+            public static class Payments
+            {
+                public static Model Build()
+                {
+                    var c = new Module("mod_c", "{{name}}");
+                    return Model.Of(c);
+                }
+            }
+            """);
+        Payments("Payments");
+        var before = SourceFingerprint.For(_root, "view_v", "publication", "dual-theme");
+
+        Payments("Settlement");
+
+        before.Elements.Should().Be(3);
+        Hash().Should().NotBe(before.Hash);
+    }
+
+    [Fact]
     public void Counts_are_reported_alongside_the_hash_so_a_failure_can_say_what_moved()
     {
         Baseline();

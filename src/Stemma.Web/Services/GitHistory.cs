@@ -129,13 +129,7 @@ public static class GitHistory
     private static History Unavailable(string reason) => new(false, reason, null, null, null, [], []);
 
     /// <summary>A C# file inside a folder named <c>Architecture</c>, not generated — the live read's rule.</summary>
-    public static bool IsModelFile(string path)
-    {
-        var p = "/" + path.Replace('\\', '/');
-        return p.Contains($"/{ModelWorkspaceLoader.ArchitectureDir}/", StringComparison.OrdinalIgnoreCase)
-            && p.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-            && !p.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool IsModelFile(string path) => ArchModelMerge.IsModelFile(path);
 
     private static async Task<string?> DefaultBranchAsync(string root, CancellationToken ct)
     {

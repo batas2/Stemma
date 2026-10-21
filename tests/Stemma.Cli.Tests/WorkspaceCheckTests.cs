@@ -676,4 +676,71 @@ public sealed class WorkspaceCheckTests : IDisposable
         BookRun().Should().BeEmpty();
         Run().Should().ContainSingle(f => f.Rule == "sidecar/unreadable");
     }
+
+    // ---- A model in several files (ADR-0016, ADR-0024) -----------------------------------------
+
+    /// <summary>Another model file beside Architecture.cs, as the engine reads and merges them.</summary>
+    private void ModelFile(string relative, string className, string body)
+    {
+        var path = Path.Combine(_root, "Architecture", relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $$"""
+            using Stemma.Model;
+            namespace Probe;
+            public static class {{className}}
+            {
+                public static Model Build()
+                {
+            {{body}}
+                }
+            }
+            """);
+    }
+
+    [Fact]
+    public void A_model_split_over_several_files_is_checked_as_the_one_model_the_engine_reads()
+    {
+        // Only Architecture.cs was read, so a link to an element declared in Payments.cs was reported
+        // as dangling, and validate failed a model the canvas draws perfectly well.
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var flow = new DataFlow("flow_1", "mod_a", "mod_b", "payment");
+                    return Model.Of(a, flow);
+        """);
+        ModelFile("Payments.cs", "Payments", """
+                    var b = new Module("mod_b", "B");
+                    return Model.Of(b);
+        """);
+        ModelFile(Path.Combine("Billing", "Invoicing.cs"), "Invoicing", """
+                    var c = new Module("mod_c", "C");
+                    var flow = new DataFlow("flow_2", "mod_c", "mod_a", "invoice");
+                    return Model.Of(c, flow);
+        """);
+
+        Run().Where(f => f.Severity == CheckSeverity.Error).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_id_declared_in_two_model_files_is_a_duplicate()
+    {
+        Model(TwoModules);
+        ModelFile("Payments.cs", "Payments", """
+                    var b = new Module("mod_b", "B again");
+                    return Model.Of(b);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "model/duplicate-id").Which.ElementId.Should().Be("mod_b");
+    }
+
+    [Fact]
+    public void Build_output_under_Architecture_is_not_part_of_the_model()
+    {
+        Model(TwoModules);
+        ModelFile(Path.Combine("obj", "Debug", "Copy.cs"), "Copy", """
+                    var b = new Module("mod_b", "B");
+                    return Model.Of(b);
+        """);
+
+        Run().Should().NotContain(f => f.Rule == "model/duplicate-id");
+    }
 }

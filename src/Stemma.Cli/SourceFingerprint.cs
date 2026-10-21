@@ -30,13 +30,9 @@ public static class SourceFingerprint
         var sb = new StringBuilder();
         sb.Append("profile=").Append(profile).Append(";palette=").Append(palette).Append(";view=").Append(viewId).Append('\n');
 
-        var archPath = Path.Combine(workspaceRoot, "Architecture", "Architecture.cs");
-        ArchModel? model = null;
-        if (File.Exists(archPath))
-        {
-            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(archPath));
-            model = DslReader.TryRead(archPath, tree.GetRoot());
-        }
+        // Every model file, merged as the engine merges them: a rename in Payments.cs is as much a
+        // change to the picture as one in Architecture.cs.
+        var model = ArchModelMerge.ReadFrom(workspaceRoot).Model;
 
         var elements = 0;
         var links = 0;
