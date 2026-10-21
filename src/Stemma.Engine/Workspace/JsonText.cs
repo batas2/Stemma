@@ -45,12 +45,15 @@ internal static class JsonText
     /// <param name="End">Just past the item's last byte.</param>
     internal sealed record Item(int Start, int End, JObject? Object, JArray? Array);
 
+    /// <summary>How many objects and lists deep a sidecar is read: System.Text.Json's own default.</summary>
+    internal const int MaxDepth = 64;
+
     /// <summary>The root object of <paramref name="bytes"/>, or a refusal naming <paramref name="file"/>.</summary>
     internal static JObject Parse(byte[] bytes, string file)
     {
         try
         {
-            var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { AllowTrailingCommas = false });
+            var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { AllowTrailingCommas = false, MaxDepth = MaxDepth });
             if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                 throw Unreadable(file, "does not hold a JSON object");
             var root = ReadObject(ref reader, new Source(bytes, file));

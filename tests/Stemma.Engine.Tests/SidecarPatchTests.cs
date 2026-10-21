@@ -352,6 +352,61 @@ public sealed class SidecarPatchTests
     }
 
     [Fact]
+    public void Adding_and_then_removing_a_key_in_one_batch_leaves_the_file_as_it_was()
+    {
+        // The objects made to hold the key stayed behind: `"a": {}` in a file no one meant to change.
+        SidecarPatch.Apply(Written, [Set("1", "a", "b"), Remove("a", "b")]).Should().Be(Written);
+        SidecarPatch.Apply(Written, [
+            Set("""{"x":1,"y":2}""", "views", "custom:view_new", "nodes", "mod_a"),
+            Remove("views", "custom:view_new", "nodes", "mod_a"),
+        ]).Should().Be(Written);
+
+        // An object set on purpose is the change's, and stays.
+        SidecarPatch.Apply(Written, [Set("{}", "a"), Set("1", "a", "b"), Remove("a", "b")])
+            .Should().Be(Expect(Written, ("  \"palettes\": {\n    \"ink\": \"#222\"\n  }\n", "  \"palettes\": {\n    \"ink\": \"#222\"\n  },\n  \"a\": {}\n")));
+    }
+
+    [Fact]
+    public void A_path_deeper_than_the_file_can_hold_is_refused()
+    {
+        // The file is read to 64 levels. A longer path threw where it was nested, which answered 500.
+        var deep = Enumerable.Repeat("k", 70).ToArray();
+        var refuse = () => SidecarPatch.Apply(Written, [Set("1", deep)]);
+        refuse.Should().Throw<SidecarPatchRefusedException>().Which.Reason.Should().Be("TooDeep");
+        var deepValue = () => SidecarPatch.Apply(Written, [Set(string.Concat(Enumerable.Repeat("[", 60)) + string.Concat(Enumerable.Repeat("]", 60)), "a", "b", "c", "d", "e")]);
+        deepValue.Should().Throw<SidecarPatchRefusedException>().Which.Reason.Should().Be("TooDeep");
+
+        // As deep as it can hold is written, and reads back.
+        var written = SidecarPatch.Apply(Written, [Set("1", Enumerable.Repeat("k", 64).ToArray())]);
+        var reread = () => SidecarPatch.Apply(written, []);
+        reread.Should().NotThrow();
+    }
+
+    [Fact]
+    public void A_null_on_the_way_to_a_key_is_taken_as_nothing_there()
+    {
+        // `"views": null`, as a hand edit can leave it, refused every position saved into a view.
+        const string text = "{\n  \"version\": 1,\n  \"views\": null\n}\n";
+
+        SidecarPatch.Apply(text, [Set("""{"x":1}""", "views", "m", "nodes", "a")]).Should().Be("""
+            {
+              "version": 1,
+              "views": {
+                "m": {
+                  "nodes": {
+                    "a": {
+                      "x": 1
+                    }
+                  }
+                }
+              }
+            }
+
+            """);
+        SidecarPatch.Apply(text, [Set("1", "views", "m"), Remove("views", "m")]).Should().Be(text);
+    }
+
+    [Fact]
     public void A_path_through_a_value_that_is_not_an_object_is_refused()
     {
         var refuse = () => SidecarPatch.Apply(Written, [Set("1", "notes", "cnt_web", "x")]);

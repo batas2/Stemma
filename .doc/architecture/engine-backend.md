@@ -133,10 +133,14 @@ file's text: a changed value's span is replaced; an object set onto an object ch
 differs inside it; a new key goes after its object's last one, laid out like it — on its line when
 the object is written on one line, otherwise with that member's indentation and the file's indent
 unit, line ending and escaping; a removed key takes its lines and one comma, and the last one out
-leaves `{}`. The BOM, or its absence, survives. Refuses `UnreadableSidecar` (the file does not parse:
+leaves `{}`. A `null` on the way to a key is taken as nothing there yet. A batch is applied in order
+to one reading of the file and written in one pass, with the file's layout as it was read; a key
+added and removed in the same batch leaves the file as it was, the objects made to hold it
+included. The BOM, or its absence, survives. Refuses `UnreadableSidecar` (the file does not parse:
 a merge conflict is never read as empty and written back; or an object has the same key twice, which
 an edit and the browser would each read differently — the refusal names the key and both lines),
-`NotAnObject`, `EmptyPath`, and `InvalidText` — a change holding text that is not valid Unicode, such
+`NotAnObject`, `EmptyPath`, `TooDeep` (a value nested past the 64 levels the file is read to), and
+`InvalidText` — a change holding text that is not valid Unicode, such
 as half of an emoji, refused before anything is written; it is the change that is wrong, not the
 file, and resending it will not help. A file holding such text is unreadable, with its line. A
 workspace without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.

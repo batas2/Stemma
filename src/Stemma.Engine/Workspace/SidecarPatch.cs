@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace Stemma.Engine.Workspace;
@@ -56,11 +55,23 @@ public static class SidecarPatch
         foreach (var change in list)
         {
             if (change.Path.Count == 0) throw new SidecarPatchRefusedException("EmptyPath", "A change must name a key.");
+            // The file is read to so many levels and no deeper; a value nested past that would be a file
+            // that cannot be read again. It threw where it was nested, which answered 500.
+            if (change.Value is { } deep && change.Path.Count + Depth(deep) > JsonText.MaxDepth)
+                throw new SidecarPatchRefusedException("TooDeep",
+                    $"A change nests {change.Path.Count + Depth(deep)} levels deep, and the layout file holds {JsonText.MaxDepth} at most, so it was not saved.");
             if (change.Value is { } value) edit.Set(edit.Root, change.Path, 0, value);
             else edit.Remove(edit.Root, change.Path, 0);
         }
         return edit.Write();
     }
+
+    private static int Depth(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Object => 1 + value.EnumerateObject().Select(p => Depth(p.Value)).DefaultIfEmpty(0).Max(),
+        JsonValueKind.Array => 1 + value.EnumerateArray().Select(Depth).DefaultIfEmpty(0).Max(),
+        _ => 0,
+    };
 
     // ---------------------------------------------------------------- what a batch does to the file
 
@@ -76,6 +87,12 @@ public static class SidecarPatch
     private sealed class Built : Node
     {
         public List<(string Name, Node Value)> Members { get; } = [];
+
+        /// <summary>
+        /// Made only to hold a path that did not exist: it goes again when the last thing it held is
+        /// removed in the same batch, so adding a key and removing it leaves the file as it was.
+        /// </summary>
+        public bool Holder { get; set; }
         public int IndexOf(string name) => Members.FindIndex(m => m.Name == name);
 
         public static Built From(JsonElement obj)
@@ -127,6 +144,8 @@ public static class SidecarPatch
                 if (last) SetMember(obj, member, path, value);
                 else if (obj.Replaced.TryGetValue(member, out var replaced)) obj.Replaced[member] = SetIn(replaced, path, i + 1, value);
                 else if (member.Object is not null) Set(obj.InnerOf(member), path, i + 1, value);
+                // A null on the way, as a hand edit leaves `"views": null`, is nothing there yet.
+                else if (IsNull(member)) obj.Replaced[member] = Nest(path, i + 1, value);
                 else throw NotAnObject(path, i);
                 return;
             }
@@ -159,6 +178,8 @@ public static class SidecarPatch
             if (!Says(member, value)) obj.Replaced[member] = new Leaf(value);
         }
 
+        private bool IsNull(JsonText.Member member) => member.Object is null && member.Array is null && bytes[member.ValueStart] == 'n';
+
         private bool Says(JsonText.Member member, JsonElement value)
         {
             using var current = JsonDocument.Parse(bytes.AsMemory(member.ValueStart, member.ValueEnd - member.ValueStart));
@@ -168,7 +189,8 @@ public static class SidecarPatch
         /// <summary><paramref name="node"/> with the value at <paramref name="path"/>[<paramref name="i"/>..] set.</summary>
         private static Node SetIn(Node node, IReadOnlyList<string> path, int i, JsonElement value)
         {
-            var built = AsBuilt(node) ?? throw NotAnObject(path, i - 1);
+            var built = AsBuilt(node)
+                ?? (node is Leaf { Value.ValueKind: JsonValueKind.Null } ? new Built { Holder = true } : throw NotAnObject(path, i - 1));
             var at = built.IndexOf(path[i]);
             if (at < 0) built.Members.Add((path[i], Nest(path, i + 1, value)));
             else if (i == path.Count - 1) built.Members[at] = (path[i], Assign(built.Members[at].Value, value));
@@ -180,6 +202,7 @@ public static class SidecarPatch
         private static Node Assign(Node current, JsonElement value)
         {
             if (value.ValueKind != JsonValueKind.Object || AsBuilt(current) is not { } built) return new Leaf(value);
+            built.Holder = false; // set on purpose now, so it stays when emptied
             foreach (var property in value.EnumerateObject())
             {
                 var at = built.IndexOf(property.Name);
@@ -201,14 +224,9 @@ public static class SidecarPatch
         private static Node Nest(IReadOnlyList<string> path, int from, JsonElement value)
         {
             if (from >= path.Count) return new Leaf(value);
-            using var stream = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
-            {
-                for (var i = from; i < path.Count; i++) { writer.WriteStartObject(); writer.WritePropertyName(path[i]); }
-                JsonText.Write(writer, value);
-                for (var i = from; i < path.Count; i++) writer.WriteEndObject();
-            }
-            return new Leaf(JsonDocument.Parse(stream.ToArray()).RootElement.Clone());
+            var holder = new Built { Holder = true };
+            holder.Members.Add((path[from], Nest(path, from + 1, value)));
+            return holder;
         }
 
         private static SidecarPatchRefusedException NotAnObject(IReadOnlyList<string> path, int i) =>
@@ -228,24 +246,30 @@ public static class SidecarPatch
                     obj.Replaced.Remove(member);
                     obj.Inner.Remove(member);
                 }
-                else if (obj.Replaced.TryGetValue(member, out var replaced)) obj.Replaced[member] = RemoveIn(replaced, path, i + 1);
+                else if (obj.Replaced.TryGetValue(member, out var replaced))
+                {
+                    // Emptied of what it was made to hold: what the file had there comes back.
+                    if (RemoveIn(replaced, path, i + 1) is { } kept) obj.Replaced[member] = kept;
+                    else obj.Replaced.Remove(member);
+                }
                 else if (member.Object is not null) Remove(obj.InnerOf(member), path, i + 1);
                 return;
             }
             var added = obj.Added.FindIndex(a => a.Name == name);
             if (added < 0) return;
-            if (last) obj.Added.RemoveAt(added);
-            else obj.Added[added] = (name, RemoveIn(obj.Added[added].Value, path, i + 1));
+            if (!last && RemoveIn(obj.Added[added].Value, path, i + 1) is { } left) obj.Added[added] = (name, left);
+            else obj.Added.RemoveAt(added);
         }
 
-        private static Node RemoveIn(Node node, IReadOnlyList<string> path, int i)
+        /// <summary><paramref name="node"/> without the value at the path, or null when nothing it was made to hold is left.</summary>
+        private static Node? RemoveIn(Node node, IReadOnlyList<string> path, int i)
         {
             if (AsBuilt(node) is not { } built) return node;
             var at = built.IndexOf(path[i]);
             if (at < 0) return node;
-            if (i == path.Count - 1) built.Members.RemoveAt(at);
-            else built.Members[at] = (path[i], RemoveIn(built.Members[at].Value, path, i + 1));
-            return built;
+            if (i < path.Count - 1 && RemoveIn(built.Members[at].Value, path, i + 1) is { } kept) built.Members[at] = (path[i], kept);
+            else built.Members.RemoveAt(at);
+            return built.Holder && built.Members.Count == 0 ? null : built;
         }
 
         // ---- writing
