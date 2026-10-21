@@ -51,13 +51,21 @@ public static partial class DiagnosticsBundle
         return JsonSerializer.Serialize(bundle, new JsonSerializerOptions { WriteIndented = true });
     }
 
+    /// <summary>
+    /// The last <paramref name="max"/> records, oldest first. Files are read newest first only until
+    /// there are enough, then put back in order: the log rolls daily, so early in a day the newest
+    /// file is short, and read in the order found, the cap kept the day before and dropped today.
+    /// </summary>
     private static IEnumerable<string> ReadRecent(string logDirectory, int max)
     {
         if (!Directory.Exists(logDirectory)) return [];
-        var lines = new List<string>();
+        var newestFirst = new List<List<string>>();
+        var count = 0;
         foreach (var file in Directory.EnumerateFiles(logDirectory, "stemma-*.log")
-                     .OrderByDescending(File.GetLastWriteTimeUtc))
+                     .OrderByDescending(File.GetLastWriteTimeUtc)
+                     .ThenByDescending(f => f, StringComparer.Ordinal))
         {
+            var lines = new List<string>();
             try
             {
                 // `shared: true` on the sink means the file is open for writing while we read it.
@@ -70,9 +78,11 @@ public static partial class DiagnosticsBundle
                 // A log we cannot read is not a reason to fail the bundle — the point is to produce
                 // something the user can send, from whatever is available.
             }
-            if (lines.Count >= max) break;
+            newestFirst.Add(lines);
+            count += lines.Count;
+            if (count >= max) break;
         }
-        return lines.TakeLast(max);
+        return Enumerable.Reverse(newestFirst).SelectMany(lines => lines).TakeLast(max);
     }
 
     /// <summary>

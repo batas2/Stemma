@@ -80,7 +80,8 @@
       with logging at `Trace` and at `None`, proven by a test, not by inspection.
 - [x] AC9 — The user can produce a **diagnostics bundle** (recent log records + environment facts) in
       one action. It is **redacted by default** — no element names, no source text, no absolute paths
-      — with an explicit opt-in to include model content.
+      — with an explicit opt-in to include model content. The records are the newest 500, oldest
+      first, across however many daily files they span.
 - [x] AC10 — No log record leaves the machine. There is no network sink, and none can be configured
       without a code change (see §3.6).
 
