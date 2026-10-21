@@ -100,6 +100,29 @@ public sealed class LayoutEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_change_made_in_another_workspace_is_not_written_into_this_one()
+    {
+        var other = Path.Combine(Path.GetTempPath(), $"stemma-elsewhere-{Guid.NewGuid():N}");
+        var elsewhere = await PatchAsync(new
+        {
+            rootPath = other,
+            changes = new[] { new { path = new[] { "views", "moduleMap", "nodes" }, remove = true } },
+        });
+
+        elsewhere.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await elsewhere.Content.ReadAsStringAsync()).Should().Contain("WorkspaceChanged");
+        (await File.ReadAllTextAsync(File_)).Should().Be(Sidecar);
+
+        // The same folder, however it is spelled, is this workspace.
+        var here = await PatchAsync(new
+        {
+            rootPath = _root + Path.DirectorySeparatorChar,
+            changes = new[] { new { path = new[] { "views", "moduleMap", "nodes", "ctx_a", "y" }, value = 42 } },
+        });
+        here.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
     public async Task The_whole_file_can_no_longer_be_put()
     {
         var put = await _http.PutAsJsonAsync("/api/workspace/layout", new { version = 1 });

@@ -18,7 +18,23 @@ async function request(input: string, init: RequestInit = {}): Promise<Response>
 }
 
 
+/**
+ * What has to reach the open workspace before the server leaves it: layout edits still waiting to be
+ * sent. Whoever holds them registers here, so nothing that opens, creates or closes a workspace can
+ * forget to wait — sent afterwards, they landed in the next workspace's file.
+ */
+const beforeLeaving = new Set<() => Promise<void>>();
+
+export function beforeLeavingWorkspace(settle: () => Promise<void>): void {
+  beforeLeaving.add(settle);
+}
+
+async function leaving(): Promise<void> {
+  await Promise.all([...beforeLeaving].map((settle) => settle().catch(() => undefined)));
+}
+
 export async function openWorkspace(rootPath: string): Promise<WorkspaceModel> {
+  await leaving();
   const r = await request(`${BASE}/api/workspace/open`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -29,6 +45,7 @@ export async function openWorkspace(rootPath: string): Promise<WorkspaceModel> {
 }
 
 export async function initWorkspace(rootPath?: string, name?: string): Promise<WorkspaceModel> {
+  await leaving();
   const r = await request(`${BASE}/api/workspace/init`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -46,6 +63,7 @@ export async function snapshot(): Promise<WorkspaceModel | null> {
 }
 
 export async function closeWorkspace(): Promise<void> {
+  await leaving();
   const r = await request(`${BASE}/api/workspace/close`, { method: 'POST' });
   if (!r.ok && r.status !== 204) throw new Error(`Close failed: ${r.status} ${await r.text()}`);
 }
@@ -153,12 +171,15 @@ export async function fetchLayout(): Promise<unknown> {
 /** One change to the sidecar: the value at a path of keys, or its removal (ADR-0021). */
 export type SidecarChange = { path: string[]; value: unknown } | { path: string[]; remove: true };
 
-/** Apply changes to the sidecar as it is on disk; resolves to the refusal (409) if it declines them. */
-export async function patchLayoutSidecar(changes: SidecarChange[]): Promise<OperationFailed | null> {
+/**
+ * Apply changes to the sidecar as it is on disk; resolves to the refusal (409) if it declines them —
+ * among other reasons, because `rootPath`, the workspace they were made in, is no longer the open one.
+ */
+export async function patchLayoutSidecar(changes: SidecarChange[], rootPath: string): Promise<OperationFailed | null> {
   const r = await request(`${BASE}/api/workspace/layout`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ changes }),
+    body: JSON.stringify({ changes, rootPath }),
   });
   if (r.status === 409) return refusal(r);
   if (!r.ok) throw new Error(`Layout save failed: ${r.status}`);

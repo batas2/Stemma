@@ -140,3 +140,51 @@ describe('a change made outside', () => {
     expect(api.fetchLayout).not.toHaveBeenCalled();
   });
 });
+
+describe('another workspace', () => {
+  const OTHER = '/ws/other';
+
+  it('does not inherit this one\'s copy: its first save waits for its own file, and removes nothing', async () => {
+    const s = await session();
+    s.layout.forgetLayoutSidecar();
+    s.api.fetchLayout.mockImplementation(async () => ({ version: 1, views: { moduleMap: { nodes: { ctx_x: { x: 1, y: 2 }, ctx_y: { x: 3, y: 4 } } } } }));
+
+    // Saved before its file was read: nothing is sent until it has been.
+    s.layout.saveLayout(OTHER, 'moduleMap', { ctx_x: { x: 1, y: 2 }, ctx_y: { x: 3, y: 4 }, ctx_new: { x: 9, y: 9 } });
+    await flush();
+    expect(s.api.patchLayoutSidecar).not.toHaveBeenCalled();
+    expect(s.layout.isSidecarPrimed(OTHER)).toBe(false);
+
+    await s.layout.primeLayoutSidecar(OTHER);
+    await flush();
+    expect(sent(s)).toEqual([{ path: ['views', 'moduleMap', 'nodes', 'ctx_new'], value: { x: 9, y: 9 } }]);
+    expect(s.api.patchLayoutSidecar.mock.calls[0][1]).toBe(OTHER);
+  });
+
+  it('opened again is read again, not drawn from a copy that may have been emptied', async () => {
+    const s = await session();
+    // A save under another root replaces the copy; this workspace is then no longer read.
+    s.layout.saveLayout(OTHER, 'moduleMap', {});
+    expect(s.layout.isSidecarPrimed(ROOT)).toBe(false);
+
+    await s.layout.primeLayoutSidecar(ROOT);
+    expect(s.layout.loadLayout(ROOT, 'moduleMap').mod_2).toEqual({ x: 300, y: 20 });
+    s.layout.saveLayout(ROOT, 'moduleMap', { mod_1: { x: 15, y: 20 }, mod_2: { x: 300, y: 20 } });
+    await flush();
+    expect(sent(s)).toEqual([{ path: ['views', 'moduleMap', 'nodes', 'mod_1', 'x'], value: 15 }]);
+  });
+
+  it('is opened only once what waited to be sent has been', async () => {
+    const s = await session();
+    s.layout.saveLayout(ROOT, 'moduleMap', { mod_1: { x: 15, y: 20 }, mod_2: { x: 300, y: 20 } });
+
+    // Before the pause is over: settling sends it now, naming the workspace it was made in.
+    await s.layout.settleLayoutSidecar();
+    expect(sent(s)).toEqual([{ path: ['views', 'moduleMap', 'nodes', 'mod_1', 'x'], value: 15 }]);
+    expect(s.api.patchLayoutSidecar.mock.calls[0][1]).toBe(ROOT);
+
+    s.layout.forgetLayoutSidecar();
+    await flush();
+    expect(s.api.patchLayoutSidecar).toHaveBeenCalledTimes(1);
+  });
+});

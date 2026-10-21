@@ -9,7 +9,7 @@ import {
   renameCustomProp as renameCP, type CustomProps,
 } from './customProps';
 import { saveServerView, deleteServerView, listServerViews, type ServerView } from './api';
-import { editBooksSection, editViewHeader, isSidecarPrimed, loadBooksSection, loadViewEntries, loadViewLayoutModes, saveViewLayoutMode } from './layout';
+import { editBooksSection, editViewHeader, forgetLayoutSidecar, isSidecarPrimed, loadBooksSection, loadViewEntries, loadViewLayoutModes, saveViewLayoutMode } from './layout';
 import { readViewHeaders, type HeaderField, type ViewHeaderSpec } from './viewHeader';
 import {
   addBook as addBookTo, addPage, duplicatePage, movePage, newBookId, newPageId, readBooks,
@@ -485,6 +485,9 @@ export const useApp = create<AppState>((set, get) => ({
     // during the same session should NOT reset activeCustomViewId / selection — the user's
     // in-memory choices win over stale localStorage.
     const previous = get().workspace;
+    // What this window holds of the last workspace's sidecar is not this one's: written here, it read
+    // as the new workspace's whole layout and removed everything else from its file.
+    if (previous?.rootPath !== ws?.rootPath) forgetLayoutSidecar();
     set({ workspace: ws });
     if (!ws) {
       set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {}, trail: { back: [], forward: [] }, compare: null, headModel: null });

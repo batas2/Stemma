@@ -1,6 +1,6 @@
 import type { ViewKind } from './types';
 import { reportFailure, ClientEvent } from './log';
-import { fetchLayout, patchLayoutSidecar, type SidecarChange } from './api';
+import { beforeLeavingWorkspace, fetchLayout, patchLayoutSidecar, type SidecarChange } from './api';
 import { isLayoutConstraint, type LayoutConstraint, type LayoutOffsets } from './layoutDsl';
 
 export interface SavedPosition { x: number; y: number; }
@@ -22,6 +22,11 @@ export type SidecarSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProp
 function ensureSidecar(rootPath: string): SidecarShape {
   if (!sidecarCache || sidecarCache.rootPath !== rootPath) {
     sidecarCache = { rootPath, sidecar: { version: 1, views: {}, nodeStyles: {}, edgeStyles: {} } };
+    // A fresh copy holds only what is about to be put in it, so nothing of this workspace has been
+    // read. Left marked as read, the empty copy was the whole layout, and the next save removed the
+    // rest of the file.
+    primedRoot = null;
+    sidecarBase = null;
   }
   return sidecarCache.sidecar;
 }
@@ -93,19 +98,24 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Send what changed since the copy last read or written, and nothing else (ADR-0021). The server
  * applies it to the file as it is now, so whatever anyone else changed since stays, and the diff of
  * an edit is that edit — sending the whole copy rewrote the file and put back what others had
- * changed (B-014). One send at a time; edits made meanwhile go in the next one.
+ * changed (B-014). One send at a time, in order; edits made meanwhile go in the next one. Resolves
+ * once what the copy held when it was called has been sent.
  */
-async function flushSidecar(rootPath: string): Promise<void> {
+function flushSidecar(rootPath: string): Promise<void> {
+  const next = sendQueue.then(() => sendChanges(rootPath));
+  sendQueue = next.catch(() => undefined);
+  return next;
+}
+
+async function sendChanges(rootPath: string): Promise<void> {
   if (!isSidecarPrimed(rootPath) || sidecarBase?.rootPath !== rootPath) return;
-  if (flushing) { flushAgain = true; return; }
   // A copy, not references into the live sidecar: an edit made while this request is in flight
   // mutates those objects, and recording the request as written would then record the later edit as
   // written too — when it was never sent.
   const changes = structuredClone(sidecarChanges(sidecarBase.sidecar, sidecarCache!.sidecar));
   if (changes.length === 0) return;
-  flushing = true;
   try {
-    const refused = await patchLayoutSidecar(changes);
+    const refused = await patchLayoutSidecar(changes, rootPath);
     if (refused) {
       // Kept against the copy, so the next send carries them again.
       reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(new Error(`${refused.reason}: ${refused.message}`));
@@ -114,10 +124,30 @@ async function flushSidecar(rootPath: string): Promise<void> {
     }
   } catch (error) {
     reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Writing the layout sidecar')(error);
-  } finally {
-    flushing = false;
-    if (flushAgain) { flushAgain = false; void flushSidecar(rootPath); }
   }
+}
+
+/**
+ * Send what is waiting now rather than after the pause: the server is about to leave this workspace,
+ * and anything sent afterwards would be refused (or, before it named its workspace, written into the
+ * next one's file).
+ */
+export async function settleLayoutSidecar(): Promise<void> {
+  if (pendingWrite) {
+    clearTimeout(pendingWrite.timer);
+    pendingWrite = null;
+  }
+  await (sidecarCache ? flushSidecar(sidecarCache.rootPath) : sendQueue);
+}
+beforeLeavingWorkspace(settleLayoutSidecar);
+
+/** Let go of the last workspace's sidecar: another is open, and it is read afresh — reopening the same one included. */
+export function forgetLayoutSidecar(): void {
+  if (pendingWrite) clearTimeout(pendingWrite.timer);
+  pendingWrite = null;
+  sidecarCache = null;
+  sidecarBase = null;
+  primedRoot = null;
 }
 
 /**
@@ -356,8 +386,8 @@ let pendingWrite: { rootPath: string; sidecar: SidecarShape; timer: ReturnType<t
 // The sidecar as the file has it, as far as this session knows: what was last read, plus what has
 // been written since. What the cache holds beyond it is what is still to be sent.
 let sidecarBase: { rootPath: string; sidecar: SidecarShape } | null = null;
-let flushing = false;
-let flushAgain = false;
+// Sends, one after another.
+let sendQueue: Promise<void> = Promise.resolve();
 // Workspace the committed sidecar has already been fetched for. Once set, the in-memory cache is
 // authoritative for the session and we never re-fetch (re-fetching clobbers unflushed local edits).
 let primedRoot: string | null = null;

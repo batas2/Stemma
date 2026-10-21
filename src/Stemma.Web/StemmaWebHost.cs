@@ -200,6 +200,15 @@ public static class StemmaWebHost
             || IsDevOrigin(origin);
     }
 
+    /// <summary>Whether two paths name the same folder, however each is spelled (a trailing separator, <c>..</c>).</summary>
+    internal static bool SameFolder(string a, string b)
+    {
+        static string Normal(string p) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(p));
+        var comparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        try { return string.Equals(Normal(a), Normal(b), comparison); }
+        catch (ArgumentException) { return false; }
+    }
+
     /// <summary>
     /// Where the built front end is.
     ///
@@ -535,6 +544,11 @@ public static class StemmaWebHost
             if (engine is null) return Results.BadRequest(new { error = "no workspace open" });
             if (patch.Changes.Any(c => c.Path.Length == 0 || (!c.Remove && c.Value is null)))
                 return Results.BadRequest(new { error = "every change needs a path, and a value or remove: true" });
+            // A save still on its way when the window opened another workspace, or one from a window
+            // still showing the last one, names the workspace it was made in. Written here, it would put
+            // one workspace's layout into another's file.
+            if (patch.RootPath is not null && !SameFolder(patch.RootPath, engine.RootPath))
+                return Results.Conflict(new { reason = "WorkspaceChanged", message = "This layout change was made in another workspace, so it was not saved into this one." });
             var changes = patch.Changes.Select(c => new SidecarChange(c.Path, c.Remove ? null : c.Value)).ToList();
             try
             {
@@ -704,8 +718,12 @@ public static class StemmaWebHost
     }
 }
 
-/// <summary>The body of <c>PATCH /api/workspace/layout</c>: each change sets the value at a path of keys, or removes it.</summary>
-internal sealed record LayoutPatch(List<LayoutPatch.Change> Changes)
+/// <summary>
+/// The body of <c>PATCH /api/workspace/layout</c>: each change sets the value at a path of keys, or
+/// removes it. <c>RootPath</c> names the workspace the changes were made in; when it is not the open
+/// one, nothing is written.
+/// </summary>
+internal sealed record LayoutPatch(List<LayoutPatch.Change> Changes, string? RootPath = null)
 {
     internal sealed record Change(string[] Path, JsonElement? Value, bool Remove);
 }
