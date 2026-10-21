@@ -584,14 +584,17 @@ public static class StemmaWebHost
             using var lease = host.Use();
             if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
             var engine = lease.Engine;
-            if (patch.Changes.Any(c => c.Path.Length == 0 || (!c.Remove && c.Value is null)))
-                return Results.BadRequest(new { error = "every change needs a path, and a value or remove: true" });
+            // The body is the client's, so nothing in it is assumed to be there: `{}`, a null change or
+            // one without a path each ended in a NullReferenceException and a bare 500.
+            if (patch.Changes is null || patch.Changes.Any(c => c?.Path is not { Length: > 0 } path || path.Any(key => key is null) || (!c.Remove && c.Value is null)))
+                return Results.BadRequest(new { error = "every change needs a path of keys, and a value or remove: true" });
             // A save still on its way when the window opened another workspace, or one from a window
             // still showing the last one, names the workspace it was made in. Written here, it would put
             // one workspace's layout into another's file.
             if (patch.RootPath is not null && !SameFolder(patch.RootPath, engine.RootPath))
                 return Results.Conflict(new { reason = "WorkspaceChanged", message = "This layout change was made in another workspace, so it was not saved into this one." });
-            var changes = patch.Changes.Select(c => new SidecarChange(c.Path, c.Remove ? null : c.Value)).ToList();
+            var changes = patch.Changes.OfType<LayoutPatch.Change>()
+                .Select(c => new SidecarChange(c.Path!, c.Remove ? null : c.Value)).ToList();
             try
             {
                 var result = await engine.PatchSidecarAsync($"layout_{Guid.NewGuid():N}", changes, ct);
@@ -635,9 +638,11 @@ public static class StemmaWebHost
             if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
             var engine = lease.Engine;
             var changes = new List<CommentChange>();
+            if (request.Changes is null)
+                return Results.BadRequest(new { error = "changes is required: a list of add, reply, resolve or remove" });
             foreach (var c in request.Changes)
             {
-                CommentChange? change = c.Op switch
+                CommentChange? change = c?.Op switch
                 {
                     "add" when c.Comment is { } comment => new CommentChange.Add(comment),
                     "reply" when c.Id is { Length: > 0 } id && c.Reply is { } reply => new CommentChange.AddReply(id, reply),
@@ -772,16 +777,16 @@ public static class StemmaWebHost
 /// removes it. <c>RootPath</c> names the workspace the changes were made in; when it is not the open
 /// one, nothing is written.
 /// </summary>
-internal sealed record LayoutPatch(List<LayoutPatch.Change> Changes, string? RootPath = null)
+internal sealed record LayoutPatch(List<LayoutPatch.Change?>? Changes, string? RootPath = null)
 {
-    internal sealed record Change(string[] Path, JsonElement? Value, bool Remove);
+    internal sealed record Change(string[]? Path, JsonElement? Value, bool Remove);
 }
 
 /// <summary>
 /// The body of <c>PATCH /api/workspace/comments</c>: each change adds a comment, replies to one,
 /// resolves one or removes one, naming it by id.
 /// </summary>
-internal sealed record CommentChanges(List<CommentChanges.Change> Changes)
+internal sealed record CommentChanges(List<CommentChanges.Change?>? Changes)
 {
     internal sealed record Change(string? Op, string? Id, JsonElement? Comment, JsonElement? Reply, bool? Resolved);
 }
