@@ -13,14 +13,6 @@ import { loadLayout, saveLayout } from './layout';
 import { addedId } from './signalr';
 import type { ArchElementKind, OperationResult, ViewKind } from './types';
 
-/** The first element whose id is not in `prevIds`: a guess at the one a just-applied AddElement
- *  created, for a caller that has no result to name it — another window's may come first.
- *  Pure + deterministic, so it unit-tests without timers. */
-export function firstNewId(prevIds: Set<string>, elements: { id: string }[]): string | null {
-  for (const e of elements) if (!prevIds.has(e.id)) return e.id;
-  return null;
-}
-
 export interface RevealResult {
   id: string; name: string; kind: ArchElementKind; view: ViewKind; switched: boolean;
   /** Added where no open view draws it: a Concept outside a view that names it. */
@@ -34,18 +26,16 @@ export interface RevealResult {
  * if the operation added nothing, or the element did not arrive (not refreshed) within the budget.
  *
  * `added` is the operation's result, which names the id the engine made (`addedId`). Found instead
- * as the first id the model had not had before (a set of the ids before, still accepted), it could
- * be one another window added at the same moment — placed at this window's drop, selected, and put
- * into the open view.
+ * as the first id the model had not had before, it could be one another window added at the same
+ * moment — placed at this window's drop, selected, and put into the open view.
  */
 export async function revealNewElement(
-  added: OperationResult | Set<string>,
+  added: OperationResult,
   opts: { dropPos?: { x: number; y: number } } = {},
 ): Promise<RevealResult | null> {
-  const wanted = added instanceof Set ? null : addedId(added);
-  if (!(added instanceof Set) && !wanted) return null;
-  const arrived = (elements: { id: string }[]) =>
-    wanted ? (elements.some((e) => e.id === wanted) ? wanted : null) : firstNewId(added as Set<string>, elements);
+  const wanted = addedId(added);
+  if (!wanted) return null;
+  const arrived = (elements: { id: string }[]) => (elements.some((e) => e.id === wanted) ? wanted : null);
   let newId: string | null = null;
   for (let i = 0; i < 15 && !newId; i++) {
     await new Promise((r) => setTimeout(r, 80));

@@ -109,7 +109,7 @@ import { applyOrSay } from '@/lib/applyOp';
 import { confirmAndRemoveElements } from './removeElements';
 import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
-import { loadNote, saveNote } from '@/lib/elementNotes';
+import { loadNote, loadNotes, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
 import { layoutUndo, diffPositions, isEmptyDiff } from '@/lib/layoutUndo';
 import {
@@ -817,7 +817,10 @@ function CanvasInner() {
   // 1.5s violations poll and other churn. Keeps the canvas light on large graphs.
   const notesById = useMemo(() => {
     const m = new Map<string, string>();
-    if (workspace) for (const el of filtered.elements) { const t = loadNote(workspace.rootPath, el.id); if (t) m.set(el.id, t); }
+    if (!workspace) return m;
+    // The section once, not once per element.
+    const all = loadNotes(workspace.rootPath);
+    for (const el of filtered.elements) { const t = all[el.id]; if (t) m.set(el.id, t); }
     return m;
   }, [workspace, filtered.elements, notesVersion]);
 
@@ -1901,12 +1904,11 @@ function CanvasInner() {
 
   const addElementAt = useCallback(async (kind: ArchElementKind, pos: SavedPosition) => {
     const fresh = useApp.getState().arch;
-    const prevIds = new Set((fresh?.elements ?? []).map((e) => e.id));
-    const elementsBefore = prevIds.size;
+    const elementsBefore = fresh?.elements.length ?? 0;
     const name = suggestElementName(kind, fresh?.elements ?? []);
     const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
     if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return; }
-    const revealed = await revealNewElement(prevIds, { dropPos: pos });
+    const revealed = await revealNewElement(r, { dropPos: pos });
     if (revealed) {
       setToast({ kind: 'success', text: revealToast(revealed) });
       // Land straight in the name field: creating an element is a typing flow, not a menu hunt.
@@ -2126,17 +2128,16 @@ function CanvasInner() {
 
     if (paletteKind) {
       const fresh = useApp.getState().arch;
-      const prevIds = new Set((fresh?.elements ?? []).map((el) => el.id));
       const name = suggestElementName(paletteKind, fresh?.elements ?? []);
       const result = await applyOperation({
         kind: 'AddElement', opId: `op_${Date.now()}`,
         elementKind: paletteKind, name,
       });
       if ('reason' in result) { setToast({ kind: 'error', text: friendlyOpError(result) }); return; }
-      // Bulletproof reveal: select by id-diff and switch to a lens that renders this kind,
-      // so the new element is never silently filtered off-canvas. Offset by ~half a node so
-      // the new box lands centred under the cursor, not down-right of it.
-      const revealed = await revealNewElement(prevIds, { dropPos: { x: dropPos.x - 100, y: dropPos.y - 44 } });
+      // The element the engine says it added, on a lens that renders its kind, so it is never
+      // silently filtered off-canvas. Offset by ~half a node so the new box lands centred under the
+      // cursor, not down-right of it.
+      const revealed = await revealNewElement(result, { dropPos: { x: dropPos.x - 100, y: dropPos.y - 44 } });
       if (!revealed) { setToast({ kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` }); return; }
       // Dropping a new module/capability inside a Bounded Context nests it there.
       if (paletteKind === 'module' || paletteKind === 'capability') {

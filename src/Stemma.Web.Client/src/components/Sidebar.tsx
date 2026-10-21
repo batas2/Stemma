@@ -117,11 +117,10 @@ export function Sidebar() {
   // revealNewElement so it switches to a lens that renders the kind, then selects + centers it.
   async function addElement(kind: ArchElementKind) {
     const fresh = useApp.getState().arch;
-    const prevIds = new Set((fresh?.elements ?? []).map((e) => e.id));
     const name = suggestElementName(kind, fresh?.elements ?? []);
     const r = await applyOperation({ kind: 'AddElement', opId: `op_${Date.now()}`, elementKind: kind, name });
     if ('reason' in r) { setToast({ kind: 'error', text: friendlyOpError(r) }); return; }
-    const revealed = await revealNewElement(prevIds);
+    const revealed = await revealNewElement(r);
     setToast(revealed
       ? { kind: 'success', text: revealToast(revealed) }
       : { kind: 'error', text: `Added ${name}, but it did not appear — try refreshing.` });

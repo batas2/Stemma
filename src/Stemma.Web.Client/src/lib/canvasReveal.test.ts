@@ -11,27 +11,9 @@ vi.mock('./api', async (importOriginal) => ({
   patchLayoutSidecar: vi.fn(async () => null),
 }));
 
-const { firstNewId, revealNewElement } = await import('./canvasReveal');
+const { revealNewElement } = await import('./canvasReveal');
 const { useApp } = await import('./store');
 const { loadLayout } = await import('./layout');
-
-describe('Epic 13 — firstNewId', () => {
-  it('returns the id present now but not before', () => {
-    expect(firstNewId(new Set(['a', 'b']), [{ id: 'a' }, { id: 'b' }, { id: 'c' }])).toBe('c');
-  });
-
-  it('returns null when nothing is new', () => {
-    expect(firstNewId(new Set(['a', 'b']), [{ id: 'a' }, { id: 'b' }])).toBeNull();
-  });
-
-  it('returns null for an empty model', () => {
-    expect(firstNewId(new Set(), [])).toBeNull();
-  });
-
-  it('returns the first new id when several appeared', () => {
-    expect(firstNewId(new Set(['a']), [{ id: 'a' }, { id: 'x' }, { id: 'y' }])).toBe('x');
-  });
-});
 
 // The element just added was found as the first id the model had not had before. When another
 // window added one at the same moment, that could be theirs: it was the one placed where this
