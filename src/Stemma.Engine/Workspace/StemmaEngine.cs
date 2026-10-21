@@ -1453,7 +1453,9 @@ public sealed class StemmaEngine : IAsyncDisposable
         var root = await doc.GetSyntaxRootAsync(ct);
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
 
-        var newRoot = DslWriter.RenameElement(root, op.ElementId, op.NewName);
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.RenameElement(root, op.ElementId, op.NewName); }
+        catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
         if (ReferenceEquals(newRoot, root))
             return new OperationFailed(op.OpId, "ElementNotFound", op.ElementId);
         var oldSolution = _workspace.CurrentSolution;

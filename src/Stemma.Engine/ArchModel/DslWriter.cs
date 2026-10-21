@@ -133,6 +133,11 @@ public static class DslWriter
     {
         if (FindDeclaration(root, id) is not { } found) return root;
         var (stmt, variable, creation) = found;
+        // Only an element has a name. A link's second argument is where it starts, and renaming one
+        // wrote the new name over it.
+        var typeName = DslReader.ExtractTypeName(creation, stmt.Declaration.Type);
+        if (typeName is null || !Enum.IsDefined(typeof(ArchElementKind), typeName))
+            throw new DslEditRefusedException("NotAnElement", $"{id} is a {typeName ?? "declaration"}, not an element, and has no name to change.");
         var args = creation.ArgumentList!.Arguments;
         var nameAt = -1;
         for (var i = 0; i < args.Count && nameAt < 0; i++)
@@ -147,9 +152,8 @@ public static class DslWriter
 
         // The variable follows the name, so the C# keeps reading like the diagram — unless the new
         // name's variable is already taken, in which case the old one is kept rather than colliding.
-        var typeName = DslReader.ExtractTypeName(creation, stmt.Declaration.Type);
         var oldVar = variable.Identifier.Text;
-        var newVar = renameVariable && typeName is not null ? VarNameFromElementName(typeName, newName) : oldVar;
+        var newVar = renameVariable ? VarNameFromElementName(typeName, newName) : oldVar;
         var build = BuildBody(root);
         if (newVar == oldVar || IsDeclared(build, newVar))
             return root.ReplaceNode(creation, renamed);

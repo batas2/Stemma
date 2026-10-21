@@ -159,6 +159,23 @@ public sealed class DslWriterContractTests
     }
 
     [Fact]
+    public async Task Renaming_a_link_is_refused_rather_than_writing_the_name_over_where_it_starts()
+    {
+        // A link's second argument is where it starts, not a name: the rename once wrote
+        // new DataFlow("flow_x", "Orders placed", …) and the flow no longer started anywhere.
+        var (result, source) = await ApplyAsync("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var flowX = new DataFlow("flow_x", "mod_a", "mod_b", "Order");
+                    return Model.Of(a, b, flowX);
+            """, new RenameElementOp("op", "flow_x", "Orders placed"));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("NotAnElement");
+        source.Should().Contain("        var flowX = new DataFlow(\"flow_x\", \"mod_a\", \"mod_b\", \"Order\");\n")
+            .And.Contain("return Model.Of(a, b, flowX);");
+    }
+
+    [Fact]
     public async Task Renaming_a_concept_gives_its_variable_the_concept_prefix()
     {
         var (result, source) = await ApplyAsync("""
