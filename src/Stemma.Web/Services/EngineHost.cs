@@ -107,7 +107,7 @@ public sealed class EngineHost : IAsyncDisposable
             }
 
             await RetireAsync(Swap(new Slot(engine)));
-            Recents?.Touch(rootPath);
+            if (Recents is not null) await Recents.TouchAsync(rootPath);
             return engine.Model;
         }
         finally

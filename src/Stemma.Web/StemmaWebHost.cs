@@ -40,7 +40,10 @@ public static class StemmaWebHost
     private const string PortFileKey = "port-file";
     private const string PortFileEnvironmentVariable = "STEMMA_PORT_FILE";
 
-    /// <summary>Config key (and environment variable) that, set to <c>off</c>, leaves the recent list alone.</summary>
+    /// <summary>
+    /// Config key (and environment variable) naming where the recent list is kept: <c>off</c> leaves it
+    /// alone; a path keeps it there instead of in <c>~/.stemma/recent.json</c>.
+    /// </summary>
     private const string RecentsKey = "recents";
     private const string RecentsEnvironmentVariable = "STEMMA_RECENTS";
 
@@ -66,7 +69,7 @@ public static class StemmaWebHost
 
         // The recent list is the person's: what they opened. A host started for a headless render opens
         // a workspace nobody chose to open, so it is started with `--recents off` and adds nothing.
-        var recents = KeepsRecents(builder.Configuration) ? RecentWorkspaces.ForUser() : null;
+        var recents = Recents(builder.Configuration);
         builder.Services.AddSingleton(services => new EngineHost(
             services.GetService<IHubContext<WorkspaceHub>>(), services.GetService<ILoggerFactory>(), recents));
         builder.Services.AddSignalR().AddJsonProtocol(o =>
@@ -254,11 +257,13 @@ public static class StemmaWebHost
         return string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
     }
 
-    private static bool KeepsRecents(IConfiguration config)
+    /// <summary>The person's own list unless told otherwise: <c>off</c> for none, or the file to keep it in.</summary>
+    private static RecentWorkspaces? Recents(IConfiguration config)
     {
         var value = config[RecentsKey];
         if (string.IsNullOrWhiteSpace(value)) value = Environment.GetEnvironmentVariable(RecentsEnvironmentVariable);
-        return !string.Equals(value?.Trim(), "off", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(value)) return RecentWorkspaces.ForUser();
+        return value.Trim().Equals("off", StringComparison.OrdinalIgnoreCase) ? null : new RecentWorkspaces(Path.GetFullPath(value));
     }
 
     private static void WritePortFile(string path, string url)
@@ -534,8 +539,23 @@ public static class StemmaWebHost
             };
         });
 
+        // A folder that is missing now stays on the list, marked, so the start screen can say so: it
+        // may be on a drive that is not plugged in. Only its owner takes it off.
         workspaceApi.MapGet("/recents", (EngineHost host) =>
-            Results.Ok(host.Recents?.Load() ?? Array.Empty<RecentWorkspaces.Entry>()));
+            Results.Ok((host.Recents?.Load() ?? []).Select(e => new
+            {
+                e.RootPath,
+                e.DisplayName,
+                e.LastOpened,
+                missing = !Directory.Exists(e.RootPath),
+            })));
+
+        workspaceApi.MapDelete("/recents", async (string? rootPath, EngineHost host) =>
+        {
+            if (string.IsNullOrWhiteSpace(rootPath)) return Results.BadRequest(new { error = "rootPath is required" });
+            if (host.Recents is not null) await host.Recents.RemoveAsync(rootPath);
+            return Results.NoContent();
+        });
 
         workspaceApi.MapGet("/violations", async (EngineHost host, CancellationToken ct) =>
         {

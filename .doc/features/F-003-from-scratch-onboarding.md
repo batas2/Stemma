@@ -145,6 +145,11 @@ it was built first.
       a data flow — each at or under seven boxes, which is the rule every workspace's brief teaches.
 - [x] Native folder picker via [F-002](./F-002-desktop-shell.md); in a browser tab the default
       location plus recents, as designed.
+- [x] Recents (`~/.stemma/recent.json`, replaced whole on every write): a folder that is missing
+      when the list is read — a drive not plugged in, a checkout moved — stays on it.
+      `GET /api/workspace/recents` marks it `missing: true`, and it leaves the list only when pushed
+      off the end or removed with `DELETE /api/workspace/recents?rootPath=…`. Folders are compared
+      as the file system compares them: case matters on Linux.
 - [x] `Stemma.Model` is not published to NuGet and no longer needs to be: the scaffold references
       nothing.
 
