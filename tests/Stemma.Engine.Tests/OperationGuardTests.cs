@@ -77,6 +77,63 @@ public sealed class OperationGuardTests
     }
 
     [Fact]
+    public async Task A_type_for_a_namespace_the_file_does_not_declare_is_refused_before_anything_is_written()
+    {
+        // It was written into the file's own namespace, then not found under the one asked for, and
+        // reported AddTypeFailed with the file already changed.
+        await using var ws = await TestWorkspace.CreateAsync(new() { ["Customer.cs"] = Source });
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        var before = ws.ReadFile("Customer.cs");
+
+        var result = await engine.ApplyAsync(new AddTypeOp("op1", Path.Combine(Path.GetDirectoryName(ws.ProjectFile)!, "Customer.cs"),
+            "Billing", "Invoice", TypeKind.Class, Visibility.Public));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("NamespaceNotInFile");
+        ws.ReadFile("Customer.cs").Should().Be(before);
+        engine.Undo.CanUndo.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_type_in_a_file_outside_every_project_folder_is_refused_before_anything_is_written()
+    {
+        // The project does not compile a file outside its folder: the type was there for this session
+        // and gone the next time the workspace was opened.
+        await using var ws = await TestWorkspace.CreateAsync(new() { ["Customer.cs"] = Source });
+        await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
+        var loose = Path.Combine(ws.RootPath, "Loose.cs");
+
+        var result = await engine.ApplyAsync(new AddTypeOp("op1", loose, "Sample", "Loose", TypeKind.Class, Visibility.Public));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("NoProject");
+        File.Exists(loose).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_relative_path_is_a_file_in_the_workspace_not_beside_the_process()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"stemma-guard-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "Architecture"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Architecture", "Architecture.cs"),
+            "using Stemma.Model;\n\nnamespace Scratch;\n\npublic static class Architecture\n{\n    public static Model Build() => Model.Of();\n}\n");
+        var stray = Path.Combine(Environment.CurrentDirectory, "Domain", "Invoice.cs");
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+
+            var result = await engine.ApplyAsync(new AddTypeOp("op1", Path.Combine("Domain", "Invoice.cs"), "Scratch", "Invoice", TypeKind.Class, Visibility.Public));
+
+            result.Should().BeOfType<OperationApplied>();
+            File.Exists(Path.Combine(root, "Domain", "Invoice.cs")).Should().BeTrue();
+            File.Exists(stray).Should().BeFalse("the path was checked against the workspace, and is written there");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            if (File.Exists(stray)) File.Delete(stray);
+        }
+    }
+
+    [Fact]
     public async Task A_generated_file_is_never_written()
     {
         await using var ws = await TestWorkspace.CreateAsync(new() { ["Customer.cs"] = Source });

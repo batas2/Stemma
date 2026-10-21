@@ -109,7 +109,7 @@ refuses `TypeNotFound` for an id the model does not have.
 
 | Operation | Edits exactly | Refuses |
 |---|---|---|
-| `AddType` | a new file (LF, whatever the OS), or a new type after the last one in the file's namespace, a blank line above it | `NoProject` |
+| `AddType` | a new file (LF, whatever the OS), or a new type after the last one in the file's namespace, a blank line above it. A relative path is relative to the workspace | `NoProject` (no project's folder holds the file), `NamespaceNotInFile` (the existing file does not declare that namespace) |
 | `RenameType`, `RenameProperty` | the symbol and its references, through `Renamer` — not in strings, not in comments, not the file name | `SymbolNotFound` |
 | `RemoveType`, `RemoveProperty` | the member's lines, its attributes and its documentation comment | `TypeNodeNotFound`, `PropertyNotFound` |
 | `AddProperty` | a new property after the last member, indented like it | `TypeNodeNotFound` |

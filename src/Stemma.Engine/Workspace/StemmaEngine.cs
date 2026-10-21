@@ -642,7 +642,15 @@ public sealed class StemmaEngine : IAsyncDisposable
         _lastWrites = await DescribeWritesAsync(changes, oldSolution, newSolution, settled);
 
         await ReloadAsync(settled);
-        return buildSuccessResult();
+        // An edit that wrote its files and then cannot say it did what was asked is put back: it either
+        // happened, or nothing is left of it.
+        var result = buildSuccessResult();
+        if (result is OperationFailed)
+        {
+            _lastWrites = [];
+            await RollBackAsync(raw, projectFiles);
+        }
+        return result;
     }
 
     private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
@@ -835,8 +843,11 @@ public sealed class StemmaEngine : IAsyncDisposable
 
     private async Task<OperationResult> AddTypeAsync(AddTypeOp op, CancellationToken ct)
     {
+        // The path as Refuse checked it: relative to the workspace. Used as given, a relative path was
+        // written beside the running process instead.
+        var path = Path.GetFullPath(op.FilePath, _model.RootPath);
         var oldSolution = _workspace.CurrentSolution;
-        var existingDoc = FindDocument(op.FilePath);
+        var existingDoc = FindDocument(path);
         var visibilityKw = ToVisibilityKeyword(op.Visibility);
         var typeKindKw = op.TypeKind switch
         {
@@ -854,17 +865,22 @@ public sealed class StemmaEngine : IAsyncDisposable
             // LF whatever the OS: with Environment.NewLine the same operation wrote a CRLF file on
             // Windows, so what a model gained depended on whose machine added the type.
             var content = $"namespace {op.Namespace};\n\n{visibilityKw} {typeKindKw} {op.Name}\n{{\n}}\n";
-            var project = oldSolution.Projects
-                .OrderByDescending(p => op.FilePath.StartsWith(Path.GetDirectoryName(p.FilePath ?? "") ?? "", StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault();
-            if (project is null) return new OperationFailed(op.OpId, "NoProject", "No project to host file");
-            var newDoc = project.AddDocument(Path.GetFileName(op.FilePath), content, filePath: op.FilePath);
+            // The project that would compile the file: the one whose folder holds it. Any other project
+            // compiled it for this session only, and the type was gone the next time it was opened.
+            if (ProjectFor(path) is not { } project)
+                return new OperationFailed(op.OpId, "NoProject", $"{path} is in no project's folder, so no project would compile it.");
+            var newDoc = project.AddDocument(Path.GetFileName(path), content, filePath: path);
             newSolution = newDoc.Project.Solution;
         }
         else
         {
             var root = await existingDoc.GetSyntaxRootAsync(ct);
             if (root is not CompilationUnitSyntax cu) return new OperationFailed(op.OpId, "ParseError", "Could not parse target file");
+            // A file that does not declare the namespace would take the type into its own, and the type
+            // asked for would not exist: refused before the file is touched.
+            if (!cu.Members.OfType<BaseNamespaceDeclarationSyntax>().Any(n => n.Name.ToString() == op.Namespace))
+                return new OperationFailed(op.OpId, "NamespaceNotInFile",
+                    $"{Path.GetFileName(path)} declares no namespace {op.Namespace}, so a type in it cannot be added there.");
             var newRoot = TypeWriter.AddType(cu, op.Namespace, $"{visibilityKw} {typeKindKw} {op.Name}");
             newSolution = existingDoc.WithSyntaxRoot(newRoot).Project.Solution;
         }
