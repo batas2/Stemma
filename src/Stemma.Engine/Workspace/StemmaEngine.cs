@@ -429,7 +429,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             // What the edit wrote is the undo; the inverse operation is only the fallback for when
             // the file has changed since (see RestoreDocumentsOp).
             var writes = _lastWrites;
-            var fallback = UndoStack.BuildInverse(op, _archBeforeOp) ?? await InverseOfAddAsync(op, ct);
+            var fallback = UndoStack.BuildInverse(op, _archBeforeOp) ?? InverseOfAdd(done);
             if (writes.Count > 0 || fallback is not null)
                 _undo.Push(RedoOf(op, done), new RestoreDocumentsOp($"undo_{Guid.NewGuid():N}", writes, fallback), DescribeOp(op));
         }
@@ -744,26 +744,17 @@ public sealed class StemmaEngine : IAsyncDisposable
         return await CommitAsync(op.OpId, oldSolution, newSolution, () => new OperationApplied(op.OpId, []), ct);
     }
 
-    private async Task<OperationBase?> InverseOfAddAsync(OperationBase op, CancellationToken ct)
+    /// <summary>
+    /// An add's fallback inverse: remove the id it generated, as its result says. Looked for in the
+    /// model by kind and name, it was the highest such id — another element of the same name, when the
+    /// new one sorted lower, and undo removed that one instead.
+    /// </summary>
+    private static OperationBase? InverseOfAdd(OperationApplied applied) => applied.Deltas.FirstOrDefault() switch
     {
-        // An add's inverse needs the id the engine generated, which only the model after it knows.
-        if (op is not (AddElementOp or AddLinkOp)) return null;
-        var fresh = await ReadArchModelAsync(ct);
-        return op switch
-        {
-            AddElementOp add => fresh?.Elements
-                .Where(e => e.Kind == add.ElementKind && e.Name == add.Name)
-                .OrderByDescending(e => e.Id)
-                .Select(e => new RemoveElementOp($"undo_{Guid.NewGuid():N}", e.Id))
-                .FirstOrDefault(),
-            AddLinkOp add => fresh?.Links
-                .Where(l => l.Kind == add.LinkKind && l.FromId == add.FromId && l.ToId == add.ToId)
-                .OrderByDescending(l => l.Id)
-                .Select(l => new RemoveLinkOp($"undo_{Guid.NewGuid():N}", l.Id))
-                .FirstOrDefault(),
-            _ => null,
-        };
-    }
+        ElementAdded e => new RemoveElementOp($"undo_{Guid.NewGuid():N}", e.Id),
+        LinkAdded l => new RemoveLinkOp($"undo_{Guid.NewGuid():N}", l.Id),
+        _ => null,
+    };
 
     /// <summary>
     /// Record what each write did, and check that what landed on disk is what was intended.
