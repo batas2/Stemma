@@ -60,7 +60,11 @@
       completes with zero records.
 - [x] AC2 — Log level is configurable **per category** and changeable **without a rebuild**, via
       `appsettings.json`, an environment variable, and a `run.sh` flag. Raising a category to `Trace`
-      at runtime takes effect without restarting the process.
+      at runtime takes effect without restarting the process. Serilog is given the
+      `Logging:LogLevel` categories itself (its provider bypasses the framework's filters): one set
+      quieter than the default — `Microsoft.AspNetCore` at `Warning`, assumed when nothing says
+      otherwise — stays at least that quiet when the level is changed; one set louder says at least
+      that much; every other category follows the level, and `none` silences them all.
 - [x] AC3 — Console output is available in two formatters — `simple` (human-readable, coloured) and
       `json` (one JSON object per line) — selectable at launch. `simple` is the default for
       `./run.sh --dev`; `json` is the default when stdout is not a TTY.
