@@ -7,6 +7,7 @@ import { pickFromList } from './PromptDialog';
 import { suggestElementName } from '@/lib/naming';
 import { revealElement, revealNewElement, revealToast } from '@/lib/canvasReveal';
 import { BUILTIN_NAMES } from '@/lib/navigation';
+import { startCompare, stopCompare } from '@/lib/compare';
 import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { LayoutGrid, Shapes } from 'lucide-react';
 import type { ArchElementKind, ViewKind } from '@/lib/types';
@@ -40,6 +41,7 @@ export function CommandPalette() {
   const goForward = useApp((s) => s.goForward);
   const theme = useApp((s) => s.theme);
   const toggleTheme = useApp((s) => s.toggleTheme);
+  const compare = useApp((s) => s.compare);
   const books = useApp((s) => s.books);
   const activeBookId = useApp((s) => s.activeBookId);
   const openBook = useApp((s) => s.openBook);
@@ -209,6 +211,16 @@ export function CommandPalette() {
                 <span>{forwardTo ? `Forward to ${nameOfPlace(forwardTo)}` : 'Forward'}</span>
                 <span className="text-[10px] font-mono text-zinc-500">{SHORTCUT_HINTS.forward}</span>
               </Command.Item>
+              {compare ? (
+                <Command.Item value="stop comparing compare done" onSelect={() => { close(); stopCompare(); }} className={item}>
+                  <span>Stop comparing with {compare.label}</span>
+                  <span className="text-[10px] font-mono text-zinc-500">Esc</span>
+                </Command.Item>
+              ) : (
+                <Command.Item value="compare with the last commit changes diff git" onSelect={() => { close(); void startCompare('HEAD', 'the last commit'); }} className={item}>
+                  <span>Compare with the last commit</span>
+                </Command.Item>
+              )}
               <Command.Item value="keyboard shortcuts help" onSelect={() => { close(); window.dispatchEvent(new CustomEvent('stemma:show-shortcuts')); }} className={item}>
                 <span>Keyboard shortcuts</span>
                 <span className="text-[10px] font-mono text-zinc-500">?</span>

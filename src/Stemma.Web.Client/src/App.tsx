@@ -33,6 +33,8 @@ import { bindShortcuts, hasTextSelection } from './lib/shortcuts';
 import { filterByView } from './lib/viewFilter';
 import { hashFor, readHash, placeOf } from './lib/navigation';
 import { revealElement } from './lib/canvasReveal';
+import { refreshHeadModel, stopCompare } from './lib/compare';
+import { CompareBar } from './components/CompareBar';
 
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
@@ -101,6 +103,15 @@ export default function App() {
   // only the initial mount fetched these, so opening a workspace mid-session left the canvas
   // empty until a full page reload.
   const wsRoot = ws?.rootPath ?? null;
+  // The last commit's model, for the count of uncommitted changes (F-017 AC6): read on open, and again
+  // when the window comes back into focus — a commit is usually made from a terminal.
+  useEffect(() => {
+    if (!wsRoot) return;
+    void refreshHeadModel();
+    const onFocus = () => { void refreshHeadModel(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [wsRoot]);
   useEffect(() => {
     if (!wsRoot) { setArch(null); return; }
     primeLayoutSidecar(wsRoot).catch(reportFailure('Sidecar', ClientEvent.SidecarWriteFailed, 'Priming the layout sidecar'));
@@ -159,7 +170,16 @@ export default function App() {
       { key: 'delete', description: 'Delete selection', handler: () => { deleteSelection(); } },
       { key: 'backspace', description: 'Delete selection', handler: () => { deleteSelection(); } },
       { key: 'f2', description: 'Rename element / edit relationship', handler: () => window.dispatchEvent(new CustomEvent('stemma:start-rename')) },
-      { key: 'escape', description: 'Clear selection', handler: () => { setHelpOpen(false); clearSelection(); } },
+      {
+        key: 'escape', description: 'Clear selection',
+        handler: () => {
+          setHelpOpen(false);
+          const st = useApp.getState();
+          // With nothing selected, Escape ends a comparison (F-017); otherwise it clears the selection first.
+          if (st.compare && !st.selectedElementId && !st.selectedLinkId && !st.selectedShapeId && st.canvasSelection === 0) { stopCompare(); return; }
+          clearSelection();
+        },
+      },
       { key: 'a', primary: true, description: 'Select all elements', handler: () => window.dispatchEvent(new CustomEvent('stemma:select-all')) },
       { key: '=', primary: true, description: 'Zoom in', handler: () => window.dispatchEvent(new CustomEvent('stemma:zoom', { detail: { dir: 1 } })) },
       { key: '+', primary: true, description: 'Zoom in', handler: () => window.dispatchEvent(new CustomEvent('stemma:zoom', { detail: { dir: 1 } })) },
@@ -328,6 +348,7 @@ export default function App() {
             <main id="stemma-canvas" role="main" aria-label="Canvas" className="flex-1 min-w-0 flex flex-col">
               <div className="flex-1 min-h-0 relative">
                 {view === 'concerns' ? <ConcernsView /> : <ArchCanvas />}
+                {view !== 'concerns' && <CompareBar />}
                 {presenting && <BookPresenter />}
               </div>
             </main>

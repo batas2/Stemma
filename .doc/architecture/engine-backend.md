@@ -133,6 +133,17 @@ a merge conflict is never read as empty and written back), `NotAnObject`, `Empty
 without a sidecar gets one that starts with `$schema` and `version`. `GET` returns the file as it is.
 Not on the undo stack; layout undo lives in the client.
 
+### What the model was (read only)
+
+`GET /api/workspace/history` and `GET /api/workspace/arch-at?rev=` read the repository holding the
+workspace through the `git` command, in `Stemma.Web` (`GitHistory`), never in the engine
+([ADR-0024](./decisions/0024-history-read-from-git.md)). The first lists what a comparison can be made
+with — the branch, the default branch and where this one left it, tags, recent commits touching the
+workspace; the second parses the model files at a revision with `DslReader` and merges them with
+`ArchModelMerge`, the rule the live read uses, and returns the sidecar as it was then. A revision is
+refused unless it is shaped like one — no leading `-`, no `..`, a short safe alphabet — and every
+argument goes through `ArgumentList`, never a shell. Nothing is written or cached.
+
 ### The comments (`comments.stemma.json`)
 
 Written through `PATCH /api/workspace/comments`, which calls `StemmaEngine.PatchCommentsAsync` with

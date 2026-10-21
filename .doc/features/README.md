@@ -32,6 +32,7 @@ Living feature records — one Markdown file per feature, created from
 | [F-014](./F-014-self-explaining-views.md) | Self-explaining views — a header with the point, a legend, and cards you can read ([ADR-0023](../architecture/decisions/0023-view-headers-in-the-layout-sidecar.md)) | In progress | Next | Bartosz |
 | [F-015](./F-015-copy-paste-duplicate.md) | Copy, paste, duplicate — and copy a look from one box to another; one-step undo | Shipped | Next | Bartosz |
 | [F-016](./F-016-go-anywhere.md) | Go anywhere — find an element, land on it, and find your way back | Shipped | Next | Bartosz |
+| [F-017](./F-017-what-changed.md) | What changed — the difference between two versions, drawn on the canvas ([ADR-0024](../architecture/decisions/0024-history-read-from-git.md)) | Shipped | Next | Bartosz |
 
 F-011 **blocked F-002** — the desktop shell's "backend failed to start" state needs a log file to
 point at, and now names `~/.stemma/logs/` in that surface.

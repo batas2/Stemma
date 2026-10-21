@@ -182,6 +182,18 @@ interface AppState {
   capturing: boolean;
   /** Each view's header (F-014), keyed by view key; read from the sidecar and edited back into it. */
   viewHeaders: Record<string, ViewHeaderSpec>;
+  /**
+   * A comparison with another version of the model (F-017): what it is called, the commit it resolved
+   * to, and the model and sidecar as they were then. Session state; nothing of it is written.
+   */
+  compare: { rev: string; label: string; sha: string; before: ArchModel | null; layout: unknown | null } | null;
+  /** Comparing, whether what did not change is dimmed so the changes stand out. */
+  compareDimRest: boolean;
+  /** The model at the last commit, for the status bar's count of uncommitted changes; null when unknown. */
+  headModel: { sha: string; arch: ArchModel | null } | null;
+  setCompare: (c: AppState['compare']) => void;
+  setCompareDimRest: (b: boolean) => void;
+  setHeadModel: (h: AppState['headModel']) => void;
   /** The views visited this session, for Back and Forward (F-016). */
   trail: Trail;
   /** Open a place — a built-in lens or a view from `Views/` — as a visit Back can return from. */
@@ -426,6 +438,12 @@ export const useApp = create<AppState>((set, get) => ({
   capturing: false,
   viewHeaders: {},
   trail: { back: [], forward: [] },
+  compare: null,
+  compareDimRest: true,
+  headModel: null,
+  setCompare: (c) => set({ compare: c }),
+  setCompareDimRest: (b) => set({ compareDimRest: b }),
+  setHeadModel: (h) => set({ headModel: h }),
   goTo: (place) => {
     const s = get();
     if (place.customViewId) {
@@ -446,12 +464,12 @@ export const useApp = create<AppState>((set, get) => ({
     const previous = get().workspace;
     set({ workspace: ws });
     if (!ws) {
-      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {}, trail: { back: [], forward: [] } });
+      set({ customViews: [], activeCustomViewId: null, openViewIds: [], edgeStyles: {}, nodeStyles: {}, customProps: {}, collapsedBcs: new Set(), viewLayouts: {}, books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {}, trail: { back: [], forward: [] }, compare: null, headModel: null });
       return;
     }
     if (previous?.rootPath === ws.rootPath) return;
     // Another workspace's books and headers are not this one's; they arrive with its sidecar.
-    set({ books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {}, trail: { back: [], forward: [] } });
+    set({ books: [], activeBookId: null, activePageId: null, presenting: false, viewHeaders: {}, trail: { back: [], forward: [] }, compare: null, headModel: null });
     const views = loadViews(ws.rootPath);
     const active = loadActiveView(ws.rootPath);
     const persistedOpen = loadOpenViews(ws.rootPath);

@@ -164,3 +164,44 @@ export async function patchLayoutSidecar(changes: SidecarChange[]): Promise<Oper
   if (!r.ok) throw new Error(`Layout save failed: ${r.status}`);
   return null;
 }
+
+// ---------------------------------------------------------------- what the model was (F-017, ADR-0024)
+
+export interface GitCommit { sha: string; shortSha: string; subject: string; author: string; when: string }
+export interface GitHistoryInfo {
+  repository: boolean;
+  /** Why there is nothing to compare with, when there is not. */
+  reason: string | null;
+  branch: string | null;
+  defaultBranch: string | null;
+  /** Where this branch left the default one, when on another branch. */
+  mergeBase: string | null;
+  commits: GitCommit[];
+  tags: { name: string; sha: string }[];
+}
+
+export async function fetchHistory(): Promise<GitHistoryInfo> {
+  const r = await request(`${BASE}/api/workspace/history`);
+  if (!r.ok) throw new Error(`History failed: ${r.status}`);
+  return r.json();
+}
+
+export interface ModelAt {
+  rev: string;
+  sha: string;
+  /** Null when there was no model at that revision. */
+  arch: ArchModel | null;
+  /** The layout sidecar as it was then, for where removed elements used to sit. */
+  layout: unknown | null;
+}
+
+/** The model at a revision. Throws with the server's reason when the revision cannot be read. */
+export async function fetchModelAt(rev: string): Promise<ModelAt> {
+  const r = await request(`${BASE}/api/workspace/arch-at?rev=${encodeURIComponent(rev)}`);
+  if (!r.ok) {
+    let reason = `The revision could not be read (${r.status}).`;
+    try { const body = await r.json(); if (typeof body?.detail === 'string') reason = body.detail; } catch { /* not JSON */ }
+    throw new Error(reason);
+  }
+  return r.json();
+}

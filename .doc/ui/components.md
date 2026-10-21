@@ -11,7 +11,22 @@ The frontend's building blocks, what they own, and the rules for changing them. 
   visited (F-016, named in their tooltips, greyed at either end), then the built-in views (Module Map
   · Dependencies · Concerns) + open custom views; click to switch, double-click to rename. (Clicking
   a built-in view must always switch to it, even when a custom view is active.)
-- **Status bar** (`StatusBar.tsx`).
+- **Status bar** (`StatusBar.tsx`) — connection, counts, the open view, and — when there are any —
+  how many changes since the last commit, a click from being drawn (F-017).
+
+## Comparing ([F-017](../features/F-017-what-changed.md))
+
+- **`CompareMenu.tsx`** — *Compare* in the top bar, beside Export: the last commit, where the branch
+  started, tags, recent commits (subject, short id, author, when). Greyed with the reason when there
+  is no Git. Reads `GET /api/workspace/history`.
+- **`CompareBar.tsx`** — bottom of the canvas, between the zoom controls and the minimap, while
+  comparing: what it is compared with, counts, *Changes* (the list, upward), *Fade the rest*, *Done*.
+- **Marks** — a card gets `data.diff` (`New` / `Changed` badge and ring, `ArchNodeView`); a bounded
+  context box the same on its chip; lines go green or amber; the rest fades. **Ghosts** — removed
+  elements and relationships drawn by `GhostLayer` inside React Flow's `ViewportPortal`, never as
+  nodes, so nothing can drag, lay out, select or save them.
+- `lib/modelDiff.ts` (pure diff by id, with each change in words) and `lib/compare.ts` (start, stop,
+  the live diff hooks).
 
 ## Books ([F-013](../features/F-013-books.md))
 

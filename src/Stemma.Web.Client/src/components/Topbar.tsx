@@ -12,6 +12,7 @@ import { redo, undo } from '@/lib/undo';
 import { format, primaryKeyLabel, shiftKeyLabel } from '@/lib/shortcuts';
 import type { RecentEntry } from '@/lib/types';
 import { ExportMenu } from './ExportMenu';
+import { CompareMenu } from './CompareMenu';
 
 export function Topbar() {
   const ws = useApp((s) => s.workspace);
@@ -164,6 +165,7 @@ export function Topbar() {
                   <span className="flex-1 text-left">Search…</span>
                   <kbd className="text-[10px] font-mono bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{primaryKeyLabel}K</kbd>
                 </button>
+            <CompareMenu />
             <ExportMenu />
           </>
         ) : (

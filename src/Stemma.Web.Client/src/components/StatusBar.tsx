@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '@/lib/store';
 import { getConnectionState } from '@/lib/signalr';
+import { startCompare, useUncommittedDiff } from '@/lib/compare';
+import { describeCounts } from '@/lib/modelDiff';
 
 export function StatusBar() {
   const ws = useApp((s) => s.workspace);
@@ -25,6 +27,7 @@ export function StatusBar() {
           <span>{ws.projects.length} project{ws.projects.length === 1 ? '' : 's'}</span>
           <span>{totalTypes} type{totalTypes === 1 ? '' : 's'}</span>
           <ActiveViewBadge />
+          <UncommittedChanges />
         </>
       )}
       <span className="opacity-0 ml-auto">{tick}</span>
@@ -41,5 +44,27 @@ function ActiveViewBadge() {
     <span className="flex items-center gap-1.5">
       <span className="text-indigo-600 dark:text-indigo-400">view: {active.name} ({active.elementIds.length})</span>
     </span>
+  );
+}
+
+/**
+ * How much the model has changed since the last commit (F-017 AC6) — the running answer to "what have
+ * I done to the repository?" — and one click to see it drawn.
+ */
+function UncommittedChanges() {
+  const diff = useUncommittedDiff();
+  const comparing = useApp((s) => s.compare?.rev === 'HEAD');
+  if (!diff || diff.counts.total === 0) return null;
+  const n = diff.counts.total;
+  return (
+    <button
+      onClick={() => { void startCompare('HEAD', 'the last commit'); }}
+      disabled={comparing}
+      title={`${describeCounts(diff.counts)} since the last commit — click to see them on the canvas`}
+      className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 hover:underline disabled:no-underline disabled:opacity-70"
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden />
+      {n} change{n === 1 ? '' : 's'} since the last commit
+    </button>
   );
 }

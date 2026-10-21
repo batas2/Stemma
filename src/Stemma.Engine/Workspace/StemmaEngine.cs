@@ -1076,22 +1076,13 @@ public sealed class StemmaEngine : IAsyncDisposable
             return DslReader.TryRead(docs[0].FilePath!, root);
         }
         // Merge multi-file model: aggregate elements/links/tags from every file.
-        var elements = new List<ArchModel.ArchElement>();
-        var links = new List<ArchModel.ArchLink>();
-        var tags = new List<ArchModel.ArchTag>();
-        var seen = new HashSet<string>();
-        var primaryPath = docs[0].FilePath ?? "Architecture.cs";
+        var partials = new List<ArchModel.ArchModel?>();
         foreach (var doc in docs)
         {
             var root = await doc.GetSyntaxRootAsync(ct);
-            if (root is null) continue;
-            var partial = DslReader.TryRead(doc.FilePath!, root);
-            if (partial is null) continue;
-            foreach (var e in partial.Elements) if (seen.Add($"e:{e.Id}")) elements.Add(e);
-            foreach (var l in partial.Links) if (seen.Add($"l:{l.Id}")) links.Add(l);
-            foreach (var t in partial.Tags) tags.Add(t);
+            if (root is not null) partials.Add(DslReader.TryRead(doc.FilePath!, root));
         }
-        return new ArchModel.ArchModel(primaryPath, elements, links, tags);
+        return ArchModelMerge.Merge(docs[0].FilePath ?? "Architecture.cs", partials);
     }
 
     /// <summary>

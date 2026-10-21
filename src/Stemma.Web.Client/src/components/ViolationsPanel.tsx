@@ -39,8 +39,8 @@ export function ViolationsPanel() {
           <span className="text-emerald-600 dark:text-emerald-400">All clean</span>
         ) : (
           <div className="flex items-center gap-2">
-            {counts.error > 0 && <span className={COLORS.error}>{counts.error} errors</span>}
-            {counts.warning > 0 && <span className={COLORS.warning}>{counts.warning} warnings</span>}
+            {counts.error > 0 && <span className={COLORS.error}>{counts.error} error{counts.error === 1 ? '' : 's'}</span>}
+            {counts.warning > 0 && <span className={COLORS.warning}>{counts.warning} warning{counts.warning === 1 ? '' : 's'}</span>}
             {counts.info > 0 && <span className={COLORS.info}>{counts.info} info</span>}
           </div>
         )}

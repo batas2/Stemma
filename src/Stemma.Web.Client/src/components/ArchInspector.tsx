@@ -23,6 +23,7 @@ import { NotesModal } from './NotesModal';
 import { loadNote, saveNote } from '@/lib/elementNotes';
 import { heldStyleFor, subscribeHeldStyle } from '@/lib/clipboard';
 import { placeOf, viewsShowing } from '@/lib/navigation';
+import { useCompareDiff } from '@/lib/compare';
 import type { ArchElement } from '@/lib/types';
 import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { hashtagProps } from '@/lib/hashtags';
@@ -357,6 +358,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
       </div>
       <div className="flex-1 min-h-0 flex flex-col">
         <Section label="Properties" persistKey="element.properties" defaultOpen icon={<Info className="w-3 h-3" />}>
+          <ChangedSince elementId={e.id} />
           <SubSection title="Identity" defaultOpen>
             <Field label="Kind" value={e.kind} />
             <Field label="Id" value={e.id} mono />
@@ -1012,6 +1014,27 @@ function SubSection({ title, defaultOpen = true, children }: { title: string; de
         {open ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
       </button>
       {open && <div className="px-2.5 pb-2.5 pt-2 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+/** Comparing (F-017 AC5): what changed about this element since the version it is compared with. */
+function ChangedSince({ elementId }: { elementId: string }) {
+  const diff = useCompareDiff();
+  const label = useApp((s) => s.compare?.label);
+  const change = diff?.elements.find((c) => c.id === elementId);
+  if (!change || !label) return null;
+  const added = change.change === 'added';
+  return (
+    <div
+      role="note"
+      className={clsx(
+        'mb-3 rounded-lg border px-3 py-2 text-[11px] leading-snug',
+        added ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200' : 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100',
+      )}
+    >
+      <div className="font-semibold mb-0.5">{added ? `New since ${label}` : `Changed since ${label}`}</div>
+      {change.details.map((d) => <div key={d}>{d}</div>)}
     </div>
   );
 }

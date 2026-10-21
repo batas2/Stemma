@@ -19,6 +19,7 @@ import {
   type EdgeMarker,
   type Connection,
   MarkerType,
+  ViewportPortal,
   getNodesBounds,
   getViewportForBounds,
   type FitViewOptions,
@@ -94,6 +95,8 @@ import { executePaste } from '@/lib/paste';
 import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { history } from '@/lib/history';
 import { viewRendersKind } from '@/lib/lenses';
+import { positionsAt, sizesAt, useCompareDiff } from '@/lib/compare';
+import { kindLabel } from '@/lib/modelDiff';
 import { useApp, activePage } from '@/lib/store';
 import { viewKeyOf } from '@/lib/books';
 import { frameDuration, pageLighting, prefersReducedMotion } from '@/lib/bookFrame';
@@ -919,9 +922,16 @@ function CanvasInner() {
   // F-016 AC5: each view keeps its pan and zoom for the session, so looking elsewhere for a moment
   // does not lose the framing someone set up. Saved as a view is left, restored when it is opened.
   const memoryKey = `${workspace?.rootPath ?? ''}|${layoutKey}`;
+  // Only a view that settled on screen — fitted, restored or revealed into — has a viewport worth
+  // keeping. Opening the app passes through the last active view for a moment before the Module Map,
+  // and remembering that unfitted moment made the view open unfitted the next time.
+  const settledFor = useRef<string | null>(null);
   useEffect(() => {
     const key = memoryKey;
-    return () => { if (!useApp.getState().presenting) viewportMemory.set(key, getViewport()); };
+    return () => {
+      if (settledFor.current === key && !useApp.getState().presenting) viewportMemory.set(key, getViewport());
+      if (settledFor.current === key) settledFor.current = null;
+    };
   }, [memoryKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const [positionsRead, setPositionsRead] = useState(() => !!workspace && isSidecarPrimed(workspace.rootPath));
   useEffect(() => {
@@ -938,6 +948,7 @@ function CanvasInner() {
     const wait = positionsRead ? 80 : 1500;
     const id = setTimeout(() => {
       fittedFor.current = fitFor;
+      settledFor.current = memoryKey;
       // An element on its way to being revealed decides where the canvas goes.
       if (revealPending.current || bookPageApplies.current) return;
       const remembered = viewportMemory.get(memoryKey);
@@ -2215,6 +2226,57 @@ function CanvasInner() {
     return [...containers, ...rest];
   }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, pageLit, pageHides]);
 
+  // ---- What changed (F-017). Comparing, a changed card wears a mark, what did not change fades, and
+  // what was removed is drawn as a ghost where it used to sit — in the canvas's own coordinates but
+  // outside its node list, so a ghost can never be dragged, laid out, saved or selected.
+  const compare = useApp((s) => s.compare);
+  const compareDimRest = useApp((s) => s.compareDimRest);
+  const diff = useCompareDiff();
+  const ghosts = useMemo(() => {
+    if (!diff || !compare?.before || !workspace || diff.counts.removed === 0) return { cards: [], lines: [] };
+    const removed = new Set(diff.elements.filter((c) => c.change === 'removed').map((c) => c.id));
+    // What this view would have drawn of the model as it was: the same rule as for the model as it is.
+    const thenDrawn = filterByView(compare.before, view, activeCustomView);
+    const then = positionsAt(compare.layout, String(layoutKey));
+    const now = loadLayout(workspace.rootPath, layoutKey as ViewKind);
+    const sizes = sizesAt(compare.layout);
+    const live = nodes.filter((n) => !n.hidden);
+    const bottom = live.length ? Math.max(...live.map((n) => n.position.y + (n.measured?.height ?? 92))) : 0;
+    const left = live.length ? Math.min(...live.map((n) => n.position.x)) : 0;
+    let shelf = 0;
+    const cards = thenDrawn.elements.filter((e) => removed.has(e.id)).map((e) => {
+      const at = then[e.id] ?? now[e.id] ?? { x: left + (shelf++) * 240, y: bottom + 90 };
+      const size = sizes[e.id] ?? { w: 200, h: 84 };
+      return { id: e.id, name: e.name, kind: e.kind, x: at.x, y: at.y, w: size.w, h: size.h };
+    });
+    const centre = new Map<string, { x: number; y: number }>();
+    for (const n of live) centre.set(n.id, { x: n.position.x + (n.measured?.width ?? 200) / 2, y: n.position.y + (n.measured?.height ?? 92) / 2 });
+    for (const c of cards) centre.set(c.id, { x: c.x + c.w / 2, y: c.y + c.h / 2 });
+    const goneLinks = new Set(diff.links.filter((c) => c.change === 'removed').map((c) => c.id));
+    const lines = thenDrawn.links
+      .filter((l) => goneLinks.has(l.id) && centre.has(l.fromId) && centre.has(l.toId))
+      .map((l) => ({ id: l.id, from: centre.get(l.fromId)!, to: centre.get(l.toId)! }));
+    return { cards, lines };
+  }, [diff, compare, workspace, view, activeCustomView, layoutKey, nodes]);
+
+  useEffect(() => {
+    function onFocusGhost(ev: Event) {
+      const id = (ev as CustomEvent).detail?.id as string | undefined;
+      const card = ghosts.cards.find((c) => c.id === id);
+      if (!card) {
+        setToast({ kind: 'info', text: 'It was not drawn on this view — open the view it was on to see where it was.' });
+        return;
+      }
+      // Close enough to read, with its old neighbours still around it — the same limit a reveal keeps.
+      const rfEl = wrapperRef.current?.querySelector('.react-flow') as HTMLElement | null;
+      if (!rfEl) return;
+      const vp = getViewportForBounds({ x: card.x, y: card.y, width: card.w, height: card.h }, rfEl.clientWidth, rfEl.clientHeight, 0.05, 1.2, 0.45);
+      setViewport(vp, { duration: prefersReducedMotion() ? 0 : 450 });
+    }
+    window.addEventListener('stemma:focus-ghost', onFocusGhost);
+    return () => window.removeEventListener('stemma:focus-ghost', onFocusGhost);
+  }, [ghosts, setViewport, setToast]);
+
   // A book page points: what it focuses stays lit and the rest fades, or goes, when the page says
   // `hide`. Applied on the wrapper's opacity so a bounded-context box fades the same way a card does.
   //
@@ -2224,10 +2286,15 @@ function CanvasInner() {
   // in is taken off the nodes and edges themselves: drag, select, resize, rename, notes, label edits,
   // waypoints, arrowheads.
   const renderedNodes = useMemo<Node[]>(() => {
-    if (!pageLit && !readOnly && !revealId) return nestedNodes;
+    if (!pageLit && !readOnly && !revealId && !diff) return nestedNodes;
     return nestedNodes.map((n) => {
       let out = n;
       if (n.id === revealId) out = { ...out, data: { ...out.data, revealed: true } };
+      if (diff) {
+        const change = diff.elementChange.get(n.id);
+        if (change) out = { ...out, data: { ...out.data, diff: change } };
+        else if (compareDimRest) out = { ...out, style: { ...out.style, opacity: 0.3 } };
+      }
       if (readOnly) {
         out = {
           ...out, draggable: false, selectable: false, selected: false,
@@ -2243,12 +2310,19 @@ function CanvasInner() {
       }
       return out;
     });
-  }, [nestedNodes, pageLit, pageHides, readOnly, revealId]);
+  }, [nestedNodes, pageLit, pageHides, readOnly, revealId, diff, compareDimRest]);
 
   const renderedEdges = useMemo<Edge[]>(() => {
-    if (!pageLit && !readOnly) return allEdges;
+    if (!pageLit && !readOnly && !diff) return allEdges;
     return allEdges.map((e) => {
       let out = e;
+      if (diff) {
+        const change = diff.linkChange.get(e.id);
+        const width = Math.max(Number(out.style?.strokeWidth ?? 1.5), 2.5);
+        if (change === 'added') out = { ...out, style: { ...out.style, stroke: '#10b981', strokeWidth: width } };
+        else if (change === 'changed') out = { ...out, style: { ...out.style, stroke: '#f59e0b', strokeWidth: width } };
+        else if (compareDimRest) out = { ...out, style: { ...out.style, opacity: 0.15 }, labelStyle: { ...out.labelStyle, opacity: 0.35 } };
+      }
       if (readOnly) {
         out = {
           ...out, selectable: false, selected: false, reconnectable: false,
@@ -2264,7 +2338,7 @@ function CanvasInner() {
       }
       return out;
     });
-  }, [allEdges, pageLit, pageHides, readOnly]);
+  }, [allEdges, pageLit, pageHides, readOnly, diff, compareDimRest]);
 
   const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected).map((n) => n.id), [nodes]);
   const selectedCount = selectedNodeIds.length;
@@ -2387,6 +2461,11 @@ function CanvasInner() {
         {shapesEnabled && workspace && (
           <ShapeLayer viewKey={layoutKey} workspaceRoot={workspace.rootPath} enabled={!presenting} />
         )}
+        {(ghosts.cards.length > 0 || ghosts.lines.length > 0) && !presenting && (
+          <ViewportPortal>
+            <GhostLayer cards={ghosts.cards} lines={ghosts.lines} since={compare?.label ?? ''} />
+          </ViewportPortal>
+        )}
         {!renderMode && workspace && (
           <ViewHeader viewKey={layoutKey} viewName={viewName} drawn={drawn} readOnly={readOnly} presenting={presenting} />
         )}
@@ -2396,6 +2475,41 @@ function CanvasInner() {
       )}
       {firstSource && !presenting && <FirstElementStrip source={firstSource} onDismiss={dismissFirstSource} />}
       <ContextMenu state={menu} onClose={() => setMenu(null)} />
+    </div>
+  );
+}
+
+/**
+ * What was removed, where it used to be (F-017 AC2): dashed, faded, struck through and labelled, so
+ * colour is never the only thing that says so. Not interactive — it is a memory, not a card.
+ */
+function GhostLayer({ cards, lines, since }: {
+  cards: { id: string; name: string; kind: string; x: number; y: number; w: number; h: number }[];
+  lines: { id: string; from: { x: number; y: number }; to: { x: number; y: number } }[];
+  since: string;
+}) {
+  return (
+    <div className="pointer-events-none" aria-hidden>
+      <svg className="absolute overflow-visible" style={{ left: 0, top: 0, width: 1, height: 1 }}>
+        {lines.map((l) => (
+          <line key={l.id} x1={l.from.x} y1={l.from.y} x2={l.to.x} y2={l.to.y} stroke="#f43f5e" strokeOpacity={0.55} strokeWidth={2} strokeDasharray="6 5" />
+        ))}
+      </svg>
+      {cards.map((c) => (
+        <div
+          key={c.id}
+          data-ghost={c.id}
+          title={`Removed since ${since}`}
+          className="absolute rounded-lg border-2 border-dashed border-rose-400/70 bg-rose-500/[0.06] dark:bg-rose-500/[0.08] px-3 py-2 flex flex-col gap-1"
+          style={{ transform: `translate(${c.x}px, ${c.y}px)`, width: c.w, minHeight: c.h }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] uppercase tracking-wider text-rose-500/80 truncate">{kindLabel(c.kind)}</span>
+            <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-300">Removed</span>
+          </div>
+          <div className="text-sm font-medium text-rose-700/80 dark:text-rose-200/80 line-through decoration-rose-500/70">{c.name}</div>
+        </div>
+      ))}
     </div>
   );
 }

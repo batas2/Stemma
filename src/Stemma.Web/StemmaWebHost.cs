@@ -301,6 +301,29 @@ public static class StemmaWebHost
             return arch is null ? Results.NotFound() : Results.Ok(arch);
         });
 
+        // What the model was (F-017, ADR-0024): read from Git on demand, kept nowhere. The history is
+        // what a person can compare with; arch-at is the model and its sidecar at one of those points.
+        workspaceApi.MapGet("/history", async (EngineHost host, CancellationToken ct) =>
+        {
+            var root = host.Snapshot()?.RootPath;
+            if (root is null) return Results.NotFound();
+            return Results.Ok(await GitHistory.ReadAsync(root, ct));
+        });
+
+        workspaceApi.MapGet("/arch-at", async (string? rev, EngineHost host, CancellationToken ct) =>
+        {
+            var root = host.Snapshot()?.RootPath;
+            if (root is null) return Results.NotFound();
+            try
+            {
+                return Results.Ok(await GitHistory.ModelAtAsync(root, rev ?? "", ct));
+            }
+            catch (GitHistory.RevisionNotFound e)
+            {
+                return Results.Problem(e.Message, statusCode: StatusCodes.Status404NotFound);
+            }
+        });
+
         // What an edit actually wrote. The canvas shows this after someone's first element, which is
         // the cheapest possible demonstration of the whole premise — the box you drew is four lines
         // of C# you can read (F-003 AC7). Served as the file's own text, never as a rendering of the

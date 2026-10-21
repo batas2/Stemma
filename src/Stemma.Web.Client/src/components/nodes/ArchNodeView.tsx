@@ -68,6 +68,8 @@ export type ArchNodeData = {
   dimmed?: boolean;
   /** Just arrived at from search or a link: ringed once so the eye finds it (F-016). */
   revealed?: boolean;
+  /** Comparing with another version (F-017): new since then, or changed since then. */
+  diff?: 'added' | 'changed' | 'removed';
   fanIn?: number;
   fanOut?: number;
   contextName?: string | null;
@@ -281,6 +283,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
         onCommit={data.onCommitName}
         onCancel={data.onCancelEdit}
         revealed={data.revealed}
+        diff={data.diff}
       />
     );
   }
@@ -327,6 +330,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           'relative rounded-lg border bg-white/95 dark:bg-zinc-900/95 backdrop-blur shadow-md dark:shadow-lg transition-shadow h-full flex flex-col',
           animClass,
           data.revealed && 'stemma-reveal',
+          data.diff === 'added' && 'ring-2 ring-emerald-500/80 ring-offset-2 ring-offset-transparent',
+          data.diff === 'changed' && 'ring-2 ring-amber-500/80 ring-offset-2 ring-offset-transparent',
           data.notesEditing && 'min-h-[160px]',
           !nodeStyle?.width && 'min-w-[180px] max-w-[260px]',
           isPerson && !nodeStyle?.width ? 'rounded-full px-4 py-2.5 min-w-0' : '',
@@ -336,6 +341,16 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           !selected && !status && !hasCustomStyle && 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-lg dark:hover:shadow-xl'
         )}
       >
+        {data.diff && data.diff !== 'removed' && (
+          <span
+            className={clsx(
+              'absolute -top-2.5 right-3 z-[2] text-[10px] font-semibold px-1.5 py-0.5 rounded-full shadow-sm pointer-events-none',
+              data.diff === 'added' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white',
+            )}
+          >
+            {data.diff === 'added' ? 'New' : 'Changed'}
+          </span>
+        )}
         {anim === 'marching' && (
           <div className="stemma-march" style={{ '--march': nodeStyle?.borderColor ?? 'rgb(99 102 241)' } as React.CSSProperties} />
         )}
@@ -511,8 +526,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
 /** A context frame's header chip, sized with the frame's `textSize` so it can be read from a room. */
 const BC_CHIP_TEXT: Record<string, string> = { sm: 'text-[10px]', base: 'text-[10px]', lg: 'text-[13px]', xl: 'text-[16px]' };
 
-function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel, revealed }: {
+function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel, revealed, diff }: {
   revealed?: boolean;
+  diff?: 'added' | 'changed' | 'removed';
   id: string;
   name: string;
   childCount?: number;
@@ -566,6 +582,8 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
       className={clsx(
         'stemma-bc-frame rounded-2xl border-2 transition-colors',
         revealed && 'stemma-reveal',
+        diff === 'added' && 'ring-2 ring-emerald-500/70',
+        diff === 'changed' && 'ring-2 ring-amber-500/70',
         !nodeStyle?.borderStyle && 'border-dashed',
         !border && (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40'),
         !fill && (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]'),
@@ -589,6 +607,11 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
           ? <NameEditor id={id} initial={name} onCommit={onCommit} onCancel={onCancel} />
           : <span className="font-medium">{name}</span>}
         {childCount !== undefined && childCount > 0 && <span className="opacity-80">· {childCount}</span>}
+        {diff && diff !== 'removed' && (
+          <span className={clsx('ml-1 px-1.5 rounded-full text-white font-semibold', diff === 'added' ? 'bg-emerald-500' : 'bg-amber-500')}>
+            {diff === 'added' ? 'New' : 'Changed'}
+          </span>
+        )}
       </div>
     </div>
   );

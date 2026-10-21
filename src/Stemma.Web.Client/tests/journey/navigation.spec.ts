@@ -77,3 +77,20 @@ test('a reload comes back to the view and the element in the address', async ({ 
   await expect(tab(page, 'Three rules that win arguments')).toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
   await expect(page.locator('.react-flow__node', { hasText: 'The engine knows nothing about the web' })).toHaveClass(/selected/);
 });
+
+test('a view opens at the pan and zoom it was left at, and a view never seen is fitted', async ({ page }) => {
+  const zoom = () => page.locator('.react-flow__viewport').evaluate((el) => +/scale\(([-\d.]+)\)/.exec((el as HTMLElement).style.transform)![1]);
+  await page.waitForTimeout(500);
+  const fitted = await zoom();
+  await page.getByRole('button', { name: 'Zoom In' }).click();
+  await page.getByRole('button', { name: 'Zoom In' }).click();
+  await page.waitForTimeout(400);
+  const zoomedIn = await zoom();
+  expect(zoomedIn).toBeGreaterThan(fitted);
+
+  await tab(page, 'Dependencies').click();
+  await page.waitForTimeout(500);
+  await tab(page, 'Module Map').click();
+  await page.waitForTimeout(500);
+  expect(await zoom()).toBeCloseTo(zoomedIn, 3);
+});

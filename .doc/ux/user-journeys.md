@@ -92,7 +92,8 @@ menu, not the selection behind it).
 ## J6 — Export & share (Architect → Stakeholder)
 
 1. Export the current canvas (including shapes) to PNG/SVG.
-2. Commit the model + sidecar; reviewers see the change in both the code diff and the canvas.
+2. Commit the model + sidecar; reviewers see the change in both the code diff and the canvas —
+   drawn as a change, with *Compare* (J6d).
 
 ## J6b — Publish & review loop ([F-001](../features/F-001-architecture-report-export.md), ADR-0014)
 
@@ -105,6 +106,21 @@ menu, not the selection behind it).
    comment pack** (`<workspace>.comments.stemma.json`) and send it back.
 4. The architect imports the pack (inspector → Comments → import); threads merge idempotently into
    `comments.stemma.json`, anchored to the elements they concern. Act, re-export, repeat.
+
+## J6d — Show a change ([F-017](../features/F-017-what-changed.md))
+
+1. **Compare** in the top bar: *the last commit* (what you have changed, counted), *where this branch
+   started*, a tag, or a recent commit. The status bar already says how many changes there are since
+   the last commit; clicking it is the same as the first choice.
+2. The canvas marks what is **New** (green) and **Changed** (amber), draws what was **removed** as a
+   struck-through ghost where it used to be, and fades the rest. Relationships likewise.
+3. The bar at the bottom names the comparison and counts it; *Changes* lists every change with what
+   changed about it; choosing one shows it. The inspector says what changed about the selected card.
+4. Keep editing: the marks follow. *Done*, or Escape with nothing selected, ends it.
+
+**Must-handle:** no Git or no repository — Compare is greyed with the reason; a revision that cannot
+be read — a toast, and the canvas as it was; nothing changed — "No changes", not an empty list;
+comparing writes nothing, and a ghost is never a position in the sidecar.
 
 ## J6c — Present a book ([F-013](../features/F-013-books.md))
 
