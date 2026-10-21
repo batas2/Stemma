@@ -168,6 +168,8 @@ async function refusal(r: Response): Promise<OperationFailed> {
 
 export async function exportDrawio(): Promise<string> {
   const r = await request(`${BASE}/api/workspace/export/drawio`);
+  // The server's own words when it refuses — the layout file cannot be read — not a status code.
+  if (r.status === 409) throw new Error((await refusal(r)).message || 'The layout file cannot be read, so the drawing was not made.');
   if (!r.ok) throw new Error(`drawio export failed: ${r.status}`);
   return r.text();
 }

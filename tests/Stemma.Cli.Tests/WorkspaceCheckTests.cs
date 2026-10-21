@@ -56,6 +56,20 @@ public sealed class WorkspaceCheckTests : IDisposable
         """;
 
     [Fact]
+    public void A_declaration_the_reader_cannot_read_is_reported_rather_than_passed()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module(Ids.Next(), "B");
+                    return Model.Of(a, b);
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "model/unreadable-declaration").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.Message.Should().Contain("Architecture.cs:");
+    }
+
+    [Fact]
     public void A_directory_that_is_not_a_workspace_says_so_rather_than_reporting_nothing_wrong()
     {
         Run().Should().ContainSingle(f => f.Rule == "workspace/no-model" && f.Severity == CheckSeverity.Error);

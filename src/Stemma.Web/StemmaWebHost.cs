@@ -465,7 +465,11 @@ public static class StemmaWebHost
                 }
             }
 
-            var positions = ReadPositions(engine.RootPath, layoutKey);
+            // A sidecar that cannot be read is said to be, as GET /layout says it — not a 500, and not a
+            // drawing quietly laid out on a grid as if no one had placed anything.
+            Dictionary<string, (double X, double Y)>? positions;
+            try { positions = ReadPositions(engine.RootPath, layoutKey); }
+            catch (SidecarPatchRefusedException e) { return Results.Conflict(new { reason = e.Reason, message = e.Message }); }
 
             var xml = DrawioExporter.Export(arch, new DrawioExporter.Options
             {

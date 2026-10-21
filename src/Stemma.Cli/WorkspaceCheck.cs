@@ -52,6 +52,7 @@ public static class WorkspaceCheck
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
         var viewFiles = WorkspaceViews.Read(workspaceRoot);
         var views = viewFiles.Select(v => v.View).ToList();
+        findings.AddRange(UnreadableDeclarations(model));
         findings.AddRange(DuplicateIds(read.Partials));
         findings.AddRange(DuplicateLinkIds(read.Partials));
         findings.AddRange(DuplicateViewIds(workspaceRoot, viewFiles));
@@ -638,6 +639,16 @@ public static class WorkspaceCheck
     /// Both are informational on purpose. `Concept` exists so an argument does not have to pretend
     /// to be an architecture; turning its presence into a warning would put the pretence back.
     /// </summary>
+    /// <summary>
+    /// What the model files declare that the reader could not read — an id written as a method call, a
+    /// name built at run time — as the canvas reports it (<c>model/unreadable-declaration</c>). Without
+    /// this, validate passed a model the canvas was drawing without those declarations. A declaration
+    /// left out is an error; one argument read as empty is a warning.
+    /// </summary>
+    private static IEnumerable<CheckFinding> UnreadableDeclarations(ArchModel model) =>
+        model.Unreadable.Select(p => new CheckFinding(
+            p.LeftOut ? CheckSeverity.Error : CheckSeverity.Warning, "model/unreadable-declaration", p.Message, p.Id));
+
     private static IEnumerable<CheckFinding> RegisterFindings(ArchModel model)
     {
         var concepts = model.Elements.Count(e => e.Kind == ArchElementKind.Concept);

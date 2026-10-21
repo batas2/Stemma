@@ -141,6 +141,17 @@ public sealed class LayoutEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_export_says_the_sidecar_cannot_be_read_rather_than_failing()
+    {
+        await File.WriteAllTextAsync(File_, "{\n<<<<<<< HEAD\n  \"version\": 1\n=======\n  \"version\": 2\n>>>>>>> theirs\n}\n");
+
+        var export = await _http.GetAsync("/api/workspace/export/drawio");
+
+        export.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await export.Content.ReadAsStringAsync()).Should().Contain("UnreadableSidecar");
+    }
+
+    [Fact]
     public async Task The_whole_file_can_no_longer_be_put()
     {
         var put = await _http.PutAsJsonAsync("/api/workspace/layout", new { version = 1 });
