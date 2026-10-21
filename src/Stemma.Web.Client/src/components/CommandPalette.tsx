@@ -230,6 +230,9 @@ export function CommandPalette() {
                   <span>Compare with last commit</span>
                 </Command.Item>
               )}
+              <Command.Item value="what's new in stemma changes release" onSelect={() => { close(); window.dispatchEvent(new Event('stemma:whats-new')); }} className={item}>
+                <span>What's new in Stemma</span>
+              </Command.Item>
               <Command.Item value="keyboard shortcuts help" onSelect={() => { close(); window.dispatchEvent(new CustomEvent('stemma:show-shortcuts')); }} className={item}>
                 <span>Keyboard shortcuts</span>
                 <span className="text-[10px] font-mono text-zinc-500">?</span>

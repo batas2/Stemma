@@ -35,6 +35,7 @@ import { hashFor, readHash, placeOf } from './lib/navigation';
 import { revealElement } from './lib/canvasReveal';
 import { refreshHeadModel, stopCompare } from './lib/compare';
 import { CompareBar } from './components/CompareBar';
+import { WhatsNew } from './components/WhatsNew';
 
 const ShortcutHelp = lazy(() => import('./components/ShortcutHelp').then((m) => ({ default: m.ShortcutHelp })));
 
@@ -342,6 +343,13 @@ export default function App() {
     return () => window.removeEventListener('stemma:show-shortcuts', show);
   }, []);
 
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  useEffect(() => {
+    const show = () => setWhatsNewOpen(true);
+    window.addEventListener('stemma:whats-new', show);
+    return () => window.removeEventListener('stemma:whats-new', show);
+  }, []);
+
   // Headless render mode strips every affordance meant for a person and reports when the canvas
   // has settled. Declared after all hooks so hook order is identical in both modes.
   if (renderParams) return <RenderShell params={renderParams} />;
@@ -377,6 +385,7 @@ export default function App() {
       <Suspense fallback={null}>
         <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       </Suspense>
+      <WhatsNew open={whatsNewOpen} onClose={() => { setWhatsNewOpen(false); window.dispatchEvent(new Event('stemma:whats-new-seen')); }} />
       <ConfirmDialog />
       <PromptDialog />
       <ToastQueue />

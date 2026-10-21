@@ -84,6 +84,8 @@ const hint = (s: Pick<Shortcut, 'key' | 'primary' | 'shift' | 'alt'>) => format(
 
 /** The shortcuts menus print beside their items, written once so a menu and the sheet cannot disagree. */
 export const SHORTCUT_HINTS = {
+  palette: hint({ key: 'k', primary: true }),
+  undo: hint({ key: 'z', primary: true }),
   copy: hint({ key: 'c', primary: true }),
   paste: hint({ key: 'v', primary: true }),
   duplicate: hint({ key: 'd', primary: true }),

@@ -3,6 +3,7 @@ import { useApp } from '@/lib/store';
 import { getConnectionState } from '@/lib/signalr';
 import { startCompare, useUncommittedDiff } from '@/lib/compare';
 import { describeCounts } from '@/lib/modelDiff';
+import { whatsNewSeen } from './WhatsNew';
 
 export function StatusBar() {
   const ws = useApp((s) => s.workspace);
@@ -31,6 +32,7 @@ export function StatusBar() {
         </>
       )}
       <span className="opacity-0 ml-auto">{tick}</span>
+      <WhatsNewLink />
     </footer>
   );
 }
@@ -65,6 +67,26 @@ function UncommittedChanges() {
     >
       <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden />
       {n} change{n === 1 ? '' : 's'} since the last commit
+    </button>
+  );
+}
+
+/** Offered once, quietly: the changes in this version and the keys that do them, until they have been read. */
+function WhatsNewLink() {
+  const [seen, setSeen] = useState(whatsNewSeen);
+  useEffect(() => {
+    const done = () => setSeen(true);
+    window.addEventListener('stemma:whats-new-seen', done);
+    return () => window.removeEventListener('stemma:whats-new-seen', done);
+  }, []);
+  if (seen) return null;
+  return (
+    <button
+      onClick={() => window.dispatchEvent(new Event('stemma:whats-new'))}
+      className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 hover:underline"
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" aria-hidden />
+      What's new
     </button>
   );
 }

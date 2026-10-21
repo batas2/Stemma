@@ -9,6 +9,81 @@ within one, entries are dated. How a release is cut:
 
 ## Unreleased
 
+### Faster on the canvas, clearer in the room — 2026-10-21
+
+Six things that make Stemma quicker to work in and easier to present with. Every one of them has a
+keyboard path; none of them adds a file to your repository.
+
+**Added**
+
+- **Copy, paste and duplicate** ([F-015](./.doc/features/F-015-copy-paste-duplicate.md)).
+  Select boxes and press **⌘C**, then **⌘V**: you get "*Name* copy" with its status, owner, notes,
+  custom properties, look, and the relationships between the copies. A paste lands a step down and
+  right of the originals (each further paste a step further), or in the middle of the screen when
+  they are out of sight; **right-click the canvas → Paste here** puts it exactly where you clicked.
+  Copy a bounded context and its modules come with it; paste a module inside a context's box and it
+  joins that context. **⌘D** duplicates in place without touching the clipboard. *(Ctrl instead of
+  ⌘ on Linux and Windows.)*
+- **Copy a look from one box to others.** **⌥⌘C** copies the style of the selected box or
+  relationship, **⌥⌘V** pastes it onto everything selected; each box keeps its own size. Also as
+  *Copy style* / *Paste style* at the top of the Appearance panel and in the right-click menus.
+- **One ⌘Z for the last thing you did, whatever it was.** A paste of eight boxes and arrows is one
+  step, a move is one step, a change of look is one step — and changes of look can be undone for
+  the first time. Steps are undone in the order you made them, the toast says what was undone, and
+  the boxes it touched are ringed for a moment (brought on screen if they were not).
+- **Go anywhere with ⌘K** ([F-016](./.doc/features/F-016-go-anywhere.md)). The palette now lists
+  every view (with how many elements each draws), every book, and every element with its kind and
+  where it lives. Type a few letters of a name, an id, a squad or a context and press Enter: Stemma
+  opens a view that draws the element, glides to it and rings it once. The same happens when you
+  click an element in the sidebar.
+- **Back and forward.** **⌘[** and **⌘]**, or **‹ ›** at the left of the view tabs, go back and
+  forward through the views you visited. Each view now opens at the pan and zoom you left it at.
+  Reloading the page brings you back to the same view and selection.
+- **"Appears in"** at the top of an element's Properties: the views that draw it and the book pages
+  that point at it, one click each.
+- **What changed, drawn on the diagram** ([F-017](./.doc/features/F-017-what-changed.md)). Click
+  **Compare** in the top bar and pick *the last commit* (your uncommitted changes), *where this
+  branch started*, a tag, or a recent commit. New boxes are marked **New**, altered ones
+  **Changed**, and removed ones appear as struck-through ghosts where they used to be; the rest
+  fades. The bar at the bottom counts the changes and lists them with what changed about each
+  ("Renamed from …", "Status target → current"); click one to see it. Keep editing and the marks
+  follow. **Done**, or Escape, ends it. The status bar always says how many changes you have since
+  the last commit — click it to see them drawn. Nothing is written while comparing; Stemma reads
+  the old version straight from Git.
+- **Find on this view with ⌘F** ([F-018](./.doc/features/F-018-find-on-the-view.md)). Type a word,
+  or tap a chip for a status, a squad or a kind: what matches stays lit and everything else fades
+  (or hides). **Enter** walks through the matches, **Shift+Enter** walks back. Narrow a word to one
+  field with `status:target`, `squad:core`, `kind:module`, `in:payments` or `#tag`. With a book open
+  on this view, **Point the page at these** turns the answer into a slide.
+- **A presenter view for a second screen** ([F-019](./.doc/features/F-019-presenter-view.md)).
+  While presenting, press **P** — or use **With notes** in the book editor — and a second window
+  shows the page now (with its narrative in large type), the page next, every page as a list to jump
+  to, an elapsed timer and the time. The projector shows the diagram alone. Either window turns the
+  page, with the buttons, the arrow keys or a clicker; **End** stops both. In the desktop app the
+  presenter view opens in your browser.
+- **Steps: play a flow one arrow at a time** ([F-020](./.doc/features/F-020-flow-steps.md)). In the
+  book editor, under a page's narrative, press **Record** and click the relationships on the canvas
+  in the order things happen (or add the selected one). Give each step a line to say. When you
+  present, every **Next** lights the next arrow — numbered ①②③, the current one in amber — before
+  the page turns, and **Back** unwinds them. The PDF shows the whole flow and lists the steps.
+  `stemma validate` reports a step whose relationship no longer exists (`book/dangling-step`).
+
+**Changed**
+
+- **Tab** walks the boxes on the view you are looking at, in name order, instead of every element
+  of the model.
+- **AddElement and AddLink report the id they created** (`ElementAdded` / `LinkAdded` deltas), for
+  anything that goes on to place, style or link what it just added.
+
+**Fixed**
+
+- Pressing **Escape** to close a right-click menu also cleared your selection, and the arrow keys
+  that move through the menu also nudged the selected box. The menu now keeps the keyboard to itself.
+- Every item in **⌘K** was set in spaced capitals.
+- Clicking a view's tab while **Concerns** was open left the Concerns list on screen.
+- In the dark theme the **Draft** and **Glass** style presets could not be read.
+- The validation strip said "1 errors".
+
 ## 0.1.0 — 2026-10-17
 
 The first release: everything below, as one version you can install in one command. It is the
