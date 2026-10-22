@@ -1061,4 +1061,71 @@ public sealed class WorkspaceCheckTests : IDisposable
 
         Run().Should().ContainSingle(f => f.Rule == "rule/module-has-at-most-one-context").Which.ElementId.Should().Be("mod_a");
     }
+
+    // ---- Model.Of (B-025) ---------------------------------------------------------------------
+    //
+    // Stemma reads the declarations; the compiler reads Model.Of. A declaration left out of Model.Of
+    // is drawn on the canvas and missing from the compiled model, and nothing said so.
+
+    [Fact]
+    public void A_declared_element_left_out_of_Model_Of_is_reported_with_its_variable()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var orphan = new Module("mod_orphan", "Orphan");
+                    var t = Tag.For(a, lifecycle: new Lifecycle(Status: "current"));
+                    return Model.Of(a, t);
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "model/not-collected").Which;
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.ElementId.Should().Be("mod_orphan");
+        finding.Message.Should().Contain("Architecture.cs:8").And.Contain("Add `orphan` to Model.Of");
+    }
+
+    [Fact]
+    public void A_link_left_out_of_Model_Of_is_reported_too()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var f = new DataFlow("flow_1", "mod_a", "mod_b", "order");
+                    return Model.Of(a, b);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "model/not-collected").Which.ElementId.Should().Be("flow_1");
+    }
+
+    [Fact]
+    public void A_model_whose_return_is_not_Model_Of_is_not_checked()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var all = new object[] { a, b };
+                    return Model.Of(all);
+        """);
+
+        Run().Should().NotContain(f => f.Rule == "model/not-collected");
+    }
+
+    [Fact]
+    public void Each_model_file_is_checked_against_its_own_Model_Of()
+    {
+        // `b` is collected by Payments.cs, not by Architecture.cs, and a local of one file means nothing
+        // in the other.
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    return Model.Of(a);
+        """);
+        ModelFile("Payments.cs", "Payments", """
+                    var b = new Module("mod_b", "B");
+                    var c = new Module("mod_c", "C");
+                    return Model.Of(b);
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "model/not-collected").Which;
+        finding.ElementId.Should().Be("mod_c");
+        finding.Message.Should().Contain("Payments.cs:");
+    }
 }

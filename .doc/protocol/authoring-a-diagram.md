@@ -102,6 +102,9 @@ or a missing edge, silently — which is invisible to anyone who cannot look at 
 
 - Ids must be unique.
 - Every `fromId`, `toId`, `contextId`, `systemId` and `aboutId` must name a real element.
+- Every element and link must be collected in `Model.Of(...)`. Stemma reads the declarations, so one
+  left out is still drawn — but the compiled model, and every test written against
+  `Architecture.Build()`, does not have it. A tag kept in a local need not be collected.
 - A prefix convention keeps them readable: `per_`, `sys_`, `cnt_`, `ctx_`, `mod_`, `cap_`, `uc_`,
   `q_`, `asm_`, `risk_`, `con_`, and `flow_` / `dep_` / `rel_` for links.
 
@@ -469,6 +472,7 @@ What it catches, in rough order of how often it bites:
 | `view/empty` | error | The render will report `empty`; better to know now. |
 | `model/duplicate-id`, `link/duplicate-id` | error | An element or a link id declared twice, in one file or two. Which one wins is arbitrary. |
 | `model/unreadable-declaration` | error / warning | An argument Stemma cannot read — an id written as a method call, a name built at run time. An error when the whole declaration is left out of the model, a warning when one argument is read as empty. Write it as a string literal or a constant. |
+| `model/not-collected` | warning | An element or link declared in `Build()` and left out of its `Model.Of(...)`: Stemma draws it, the compiled model does not have it. Named by file, line and variable. Not checked when the return is anything but `Model.Of` of plain locals. |
 | `rule/<rule-id>` | as the rule says, or as `stemma.rules.json` sets it | The engine's rules — the ones the canvas marks cards with: a data-flow cycle (`rule/no-circular-dataflows`), a flow into a deprecated element, a module whose context is not a bounded context. Switched off or re-graded in `stemma.rules.json` (`{ "rules": { "no-circular-dataflows": { "enabled": false } } }`), for the canvas and `validate` alike. |
 | `view/duplicate-id` | error | Two view files with one id. The app opens and saves whichever it reads first. |
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |

@@ -89,6 +89,11 @@ Links render in a view when **both** endpoints are present.
   the model is the `static Model Build()` of the class named `Architecture`; a further model file
   (`static class FlowsArchitecture`) has one of its own. A helper's `Build` that is not static, or
   does not return `Model`, is never taken for the model.
+- **Every declaration is collected.** Stemma reads the model off the declarations in `Build()`; the
+  compiler reads what `return Model.Of(...)` collects. A declaration left out of it is drawn and absent
+  from the compiled model, so validation reports it (`model/not-collected`) with its file, line and
+  variable — for each model file against its own `Model.Of`, and only when that return names plain
+  locals (a tag local need not be collected).
 - Keep the model **structural**. No method bodies, no behavior. Decisions/risks/assumptions express
   *intent*, not logic.
 

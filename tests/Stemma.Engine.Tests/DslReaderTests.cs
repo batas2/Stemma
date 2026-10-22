@@ -248,4 +248,76 @@ public sealed class DslReaderTests
         alone.Elements.Single().Attributes["contextId"].Should().BeNull();
         alone.Unreadable.Should().ContainSingle();
     }
+
+    // ---- what Model.Of collects (B-025) -------------------------------------------------------
+
+    [Fact]
+    public void A_declaration_Model_Of_leaves_out_is_known_by_its_local_and_its_line()
+    {
+        var model = Read("""
+            using Stemma.Model;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var api = new Container("cnt_api", "API", "sys_x");
+                    var orphan = new Container("cnt_orphan", "Orphan", "sys_x");
+                    var call = new DataFlow("flow_call", "cnt_api", "cnt_orphan", "call");
+                    var tag = Tag.For(api, lifecycle: new Lifecycle(Status: "current"));
+                    return Model.Of(api, call, tag);
+                }
+            }
+            """)!;
+
+        model.Collected.Should().BeEquivalentTo(["api", "call", "tag"]);
+        model.Locals.Select(l => (l.Variable, l.Id)).Should().Equal(("api", "cnt_api"), ("orphan", "cnt_orphan"), ("call", "flow_call"));
+        var orphan = model.NotCollected.Should().ContainSingle().Which;
+        orphan.Should().Be(new ArchLocal("orphan", "cnt_orphan", "/tmp/Architecture.cs", 7));
+    }
+
+    [Theory]
+    [InlineData("return new Model();")]
+    [InlineData("return Model.Of(all);")]
+    [InlineData("return Model.Of(api, Helpers.More());")]
+    [InlineData("return Model.Of(items: api);")]
+    public void A_return_that_is_not_Model_Of_plain_locals_says_nothing_about_what_is_collected(string ret)
+    {
+        // `all` is a local, but an array: it could hold anything, so nothing can be said.
+        var model = Read($$"""
+            using Stemma.Model;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var api = new Container("cnt_api", "API", "sys_x");
+                    var orphan = new Container("cnt_orphan", "Orphan", "sys_x");
+                    var all = new object[] { api, orphan };
+                    {{ret}}
+                }
+            }
+            """)!;
+
+        model.Collected.Should().BeNull();
+        model.NotCollected.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_merged_model_keeps_each_file_s_locals_and_claims_no_collection_of_its_own()
+    {
+        var first = Read("""
+            using Stemma.Model;
+            public static class Architecture { public static Model Build() { var a = new Module("mod_a", "A"); return Model.Of(a); } }
+            """);
+        var second = DslReader.TryRead("/tmp/Payments.cs", CSharpSyntaxTree.ParseText("""
+            using Stemma.Model;
+            public static class Payments { public static Model Build() { var b = new Module("mod_b", "B"); return Model.Of(); } }
+            """).GetRoot());
+
+        var merged = ArchModelMerge.Merge("/tmp/Architecture.cs", [first, second]);
+
+        merged.Locals.Select(l => l.Id).Should().Equal("mod_a", "mod_b");
+        merged.Collected.Should().BeNull();
+        second!.NotCollected.Should().ContainSingle(l => l.Id == "mod_b");
+        first!.NotCollected.Should().BeEmpty();
+    }
 }

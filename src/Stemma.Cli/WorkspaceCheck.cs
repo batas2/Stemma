@@ -59,6 +59,7 @@ public static class WorkspaceCheck
         var viewFiles = WorkspaceViews.Read(workspaceRoot);
         var views = viewFiles.Select(v => v.View).ToList();
         findings.AddRange(UnreadableDeclarations(model));
+        findings.AddRange(NotCollected(read.Partials));
         findings.AddRange(DuplicateIds(read.Partials));
         findings.AddRange(DuplicateLinkIds(read.Partials));
         findings.AddRange(DuplicateViewIds(workspaceRoot, viewFiles));
@@ -655,6 +656,23 @@ public static class WorkspaceCheck
     private static IEnumerable<CheckFinding> UnreadableDeclarations(ArchModel model) =>
         model.Unreadable.Select(p => new CheckFinding(
             p.LeftOut ? CheckSeverity.Error : CheckSeverity.Warning, "model/unreadable-declaration", p.Message, p.Id));
+
+    /// <summary>
+    /// A declaration <c>Model.Of(...)</c> does not collect. Stemma reads the model off the declarations
+    /// in <c>Build()</c>, so it draws one; the compiler, and every test written against
+    /// <c>Architecture.Build()</c>, reads what <c>Model.Of</c> collects, so the compiled model lacks it.
+    /// Two readings of one file disagreed and nothing said so (B-025). Each file's declarations are
+    /// checked against that file's own return; a return that is not a <c>Model.Of</c> of plain locals
+    /// is not checked at all.
+    /// </summary>
+    private static IEnumerable<CheckFinding> NotCollected(IReadOnlyList<ArchModel> partials) =>
+        partials.SelectMany(p => p.NotCollected).Select(l =>
+        {
+            var at = $"{Path.GetFileName(l.FilePath)}:{l.Line}";
+            return new CheckFinding(CheckSeverity.Warning, "model/not-collected",
+                $"{l.Id} is declared in {at} but not collected in Model.Of(...); Stemma draws it, the compiled model does not have it. " +
+                $"Add `{l.Variable}` to Model.Of.", l.Id);
+        });
 
     private static IEnumerable<CheckFinding> RegisterFindings(ArchModel model)
     {
