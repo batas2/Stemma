@@ -144,7 +144,40 @@ members it does not model are preserved, never dropped.**
 
 The view key is `custom:<viewId>` for a saved view, or the lens name for a built-in.
 
-### Layout as a constraint, not as coordinates
+### For an architecture: write nothing, or say `layered`
+
+A view with no `layout` and no position for any of its members is laid out for you: in layers that
+follow its relationships, every edge routed around the boxes, every label kept clear of them
+([F-021](../features/F-021-layered-layout-and-routed-edges.md)). For an architecture of any size this
+is the right default, and the first thing to try. Nothing is written to the sidecar for it.
+
+Say it explicitly to choose its options, or to keep it once someone has nudged a box:
+
+```jsonc
+"views": {
+  "custom:view_containers": {
+    "layout": { "kind": "layered", "direction": "down", "last": ["sys_stripe", "sys_maps"] }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `direction` | `down` (default), `right`, `up`, `left` — which way the flow runs. |
+| `spacing` | One number, or `[between boxes, between layers]`. Default `[48, 72]`. |
+| `first`, `last` | Ids pinned to the first or the last layer — people first and external systems last, usually. |
+| `groups` | Default `true`: a context is laid out around its modules and a system around its containers, and the system's boundary is drawn, when the parent and a child are both in the view. |
+| `routing` | `orthogonal` (default), `polyline`, `spline`. |
+
+**Declaration order breaks ties.** Elements and links are laid out in the order `Architecture.cs`
+declares them, so declaring in reading order — people, front ends, services, stores, neighbours — is
+how to ask for an order without placing anything. The same input always gives the same picture
+([ADR-0025](../architecture/decisions/0025-layered-layout-is-a-live-constraint.md)).
+
+A nudge on a layered view is stored as an offset, as for the constraints below; the edges of a nudged
+box are drawn unrouted until its nudge is reset.
+
+### For a figure: layout as a constraint, not as coordinates
 
 This is the part worth reading twice. You *can* write absolute positions:
 

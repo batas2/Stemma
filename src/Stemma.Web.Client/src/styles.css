@@ -369,6 +369,20 @@
   color: var(--pub-text) !important;
 }
 
+/* B-023 — publication cards have no fill, so the edge layer has them cut out (EdgeKnockout): a line
+   that passes beneath a card is not drawn across its name. */
+[data-stemma-profile='publication'] .react-flow__edge-path {
+  mask: url(#stemma-knockout);
+}
+
+/* F-021 — a card the layered layout has not placed yet: measured (so the layout can be solved for
+   its real size) but not shown and not clickable, so a view never opens in one arrangement and jumps
+   to another a moment later. */
+.react-flow__node.stemma-layout-pending {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Edge labels: the plate is a readability aid over a canvas whose background is known. On a
    transparent export it is a white slab on someone else's page, so the label carries the ink alone
    — which is what the draw.io originals do. */

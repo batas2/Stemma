@@ -25,8 +25,10 @@ import {
   type FitViewOptions,
 } from '@xyflow/react';
 import { ArchNodeView } from './nodes/ArchNodeView';
-import { WaypointEdge } from './edges/WaypointEdge';
+import { WaypointEdge, LABEL_PX } from './edges/WaypointEdge';
 import { EdgeMarkerDefs, customMarkerId, type CustomMarker } from './edges/EdgeMarkerDefs';
+import { EdgeKnockout } from './edges/EdgeKnockout';
+import { knockoutRects } from '@/lib/edgeKnockout';
 import { LAYOUT_ACTION_EVENT, type LayoutAction } from './LayoutPanel';
 import { ShapeLayer } from './ShapeLayer';
 import { ViewHeader, viewHeaderHeight } from './ViewHeader';
@@ -36,6 +38,7 @@ import { StencilDrawer } from './StencilDrawer';
 import { loadShapes, primeShapeCache, type Shape } from '@/lib/shapes';
 import { resolveExportOptions, exportFileName, type ExportRequest } from '@/lib/exportImage';
 import { resolveLayout, offsetForDrag, constraintIds } from '@/lib/layoutDsl';
+import { solveLayered, layeredOffsetForDrag, FRAME_PAD, FRAME_HEADER, type LayeredConstraint, type LayeredInput, type LayeredResult } from '@/lib/layeredLayout';
 import { linkLabel, linkLabelField, linkIsDashedByDefault, LINK_FIELD_LABEL } from '@/lib/linkLabel';
 import { sizesFor } from '@/lib/textMetrics';
 
@@ -107,13 +110,13 @@ import { friendlyOpError } from '@/lib/opError';
 import { relink } from '@/lib/relink';
 import { applyOrSay } from '@/lib/applyOp';
 import { confirmAndRemoveElements } from './removeElements';
-import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
+import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewLayered, saveViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
 import { loadNote, loadNotes, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
 import { layoutUndo, diffPositions, isEmptyDiff } from '@/lib/layoutUndo';
 import {
-  layoutHierarchical, layoutForceDirected, layoutFocused, layoutByType,
+  layoutHierarchical, layoutForceDirected, layoutFocused, layoutByType, defaultArrangement,
   alignSelected, distributeSelected,
   type LayoutAlgorithm,
 } from '@/lib/autoLayout';
@@ -151,7 +154,7 @@ function sameValue(a: unknown, b: unknown): boolean {
 /** Whether a rebuilt card says nothing the card on screen does not: same place, state, size and data. */
 function sameNode(a: Node, b: Node): boolean {
   if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false;
-  if (a.selected !== b.selected || a.draggable !== b.draggable || a.type !== b.type) return false;
+  if (a.selected !== b.selected || a.draggable !== b.draggable || a.type !== b.type || a.className !== b.className) return false;
   if (!sameValue(a.style, b.style)) return false;
   const ad = a.data as Record<string, unknown>;
   const bd = b.data as Record<string, unknown>;
@@ -164,13 +167,22 @@ const LAYOUT_LABEL: Record<LayoutAlgorithm, string> = {
   focused: 'focused', byType: 'architectural (by type)',
 };
 
-function defaultPositions(elements: ArchElement[]): Record<string, SavedPosition> {
-  return layoutHierarchical(elements, []);
+
+/** The layered layout's positions with each card's nudge applied; nothing when it has not answered. */
+function layeredPositions(solved: LayeredResult | null, offsets: Record<string, SavedPosition>): Record<string, SavedPosition> {
+  if (!solved) return {};
+  const out: Record<string, SavedPosition> = {};
+  for (const [id, p] of Object.entries(solved.positions)) {
+    const o = offsets[id];
+    out[id] = o ? { x: p.x + o.x, y: p.y + o.y } : p;
+  }
+  return out;
 }
 
 // Bounded-Context container geometry: padding around the contained modules + a header strip.
-const BC_PAD = 26;
-const BC_HEADER = 26;
+// Shared with the layered layout, which leaves exactly this much room inside a group (ADR-0025).
+const BC_PAD = FRAME_PAD;
+const BC_HEADER = FRAME_HEADER;
 
 /** Best-effort rendered size of a node: explicit style → user resize → measured DOM → default. */
 function nodeSize(n: Node): { w: number; h: number } {
@@ -674,7 +686,7 @@ function CanvasInner() {
     };
   }), [aboutRels, autoDocks]);
 
-  const allEdges = useMemo<Edge[]>(() => aboutEdges.length ? [...edges, ...aboutEdges] : edges, [edges, aboutEdges]);
+  const baseEdges = useMemo<Edge[]>(() => aboutEdges.length ? [...edges, ...aboutEdges] : edges, [edges, aboutEdges]);
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
@@ -685,8 +697,13 @@ function CanvasInner() {
 
   // Fill an auto dock (nearest sensible dots) for any relationship without an explicit anchor.
   // Idempotent — only fills *missing* entries, so it never re-docks while boxes are dragged.
+  //
+  // Chosen once, so chosen from where the cards really are: not before the sidecar is read (the cards
+  // sit at default positions then, and a grid docked from those drew every arrow as a loop out of the
+  // bottom of one card into the top of the next), and not while the layered layout is still placing them.
   useEffect(() => {
-    if (nodes.length === 0) return;
+    if (nodes.length === 0 || !workspace || !isSidecarPrimed(workspace.rootPath)) return;
+    if (nodes.some((n) => n.className === 'stemma-layout-pending')) return;
     setAutoDocks((prev) => {
       const rectById = new Map(nodes.map((n) => [n.id, nodeRect(n)]));
       let changed = false;
@@ -703,7 +720,7 @@ function CanvasInner() {
       for (const r of aboutRels) consider(r.id, r.from, r.to);
       return changed ? next : prev;
     });
-  }, [nodes, filtered.links, aboutRels, edgeHandles]);
+  }, [nodes, filtered.links, aboutRels, edgeHandles, workspace]);
 
   // Reconcile dots chosen while drawing/reconnecting with the engine-assigned link id, once the
   // model refresh brings the new link in.
@@ -859,18 +876,132 @@ function CanvasInner() {
     if (changed) measuredSizesRef.current = next;
   }, [nodes]);
 
+  // ---- Layered layout (F-021, ADR-0025). A view with a `layered` constraint — or a view nobody has
+  // arranged, with no constraint and no saved position for any of its cards — is laid out by ELK and
+  // its edges routed. Decided only once the sidecar is read: before that, "no saved position" means
+  // "not read yet", and laying out a view that has a committed arrangement would draw over it.
+  const layered = useMemo<{ constraint: LayeredConstraint; implicit: boolean } | null>(() => {
+    if (!workspace || !arch || !isSidecarPrimed(workspace.rootPath)) return null;
+    const key = String(layoutKey);
+    const explicit = loadViewLayered(workspace.rootPath, key);
+    if (explicit) return { constraint: explicit, implicit: false };
+    if (loadViewConstraint(workspace.rootPath, key)) return null;
+    const saved = loadLayout(workspace.rootPath, layoutKey as ViewKind);
+    return filtered.elements.some((e) => saved[e.id]) ? null : { constraint: { kind: 'layered' }, implicit: true };
+  }, [workspace, arch, layoutKey, filtered.elements, sidecarTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const layeredRef = useRef(layered);
+  layeredRef.current = layered;
+
+  // What ELK was last asked, what it answered, and what it could not lay out — each keyed by the
+  // input, so a render that changes nothing ELK sees (a drag, a selection) asks nothing of it.
+  const [layeredWant, setLayeredWant] = useState<string | null>(null);
+  const [layeredSolved, setLayeredSolved] = useState<{ viewKey: string; key: string; result: LayeredResult } | null>(null);
+  const [layeredFailed, setLayeredFailed] = useState<string | null>(null);
+  const layeredSolvedRef = useRef(layeredSolved);
+  layeredSolvedRef.current = layeredSolved;
+  const layeredRun = useRef(0);
+  useEffect(() => {
+    if (!layered) { setLayeredWant(null); return; }
+    const visible = filtered.elements.filter((e) => !hiddenIds.has(e.id));
+    const ids = new Set(visible.map((e) => e.id));
+    const groups = layered.constraint.groups !== false;
+    // A module is laid out inside its context and a container inside its system, when both are drawn.
+    const parentOf = (e: ArchElement): string | null => {
+      if (!groups) return null;
+      const p = e.kind === 'module' ? e.attributes.contextId : e.kind === 'container' ? e.attributes.systemId : null;
+      return p && ids.has(p) ? p : null;
+    };
+    const parents = new Set(visible.map(parentOf).filter((p): p is string => !!p));
+    const sizes = measuredSizesRef.current;
+    const nodesIn: LayeredInput['nodes'] = [];
+    for (const e of visible) {
+      const size = sizes[e.id];
+      // A frame is sized by ELK from what it holds; every other card is laid out at the size it was
+      // measured at, or the layout would be solved for one size and drawn at another. Wait for it.
+      if (!size && !parents.has(e.id)) { setLayeredWant(null); return; }
+      nodesIn.push({ id: e.id, w: Math.round(size?.w ?? 0), h: Math.round(size?.h ?? 0), parent: parentOf(e) });
+    }
+    const edgesIn: LayeredInput['edges'] = [
+      ...filtered.links.filter((l) => ids.has(l.fromId) && ids.has(l.toId)).map((l) => ({
+        id: l.id, source: l.fromId, target: l.toId, label: linkLabel(l) || undefined,
+        labelPx: LABEL_PX[edgeStyles[l.id]?.labelSize ?? 'base'],
+      })),
+      ...aboutRels.map((r) => ({ id: r.id, source: r.from, target: r.to, label: 'about', labelPx: 9 })),
+    ];
+    const constraint = layered.constraint;
+    const viewKey = String(layoutKey);
+    const key = JSON.stringify([viewKey, constraint, nodesIn, edgesIn]);
+    setLayeredWant(key);
+    if (layeredSolved?.key === key || layeredFailed === key) return;
+    const run = ++layeredRun.current;
+    solveLayered({ nodes: nodesIn, edges: edgesIn, constraint })
+      .then((result) => { if (run === layeredRun.current) setLayeredSolved({ viewKey, key, result }); })
+      .catch((error: unknown) => {
+        if (run !== layeredRun.current) return;
+        setLayeredFailed(key);
+        reportFailure('Canvas', ClientEvent.Unhandled, 'Laying out a view')(error);
+        // A headless render must fail rather than capture the fallback as if it were the layout.
+        window.dispatchEvent(new CustomEvent('stemma:render-failed', {
+          detail: { reason: `the layered layout could not be computed: ${error instanceof Error ? error.message : String(error)}` },
+        }));
+        setToast({ kind: 'error', text: 'This view could not be laid out automatically, so it is shown unarranged.' });
+      });
+  }, [layered, nodes, filtered, hiddenIds, edgeStyles, aboutRels, layoutKey, layeredSolved, layeredFailed, setToast]);
+
+  const layeredHere = layered && layeredSolved?.viewKey === String(layoutKey) ? layeredSolved.result : null;
+  const layeredGaveUp = !!layered && layeredWant !== null && layeredFailed === layeredWant;
+  // Still working: the cards are not all measured yet, or ELK has not answered for what is drawn.
+  const layeredBusy = !!layered && !(layeredWant !== null && (layeredSolved?.key === layeredWant || layeredFailed === layeredWant));
+  useEffect(() => {
+    // Read by the render shell, which must not call a picture settled while it is still being laid out.
+    document.documentElement.dataset.stemmaLayout = layeredBusy ? 'pending' : 'settled';
+  }, [layeredBusy]);
+  useEffect(() => () => { delete document.documentElement.dataset.stemmaLayout; }, []);
+
+  // Cards drawn somewhere other than where the layout put them — nudged, or being dragged. Their
+  // edges are drawn unplanned: a route planned for where a card was is wrong for where it is.
+  const layeredMoved = useMemo(() => {
+    if (!layeredHere || !workspace) return '';
+    const offsets = loadViewOffsets(workspace.rootPath, String(layoutKey));
+    const moved: string[] = [];
+    for (const n of nodes) {
+      const p = layeredHere.positions[n.id];
+      if (!p || layeredHere.frames[n.id]) continue;
+      const o = offsets[n.id];
+      if (o || Math.abs(n.position.x - p.x) > 0.5 || Math.abs(n.position.y - p.y) > 0.5) moved.push(n.id);
+    }
+    return moved.sort().join('\u0000');
+  }, [layeredHere, nodes, workspace, layoutKey]);
+
+  const allEdges = useMemo<Edge[]>(() => {
+    if (!layered) return baseEdges;
+    const placed = layeredHere?.positions;
+    const moved = new Set(layeredMoved ? layeredMoved.split('\u0000') : []);
+    return baseEdges.map((e) => {
+      // An edge waits, unseen, until both its ends have been placed — unless the layout gave up.
+      const pending = !layeredGaveUp && (!placed || !placed[e.source] || !placed[e.target]);
+      const route = placed && !moved.has(e.source) && !moved.has(e.target) ? layeredHere!.routes[e.id] : undefined;
+      if (!pending && !route) return e;
+      return { ...e, data: { ...e.data, ...(route ? { route } : {}), ...(pending ? { pending: true } : {}) } };
+    });
+  }, [baseEdges, layered, layeredHere, layeredGaveUp, layeredMoved]);
+
   useEffect(() => {
     if (!workspace || !arch) {
       setNodes([]);
       return;
     }
     const saved = loadLayout(workspace.rootPath, layoutKey as ViewKind);
-    const defaults = defaultPositions(filtered.elements);
+    const defaults = defaultArrangement(filtered.elements, filtered.links);
     // A declarative constraint, when the view has one, governs the nodes it names; everything else
     // keeps its stored position. Sizes come from what React Flow has measured, falling back to an
     // estimate for nodes it has not drawn yet, so the arrangement does not jump on first paint.
     const constraint = loadViewConstraint(workspace.rootPath, String(layoutKey));
-    const merged = constraint
+    const lay = layeredRef.current;
+    const solved = lay ? layeredHere : null;
+    const merged = lay
+      ? { ...defaults, ...saved, ...layeredPositions(solved, loadViewOffsets(workspace.rootPath, String(layoutKey))) }
+      : constraint
       ? resolveLayout({
           constraint,
           offsets: loadViewOffsets(workspace.rootPath, String(layoutKey)),
@@ -881,7 +1012,10 @@ function CanvasInner() {
           ),
         })
       : { ...defaults, ...saved };
-    const governedIds = new Set(constraint ? constraintIds(constraint) : []);
+    const governedIds = new Set(lay ? filtered.elements.map((e) => e.id) : constraint ? constraintIds(constraint) : []);
+    // A card the layered layout has not placed yet waits unseen, so the view does not open in one
+    // arrangement and jump to another a moment later.
+    const waiting = (id: string) => !!lay && !layeredGaveUp && !solved?.positions[id];
 
     setNodes((prev) => {
       // Never rebuild node objects while a drag is in flight: swapping the dragged node's identity
@@ -934,6 +1068,7 @@ function CanvasInner() {
           id: e.id,
           type: 'arch',
           position: pos,
+          ...(waiting(e.id) ? { className: 'stemma-layout-pending' } : {}),
           // Preserve React Flow's selection across rebuilds — otherwise the ~1.5s violations poll
           // (and any other rebuild) wipes a Ctrl-click / marquee multi-selection a moment after it's made.
           selected: existing?.selected ?? false,
@@ -969,7 +1104,7 @@ function CanvasInner() {
         return existing && sameNode(existing, built) ? existing : built;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick, layeredHere, layeredGaveUp]);
 
   // Fit a view once, when it is first shown with its cards on the canvas and the committed positions
   // read: a fit taken before them frames where the cards are about to stop being, and a second fit
@@ -1284,7 +1419,7 @@ function CanvasInner() {
       if (!workspace) return;
       // A view arranged by a constraint is solved again — applying a Row from the Layout panel used to
       // be written and then shown only after a reload, because only stored positions were read here.
-      if (loadViewConstraint(workspace.rootPath, String(layoutKey))) { setSidecarTick((n) => n + 1); return; }
+      if (loadViewConstraint(workspace.rootPath, String(layoutKey)) || loadViewLayered(workspace.rootPath, String(layoutKey)) || layeredRef.current) { setSidecarTick((n) => n + 1); return; }
       const fresh = loadLayout(workspace.rootPath, layoutKey as ViewKind);
       setNodes((current) => current.map((n) => fresh[n.id] ? { ...n, position: fresh[n.id] } : n));
     }
@@ -1310,6 +1445,9 @@ function CanvasInner() {
     function placeNode(ev: Event) {
       const detail = (ev as CustomEvent).detail as { nodeId: string; pos: SavedPosition };
       if (!workspace) return;
+      // On a layered view the layout places the new card with the others; writing every card's
+      // position here would freeze the arrangement into coordinates.
+      if (layeredRef.current) return;
       // A newly-placed element takes this view off an auto layout (it would otherwise be re-arranged).
       useApp.getState().setViewLayout(String(layoutKey), 'custom');
       setNodes((current) => {
@@ -1558,6 +1696,21 @@ function CanvasInner() {
   const persistPositions = useCallback((next: Node[]) => {
     if (!workspace) return;
     const key = String(layoutKey);
+    const lay = layeredRef.current;
+    if (lay) {
+      // A layered view keeps its layout and records the nudge (ADR-0025, the Q6 contract). On a view
+      // laid out by default, the first nudge makes the default the committed arrangement, so what the
+      // person was looking at is what the file now says.
+      const solved = layeredSolvedRef.current?.viewKey === key ? layeredSolvedRef.current.result : null;
+      if (!solved) return;
+      if (lay.implicit) saveViewConstraint(workspace.rootPath, key, { kind: 'layered' });
+      for (const n of next) {
+        if (solved.frames[n.id]) continue;
+        const offset = layeredOffsetForDrag(n.id, n.position, solved);
+        if (offset) saveViewOffset(workspace.rootPath, key, n.id, { x: Math.round(offset.x), y: Math.round(offset.y) });
+      }
+      return;
+    }
     const constraint = loadViewConstraint(workspace.rootPath, key);
 
     if (constraint) {
@@ -1640,7 +1793,7 @@ function CanvasInner() {
   const onNodeDragStart = useCallback((_: unknown, node: Node) => {
     if (!(node.data as { isContainer?: boolean }).isContainer || !arch) return;
     const childIds = arch.elements
-      .filter((e) => e.kind === 'module' && e.attributes.contextId === node.id)
+      .filter((e) => (e.kind === 'module' && e.attributes.contextId === node.id) || (e.kind === 'container' && e.attributes.systemId === node.id))
       .map((e) => e.id);
     groupDrag.current = { id: node.id, last: { x: node.position.x, y: node.position.y }, childIds };
   }, [arch]);
@@ -2345,17 +2498,24 @@ function CanvasInner() {
   // + size are derived from the children's bounding box, it is drawn first (below the modules)
   // so they stay clickable on top, and it is not directly draggable — moving its modules
   // reshapes it. Elements without children pass through unchanged.
+  // A software system draws as a boundary around its containers on a view laid out in layers with
+  // groups (F-021) — the C4 container picture. Elsewhere a system stays a card, as it always was, so
+  // no committed arrangement changes under anyone.
+  const systemFrames = !!layered && layered.constraint.groups !== false;
   const nestedNodes = useMemo<Node[]>(() => {
     const nestable = view === 'moduleMap' || view === 'dependencyGraph' || activeCustomView !== null;
     if (!nestable) return nodes;
     const byId = new Map(nodes.map((n) => [n.id, n]));
+    const kindOf = (id: string) => (byId.get(id)?.data as { element?: ArchElement } | undefined)?.element?.kind;
     const childrenByCtx = new Map<string, Node[]>();
     for (const n of nodes) {
       const el = (n.data as { element?: ArchElement }).element;
-      if (!el || el.kind !== 'module') continue;
-      const ctxId = el.attributes.contextId ?? undefined;
-      if (!ctxId || !byId.has(ctxId)) continue;
-      (childrenByCtx.get(ctxId) ?? childrenByCtx.set(ctxId, []).get(ctxId)!).push(n);
+      if (!el) continue;
+      const parentId = el.kind === 'module' ? el.attributes.contextId
+        : systemFrames && el.kind === 'container' ? el.attributes.systemId : undefined;
+      if (!parentId || !byId.has(parentId)) continue;
+      if (kindOf(parentId) !== (el.kind === 'module' ? 'boundedContext' : 'softwareSystem')) continue;
+      (childrenByCtx.get(parentId) ?? childrenByCtx.set(parentId, []).get(parentId)!).push(n);
     }
     if (childrenByCtx.size === 0) return nodes;
 
@@ -2363,13 +2523,15 @@ function CanvasInner() {
     const rest: Node[] = [];
     for (const n of nodes) {
       const el = (n.data as { element?: ArchElement }).element;
-      if (el?.kind === 'boundedContext') {
+      if (el?.kind === 'boundedContext' || (systemFrames && el?.kind === 'softwareSystem')) {
         // On a page that hides the rest, a box wraps only what is left in it, or it frames empty space.
         const kids = childrenByCtx.get(el.id)?.filter((k) => !(litHides && lit && !lit.has(k.id)));
         if (kids && kids.length > 0) {
-          const collapsed = collapsedBcs.has(el.id);
+          // A system boundary does not fold: its containers are the picture.
+          const isSystem = el.kind === 'softwareSystem';
+          const collapsed = !isSystem && collapsedBcs.has(el.id);
           const box = boundingBox(kids);
-          const data = { ...n.data, isContainer: true, childCount: kids.length, collapsed, onToggleCollapse: () => toggleBcCollapsed(el.id) };
+          const data = { ...n.data, isContainer: true, childCount: kids.length, collapsed, onToggleCollapse: isSystem ? undefined : () => toggleBcCollapsed(el.id) };
           // Collapsed → compact card at the cluster's top-left (no size override), modules hidden.
           // Expanded → full container sized to the children's bounding box. Draggable either way.
           containers.push(collapsed
@@ -2386,7 +2548,7 @@ function CanvasInner() {
     }
     // Containers first so the contained modules paint (and receive clicks) on top of them.
     return [...containers, ...rest];
-  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, lit, litHides]);
+  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, lit, litHides, systemFrames]);
 
   // ---- What changed (F-017). Comparing, a changed card wears a mark, what did not change fades, and
   // what was removed is drawn as a ghost where it used to sit — in the canvas's own coordinates but
@@ -2487,6 +2649,19 @@ function CanvasInner() {
       return out;
     });
   }, [nestedNodes, lit, litHides, readOnly, revealId, flashIds, diff, compareDimRest]);
+
+  // B-023: under the publication profile a card has no fill, so the edge layer has the cards cut out
+  // of it instead — a line beneath a card is not drawn, and the ground stays transparent.
+  const publicationProfile = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-stemma-profile') === 'publication';
+  const knockout = useMemo(() => {
+    if (!publicationProfile) return null;
+    return knockoutRects(renderedNodes.map((n) => {
+      const { w, h } = nodeSize(n);
+      const data = n.data as { isContainer?: boolean; collapsed?: boolean };
+      return { id: n.id, x: n.position.x, y: n.position.y, w, h, frame: !!data.isContainer && !data.collapsed };
+    }));
+  }, [publicationProfile, renderedNodes]);
 
   const renderedEdgeCache = useRef(new WeakMap<Edge, { key: string; edge: Edge }>());
   const renderedEdges = useMemo<Edge[]>(() => {
@@ -2617,6 +2792,7 @@ function CanvasInner() {
         />
       )}
       <EdgeMarkerDefs markers={customMarkers} />
+      {knockout && <EdgeKnockout rects={knockout} />}
       <ReactFlow
         nodes={renderedNodes}
         edges={renderedEdges}

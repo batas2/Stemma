@@ -248,7 +248,8 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
             const clones = g.querySelectorAll('path');
             for (let i = 0; i < clones.length && i < originals.length; i++) {
               const cs = getComputedStyle(originals[i]);
-              for (const prop of ['stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'fill']) {
+              // `mask` carries the publication profile's card cut-outs (B-023), defined in the copied defs.
+              for (const prop of ['stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'fill', 'mask']) {
                 const value = cs.getPropertyValue(prop);
                 if (value && value !== 'none' || prop === 'fill') clones[i].setAttribute(prop, value || 'none');
               }

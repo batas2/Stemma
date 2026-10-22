@@ -274,6 +274,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
     return (
       <BcContainer
         id={id}
+        kind={e.kind === 'softwareSystem' ? 'softwareSystem' : 'boundedContext'}
         name={e.name}
         childCount={data.childCount}
         collapsed={data.collapsed}
@@ -522,7 +523,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
 /** A context frame's header chip, sized with the frame's `textSize` so it can be read from a room. */
 const BC_CHIP_TEXT: Record<string, string> = { sm: 'text-[10px]', base: 'text-[10px]', lg: 'text-[13px]', xl: 'text-[16px]' };
 
-function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel, revealed, diff }: {
+function BcContainer({ id, kind = 'boundedContext', name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel, revealed, diff }: {
+  /** A context frames its modules; a system frames its containers — the C4 boundary (F-021). */
+  kind?: 'boundedContext' | 'softwareSystem';
   revealed?: boolean;
   diff?: 'added' | 'changed' | 'removed';
   id: string;
@@ -572,33 +575,45 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
   if (nodeStyle?.borderWidth !== undefined) bodyStyle.borderWidth = `${nodeStyle.borderWidth}px`;
   if (fill) bodyStyle.background = fill;
 
+  // A system boundary is neutral ink, not a context's violet: in C4 it is the edge of what you own,
+  // and it must not compete with the cards inside it for attention.
+  const system = kind === 'softwareSystem';
   return (
     <div
       style={bodyStyle}
       className={clsx(
         'stemma-bc-frame rounded-2xl border-2 transition-colors',
+        system && 'stemma-system-frame',
         revealed && 'stemma-reveal',
         diff === 'added' && 'ring-2 ring-emerald-500/70',
         diff === 'changed' && 'ring-2 ring-amber-500/70',
         !nodeStyle?.borderStyle && 'border-dashed',
-        !border && (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40'),
-        !fill && (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]'),
+        !border && (system
+          ? (selected ? 'border-zinc-500' : 'border-zinc-400/70 dark:border-zinc-500/60')
+          : (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40')),
+        !fill && (system
+          ? (selected ? 'bg-zinc-500/[0.07]' : 'bg-zinc-500/[0.03] dark:bg-zinc-400/[0.04]')
+          : (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]')),
       )}
     >
       <div
         style={{ pointerEvents: 'auto', ...(border ? { background: border, borderColor: border, color: '#fff' } : {}) }}
-        title={`Bounded Context: ${name}`}
+        title={`${system ? 'Software System' : 'Bounded Context'}: ${name}`}
         className={clsx(
           'absolute left-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded border cursor-pointer',
           BC_CHIP_TEXT[nodeStyle?.textSize ?? 'base'] ?? 'text-[10px]',
           nodeStyle?.textSize === 'xl' ? '-top-4' : nodeStyle?.textSize === 'lg' ? '-top-3.5' : '-top-3',
-          !border && 'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30',
+          !border && (system
+            ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 border-zinc-400/50 dark:border-zinc-600'
+            : 'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30'),
         )}
       >
-        <button onClick={(ev) => { ev.stopPropagation(); onToggle?.(); }} title="Collapse" className="nodrag">
-          <ChevronDown className="w-3 h-3" />
-        </button>
-        <Layers className="w-3 h-3 shrink-0" />
+        {onToggle && (
+          <button onClick={(ev) => { ev.stopPropagation(); onToggle(); }} title="Collapse" aria-label={`Collapse ${name}`} className="nodrag">
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        )}
+        {system ? <Server className="w-3 h-3 shrink-0" /> : <Layers className="w-3 h-3 shrink-0" />}
         {editing
           ? <NameEditor id={id} initial={name} onCommit={onCommit} onCancel={onCancel} />
           : <span className="font-medium">{name}</span>}

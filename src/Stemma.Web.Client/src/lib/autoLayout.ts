@@ -63,6 +63,16 @@ export interface HierarchicalLayoutOptions {
   rowGap?: number;
 }
 
+/**
+ * Where a card with no position of its own goes, on a view where others have one. Given the links:
+ * without them the layering can only sort by kind, and a view of seventeen containers came out as one
+ * long row with the edges drawn through the boxes (B-021). A view where no card has a position is not
+ * placed here at all — it is laid out by the layered layout (F-021).
+ */
+export function defaultArrangement(elements: ArchElement[], links: ArchLink[]): Record<string, SavedPosition> {
+  return layoutHierarchical(elements, links);
+}
+
 export function layoutHierarchical(
   elements: ArchElement[],
   links: ArchLink[],

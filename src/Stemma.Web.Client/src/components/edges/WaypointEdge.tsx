@@ -32,6 +32,14 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   onSetType?: (edgeId: string, t: RelationshipType) => void;
   /** The step a book page is on (F-020): its label is the one the room should be reading. */
   stepCurrent?: boolean;
+  /**
+   * A route the layout planned (F-021): every point from where the edge leaves its source to where it
+   * meets its target, and the box kept clear for its label. Drawn as given, instead of between the
+   * dock handles — the handles are where an unplanned edge attaches, not where a routed one does.
+   */
+  route?: { points: SavedPosition[]; label?: { x: number; y: number; w: number; h: number } };
+  /** Its ends have not been placed yet by the layout; drawn when they are, so nothing jumps. */
+  pending?: boolean;
 }
 
 /** The label layer of each canvas, found once. */
@@ -113,10 +121,32 @@ export function buildEdgePath(
   return d;
 }
 
+/**
+ * A planned route as a path: straight runs with the corners rounded a little, so an orthogonal route
+ * reads as one line turning rather than as segments meeting. The radius never exceeds half of either
+ * run it joins, so a short jog stays a jog. Exported for unit testing.
+ */
+export function routePath(points: SavedPosition[], radius = 6): string {
+  if (points.length === 0) return '';
+  let d = `M ${points[0].x},${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1], at = points[i], next = points[i + 1];
+    const inLen = Math.hypot(at.x - prev.x, at.y - prev.y);
+    const outLen = Math.hypot(next.x - at.x, next.y - at.y);
+    const r = Math.min(radius, inLen / 2, outLen / 2);
+    if (r <= 0.5) { d += ` L ${at.x},${at.y}`; continue; }
+    const a = { x: at.x - ((at.x - prev.x) / inLen) * r, y: at.y - ((at.y - prev.y) / inLen) * r };
+    const b = { x: at.x + ((next.x - at.x) / outLen) * r, y: at.y + ((next.y - at.y) / outLen) * r };
+    d += ` L ${a.x},${a.y} Q ${at.x},${at.y} ${b.x},${b.y}`;
+  }
+  const last = points[points.length - 1];
+  return points.length > 1 ? `${d} L ${last.x},${last.y}` : d;
+}
+
 const SELECT_COLOR = 'rgb(99 102 241)';
 
 /** An edge label's size in pixels, by `EdgeStyle.labelSize`. */
-const LABEL_PX: Record<EdgeLabelSize, number> = { sm: 9, base: 10, lg: 13, xl: 16 };
+export const LABEL_PX: Record<EdgeLabelSize, number> = { sm: 9, base: 10, lg: 13, xl: 16 };
 
 export function WaypointEdge({
   id,
@@ -131,12 +161,32 @@ export function WaypointEdge({
   const tPos = targetPosition ?? Position.Top;
   const baseWidth = Number(style?.strokeWidth) || 1.5;
 
+  const route = data?.route;
+  const pending = data?.pending === true;
   const path = useMemo(
-    () => buildEdgePath(routing, sourceX, sourceY, targetX, targetY, sPos, tPos, waypoints),
-    [routing, sourceX, sourceY, targetX, targetY, sPos, tPos, waypoints],
+    () => route && route.points.length > 1
+      ? routePath(route.points)
+      : buildEdgePath(routing, sourceX, sourceY, targetX, targetY, sPos, tPos, waypoints),
+    [route, routing, sourceX, sourceY, targetX, targetY, sPos, tPos, waypoints],
   );
+  // Where the ends are actually drawn: a planned route's own ends, otherwise the dock handles.
+  const ends = route && route.points.length > 1
+    ? { s: route.points[0], t: route.points[route.points.length - 1] }
+    : { s: { x: sourceX, y: sourceY }, t: { x: targetX, y: targetY } };
 
-  const labelMid = waypoints[Math.floor(waypoints.length / 2)] ?? { x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 };
+  // Under the publication profile a label has no plate, so a label sitting on its own line reads as
+  // struck through. A planned route already keeps its label beside the line; an unplanned one is set
+  // beside it here — above a line that runs across, to the right of one that runs down.
+  const publication = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-stemma-profile') === 'publication';
+  const across = Math.abs(targetX - sourceX) >= Math.abs(targetY - sourceY);
+  const labelAnchor = publication && !route?.label && waypoints.length === 0
+    ? (across ? 'translate(-50%, calc(-100% - 3px))' : 'translate(5px, -50%)')
+    : 'translate(-50%, -50%)';
+
+  const labelMid = route?.label
+    ? { x: route.label.x + route.label.w / 2, y: route.label.y + route.label.h / 2 }
+    : waypoints[Math.floor(waypoints.length / 2)] ?? { x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 };
 
   function onPathDoubleClick(ev: React.MouseEvent<SVGPathElement>) {
     if (!ev.shiftKey || !data?.onAddWaypoint) return;
@@ -144,6 +194,8 @@ export function WaypointEdge({
     data.onAddWaypoint(id, { x: pt.x, y: pt.y });
     ev.stopPropagation();
   }
+
+  if (pending) return null;
 
   return (
     <>
@@ -179,8 +231,8 @@ export function WaypointEdge({
       {/* Endpoint pins make the selected relationship's two docked ends pop. */}
       {selected && (
         <>
-          <circle cx={sourceX} cy={sourceY} r={4.5} fill={SELECT_COLOR} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
-          <circle cx={targetX} cy={targetY} r={4.5} fill={SELECT_COLOR} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+          <circle cx={ends.s.x} cy={ends.s.y} r={4.5} fill={SELECT_COLOR} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+          <circle cx={ends.t.x} cy={ends.t.y} r={4.5} fill={SELECT_COLOR} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
         </>
       )}
       <EdgeLabelLayer>
@@ -287,7 +339,7 @@ export function WaypointEdge({
         ) : label ? (
           <div
             style={{
-              position: 'absolute', transform: `translate(-50%, -50%) translate(${labelMid.x}px, ${labelMid.y}px)`,
+              position: 'absolute', transform: `translate(${labelMid.x}px, ${labelMid.y}px) ${labelAnchor}`,
               pointerEvents: data?.onEditStart ? 'all' : 'none',
               cursor: data?.onEditStart ? 'text' : undefined,
               fontSize: LABEL_PX[data?.labelSize ?? 'base'] ?? 10, padding: '1px 4px',

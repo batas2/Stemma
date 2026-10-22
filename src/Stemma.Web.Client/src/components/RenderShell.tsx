@@ -100,7 +100,10 @@ export function RenderShell({ params }: { params: RenderParams }) {
       const signature = nodes
         .map((n) => `${n.dataset.id}:${n.offsetWidth}x${n.offsetHeight}@${n.style.transform}`)
         .join('|');
-      stillFor = signature && signature === lastSignature ? stillFor + 1 : 0;
+      // A view being laid out (F-021) is not still, however long its cards sit where they are: they
+      // are waiting, unseen, for the layout, and a capture now would be of an empty canvas.
+      const laying = document.documentElement.dataset.stemmaLayout === 'pending';
+      stillFor = !laying && signature && signature === lastSignature ? stillFor + 1 : 0;
       lastSignature = signature;
 
       if (!fitRequested && nodes.length > 0 && stillFor >= VIEWPORT_STABLE_POLLS) {
