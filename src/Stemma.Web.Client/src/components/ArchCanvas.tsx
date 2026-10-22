@@ -29,6 +29,8 @@ import { WaypointEdge, LABEL_PX } from './edges/WaypointEdge';
 import { EdgeMarkerDefs, customMarkerId, type CustomMarker } from './edges/EdgeMarkerDefs';
 import { EdgeKnockout } from './edges/EdgeKnockout';
 import { knockoutRects } from '@/lib/edgeKnockout';
+import { readRenderGeometry } from '@/lib/renderGeometry';
+import { lintLayout } from '@/lib/layoutLint';
 import { LAYOUT_ACTION_EVENT, type LayoutAction } from './LayoutPanel';
 import { ShapeLayer } from './ShapeLayer';
 import { ViewHeader, viewHeaderHeight } from './ViewHeader';
@@ -2717,6 +2719,19 @@ function CanvasInner() {
       return out;
     });
   }, [allEdges, lit, litHides, readOnly, diff, compareDimRest, spotLit, stepNumber, stepState]);
+
+  // F-022: in a headless render, the geometry of what was drawn and what is wrong with it, for the
+  // renderer to write into the manifest. Read when asked — after the page has said it is ready.
+  useEffect(() => {
+    if (!currentRenderParams()) return;
+    const ends = renderedEdges.map((e) => ({ id: e.id, source: e.source, target: e.target }));
+    (window as unknown as { stemmaRender?: unknown }).stemmaRender = {
+      geometry: () => {
+        const geometry = readRenderGeometry(ends);
+        return { geometry, lint: lintLayout(geometry) };
+      },
+    };
+  }, [renderedEdges]);
 
   const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected).map((n) => n.id), [nodes]);
   const selectedCount = selectedNodeIds.length;

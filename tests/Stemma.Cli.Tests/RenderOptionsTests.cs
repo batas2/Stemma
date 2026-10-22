@@ -52,6 +52,22 @@ public sealed class RenderOptionsTests
     }
 
     [Fact]
+    public void Lint_never_changes_the_exit_code_unless_asked_and_text_is_the_default()
+    {
+        var o = Parse(Minimal);
+        o.FailOnLint.Should().BeFalse("a picture with a crossing is still a picture; failing on it is the caller's choice");
+        o.Json.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Json_and_fail_on_lint_are_flags_an_agent_can_ask_for()
+    {
+        var o = Parse([.. Minimal, "--json", "--fail-on-lint"]);
+        o.Json.Should().BeTrue();
+        o.FailOnLint.Should().BeTrue();
+    }
+
+    [Fact]
     public void Paths_are_absolute_so_the_output_does_not_depend_on_the_shell_that_launched_it()
     {
         var o = Parse("--workspace", "rel/ws", "--view", "v1", "--out", "rel/out.png");

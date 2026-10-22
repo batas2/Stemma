@@ -55,7 +55,7 @@ public static class RenderCommand
             {
                 var file = await renderer.RenderAsync(o, theme, format);
                 written.Add(file);
-                Console.WriteLine($"  {Path.GetFileName(file.Path)}  {file.Width}x{file.Height}  {file.NodeCount} nodes");
+                if (!o.Json) Console.WriteLine($"  {Path.GetFileName(file.Path)}  {file.Width}x{file.Height}  {file.NodeCount} nodes");
             }
         }
 
@@ -67,8 +67,30 @@ public static class RenderCommand
 
         if (o.Manifest) await WriteManifestAsync(o, palette, written);
 
-        Console.WriteLine($"stemma render: wrote {written.Count} file{(written.Count == 1 ? "" : "s")}");
-        return 0;
+        // The layout is the same in every theme and format; the first render speaks for all of them.
+        var lint = written.Count > 0 ? written[0].Lint : [];
+        var warnings = lint.Count(f => f.Severity == "warning");
+        var failed = o.FailOnLint && warnings > 0;
+
+        if (o.Json)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                ok = !failed,
+                view = o.View,
+                files = written.Select(f => new { path = f.Path, theme = f.Theme, format = f.Format, nodes = f.NodeCount, width = f.Width, height = f.Height }),
+                manifest = o.Manifest ? ManifestPath(o) : null,
+                lint = lint.Select(f => new { severity = f.Severity, rule = f.Rule, message = f.Message, ids = f.Ids }),
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            return failed ? 1 : 0;
+        }
+
+        // Said in rule and element ids, because those are what can be changed (F-022).
+        foreach (var f in lint)
+            Console.WriteLine($"  {f.Severity,-7} {f.Rule,-28} {f.Message}");
+        var said = warnings == 0 ? "" : $" · {warnings} layout warning{(warnings == 1 ? "" : "s")}";
+        Console.WriteLine($"stemma render: wrote {written.Count} file{(written.Count == 1 ? "" : "s")}{said}");
+        return failed ? 1 : 0;
     }
 
     private static string ManifestPath(RenderOptions o) =>
@@ -95,6 +117,10 @@ public static class RenderCommand
             scale = o.Scale,
             source = new { hash = fp.Hash, elements = fp.Elements, links = fp.Links, viewMembers = fp.ViewMembers },
             files = files.Select(f => new { path = Path.GetFileName(f.Path), theme = f.Theme, format = f.Format, nodes = f.NodeCount, width = f.Width, height = f.Height, hasAlpha = f.HasAlpha }),
+            // What was drawn and what is wrong with it (F-022). Not part of the fingerprint: both follow
+            // from what the fingerprint covers, so --check needs neither.
+            lint = files.Count > 0 ? files[0].Lint.Select(f => new { severity = f.Severity, rule = f.Rule, message = f.Message, ids = f.Ids }) : null,
+            geometry = files.Count > 0 ? files[0].Geometry : null,
         };
         Directory.CreateDirectory(Path.GetDirectoryName(o.Output)!);
         await File.WriteAllTextAsync(ManifestPath(o), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));

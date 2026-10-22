@@ -352,6 +352,7 @@ export function WaypointEdge({
               opacity: style?.opacity,
             }}
             className={data?.stepCurrent ? 'stemma-edge-label' : 'stemma-edge-label dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700'}
+            data-edge-id={id}
             title={data?.onEditStart ? 'Double-click to edit' : undefined}
             onDoubleClick={data?.onEditStart ? (ev) => { ev.stopPropagation(); data.onEditStart?.(id); } : undefined}
           >

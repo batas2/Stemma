@@ -462,6 +462,8 @@ stemma render --workspace <path> --view <id> --out <file> [options]
   --scale 1-4                   device pixel multiplier; default 2
   --pad <px>                    padding around the content; default 24
   --check                       do not render; report whether the image is still current
+  --json                        print the result — files, sizes, layout findings — as one JSON document
+  --fail-on-lint                exit 1 when the layout lint warns; the image is written either way
 ```
 
 A single theme and format keeps the filename exactly as given. Two themes suffix it, which is the
@@ -470,6 +472,32 @@ pair a `<picture>` element expects.
 Each render writes a sibling `<name>.manifest.json` with a fingerprint of everything that decides
 what the picture looks like. `--check` re-computes it and exits non-zero when the image no longer
 matches the model — which is the whole "a diagram cannot lie" claim, extended past the app window.
+
+### What the render tells you about the picture
+
+You cannot reliably see a crossing in a PNG, and neither can the model reading it. The renderer can:
+every render measures what it drew and says what is wrong with it, in rule and element ids
+([F-022](../features/F-022-render-geometry-and-layout-lint.md)):
+
+```
+  warning layout/edge-through-node     flow_pay_stripe passes through cnt_bus
+  warning layout/label-overlap         the labels of flow_dispatch_db and flow_bus_notify overlap
+  info    layout/crossings             edges cross 3 times
+stemma render: wrote 1 file · 2 layout warnings
+```
+
+| Rule | Severity | What to do |
+|---|---|---|
+| `layout/node-overlap` | warning | Two boxes on top of each other. Move one, or let `layered` place them. |
+| `layout/edge-through-node` | warning | A line crosses a box that is neither of its ends. Usually a grid or row whose relationships do not follow it: switch the view to `layered`, or reorder. |
+| `layout/label-overlap` | warning | A label covers another label or a box. |
+| `layout/edge-hidden` | warning | A line runs along another for most of its length and cannot be told apart — a back edge in a row. |
+| `layout/crossings` | info → warning | How many times lines cross; a warning when there are more crossings than lines. |
+
+The manifest carries the same findings under `lint`, and under `geometry` every box, frame, line and
+label in flow units — the picture as numbers, for anything that wants to check it further. Neither is
+part of the fingerprint `--check` compares. Look at the image after the lint is clean, not instead of
+running it.
 
 Rendering runs a short-lived backend of its own, so it never disturbs a workspace you have open,
 and it leaves the app's list of recent workspaces alone. (Any backend started with `--recents off`,
