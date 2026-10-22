@@ -123,6 +123,17 @@ describe('editing a view stated by rule (F-023 AC7)', () => {
     expect(v.exclude).toBeUndefined();
   });
 
+  it('takes an element listed by hand off the list without excluding it, though the view has a scope', () => {
+    useApp.setState({
+      customViews: [{ ...ruled, include: null, elementIds: ['per_admin'], members: ['sys_p', 'per_admin'], provenance: { sys_p: 'lens', per_admin: 'elementIds' } }],
+      activeCustomViewId: 'v',
+    });
+    useApp.getState().removeElementFromActiveView('per_admin');
+    const v = useApp.getState().customViews[0];
+    expect(v.elementIds).toEqual([]);
+    expect(v.exclude).toBeUndefined();
+  });
+
   it('adding an excluded element back takes it out of Exclude and draws it at once', () => {
     useApp.setState({ customViews: [{ ...ruled, exclude: ['cnt_a'], members: ['sys_p', 'cnt_b', 'per_x'] }], activeCustomViewId: 'v' });
     useApp.getState().addElementToActiveView('cnt_a');

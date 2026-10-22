@@ -112,7 +112,7 @@ import { friendlyOpError } from '@/lib/opError';
 import { relink } from '@/lib/relink';
 import { applyOrSay } from '@/lib/applyOp';
 import { confirmAndRemoveElements } from './removeElements';
-import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewLayered, saveViewConstraint, loadViewOffsets, saveViewOffset, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
+import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewLayered, saveViewConstraint, loadViewOffsets, saveViewOffset, clearViewOffsets, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
 import { loadNote, loadNotes, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
@@ -903,6 +903,9 @@ function CanvasInner() {
   // Read off React Flow's own `measured` rather than the DOM: no query, no timer, and it is already
   // the number the canvas laid out with.
   const measuredSizesRef = useRef<Record<string, { w: number; h: number }>>({});
+  // Bumped when a measurement changes, so the layered layout re-asks ELK for a new size — and not for
+  // every drag frame and selection, which change the cards but not what ELK is given.
+  const [sizesVersion, setSizesVersion] = useState(0);
   useEffect(() => {
     let changed = false;
     const next = { ...measuredSizesRef.current };
@@ -914,7 +917,7 @@ function CanvasInner() {
       next[n.id] = { w, h };
       changed = true;
     }
-    if (changed) measuredSizesRef.current = next;
+    if (changed) { measuredSizesRef.current = next; setSizesVersion((v) => v + 1); }
   }, [nodes]);
 
   // ---- Layered layout (F-021, ADR-0025). A view with a `layered` constraint — or a view nobody has
@@ -988,7 +991,7 @@ function CanvasInner() {
         }));
         setToast({ kind: 'error', text: 'This view could not be laid out automatically, so it is shown unarranged.' });
       });
-  }, [layered, nodes, filtered, hiddenIds, edgeStyles, aboutRels, impliedEdges, layoutKey, layeredSolved, layeredFailed, setToast]);
+  }, [layered, sizesVersion, filtered, hiddenIds, edgeStyles, aboutRels, impliedEdges, layoutKey, layeredSolved, layeredFailed, setToast]);
 
   const layeredHere = layered && layeredSolved?.viewKey === String(layoutKey) ? layeredSolved.result : null;
   const layeredGaveUp = !!layered && layeredWant !== null && layeredFailed === layeredWant;
@@ -1737,10 +1740,23 @@ function CanvasInner() {
     };
   }, [clipOf, selectedForCopy, pasteClip, screenInFlow, screenToFlowPosition, layoutKey, setToast, getNodes]);
 
-  const persistPositions = useCallback((next: Node[]) => {
+  const persistPositions = useCallback((next: Node[], opts?: { replacesLayout?: boolean }) => {
     if (!workspace) return;
     const key = String(layoutKey);
     const lay = layeredRef.current;
+    if (lay && opts?.replacesLayout) {
+      // A generator — force, hierarchical, by type — replaces the arrangement rather than nudging it (Q6):
+      // the view leaves its layered layout and keeps what was just drawn as positions. Recorded as nudges,
+      // the generator's picture would have sat on top of ELK's and jumped with it at the next re-solve.
+      if (!lay.implicit) saveViewConstraint(workspace.rootPath, key, null);
+      clearViewOffsets(workspace.rootPath, key);
+      layeredRef.current = null;
+      const positions: Record<string, SavedPosition> = {};
+      for (const n of next) positions[n.id] = { x: n.position.x, y: n.position.y };
+      saveLayout(workspace.rootPath, layoutKey as ViewKind, positions);
+      setSidecarTick((t) => t + 1);
+      return;
+    }
     if (lay) {
       // A layered view keeps its layout and records the nudge (ADR-0025, the Q6 contract). On a view
       // laid out by default, the first nudge makes the default the committed arrangement, so what the
@@ -2429,7 +2445,7 @@ function CanvasInner() {
       }
       const next = current.map((n) => ({ ...n, position: fresh[n.id] ?? n.position }));
       setNodes(next);
-      persistPositions(next);
+      persistPositions(next, { replacesLayout: true });
       recordArrangement(current, next, `${LAYOUT_LABEL[algo][0].toUpperCase()}${LAYOUT_LABEL[algo].slice(1)} layout`);
       setTimeout(() => fitWholeView(paddingUnderHeader(0.2), 600), 50);
     }
