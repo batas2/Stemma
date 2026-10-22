@@ -639,7 +639,7 @@ function BcContainer({ id, kind = 'boundedContext', name, childCount, collapsed,
         {editing
           ? <NameEditor id={id} initial={name} onCommit={onCommit} onCancel={onCancel} />
           : <span className="font-medium">{name}</span>}
-        {childCount !== undefined && childCount > 0 && <span className="opacity-80">· {childCount}</span>}
+        {childCount !== undefined && childCount > 0 && <span className="stemma-bc-count opacity-80">· {childCount}</span>}
         {diff && diff !== 'removed' && (
           <span className={clsx('ml-1 px-1.5 rounded-full font-semibold', diff === 'added' ? 'bg-emerald-700 text-white' : 'bg-amber-500 text-stone-900')}>
             {diff === 'added' ? 'New' : 'Changed'}

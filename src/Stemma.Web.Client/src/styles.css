@@ -363,6 +363,14 @@
   color: var(--pub-text) !important;
 }
 [data-stemma-profile='publication'] .stemma-bc-count { display: none !important; }
+/* The frame's name sits inside the frame, not straddling its line: with no plate behind it, the dashed
+   line ran through the name. The frame keeps a header's height of room for it (FRAME_HEADER). */
+[data-stemma-profile='publication'] .stemma-bc-frame > div:first-child {
+  top: 6px !important;
+  border: none !important;
+  padding-left: 2px !important;
+}
+[data-stemma-profile='publication'] .stemma-bc-frame > div:first-child button { display: none !important; }
 [data-stemma-profile='publication'] .stemma-bc-header *,
 [data-stemma-profile='publication'] .stemma-bc-frame > div:first-child {
   background: none !important;

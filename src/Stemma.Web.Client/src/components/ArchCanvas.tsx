@@ -211,6 +211,13 @@ function boundingBox(kids: Node[]): { x: number; y: number; w: number; h: number
 
 type Box = { x: number; y: number; w: number; h: number };
 
+/** The smallest box holding both; the first alone when there is no second. */
+function unionBox(a: Box, b?: Box): Box {
+  if (!b) return a;
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
 /** Bounding boxes of every Bounded Context that owns modules, keyed by BC id. `excludeId`
  *  drops one node from the calculation (used while dragging it out of its own box). */
 function bcBoxes(nodes: Node[], excludeId?: string): Map<string, Box> {
@@ -2565,7 +2572,9 @@ function CanvasInner() {
           // A system boundary does not fold: its containers are the picture.
           const isSystem = el.kind === 'softwareSystem';
           const collapsed = !isSystem && collapsedBcs.has(el.id);
-          const box = boundingBox(kids);
+          // On a layered view the frame ELK planned also holds the labels routed inside it; drawn from
+          // the cards alone, a label near the edge sat on the boundary line.
+          const box = unionBox(boundingBox(kids), layeredHere?.frames[el.id]);
           const data = { ...n.data, isContainer: true, childCount: kids.length, collapsed, onToggleCollapse: isSystem ? undefined : () => toggleBcCollapsed(el.id) };
           // Collapsed → compact card at the cluster's top-left (no size override), modules hidden.
           // Expanded → full container sized to the children's bounding box. Draggable either way.
@@ -2583,7 +2592,7 @@ function CanvasInner() {
     }
     // Containers first so the contained modules paint (and receive clicks) on top of them.
     return [...containers, ...rest];
-  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, lit, litHides, systemFrames]);
+  }, [nodes, view, activeCustomView, collapsedBcs, toggleBcCollapsed, lit, litHides, systemFrames, layeredHere]);
 
   // ---- What changed (F-017). Comparing, a changed card wears a mark, what did not change fades, and
   // what was removed is drawn as a ghost where it used to sit — in the canvas's own coordinates but
