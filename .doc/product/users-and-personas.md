@@ -55,6 +55,25 @@ today, the picture half is not. The gap analysis and the decisions behind the wo
 > render, layout as data, output that can be checked — is something Aria and Devin benefit from the
 > moment they want a diagram in a document rather than on a screen.
 
+## Building, with a human in the loop — The Architect's Agent ("Theo")
+
+A coding agent in the architect's own repository, asked for an architecture rather than a figure.
+
+- **Job-to-be-done:** turn a prompt, an existing codebase, or both into a typed model of fifteen to
+  forty elements, views of it, and the rules it must satisfy; check its own work; hand it to a human who
+  reviews and presents it in Stemma.
+- **Needs:** a picture that is laid out and routed without coordinates; views stated as intent (a
+  scope, a rule) rather than lists; a way to write down what must hold and be told when it does not;
+  to be told what is wrong with the picture in words, not pixels; to know where the model and the code
+  disagree.
+- **Cannot:** judge crossings or overlaps reliably from an image; place forty boxes by hand.
+- **Fails when:** the first render is unreadable, or a constraint the architect stated is invisible to
+  every check.
+- **Stemma for Theo:** the Claude Code plugin's skill and hook; `Architecture/`, `Views/` with C4 lenses
+  and selectors, `Rules/`; `validate`, `render` with its lint, `inspect` and `scan`.
+
+The audit and the programme are in [`agent-architecture-workflow.md`](./agent-architecture-workflow.md).
+
 ## Consuming — Non-technical stakeholders ("Priya", product/exec/security/compliance)
 
 - **Job-to-be-done:** understand capability maps, decisions, and governance overlays without
@@ -70,6 +89,7 @@ today, the picture half is not. The gap analysis and the decisions behind the wo
 | Data Architect | Relationships, ownership, data flow | `architecture/domain-model.md` |
 | Senior Engineer | Onboarding speed, conventions | `architecture/`, `engineering/` |
 | Essayist's Agent | Authorable format, headless output | `agent-authored-diagrams.md`, `architecture/domain-model.md` |
+| Architect's Agent | A picture without coordinates, checks of the design, conformance | `agent-architecture-workflow.md`, `protocol/` |
 | Stakeholder | Clarity of the projected view | `ux/`, `ui/` |
 
 When writing a feature spec, name **which persona** it serves and **which view/perspective** it

@@ -1,7 +1,7 @@
 # Roadmap
 
 > Horizon framing, not date commitments. "Now" = built and in the product. "Next" = committed and
-> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-10-21**.
+> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-10-22**.
 
 ## Now — shipped and load-bearing
 
@@ -39,6 +39,16 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Presenting, finished** (*built 2026-10-21*) — a presenter view on a second screen
   ([F-019](../features/F-019-presenter-view.md)) and flows played one arrow at a time
   ([F-020](../features/F-020-flow-steps.md)), the two pieces F-013 deferred.
+- **Agent-built architecture, reviewed in Stemma** (*in progress 2026-10-22*) — what a coding agent needs
+  to build an architecture from a prompt as fluently as in Mermaid, and the human to check and present
+  it: layered layout with routed edges as the default ([F-021](../features/F-021-layered-layout-and-routed-edges.md)),
+  a render that reports what is wrong with the picture ([F-022](../features/F-022-render-geometry-and-layout-lint.md)),
+  C4 lenses and views by rule ([F-023](../features/F-023-c4-views-and-views-by-rule.md)), architecture rules
+  as code ([F-024](../features/F-024-architecture-rules-as-code.md)), conformance with the implementation
+  ([F-025](../features/F-025-conformance-with-the-implementation.md)), and a Claude Code plugin
+  ([F-026](../features/F-026-stemma-for-claude-code.md)); the audit's bugs B-021…B-026 first. Serves the
+  **Architect's Agent** persona; the audit, research and decisions are in
+  [`agent-architecture-workflow.md`](./agent-architecture-workflow.md).
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
 - **Release follow-ups** ([F-012](../features/F-012-first-release.md) §9, [B-017](../bugs/B-017-new-model-left-uncommitted-where-git-knows-nobody.md)) — the start screen shows nothing when the new model could not be made a repository (`gitInitialised`/`gitError` are returned and ignored); MSBuild loaded from the SDK (`ExcludeAssets="runtime"`) instead of shipped, which clears the NU1903 advisory; packages for macOS and Windows once someone can try the window there; AppImage only if asked for.
 - **Sample gallery** — curated demo workspaces (today `samples/AuroraRail` and `samples/StemmaArchitecture`) that exercise every feature as living documentation.
