@@ -363,10 +363,32 @@
   color: var(--pub-text) !important;
 }
 [data-stemma-profile='publication'] .stemma-bc-count { display: none !important; }
+/* The frame's name sits inside the frame, not straddling its line: with no plate behind it, the dashed
+   line ran through the name. The frame keeps a header's height of room for it (FRAME_HEADER). */
+[data-stemma-profile='publication'] .stemma-bc-frame > div:first-child {
+  top: 6px !important;
+  border: none !important;
+  padding-left: 2px !important;
+}
+[data-stemma-profile='publication'] .stemma-bc-frame > div:first-child button { display: none !important; }
 [data-stemma-profile='publication'] .stemma-bc-header *,
 [data-stemma-profile='publication'] .stemma-bc-frame > div:first-child {
   background: none !important;
   color: var(--pub-text) !important;
+}
+
+/* B-023 — publication cards have no fill, so the edge layer has them cut out (EdgeKnockout): a line
+   that passes beneath a card is not drawn across its name. */
+[data-stemma-profile='publication'] .react-flow__edge-path {
+  mask: url(#stemma-knockout);
+}
+
+/* F-021 — a card the layered layout has not placed yet: measured (so the layout can be solved for
+   its real size) but not shown and not clickable, so a view never opens in one arrangement and jumps
+   to another a moment later. */
+.react-flow__node.stemma-layout-pending {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Edge labels: the plate is a readability aid over a canvas whose background is known. On a

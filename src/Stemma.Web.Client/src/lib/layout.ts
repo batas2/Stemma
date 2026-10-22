@@ -2,6 +2,7 @@ import type { ViewKind } from './types';
 import { reportFailure, ClientEvent } from './log';
 import { beforeLeavingWorkspace, fetchLayout, patchLayoutSidecar, type SidecarChange } from './api';
 import { isLayoutConstraint, type LayoutConstraint, type LayoutOffsets } from './layoutDsl';
+import { isLayeredConstraint, type LayeredConstraint } from './layeredLayout';
 
 export interface SavedPosition { x: number; y: number; }
 
@@ -553,7 +554,34 @@ export function loadViewConstraint(rootPath: string, viewKey: string): LayoutCon
   return isLayoutConstraint(raw) ? raw : null;
 }
 
-export function saveViewConstraint(rootPath: string, viewKey: string, constraint: LayoutConstraint | null): void {
+/**
+ * The layered constraint governing a view, if it has one (F-021). Kept apart from the others because
+ * it is solved asynchronously, by ELK, and governs every node in the view rather than the ones it names.
+ */
+export function loadViewLayered(rootPath: string, viewKey: string): LayeredConstraint | null {
+  if (sidecarCache?.rootPath !== rootPath) return null;
+  const raw = sidecarCache.sidecar.views?.[viewKey]?.layout;
+  return isLayeredConstraint(raw) ? raw : null;
+}
+
+/**
+ * Whether a view is laid out in layers (F-021, ADR-0025): by its own `layered` constraint, or by default
+ * when nobody has arranged it — no constraint, and no saved position for any card it draws. Null when the
+ * view is arranged some other way, or before the sidecar is read, when "no saved position" means "not read
+ * yet". The canvas lays a view out by this, and anything that places a new card asks it first: a position
+ * written into a view laid out by default would take the whole view off its layout.
+ */
+export function viewLayered(rootPath: string, viewKey: string, drawn: Iterable<string>): { constraint: LayeredConstraint; implicit: boolean } | null {
+  if (!isSidecarPrimed(rootPath)) return null;
+  const explicit = loadViewLayered(rootPath, viewKey);
+  if (explicit) return { constraint: explicit, implicit: false };
+  if (loadViewConstraint(rootPath, viewKey)) return null;
+  const saved = loadLayout(rootPath, viewKey);
+  for (const id of drawn) if (saved[id]) return null;
+  return { constraint: { kind: 'layered' }, implicit: true };
+}
+
+export function saveViewConstraint(rootPath: string, viewKey: string, constraint: LayoutConstraint | LayeredConstraint | null): void {
   if (typeof window === 'undefined') return;
   const next = constraint ? structuredClone(constraint) : undefined;
   editSidecar(rootPath, ['views', viewKey, 'layout'], () => next);

@@ -95,11 +95,11 @@ which in an SDK-style project duplicates the glob, so it is put back (unless the
 | `RenameElement` | the name literal; the variable, where it follows the name, and its uses inside `Build()` — unless the new variable name is taken, when the old one is kept | `ElementNotFound`, `NotAnElement` (a link has no name), `NotALiteral` |
 | `RemoveElement`, `RemoveLink` | the declaration's lines, every `Tag.For` naming its variable (and the `Model.Of` entry of a local holding one), and its `Model.Of` entry. Links, `aboutId`s and views that name it by id are left: they are references, the UI tells the user they are detached, and `stemma validate` reports them | `RemoveFailed` |
 | `SetElementContext` | the `contextId` argument of a Module or Capability | `ElementNotFound`, `NotNestable`, `ContextNotFound`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
-| `SetElementAttribute` | one constructor argument the kind has (`aboutId` on a Risk, `role` on a Person) | `ElementNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
-| `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`) | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
+| `SetElementAttribute` | one constructor argument the kind has (`aboutId` on a Risk, `role` on a Person; `description` on a Person, SoftwareSystem or Container and `technology` on a Container, [ADR-0027](./decisions/0027-description-and-technology.md)). A missing one is added by position only when every argument before it is written positionally; otherwise by name — `Technology:` on a container written without its `kind` | `ElementNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
+| `SetLinkAttribute` | one constructor argument of a link (`payload`, `direction`, `kind`, `label`; `technology` on a DataFlow), added the same way | `LinkNotFound`, `UnknownAttribute`, `AttributeRequired`, `NotALiteral`, `RewriteFailed` |
 | `SetLifecycle` | the fields inside `new Lifecycle(...)` in the element's `Tag.For` — a statement of its own, or a local's value (`var tag = Tag.For(...)`); a new `Tag.For` after the declaration when there is none; an emptied lifecycle is removed, and an emptied tag with it, a local's `Model.Of` entry included | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
 | `SetOwnership` | `Squad` and `Domain` inside `new Ownership(...)`. RAPID roles are not part of the operation and are not touched | `SetTagFailed`, `UnreadableTag`, `NotALiteral` |
-| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, and the redo of an add, re-declaring it with its own id before `return` — in the model file it came from, with its lifecycle, squad and domain, under a variable name nothing else declares | — |
+| `RestoreElement`, `RestoreLink` | internal: the fallback undo of a removal, and the redo of an add, re-declaring it with its own id before `return` — in the model file it came from, with its attributes (a technology or description after an argument it lacks written by name), lifecycle, squad and domain, under a variable name nothing else declares | — |
 
 An id `AddElement` or `AddLink` generates (`mod_001`, `flow_001`) is one nothing names: no model file
 declares it or holds it as an argument (a link's end, a context, what a risk is about), no view lists
@@ -141,13 +141,20 @@ nested type and a top-level one, which the model names alike.
 ### Views (`Views/*.cs`)
 
 Saved and deleted through `PUT` / `DELETE /api/workspace/views`, which call
-`StemmaEngine.SaveViewAsync` / `RemoveViewAsync`. A view is found by reading the id its `Define()`
+`StemmaEngine.SaveViewAsync` / `RemoveViewAsync`; listed by `GET`, each with what it draws as
+`ViewProjection` resolves it (the shape is in [`data-flow-and-sync.md`](./data-flow-and-sync.md)), and
+the draw.io export of a view takes the same members. A view is found by reading the id its `Define()`
 declares, never by searching file text. Before either, the workspace catches up with files a pull
 added or deleted ([B-015](../bugs/B-015-outside-changes-to-the-set-of-files-are-missed.md)): a new
 file is taken in when its project compiles it — by the project's evaluation, so one kept out with
 `<Compile Remove>` stays out — and the walk never enters `bin`, `obj`, `node_modules`, `.git` or
 another dot-folder. The watcher takes a file in by the same rule. Saving edits the name, the lens and the member ids in place
-— in whatever form the file writes them — and keeps the file and class names; a new view gets a file
+— in whatever form the file writes them — and keeps the file and class names. The scope, includes and excludes
+([ADR-0026](./decisions/0026-views-by-rule.md)) are edited the same way, each where it stands: one the save leaves
+null is kept exactly as written, so a save that only changed the members keeps the rules; a scope of `""` is removed
+(or becomes `null` when a positional rule follows it); a missing one is appended by name, and so are member ids a
+rule-based view did not list. An emptied `new[] { … }` becomes `[]`. A new view's file writes the scope and rules only
+when they are set, and no empty member list beside them; a new view gets a file
 no other file or class is named after, in the namespace `Architecture.cs` declares — or, when it declares
 none, the project's name made into a C# one (`my-arch` → `my_arch`). Refuses `ViewNotFound`, `UnreadableView`. Not on the undo
 stack: the client keeps the views list and would not hear about an undo.
@@ -187,6 +194,30 @@ workspace; the second parses the model files at a revision with `DslReader` and 
 `ArchModelMerge`, the rule the live read uses, and returns the sidecar as it was then. A revision is
 refused unless it is shaped like one — no leading `-`, no `..`, a short safe alphabet — and every
 argument goes through `ArgumentList`, never a shell. Nothing is written or cached.
+
+### Rules (`Rules/*.cs`, read only)
+
+The engine reads a workspace's architecture rules and never writes them: there is no operation on a
+rules file, and none is planned ([ADR-0028](./decisions/0028-architecture-rules-as-code.md)). Rules are
+read off the syntax tree — `DeclaredRules`, from every `.cs` file in a folder named `Rules`, found by the
+view files' rule — and never compiled or run. They are read from disk each time the violations are
+asked for, which the canvas does every second and a half; a file is parsed again only when its time or
+length changes, so an edit made outside Stemma shows on the canvas at the next poll without the watcher.
+`RuleEngine.Default(root)` runs them beside the built-in rules (`WorkspaceRules`): each declared rule under
+its own id, evaluated by `DeclaredRuleEvaluator` as a pure function of the model and the selector scope;
+one rule per kind of mistake in the files; and the C4 pack when a file asks for it (`C4Pack`). The same
+engine is what `GET /api/workspace/violations` and `stemma validate` run, and `stemma.rules.json` applies
+to all of it by id.
+
+When the rules map elements to code (`Code.At`, `Code.Map`), `ConformanceCheck` compares the model with
+the project graph ([ADR-0029](./decisions/0029-conformance-against-the-implementation.md)). `ProjectGraph`
+reads `.csproj` files as XML with `System.Xml.Linq` and nothing else — no MSBuild evaluation, no
+`MSBuildLocator`, no SDK — resolving each `ProjectReference` against the referencing project's folder;
+conditions are not followed and imports are not read, except that a project naming no target framework
+takes the nearest `Directory.Build.props`'s. Its walk never enters `bin`, `obj`, `node_modules`, `.git` or a
+dot-folder. A project file is parsed again only when its time or length changes, so the poll walks the
+tree and parses nothing that has not changed. Results are violations like any rule's, recomputed on
+every ask and never stored.
 
 ### The comments (`comments.stemma.json`)
 
@@ -261,7 +292,9 @@ An outside edit is taken in without being written back
 | DSL read / write | `Stemma.Engine/ArchModel/DslReader.cs`, `DslWriter.cs`; constructor shapes in `DslVocabulary.cs` |
 | List and trivia edits | `Stemma.Engine/ArchModel/SeparatedEdits.cs` |
 | Type operations' syntax edits | `Stemma.Engine/Operations/TypeWriter.cs` |
-| Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` |
+| Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` (read, edit, new files); `ViewProjection.cs` (what a view draws: members, implied links, problems) and `Selectors.cs` (the selector language), both pure functions of the model |
+| Architecture rules (read only) | `Stemma.Engine/Validation/DeclaredRules.cs` (the reader), `DeclaredRuleEvaluator.cs` (what each says), `C4Pack.cs`, `WorkspaceRules.cs` (how they join the `RuleEngine`) |
+| Conformance with the code | `Stemma.Engine/Conformance/ProjectGraph.cs` (project files as XML), `ConformanceCheck.cs` (the comparison) |
 | Undo | `Stemma.Engine/Workspace/UndoStack.cs` |
 | Presentation sidecar | `Stemma.Engine/Workspace/LayoutSidecar.cs` (typed reading), `SidecarPatch.cs` (writing) |
 | Operation polymorphism | `Stemma.Engine/Operations/Operations.cs` |

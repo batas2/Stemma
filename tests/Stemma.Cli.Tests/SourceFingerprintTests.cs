@@ -234,4 +234,29 @@ public sealed class SourceFingerprintTests : IDisposable
         fp.ViewMembers.Should().Be(2);
         fp.Hash.Should().HaveLength(16, "long enough to not collide, short enough to read in a diff");
     }
+
+    [Fact]
+    public void A_view_by_rule_is_fingerprinted_by_what_its_rule_selects()
+    {
+        // It lists no ids: fingerprinted by its list, it had no members, and a change to what its rule
+        // selects went unnoticed though it changed the picture.
+        Model(TwoModules);
+        Directory.CreateDirectory(Path.Combine(_root, "Views"));
+        void RuleView(string include) => File.WriteAllText(Path.Combine(_root, "Views", "V.cs"), $$"""
+            using Stemma.Model;
+            namespace Probe;
+            public static class V
+            {
+                public static View Define() => new(Id: "view_v", Name: "V", BaseView: "all", Include: new[] { "{{include}}" });
+            }
+            """);
+        RuleView("kind:module");
+        var all = SourceFingerprint.For(_root, "view_v", "publication", "dual-theme");
+
+        RuleView("kind:module[name=A]");
+
+        all.ViewMembers.Should().Be(2);
+        SourceFingerprint.For(_root, "view_v", "publication", "dual-theme").ViewMembers.Should().Be(1);
+        Hash().Should().NotBe(all.Hash);
+    }
 }

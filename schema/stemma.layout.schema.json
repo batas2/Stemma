@@ -221,11 +221,11 @@
             "hierarchical",
             "byType"
           ],
-          "description": "How the view is arranged. 'custom' means the stored `nodes` positions are authoritative; the others re-run on open and overwrite them. Absent means 'custom'."
+          "description": "The Layout panel's last choice for this view, so its sliders and Re-apply button come back as they were. It is not an instruction: the generators run only when the panel asks, and bake their positions into `nodes` (B-022). For an arrangement Stemma keeps solving, write a `layout` constraint — `{ \"kind\": \"layered\" }` for an architecture. Absent means 'custom'."
         },
         "layout": {
           "$ref": "#/$defs/layoutConstraint",
-          "description": "A declarative arrangement, solved to coordinates on open. Governs only the ids it names; everything else keeps its `nodes` position. Unlike `layoutMode`, this stays live: a drag records an entry in `offsets` rather than replacing the constraint."
+          "description": "A declarative arrangement, solved to coordinates on open. A grid, row, column or stack governs only the ids it names, and everything else keeps its `nodes` position; `layered` governs the whole view. Unlike `layoutMode`, this stays live: a drag records an entry in `offsets` rather than replacing the constraint. A view with no `layout` and no position for any of its members is laid out as `{ \"kind\": \"layered\" }`."
         },
         "offsets": {
           "type": "object",
@@ -878,8 +878,73 @@
       ]
     },
     "layoutConstraint": {
-      "description": "Layout as intent rather than pixels. Only deterministic arrangements belong here: re-solving must give the same picture, which is why the iterative auto-layouts (force, hierarchical, byType) are `layoutMode` generators that bake coordinates instead.",
+      "description": "Layout as intent rather than pixels. Only deterministic arrangements belong here: re-solving must give the same picture, which is why the iterative auto-layouts (force, hierarchical, byType) are `layoutMode` generators that bake coordinates instead. `layered` is solved by ELK with its version pinned and its input in model order, so it is deterministic too (ADR-0025).",
       "oneOf": [
+        {
+          "title": "layered",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": true,
+          "description": "The whole view laid out in layers that follow its relationships, every edge routed around the boxes with its label kept clear (F-021). Nodes and edges are taken in the order the model declares them, which breaks ties.",
+          "properties": {
+            "kind": {
+              "const": "layered"
+            },
+            "direction": {
+              "enum": [
+                "down",
+                "right",
+                "up",
+                "left"
+              ],
+              "description": "Which way the flow runs. Default down."
+            },
+            "spacing": {
+              "description": "Gap between boxes in a layer and between layers, in flow units: one number for both, or [between boxes, between layers]. Default [48, 72].",
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              ]
+            },
+            "first": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Ids pinned to the first layer."
+            },
+            "last": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Ids pinned to the last layer — external systems, usually."
+            },
+            "groups": {
+              "type": "boolean",
+              "description": "Lay out a bounded context around its modules and a software system around its containers, and draw the system's boundary, when the parent and a child are both in the view. Default true."
+            },
+            "routing": {
+              "enum": [
+                "orthogonal",
+                "polyline",
+                "spline"
+              ],
+              "description": "How edges are routed. Default orthogonal."
+            }
+          }
+        },
         {
           "title": "grid",
           "type": "object",

@@ -109,32 +109,48 @@ public static class WorkspaceScaffold
 
           A brief for whoever edits these files by hand — including an agent that will never see the
           canvas. The full reference is `.doc/protocol/authoring-a-diagram.md` in the Stemma
-          repository; everything below is the part you cannot get wrong.
+          repository; with Claude Code, the Stemma plugin carries it (`/plugin marketplace add
+          batas2/Stemma`, then `/plugin install stemma@stemma`). Everything below is the part you
+          cannot get wrong.
 
           **`Architecture/Architecture.cs` says what exists. `Views/<Name>.cs` says what one picture
-          is about. `stemma.layout.json` says how it is arranged.** Nothing else is required — this
-          workspace has no project file and opens without the .NET SDK.
+          is about. `Rules/<Name>.cs` says what must hold. `stemma.layout.json` says how it is
+          arranged** — and you rarely need it. Nothing else is required: this workspace has no project
+          file and opens without the .NET SDK.
 
           ## The model
 
           One `public static Model Build()`, read off the syntax tree by name: one `var` per element,
-          one per link, all collected into `Model.Of(...)`.
+          one per link, all collected into `Model.Of(...)`. Declare in reading order — people, front
+          ends, services, stores, neighbours — because the layout breaks ties by declaration order.
 
           ```csharp
-          var api = new Container("cnt_api", "Booking API", "sys_platform", "service");
-          var store = new Container("cnt_store", "Booking Store", "sys_platform", "db");
-          var persist = new DataFlow("flow_persist", "cnt_api", "cnt_store", "order");
+          var api = new Container("cnt_api", "Booking API", "sys_platform", "service", Technology: ".NET 8", Description: "Takes bookings");
+          var store = new Container("cnt_store", "Booking Store", "sys_platform", "db", Technology: "PostgreSQL");
+          var persist = new DataFlow("flow_persist", "cnt_api", "cnt_store", "bookings", Technology: "SQL");
 
           return Model.Of(api, store, persist);
           ```
 
           Elements: `Person`, `SoftwareSystem`, `Container`, `BoundedContext`, `Module`,
           `Capability`, `UseCase`, `Question`, `Assumption`, `Risk`, and `Concept`. Links:
-          `DataFlow`, `Dependency`, `Relation`.
+          `DataFlow`, `Dependency`, `Relation`. People, systems and containers take a `Description`;
+          containers and data flows a `Technology`.
 
           `Concept` is the one to understand first. Every other kind claims something — "this is a
           bounded context", "this is deployable". A box in an argument claims nothing, and forcing it
           into `Module` writes a falsehood into a file other people will copy from.
+
+          ## Views
+
+          State a view by its scope, not by listing ids: `BaseView: "container", Scope: "sys_platform"`
+          draws the system as a boundary around its containers with everything they talk to;
+          `"systemContext"` draws the system and its neighbours. Shape a view with `Include` and
+          `Exclude` selectors (`"sys_platform.*"`, `"->cnt_api->"`). `stemma inspect --view <id>` shows
+          what a view selected.
+
+          **Do not write coordinates.** A view nobody arranged is laid out in layers that follow its
+          links, with every edge routed around the boxes.
 
           ## The rules nothing enforces
 
@@ -145,24 +161,28 @@ public static class WorkspaceScaffold
           - Every `fromId`, `toId`, `contextId`, `systemId` and `aboutId` must name a real element.
           - Prefixes keep them readable: `per_`, `sys_`, `cnt_`, `ctx_`, `mod_`, `cap_`, `uc_`,
             `q_`, `asm_`, `risk_`, `con_`, and `flow_` / `dep_` / `rel_` for links.
-          - **A link is drawn only when both of its endpoints are in the view.** This is the usual
-            reason a diagram comes out looking right and missing an arrow.
-          - **Seven boxes is the working maximum.** Past that a picture has generally stopped
-            answering one question.
+          - **A link is drawn only when both of its endpoints are in the view** — or, in a C4 lens,
+            when the system holding a container at one end is.
+          - **Seven boxes is the working maximum for a figure;** an architecture view past thirty has
+            usually stopped being one picture.
           - **Never add an element to make a picture work.** That is what a free-form shape in the
             sidecar is for. An element is a claim about the system and it outlives the diagram.
+
+          What must hold — "only the payment service talks to the card provider" — goes in
+          `Rules/*.cs` as `Rule.Forbid`, `Rule.Only`, `Rule.Layers` or `Rule.Require`, with the reason.
 
           ## Checking and rendering
 
           ```
-          stemma validate --workspace .            # what is broken; --json to act on it
-          stemma render --workspace . --view <id> --out diagram.png
+          stemma validate .                                  # what is broken; --json to act on it
+          stemma render --workspace . --view <id> --out diagram.png --json
           ```
 
-          `validate` is the answer to every "did I get the ids right" question. Run it before you
-          look at anything. `render` produces the image with no browser open, and writes a manifest
-          beside it so `render --check` can later tell you the picture has stopped matching
-          `{{name}}`.
+          `validate` is the answer to every "did I get the ids right" question, and checks the rules.
+          Run it before you look at anything. `render` produces the image with no browser open, says
+          what is wrong with the picture — boxes overlapping, an edge through a box — in element ids,
+          and writes a manifest beside it so `render --check` can later tell you the picture has
+          stopped matching `{{name}}`.
 
           """;
 

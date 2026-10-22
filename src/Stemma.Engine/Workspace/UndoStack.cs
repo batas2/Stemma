@@ -120,10 +120,12 @@ public sealed class UndoStack
                 prior.Attributes.TryGetValue("kind", out var ckind);
                 prior.Attributes.TryGetValue("role", out var role);
                 prior.Attributes.TryGetValue("aboutId", out var about);
+                prior.Attributes.TryGetValue("technology", out var technology);
+                prior.Attributes.TryGetValue("description", out var description);
                 // Re-declared with its own id, in its own file, with the tag that went with it.
                 var tag = archBefore.Tags.FirstOrDefault(t => t.TargetId == prior.Id);
                 return new RestoreElementOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.Name, prior.Kind,
-                    ctx, sys, ckind, role, about, declaredIn, tag?.Lifecycle, tag?.Ownership);
+                    ctx, sys, ckind, role, about, declaredIn, tag?.Lifecycle, tag?.Ownership, technology, description);
             }
 
             case AddLinkOp:
@@ -137,9 +139,10 @@ public sealed class UndoStack
                 prior.Attributes.TryGetValue("direction", out var direction);
                 prior.Attributes.TryGetValue("kind", out var kind);
                 prior.Attributes.TryGetValue("label", out var label);
+                prior.Attributes.TryGetValue("technology", out var technology);
                 var tag = archBefore.Tags.FirstOrDefault(t => t.TargetId == prior.Id);
                 return new RestoreLinkOp($"undo_{Guid.NewGuid():N}", prior.Id, prior.FromId, prior.ToId, prior.Kind,
-                    payload, direction, kind, label, declaredIn, tag?.Lifecycle, tag?.Ownership);
+                    payload, direction, kind, label, declaredIn, tag?.Lifecycle, tag?.Ownership, technology);
             }
 
             case SetLinkAttributeOp set when archBefore is not null:
@@ -194,6 +197,8 @@ public sealed class UndoStack
 /// file has that path.</param>
 /// <param name="Lifecycle">The lifecycle its tag had, written back with it.</param>
 /// <param name="Ownership">The squad and domain its tag had, written back with it.</param>
+/// <param name="Technology">A container's technology (ADR-0027).</param>
+/// <param name="Description">A person's, system's or container's description (ADR-0027).</param>
 public sealed record RestoreElementOp(
     string OpId,
     string ElementId,
@@ -206,7 +211,9 @@ public sealed record RestoreElementOp(
     string? AboutId = null,
     string? FilePath = null,
     ArchLifecycle? Lifecycle = null,
-    ArchOwnership? Ownership = null) : OperationBase(OpId);
+    ArchOwnership? Ownership = null,
+    string? Technology = null,
+    string? Description = null) : OperationBase(OpId);
 
 /// <summary>
 /// Internal op used by the undo stack to restore a removed link with its original id; see
@@ -224,7 +231,8 @@ public sealed record RestoreLinkOp(
     string? Label = null,
     string? FilePath = null,
     ArchLifecycle? Lifecycle = null,
-    ArchOwnership? Ownership = null) : OperationBase(OpId);
+    ArchOwnership? Ownership = null,
+    string? Technology = null) : OperationBase(OpId);
 
 /// <summary>What one write did to one file: its syntax tree before, and the exact text it left.</summary>
 /// <param name="Before">Null when the write created the file.</param>

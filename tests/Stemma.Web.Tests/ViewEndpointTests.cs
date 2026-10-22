@@ -105,4 +105,119 @@ public sealed class ViewEndpointTests : IAsyncLifetime
     }
 
     private sealed record ListedView(string Id, string Name);
+
+    // ---- views by rule (F-023, ADR-0026) ------------------------------------------------------
+
+    private async Task OpenC4Async(params (string File, string Define)[] views)
+    {
+        await File.WriteAllTextAsync(Path.Combine(_root, "Architecture", "Architecture.cs"), """
+            using Stemma.Model;
+            namespace Views;
+            public static class Architecture
+            {
+                public static Model Build()
+                {
+                    var buyer = new Person("per_buyer", "Buyer", "external");
+                    var shop = new SoftwareSystem("sys_shop", "Shop");
+                    var payments = new SoftwareSystem("sys_payments", "Payments");
+                    var web = new Container("cnt_web", "Web Shop", "sys_shop", "spa");
+                    var api = new Container("cnt_api", "Order API", "sys_shop", Technology: ".NET 8");
+                    var gateway = new Container("cnt_gateway", "Gateway", "sys_payments");
+                    var browse = new DataFlow("flow_browse", "per_buyer", "cnt_web", "search terms");
+                    var call = new DataFlow("flow_call", "cnt_web", "cnt_api", "orders");
+                    var pay = new DataFlow("flow_pay", "cnt_api", "cnt_gateway", "payment");
+                    var refund = new DataFlow("flow_refund", "cnt_api", "cnt_gateway", "refund");
+                    return Model.Of(buyer, shop, payments, web, api, gateway, browse, call, pay, refund);
+                }
+            }
+            """);
+        Directory.CreateDirectory(Path.Combine(_root, "Views"));
+        foreach (var (file, define) in views)
+            await File.WriteAllTextAsync(Path.Combine(_root, "Views", file), $$"""
+                using Stemma.Model;
+                namespace Views;
+                public static class {{Path.GetFileNameWithoutExtension(file)}}
+                {
+                    public static View Define() => {{define}};
+                }
+                """);
+        (await _http.PostAsJsonAsync("/api/workspace/open", new { rootPath = _root })).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task The_list_gives_each_view_as_written_and_what_it_draws()
+    {
+        await OpenC4Async(
+            ("ShopContainers.cs", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop", Include: new[] { "sys_ghost.*" })"""),
+            ("Listed.cs", """new(Id: "view_listed", Name: "Listed", BaseView: "all", ElementIds: new[] { "cnt_api", "cnt_web" })"""));
+
+        using var json = System.Text.Json.JsonDocument.Parse(await _http.GetStringAsync("/api/workspace/views"));
+        var views = json.RootElement.EnumerateArray().ToDictionary(v => v.GetProperty("id").GetString()!);
+
+        var shop = views["view_shop"];
+        shop.EnumerateObject().Select(p => p.Name).Should().Equal(
+            "id", "name", "baseView", "elementIds", "scope", "include", "exclude", "members", "provenance", "implied", "problems");
+        shop.GetProperty("elementIds").GetArrayLength().Should().Be(0, "a view with no list is an empty one, not a missing one");
+        shop.GetProperty("scope").GetString().Should().Be("sys_shop");
+        shop.GetProperty("exclude").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        shop.GetProperty("members").EnumerateArray().Select(m => m.GetString()).Should()
+            .Equal("per_buyer", "sys_shop", "sys_payments", "cnt_web", "cnt_api");
+        shop.GetProperty("provenance").GetProperty("cnt_api").GetString().Should().Be("lens");
+        var implied = shop.GetProperty("implied").EnumerateArray().Single();
+        implied.GetProperty("id").GetString().Should().Be("__implied__cnt_api__sys_payments");
+        (implied.GetProperty("fromId").GetString(), implied.GetProperty("toId").GetString()).Should().Be(("cnt_api", "sys_payments"));
+        implied.GetProperty("linkIds").EnumerateArray().Select(l => l.GetString()).Should().Equal("flow_pay", "flow_refund");
+        var problem = shop.GetProperty("problems").EnumerateArray().Single();
+        problem.EnumerateObject().Select(p => p.Name).Should().Equal("rule", "severity", "message");
+        (problem.GetProperty("rule").GetString(), problem.GetProperty("severity").GetString()).Should().Be(("view/dangling-include", "error"));
+
+        var listed = views["view_listed"];
+        listed.GetProperty("scope").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        listed.GetProperty("include").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        listed.GetProperty("members").EnumerateArray().Select(m => m.GetString()).Should().Equal("cnt_api", "cnt_web");
+        listed.GetProperty("provenance").GetProperty("cnt_web").GetString().Should().Be("elementIds");
+        listed.GetProperty("implied").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Saving_the_view_as_listed_with_an_exclude_keeps_the_rules_and_ignores_what_was_resolved()
+    {
+        await OpenC4Async(("ShopContainers.cs", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop", Include: new[] { "per_buyer" })"""));
+        var file = Path.Combine(_root, "Views", "ShopContainers.cs");
+        var before = await File.ReadAllTextAsync(file);
+        var listed = (await _http.GetFromJsonAsync<List<System.Text.Json.Nodes.JsonObject>>("/api/workspace/views"))!.Single();
+
+        // Sent back as it came, members and all, with one element hidden and the scope and include
+        // left out altogether.
+        listed["exclude"] = new System.Text.Json.Nodes.JsonArray("cnt_web");
+        listed.Remove("scope");
+        listed["include"] = null;
+        var saved = await _http.PutAsJsonAsync("/api/workspace/views", listed);
+
+        saved.StatusCode.Should().Be(HttpStatusCode.NoContent, await saved.Content.ReadAsStringAsync());
+        (await File.ReadAllTextAsync(file)).Should().Be(before.Replace(
+            "Include: new[] { \"per_buyer\" })",
+            "Include: new[] { \"per_buyer\" }, Exclude: [\"cnt_web\"])"));
+    }
+
+    [Fact]
+    public async Task The_draw_io_export_of_a_view_by_rule_has_what_the_view_draws()
+    {
+        // It took the view's ElementIds, which a view by rule does not have: the export was empty.
+        await OpenC4Async(("ShopContainers.cs", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop")"""));
+
+        var xml = await _http.GetStringAsync("/api/workspace/export/drawio?view=view_shop");
+
+        var labels = System.Xml.Linq.XDocument.Parse(xml).Descendants("mxCell")
+            .Where(c => c.Attribute("vertex")?.Value == "1").Select(c => c.Attribute("value")?.Value);
+        labels.Should().BeEquivalentTo("Buyer", "Shop", "Payments", "Web Shop", "Order API");
+    }
+
+    [Fact]
+    public async Task A_save_with_no_id_is_refused_rather_than_written_somewhere()
+    {
+        var response = await _http.PutAsJsonAsync("/api/workspace/views", new { name = "Nameless", baseView = "all" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

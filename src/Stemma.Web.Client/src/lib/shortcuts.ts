@@ -64,12 +64,19 @@ const CONTROLS = 'button, a[href], select, summary, [role="button"], [role="tab"
 export function keyBelongsToFocus(e: Pick<KeyboardEvent, 'key' | 'target'>): boolean {
   const target = e.target as HTMLElement | null;
   if (!target || typeof target.closest !== 'function') return false;
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return true;
+  if (isTextEntry(target)) return true;
   if (typeof document !== 'undefined' && document.querySelector('[aria-modal="true"]')) return true;
   if (target.closest('[role="dialog"], [role="alertdialog"]')) return true;
   // The canvas is where the app's own keys are meant: a focused box still nudges and Tab still walks.
   if (target.closest('.react-flow')) return false;
   return CONTROL_KEYS.has(e.key.toLowerCase()) && !!target.closest(CONTROLS);
+}
+
+/** A field something is being typed or picked into: it owns every key, and focus is not taken from it. */
+export function isTextEntry(el: Element | null): boolean {
+  const target = el as HTMLElement | null;
+  if (!target) return false;
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || !!target.isContentEditable;
 }
 
 /**

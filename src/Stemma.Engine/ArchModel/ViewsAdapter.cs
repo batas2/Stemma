@@ -25,12 +25,23 @@ namespace Stemma.Engine.ArchModel;
 ///
 /// Hand-written view files are read in any of the usual forms — named or positional arguments,
 /// <c>new[] { … }</c> or <c>[ … ]</c> — and saving one edits it in that form (<see cref="ViewsAdapter.Edit"/>).
+///
+/// A view is a scope and rules as well as a list (ADR-0026): <paramref name="Scope"/> names the system a
+/// C4 lens is drawn around, and <paramref name="Include"/> / <paramref name="Exclude"/> are selector
+/// strings. They are edited where they stand, like the members.
 /// </summary>
+/// <param name="ElementIds">As written; empty when the file has none.</param>
+/// <param name="Scope">Null when the file has none; on a save, null leaves it as written and "" removes it.</param>
+/// <param name="Include">Null when the file has none; on a save, null leaves it as written.</param>
+/// <param name="Exclude">Null when the file has none; on a save, null leaves it as written.</param>
 public sealed record ArchView(
     string Id,
     string Name,
     string BaseView,
-    IReadOnlyList<string> ElementIds);
+    IReadOnlyList<string> ElementIds,
+    string? Scope = null,
+    IReadOnlyList<string>? Include = null,
+    IReadOnlyList<string>? Exclude = null);
 
 public static class ViewsAdapter
 {
@@ -64,25 +75,36 @@ public static class ViewsAdapter
     {
         if (FindDefinition(root) is not { } creation) return null;
         var parameters = DslVocabulary.ParametersOf("View")!;
-        string? id = null, name = null, baseView = null;
-        var elementIds = new List<string>();
+        string? id = null, name = null, baseView = null, scope = null;
+        IReadOnlyList<string>? elementIds = null, include = null, exclude = null;
         var args = creation.ArgumentList!.Arguments;
         for (var i = 0; i < args.Count; i++)
         {
+            var expression = args[i].Expression;
             switch (KeyOf(args[i], i, parameters))
             {
-                case "id": id = AsString(args[i].Expression); break;
-                case "name": name = AsString(args[i].Expression); break;
-                case "baseView": baseView = AsString(args[i].Expression); break;
-                case "elementIds":
-                    foreach (var inner in args[i].Expression.DescendantNodes().OfType<LiteralExpressionSyntax>())
-                        if (inner.Token.IsKind(SyntaxKind.StringLiteralToken))
-                            elementIds.Add(inner.Token.ValueText);
-                    break;
+                case "id": id = AsString(expression); break;
+                case "name": name = AsString(expression); break;
+                case "baseView": baseView = AsString(expression); break;
+                case "elementIds": elementIds = Strings(expression); break;
+                case "scope": scope = AsString(expression); break;
+                case "include": include = Strings(expression); break;
+                case "exclude": exclude = Strings(expression); break;
             }
         }
-        return id is not null && name is not null ? new ArchView(id, name, baseView ?? "all", elementIds) : null;
+        return id is not null && name is not null
+            ? new ArchView(id, name, baseView ?? "all", elementIds ?? [], scope, include, exclude)
+            : null;
     }
+
+    /// <summary>The string literals in a list argument, in order; null for a <c>null</c> written in its place.</summary>
+    private static IReadOnlyList<string>? Strings(ExpressionSyntax expression) =>
+        expression.IsKind(SyntaxKind.NullLiteralExpression)
+            ? null
+            : expression.DescendantNodes().OfType<LiteralExpressionSyntax>()
+                .Where(l => l.Token.IsKind(SyntaxKind.StringLiteralToken))
+                .Select(l => l.Token.ValueText)
+                .ToList();
 
     /// <summary>The <c>new View(...)</c> a <c>Define()</c> method returns.</summary>
     private static BaseObjectCreationExpressionSyntax? FindDefinition(SyntaxNode root)
@@ -105,10 +127,13 @@ public static class ViewsAdapter
         expr is LiteralExpressionSyntax lit && lit.Token.IsKind(SyntaxKind.StringLiteralToken) ? lit.Token.ValueText : null;
 
     /// <summary>
-    /// The view file with its name, lens and members set to <paramref name="view"/>'s, each edited
-    /// where it stands: a literal replaced, an id removed with its own line, a new id laid out like
-    /// the last. Everything else — the doc comment, the class and file name, ids that are not string
-    /// literals — is left as written. Returns <paramref name="root"/> itself when nothing changes.
+    /// The view file with its name, lens, members, scope and rules set to <paramref name="view"/>'s,
+    /// each edited where it stands: a literal replaced, an id removed with its own line, a new id laid
+    /// out like the last, a missing argument appended by name (ADR-0026). A scope, include or exclude
+    /// that <paramref name="view"/> leaves null is left as written, so a save from a canvas that only
+    /// changed the members keeps the rules. Everything else — the doc comment, the class and file name,
+    /// ids that are not string literals — is left as written. Returns <paramref name="root"/> itself
+    /// when nothing changes.
     /// </summary>
     public static SyntaxNode Edit(SyntaxNode root, ArchView view)
     {
@@ -117,26 +142,54 @@ public static class ViewsAdapter
         var list = creation.ArgumentList!;
         list = DslWriter.SetArgument(list, parameters, "name", view.Name, "View", nullablePlaceholder: false) ?? list;
         list = DslWriter.SetArgument(list, parameters, "baseView", view.BaseView, "View", nullablePlaceholder: false) ?? list;
-
-        var args = list.Arguments;
-        var at = -1;
-        for (var i = 0; i < args.Count && at < 0; i++)
-            if (KeyOf(args[i], i, parameters) == "elementIds") at = i;
-        if (at < 0)
-        {
-            var ids = SyntaxFactory.ParseExpression($"[{string.Join(", ", view.ElementIds.Select(id => DslWriter.Literal(id).ToString()))}]");
-            list = list.WithArguments(SeparatedEdits.Append(args, DslWriter.NamedArgument("ElementIds", ids)));
-        }
-        else
-        {
-            var expression = args[at].Expression;
-            var edited = EditMembers(expression, view.ElementIds);
-            if (!ReferenceEquals(edited, expression)) list = list.WithArguments(args.Replace(args[at], args[at].WithExpression(edited)));
-        }
+        list = EditList(list, parameters, "elementIds", view.ElementIds);
+        if (view.Scope is not null) list = EditScope(list, parameters, view.Scope);
+        if (view.Include is not null) list = EditList(list, parameters, "include", view.Include);
+        if (view.Exclude is not null) list = EditList(list, parameters, "exclude", view.Exclude);
         return ReferenceEquals(list, creation.ArgumentList) ? root : root.ReplaceNode(creation.ArgumentList!, list);
     }
 
-    private static ExpressionSyntax EditMembers(ExpressionSyntax expression, IReadOnlyList<string> wanted)
+    private static int IndexOf(SeparatedSyntaxList<ArgumentSyntax> args, IReadOnlyList<string> parameters, string key)
+    {
+        for (var i = 0; i < args.Count; i++)
+            if (KeyOf(args[i], i, parameters) == key) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// The scope replaced where it stands, removed when it is "", or appended by name. A scope written
+    /// by position before a rule that is too becomes <c>null</c>, which keeps the rule in its place.
+    /// </summary>
+    private static ArgumentListSyntax EditScope(ArgumentListSyntax list, IReadOnlyList<string> parameters, string scope)
+    {
+        var value = scope.Length == 0 ? null : scope;
+        if (IndexOf(list.Arguments, parameters, "scope") >= 0)
+            return DslWriter.SetArgument(list, parameters, "scope", value, "View", nullablePlaceholder: true) ?? list;
+        return value is null
+            ? list
+            : list.WithArguments(SeparatedEdits.Append(list.Arguments, DslWriter.NamedArgument("Scope", DslWriter.Literal(value))));
+    }
+
+    /// <summary>
+    /// A list argument — the members, the includes, the excludes — edited in whatever form it is written
+    /// in, or appended by name when it is missing and <paramref name="wanted"/> has something in it.
+    /// </summary>
+    private static ArgumentListSyntax EditList(ArgumentListSyntax list, IReadOnlyList<string> parameters, string key, IReadOnlyList<string> wanted)
+    {
+        var args = list.Arguments;
+        var at = IndexOf(args, parameters, key);
+        if (at < 0)
+        {
+            if (wanted.Count == 0) return list;
+            var items = SyntaxFactory.ParseExpression($"[{string.Join(", ", wanted.Select(id => DslWriter.Literal(id).ToString()))}]");
+            return list.WithArguments(SeparatedEdits.Append(args, DslWriter.NamedArgument(DslVocabulary.ParameterName(key), items)));
+        }
+        var expression = args[at].Expression;
+        var edited = EditMembers(expression, wanted, DslVocabulary.ParameterName(key));
+        return ReferenceEquals(edited, expression) ? list : list.WithArguments(args.Replace(args[at], args[at].WithExpression(edited)));
+    }
+
+    private static ExpressionSyntax EditMembers(ExpressionSyntax expression, IReadOnlyList<string> wanted, string what)
     {
         // `new[] { … }` cannot be empty — it has no type to infer — so an emptied array becomes `[]`.
         static ExpressionSyntax Empty(ExpressionSyntax replaced) =>
@@ -144,6 +197,11 @@ public static class ViewsAdapter
 
         switch (expression)
         {
+            case LiteralExpressionSyntax when expression.IsKind(SyntaxKind.NullLiteralExpression):
+                // `Exclude: null` is an empty list written another way; it becomes a list only when it has to.
+                return wanted.Count == 0
+                    ? expression
+                    : SyntaxFactory.ParseExpression($"[{string.Join(", ", wanted.Select(id => DslWriter.Literal(id).ToString()))}]").WithTriviaFrom(expression);
             case CollectionExpressionSyntax collection:
             {
                 var (open, items) = EditList(collection.OpenBracketToken, collection.Elements, wanted,
@@ -165,7 +223,7 @@ public static class ViewsAdapter
             }
             default:
                 throw new DslEditRefusedException("UnreadableView",
-                    "This view's ElementIds is not written as an array or a collection of strings, so it cannot be edited in place.");
+                    $"This view's {what} is not written as an array or a collection of strings, so it cannot be edited in place.");
         }
     }
 
@@ -190,7 +248,22 @@ public static class ViewsAdapter
     /// </summary>
     public static string Render(string namespaceName, string className, ArchView view)
     {
-        var ids = string.Join(", ", view.ElementIds.Select(id => DslWriter.Literal(id).ToString()));
+        static string List(IEnumerable<string> items) => $"[{string.Join(", ", items.Select(id => DslWriter.Literal(id).ToString()))}]";
+
+        // The scope and rules only when they are set, and the members unless the view is made of those
+        // alone: a rule-based view does not need an empty list to say it has no listed members.
+        var arguments = new List<string>
+        {
+            $"Id: {DslWriter.Literal(view.Id)}",
+            $"Name: {DslWriter.Literal(view.Name)}",
+            $"BaseView: {DslWriter.Literal(view.BaseView)}",
+        };
+        if (view.ElementIds.Count > 0 || (string.IsNullOrEmpty(view.Scope) && view.Include is not { Count: > 0 }))
+            arguments.Add($"ElementIds: {List(view.ElementIds)}");
+        if (!string.IsNullOrEmpty(view.Scope)) arguments.Add($"Scope: {DslWriter.Literal(view.Scope)}");
+        if (view.Include is { Count: > 0 }) arguments.Add($"Include: {List(view.Include)}");
+        if (view.Exclude is { Count: > 0 }) arguments.Add($"Exclude: {List(view.Exclude)}");
+
         return $$"""
             using Stemma.Model;
 
@@ -199,10 +272,7 @@ public static class ViewsAdapter
             public static class {{className}}
             {
                 public static View Define() => new(
-                    Id: {{DslWriter.Literal(view.Id)}},
-                    Name: {{DslWriter.Literal(view.Name)}},
-                    BaseView: {{DslWriter.Literal(view.BaseView)}},
-                    ElementIds: [{{ids}}]);
+                    {{string.Join(",\n        ", arguments)}});
             }
 
             """;

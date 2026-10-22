@@ -26,6 +26,9 @@ try
         "open" => await OpenCommand.RunAsync(rest),
         "render" => await RenderCommand.RunAsync(rest),
         "validate" => await ValidateCommand.RunAsync(rest),
+        "inspect" => await InspectCommand.RunAsync(rest),
+        "scan" => await ScanCommand.RunAsync(rest),
+        "hook" => await HookCommand.RunAsync(rest),
         _ => Cli.Fail($"unknown command '{command}'"),
     };
 }
@@ -45,6 +48,9 @@ namespace Stemma.Cli
               stemma open      Open Stemma in its own window.
               stemma render    Turn a model and a view into an image.
               stemma validate  Check a workspace for the things the compiler cannot see.
+              stemma inspect   Show what a view draws, and what brought each element in.
+              stemma scan      List the .NET projects under a path, and what each references.
+              stemma hook      Entry points for agent hooks (the Claude Code plugin's post-edit check).
 
             Run a command with --help for its options, or `stemma --version` for which Stemma this is.
             """;

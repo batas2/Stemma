@@ -129,7 +129,14 @@ export async function listViolations(): Promise<Violation[]> {
   return r.json();
 }
 
-export interface ServerView { id: string; name: string; baseView: string; elementIds: string[]; }
+export interface ServerView {
+  id: string; name: string; baseView: string; elementIds: string[];
+  scope?: string | null; include?: string[] | null; exclude?: string[] | null;
+  // Resolved by the engine and returned with the view (ADR-0026); never sent back.
+  members?: string[]; provenance?: Record<string, string>;
+  implied?: { id: string; fromId: string; toId: string; linkIds: string[] }[];
+  problems?: { rule: string; severity: string; message: string }[];
+}
 
 /**
  * The views `Views/*.cs` declares. A list that cannot be read throws rather than coming back

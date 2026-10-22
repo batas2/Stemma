@@ -9,6 +9,8 @@ dotnet tool install -g Stemma
 
 stemma open ~/models/payments        # the app, in its own window
 stemma validate --workspace .        # what the compiler cannot see: dangling ids, half-drawn links
+stemma inspect --view view_overview  # what a view draws, and what brought each element in
+stemma scan src --json               # the .NET projects under a path and what each references
 stemma render --workspace . --view view_overview --out overview.png
 ```
 

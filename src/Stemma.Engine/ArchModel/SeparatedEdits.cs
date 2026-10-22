@@ -53,6 +53,17 @@ internal static class SeparatedEdits
             ? Comma(commas[^1])
             : SyntaxFactory.Token(SyntaxKind.CommaToken).WithTrailingTrivia(SyntaxFactory.Space);
         if (items.Count < 2) placed = item;
+        if (items.Count >= 2 && Trivia.EndsLine(items[^2].GetTrailingTrivia()))
+        {
+            // Leading commas — `"a"⏎    , "b"` — put the line break before the comma, so the new item
+            // starts a line the same way: the break after the last item, then the comma at the last one's
+            // indentation, without a comment that was in front of it.
+            items[^1] = last.WithTrailingTrivia(Trivia.Layout(items[^2].GetTrailingTrivia()));
+            comma = SyntaxFactory.Token(Trivia.Indentation(commas[^1].LeadingTrivia), SyntaxKind.CommaToken, Trivia.Layout(commas[^1].TrailingTrivia));
+            items.Add(placed.WithTrailingTrivia(last.GetTrailingTrivia()));
+            commas.Add(comma);
+            return SyntaxFactory.SeparatedList(items, commas);
+        }
         items[^1] = last.WithTrailingTrivia(SyntaxTriviaList.Empty);
         items.Add(placed.WithTrailingTrivia(last.GetTrailingTrivia()));
         commas.Add(comma);
@@ -203,14 +214,19 @@ internal static class Trivia
 
     /// <summary>
     /// Only the whitespace and line endings: the layout of some trivia without its content. The space
-    /// that separated a removed comment from its comma would be left trailing, so it goes too.
+    /// that separated a removed comment from its comma would be left trailing, so it goes too; and the
+    /// spaces either side of a comment — <c>, /* note */ "x"</c> — are one gap once the comment is gone,
+    /// not two. Of the two, the first stays: at the start of a line it is the line's indentation.
     /// </summary>
     public static SyntaxTriviaList Layout(SyntaxTriviaList trivia)
     {
         var kept = trivia.Where(t => t.IsKind(SyntaxKind.WhitespaceTrivia) || t.IsKind(SyntaxKind.EndOfLineTrivia)).ToList();
         for (var i = kept.Count - 2; i >= 0; i--)
-            if (kept[i].IsKind(SyntaxKind.WhitespaceTrivia) && kept[i + 1].IsKind(SyntaxKind.EndOfLineTrivia))
-                kept.RemoveAt(i);
+        {
+            if (!kept[i].IsKind(SyntaxKind.WhitespaceTrivia)) continue;
+            if (kept[i + 1].IsKind(SyntaxKind.EndOfLineTrivia)) kept.RemoveAt(i);
+            else if (kept[i + 1].IsKind(SyntaxKind.WhitespaceTrivia)) kept.RemoveAt(i + 1);
+        }
         return SyntaxFactory.TriviaList(kept);
     }
 }

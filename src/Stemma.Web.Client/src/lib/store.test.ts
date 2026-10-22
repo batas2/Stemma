@@ -98,3 +98,48 @@ describe('UX bug #4 — setWorkspace hydrates only on first open per rootPath', 
     expect(useApp.getState().activeCustomViewId).toBeNull();
   });
 });
+
+describe('editing a view stated by rule (F-023 AC7)', () => {
+  const ruled: CustomView = {
+    id: 'v', name: 'Containers', baseView: 'container', scope: 'sys_p', elementIds: ['per_x'], createdAt: '',
+    include: ['->sys_p.*'], members: ['sys_p', 'cnt_a', 'cnt_b', 'per_x'],
+  };
+
+  it('excludes an element a rule brought in, so the rule stays live and the toast says why the file changed', () => {
+    useApp.setState({ customViews: [ruled], activeCustomViewId: 'v' });
+    useApp.getState().removeElementFromActiveView('cnt_a');
+    const v = useApp.getState().customViews[0];
+    expect(v.exclude).toEqual(['cnt_a']);
+    expect(v.members).toEqual(['sys_p', 'cnt_b', 'per_x']);
+    expect(useApp.getState().toast?.text).toMatch(/Exclude/);
+  });
+
+  it('takes a listed element off the list of a view with no rules, and excludes nothing', () => {
+    const plain: CustomView = { id: 'p', name: 'Plain', baseView: 'all', elementIds: ['a', 'b'], createdAt: '' };
+    useApp.setState({ customViews: [plain], activeCustomViewId: 'p' });
+    useApp.getState().removeElementFromActiveView('a');
+    const v = useApp.getState().customViews[0];
+    expect(v.elementIds).toEqual(['b']);
+    expect(v.exclude).toBeUndefined();
+  });
+
+  it('takes an element listed by hand off the list without excluding it, though the view has a scope', () => {
+    useApp.setState({
+      customViews: [{ ...ruled, include: null, elementIds: ['per_admin'], members: ['sys_p', 'per_admin'], provenance: { sys_p: 'lens', per_admin: 'elementIds' } }],
+      activeCustomViewId: 'v',
+    });
+    useApp.getState().removeElementFromActiveView('per_admin');
+    const v = useApp.getState().customViews[0];
+    expect(v.elementIds).toEqual([]);
+    expect(v.exclude).toBeUndefined();
+  });
+
+  it('adding an excluded element back takes it out of Exclude and draws it at once', () => {
+    useApp.setState({ customViews: [{ ...ruled, exclude: ['cnt_a'], members: ['sys_p', 'cnt_b', 'per_x'] }], activeCustomViewId: 'v' });
+    useApp.getState().addElementToActiveView('cnt_a');
+    const v = useApp.getState().customViews[0];
+    expect(v.exclude).toEqual([]);
+    expect(v.elementIds).toContain('cnt_a');
+    expect(v.members).toContain('cnt_a');
+  });
+});

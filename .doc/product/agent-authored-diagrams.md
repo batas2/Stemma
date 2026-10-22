@@ -950,6 +950,10 @@ design (a headless, browser-free, multi-workspace render service) rather than tw
 
 ### Q6 — Resolved: deterministic constraints stay live, heuristic layouts stay one-shot
 
+> **Amended 2026-10-22 by [ADR-0025](../architecture/decisions/0025-layered-layout-is-a-live-constraint.md):**
+> ELK's layered algorithm passes this section's own test — same input, same picture — and is a live
+> constraint, solved on open and adjusted by offsets. The force-directed generator stays a generator.
+
 **Decision: split the two by whether they are reproducible.** A *deterministic* constraint (grid,
 row, column, stack) stays live in the sidecar and is adjusted by **per-node offsets**; solved
 coordinates are not committed. A *heuristic* layout (force, hierarchical, byType) stays what it is

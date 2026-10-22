@@ -14,7 +14,7 @@ namespace Stemma.Cli;
 /// and the picture keeps making a claim that has stopped being true.
 ///
 /// What goes in is deliberate. Element ids, names and kinds; link endpoints and kinds; the view's
-/// membership; the layout constraint, offsets and positions for that view; the profile and palette.
+/// members as its lens and rules resolve them; the layout constraint, offsets and positions for that view; the profile and palette.
 /// What stays out is node *sizes*: they depend on the font, so including them would make the check
 /// fail on a machine with different fonts installed, which is noise rather than drift. The trade is
 /// recorded rather than hidden — a font change can alter the picture without the fingerprint
@@ -57,8 +57,11 @@ public static class SourceFingerprint
             }
         }
 
+        // What the view draws, its lens and rules resolved (ADR-0026): a view by rule lists no ids, and a
+        // change to what its rule selects is a change to the picture.
+        var resolved = match is null ? [] : ViewProjection.Resolve(match, model ?? new ArchModel("", [], [], [])).Members;
         var members = 0;
-        foreach (var id in match?.ElementIds.OrderBy(x => x, StringComparer.Ordinal) ?? Enumerable.Empty<string>())
+        foreach (var id in resolved.OrderBy(x => x, StringComparer.Ordinal))
         {
             sb.Append("m:").Append(id).Append('\n');
             members++;

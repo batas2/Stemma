@@ -127,6 +127,25 @@ internal static class RenderHarness
         File.WriteAllText(Path.Combine(dir, "stemma.layout.json"), sidecar);
         return dir;
     }
+
+    /// <summary>
+    /// <see cref="Workspace"/>, with relationships between the concepts — the layered layout and the
+    /// layout lint (F-021, F-022) are about edges as much as boxes. Each link is a <c>Relation</c>.
+    /// </summary>
+    public static string WorkspaceWithLinks(string dir, string viewId, IReadOnlyList<string> ids,
+        IReadOnlyList<(string Id, string From, string To, string Label)> links, string sidecar)
+    {
+        Workspace(dir, viewId, ids, sidecar);
+        var path = Path.Combine(dir, "Architecture", "Architecture.cs");
+        var relations = string.Join("\n", links.Select((l, i) =>
+            $"        var r{i} = new Relation(\"{l.Id}\", \"{l.From}\", \"{l.To}\", \"{l.Label}\");"));
+        var names = string.Join("", links.Select((_, i) => $", r{i}"));
+        var text = File.ReadAllText(path);
+        var at = text.IndexOf("        return Model.Of(", StringComparison.Ordinal);
+        text = text[..at] + relations + "\n" + text[at..].Replace(");", names + ");");
+        File.WriteAllText(path, text);
+        return dir;
+    }
 }
 
 /// <summary>A fact that skips, with a reason, when this machine cannot run a render.</summary>

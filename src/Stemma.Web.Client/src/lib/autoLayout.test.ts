@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   alignSelected, distributeSelected,
-  layoutHierarchical, layoutForceDirected, layoutFocused, layoutByType,
+  layoutHierarchical, layoutForceDirected, layoutFocused, layoutByType, defaultArrangement,
   type NodeBounds,
 } from './autoLayout';
 import type { ArchElement, ArchLink } from './types';
@@ -448,5 +448,20 @@ describe('layoutByType', () => {
 
   it('returns empty for empty input', () => {
     expect(layoutByType([], [], { view: 'moduleMap' })).toEqual({});
+  });
+});
+
+describe('defaultArrangement (B-021)', () => {
+  const container = (id: string): ArchElement => ({ id, name: id, kind: 'container', attributes: { systemId: 'sys' } });
+  const flow = (id: string, fromId: string, toId: string): ArchLink => ({ id, fromId, toId, kind: 'dataFlow', attributes: { payload: id } });
+
+  it('follows the links: a chain of three containers takes three layers, not one row', () => {
+    const out = defaultArrangement(
+      [container('a'), container('b'), container('c')],
+      [flow('ab', 'a', 'b'), flow('bc', 'b', 'c')],
+    );
+    expect(new Set([out.a.y, out.b.y, out.c.y]).size).toBe(3);
+    expect(out.a.y).toBeLessThan(out.b.y);
+    expect(out.b.y).toBeLessThan(out.c.y);
   });
 });

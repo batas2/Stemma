@@ -99,14 +99,35 @@ export interface Violation {
 /** Built-in lenses: the two architecture canvases + a Concerns summary, all from `Architecture.cs`. */
 export type ViewKind = 'moduleMap' | 'dependencyGraph' | 'concerns';
 
-/** A user-defined named subset of the canonical model. Persisted in localStorage per workspace. */
+/**
+ * A relationship drawn to a system because the container at its end is not in the view — C4's
+ * "implied" relationship (ADR-0026). Derived by the engine, never stored, never edited.
+ */
+export interface ImpliedLink { id: string; fromId: string; toId: string; linkIds: string[]; }
+
+/** The lens a view projects through: the built-in ones, no lens, or a C4 lens over a scope (F-023). */
+export type ViewLens = ViewKind | 'all' | 'systemContext' | 'container';
+
+/** A view from `Views/*.cs`: a lens, a list, and — since F-023 — a scope and rules. */
 export interface CustomView {
   id: string;
   name: string;
-  /** Which built-in lens to project through (`all` = no kind filter, just show what's in elementIds). */
-  baseView: ViewKind | 'all';
+  /** Which lens to project through (`all` = no kind filter, just show what is in the view). */
+  baseView: ViewLens;
   /** Explicit element IDs included in this view. */
   elementIds: string[];
+  /** The software system a C4 lens is about. */
+  scope?: string | null;
+  /** Selectors adding to the view, and taking away from it (ADR-0026). */
+  include?: string[] | null;
+  exclude?: string[] | null;
+  /** What the view draws, resolved by the engine — lens, ids, include, minus exclude. */
+  members?: string[];
+  /** Why each member is in the view: `lens`, `elementIds`, or `include:<selector>`. */
+  provenance?: Record<string, string>;
+  implied?: ImpliedLink[];
+  /** What the engine could not resolve: a bad selector, a missing scope. */
+  problems?: { rule: string; severity: string; message: string }[];
   createdAt: string;
 }
 

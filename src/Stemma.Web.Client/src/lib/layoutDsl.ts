@@ -22,6 +22,10 @@ import type { SavedPosition } from './layout';
  *
  * The test for which is which: if re-running it tomorrow must give the same picture, it is a
  * constraint; if it is a starting point you will then correct, it is a generator.
+ *
+ * ELK's layered algorithm passes that test (ADR-0025) and is a constraint too, but it is solved
+ * asynchronously and governs every node in the view, so it lives in `layeredLayout.ts` rather than
+ * in this synchronous solver.
  */
 
 export type LayoutConstraintKind = 'grid' | 'row' | 'column' | 'stack';

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { eventMatches, focusIsOnCanvas, isMac, keyBelongsToFocus, type Shortcut } from './shortcuts';
+import { eventMatches, focusIsOnCanvas, isMac, isTextEntry, keyBelongsToFocus, type Shortcut } from './shortcuts';
 
 const press = (over: Partial<KeyboardEvent>) => ({
   key: '', code: '', metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...over,
@@ -38,6 +38,15 @@ describe('keys that belong to what has focus', () => {
     expect(keyBelongsToFocus({ key: 'z', target: on('<input>', 'input') })).toBe(true);
     expect(keyBelongsToFocus({ key: 'ArrowDown', target: on('<select><option>a</option></select>', 'select') })).toBe(true);
     expect(keyBelongsToFocus({ key: 'Tab', target: on('<div role="dialog" aria-modal="true"><button>Cancel</button></div>', 'button') })).toBe(true);
+  });
+
+  // A card created into its own name field is revealed — selected and framed — a moment later. Focus moved
+  // from the field to the card then closed the field before a letter was typed.
+  it('a field inside a box is still a field: nothing takes focus from it', () => {
+    expect(isTextEntry(on('<div class="react-flow"><div class="react-flow__node"><input aria-label="Element name"></div></div>', 'input'))).toBe(true);
+    expect(isTextEntry(on('<div contenteditable="true">x</div>', 'div'))).toBe(true);
+    expect(isTextEntry(on('<div class="react-flow__node" tabindex="0"></div>', 'div'))).toBe(false);
+    expect(isTextEntry(null)).toBe(false);
   });
 
   it('a button keeps Tab and the arrows, but not the app\'s letters', () => {

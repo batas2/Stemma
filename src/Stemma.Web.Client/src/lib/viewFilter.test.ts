@@ -32,3 +32,61 @@ describe('which elements a view draws', () => {
     expect(v.links.map((l) => l.id)).toEqual(['rel_ca']);
   });
 });
+
+describe('a view by rule (F-023, ADR-0026)', () => {
+  const c4: ArchModel = {
+    filePath: '/ws/Architecture/Architecture.cs',
+    elements: [
+      { id: 'per_x', name: 'Customer', kind: 'person', attributes: {} },
+      { id: 'sys_p', name: 'Platform', kind: 'softwareSystem', attributes: {} },
+      { id: 'cnt_app', name: 'App', kind: 'container', attributes: { systemId: 'sys_p' } },
+      { id: 'cnt_api', name: 'API', kind: 'container', attributes: { systemId: 'sys_p' } },
+      { id: 'sys_pay', name: 'Payments', kind: 'softwareSystem', attributes: {} },
+      { id: 'mod_m', name: 'M', kind: 'module', attributes: {} },
+    ],
+    links: [
+      { id: 'flow_use', fromId: 'per_x', toId: 'cnt_app', kind: 'dataFlow', attributes: { payload: 'uses' } },
+      { id: 'flow_call', fromId: 'cnt_app', toId: 'cnt_api', kind: 'dataFlow', attributes: { payload: 'calls' } },
+      { id: 'flow_pay', fromId: 'cnt_api', toId: 'sys_pay', kind: 'dataFlow', attributes: { payload: 'charges' } },
+    ],
+    tags: [],
+  };
+
+  it('draws what the engine resolved, not only what the view lists', () => {
+    const v = filterByView(c4, 'moduleMap', {
+      id: 'v', name: 'Containers', baseView: 'container', scope: 'sys_p', elementIds: [], createdAt: '',
+      members: ['sys_p', 'cnt_app', 'cnt_api', 'per_x', 'sys_pay'],
+    });
+    expect(v.elements.map((e) => e.id)).toEqual(['per_x', 'sys_p', 'cnt_app', 'cnt_api', 'sys_pay']);
+    expect(v.links.map((l) => l.id)).toEqual(['flow_use', 'flow_call', 'flow_pay']);
+  });
+
+  it('does not filter a C4 lens by kind, as the module map lens is filtered', () => {
+    const v = filterByView(c4, 'moduleMap', {
+      id: 'v', name: 'Context', baseView: 'systemContext', scope: 'sys_p', elementIds: [], createdAt: '',
+      members: ['per_x', 'sys_p', 'sys_pay'],
+      implied: [
+        { id: '__implied__per_x__sys_p', fromId: 'per_x', toId: 'sys_p', linkIds: ['flow_use'] },
+        { id: '__implied__sys_p__sys_pay', fromId: 'sys_p', toId: 'sys_pay', linkIds: ['flow_pay'] },
+      ],
+    });
+    expect(v.elements.map((e) => e.id)).toEqual(['per_x', 'sys_p', 'sys_pay']);
+    expect(v.links).toEqual([]);
+    expect(v.implied.map((i) => i.id)).toEqual(['__implied__per_x__sys_p', '__implied__sys_p__sys_pay']);
+  });
+
+  it('drops an implied relationship whose end the view does not draw', () => {
+    const v = filterByView(c4, 'moduleMap', {
+      id: 'v', name: 'Context', baseView: 'systemContext', scope: 'sys_p', elementIds: [], createdAt: '',
+      members: ['per_x', 'sys_p'],
+      implied: [{ id: '__implied__sys_p__sys_pay', fromId: 'sys_p', toId: 'sys_pay', linkIds: ['flow_pay'] }],
+    });
+    expect(v.implied).toEqual([]);
+  });
+
+  it('falls back to the listed ids from a server that does not resolve views', () => {
+    const v = filterByView(c4, 'moduleMap', { id: 'v', name: 'Old', baseView: 'all', elementIds: ['cnt_app', 'cnt_api'], createdAt: '' });
+    expect(v.elements.map((e) => e.id)).toEqual(['cnt_app', 'cnt_api']);
+    expect(v.implied).toEqual([]);
+  });
+});

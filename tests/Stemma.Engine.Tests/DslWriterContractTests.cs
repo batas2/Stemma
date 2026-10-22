@@ -58,6 +58,38 @@ public sealed class DslWriterContractTests
         source.Should().Contain("        var mod = new Module(\"mod_001\", \"Checkout\");\n");
     }
 
+    [Theory]
+    // Description and technology are on the kinds C4 defines them for and no others (ADR-0027): a
+    // module's prose is its notes, and a Concept stays poor.
+    [InlineData("var e = new Module(\"e_1\", \"Checkout\");", "e_1", "description")]
+    [InlineData("var e = new Concept(\"e_1\", \"An idea\");", "e_1", "description")]
+    [InlineData("var e = new Person(\"e_1\", \"Buyer\");", "e_1", "technology")]
+    [InlineData("var e = new SoftwareSystem(\"e_1\", \"Shop\");", "e_1", "technology")]
+    public async Task Description_and_technology_are_refused_on_the_kinds_that_do_not_have_them(string declaration, string id, string attribute)
+    {
+        var (result, source) = await ApplyAsync($"""
+                    {declaration}
+                    return Model.Of(e);
+            """, new SetElementAttributeOp("op", id, attribute, "something"));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("UnknownAttribute");
+        source.Should().Contain($"        {declaration}\n");
+    }
+
+    [Fact]
+    public async Task A_technology_is_refused_on_a_link_that_is_not_a_data_flow()
+    {
+        var (result, source) = await ApplyAsync("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var dep = new Dependency("dep_001", "mod_a", "mod_b", "calls");
+                    return Model.Of(a, b, dep);
+            """, new SetLinkAttributeOp("op", "dep_001", "technology", "gRPC"));
+
+        result.Should().BeOfType<OperationFailed>().Which.Reason.Should().Be("UnknownAttribute");
+        source.Should().Contain("        var dep = new Dependency(\"dep_001\", \"mod_a\", \"mod_b\", \"calls\");\n");
+    }
+
     [Fact]
     public async Task A_positional_attribute_that_later_arguments_depend_on_cannot_be_cleared()
     {

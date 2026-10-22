@@ -35,6 +35,12 @@ removed).
 | [0022](./0022-books-in-the-layout-sidecar.md) | **Books live in the layout sidecar** — presentation, keyed pages with an `order`, references by id, presenting writes nothing. | 🟡 Proposed — see [F-013](../../features/F-013-books.md). |
 | [0023](./0023-view-headers-in-the-layout-sidecar.md) | **A view's header lives with the view in the layout sidecar** — title, message, context and a legend computed from what is drawn; drawn in screen space; part of the slide, not of the figure. | 🟡 Proposed — see [F-014](../../features/F-014-self-explaining-views.md). |
 | [0024](./0024-history-read-from-git.md) | **What the model was is read from Git, never kept by Stemma** — `git show` through `Stemma.Web`, parsed by the engine's reader, compared in the client; nothing written. | 🟡 Proposed — see [F-017](../../features/F-017-what-changed.md). |
+| [0025](./0025-layered-layout-is-a-live-constraint.md) | **A layered layout, solved by ELK in the browser, is a live constraint** — stored as intent, nudged by offsets, the default for a view nobody arranged; edges routed. | 🟡 Proposed — see [F-021](../../features/F-021-layered-layout-and-routed-edges.md). |
+| [0026](./0026-views-by-rule.md) | **A view is a scope and rules as well as a list** — `Scope`/`Include`/`Exclude`, two C4 lenses, one selector language, resolved in the engine; implied links derived. | 🟡 Proposed — see [F-023](../../features/F-023-c4-views-and-views-by-rule.md). |
+| [0027](./0027-description-and-technology.md) | **Description and technology in the model** — on people, systems and containers; technology on data flows. | 🟡 Proposed — see [F-023](../../features/F-023-c4-views-and-views-by-rule.md). |
+| [0028](./0028-architecture-rules-as-code.md) | **Architecture rules are C# in `Rules/`**, read off the syntax tree, never executed; run with the built-in rules. | 🟡 Proposed — see [F-024](../../features/F-024-architecture-rules-as-code.md). |
+| [0029](./0029-conformance-against-the-implementation.md) | **Conformance is a rule** — elements mapped to projects; project references compared with declared links; never stored. | 🟡 Proposed — see [F-025](../../features/F-025-conformance-with-the-implementation.md). |
+| [0030](./0030-agents-reach-stemma-through-the-cli.md) | **Agents reach Stemma through the CLI**, packaged as a Claude Code plugin; MCP deferred. | 🟡 Proposed — see [F-026](../../features/F-026-stemma-for-claude-code.md). |
 
 ## Legend
 

@@ -5,8 +5,9 @@ using System.Text.Json.Serialization;
 namespace Stemma.Engine.Validation;
 
 /// <summary>
-/// Discovers all rules (built-in [StemmaRule] classes plus user-defined rules in the workspace
-/// assembly), applies any stemma.rules.json overrides, and runs them against an ArchModel.
+/// The built-in rules, and the rules a workspace declares in its <c>Rules/</c> folders with whatever
+/// they turn on (<see cref="WorkspaceRules"/>, ADR-0028), run against an ArchModel with the workspace's
+/// stemma.rules.json applied to all of them alike.
 /// </summary>
 public sealed class RuleEngine
 {
@@ -19,11 +20,17 @@ public sealed class RuleEngine
         _config = config;
     }
 
+    /// <summary>
+    /// The engine the canvas and <c>stemma validate</c> both run, so the two show the same violations. With
+    /// a workspace, its rules files are read from disk each time — the canvas asks every second and a
+    /// half, and a file is parsed again only when it has changed.
+    /// </summary>
     public static RuleEngine Default(string? workspaceRoot = null)
     {
         var rules = DiscoverRulesIn(typeof(IRule).Assembly).ToList();
-        var config = workspaceRoot is not null ? RulesConfig.LoadFor(workspaceRoot) : RulesConfig.Empty;
-        return new RuleEngine(rules, config);
+        if (workspaceRoot is null) return new RuleEngine(rules, RulesConfig.Empty);
+        rules.AddRange(WorkspaceRules.For(workspaceRoot));
+        return new RuleEngine(rules, RulesConfig.LoadFor(workspaceRoot));
     }
 
     public IReadOnlyList<IRule> Rules => _rules;
@@ -51,6 +58,11 @@ public sealed class RuleEngine
         return results;
     }
 
+    /// <summary>
+    /// Every rule in <paramref name="asm"/> that can be made with no arguments: the built-in ones. A
+    /// declared rule, a pack's and conformance's are made from what the workspace declares, so they take
+    /// arguments and are never found here — a pack nobody turned on is not run.
+    /// </summary>
     public static IEnumerable<IRule> DiscoverRulesIn(Assembly asm)
     {
         foreach (var type in asm.GetTypes())

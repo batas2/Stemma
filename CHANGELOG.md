@@ -9,6 +9,75 @@ within one, entries are dated. How a release is cut:
 
 ## Unreleased
 
+### Architecture built by an agent, reviewed in Stemma — 2026-10-22
+
+Ask Claude Code for an architecture in your own words and get a Stemma model that is laid out, checked
+and ready to present — and the same improvements make every diagram you draw yourself cleaner. The
+audit and the reasoning behind each change are in
+[`agent-architecture-workflow.md`](./.doc/product/agent-architecture-workflow.md).
+
+**Added**
+
+- **Diagrams lay themselves out** ([F-021](./.doc/features/F-021-layered-layout-and-routed-edges.md)).
+  A view nobody has arranged is now laid out in layers that follow its relationships, every arrow
+  routed around the boxes and every label kept clear of them — no more seventeen boxes in one row.
+  Nothing is written to your files for it, and the same model always gives the same picture. To keep
+  it, or to turn it, open **Layout & arrange → Lay out in layers** and pick a direction (the arrow keys
+  move between them). Nudging a box records a nudge, as on a grid; **Reset nudges** puts it back. In a
+  sidecar it is `"layout": { "kind": "layered" }`, with `direction`, `spacing`, `first`, `last`,
+  `groups` and `routing`.
+- **C4 views from a scope** ([F-023](./.doc/features/F-023-c4-views-and-views-by-rule.md)). A view
+  written as `BaseView: "container", Scope: "sys_shop"` draws the system as a boundary around its
+  containers, with the people and systems they talk to — no list of ids to keep up to date.
+  `"systemContext"` draws the system and its neighbours; a relationship to a container that is not
+  drawn arrives at its system, and hovering its label lists what it stands for. `Include` and `Exclude`
+  shape any view with selectors such as `"sys_shop.*"`, `"kind:container[kind=db]"` or `"->cnt_api->"`;
+  `stemma inspect --view <id>` shows what a view selected and why. Taking an element out of a view a
+  rule brings it into adds it to the view's `Exclude`, and the toast says so.
+- **Technology and description on the cards.** People, systems and containers take a `Description`;
+  containers and data flows a `Technology`. A card reads **CONTAINER · .NET 8** with its sentence
+  under the name, a flow reads *places orders [HTTPS/JSON]*, and both are edited in the inspector.
+- **Rules the architecture must keep** ([F-024](./.doc/features/F-024-architecture-rules-as-code.md)).
+  Write what must hold in `Rules/*.cs` — `Rule.Only("rule_card", from: "cnt_payments", to:
+  "sys_stripe", because: "Card data stays in one service")`, `Rule.Forbid`, `Rule.Layers`,
+  `Rule.Require` — and a break is marked on the cards and listed under **Validation** as *Customer App
+  → Orders DB is not allowed — Every client call is authenticated at the gateway*. `Rule.Use("c4")`
+  turns on the C4 checklist: technologies, descriptions, labelled flows.
+- **Checked against your code** ([F-025](./.doc/features/F-025-conformance-with-the-implementation.md)).
+  Map containers to the .NET projects that build them with `Code.Map("cnt_api", "Shop.Api")`, and
+  Stemma says where the diagram and the project references disagree — a reference the model does not
+  show, a dependency no project realises, a project nothing maps. `stemma scan <path>` lists a
+  codebase's projects and references, to start a model from.
+- **Stemma for Claude Code** ([F-026](./.doc/features/F-026-stemma-for-claude-code.md)).
+  `/plugin marketplace add batas2/Stemma`, then `/plugin install stemma@stemma`. Ask for an
+  architecture and Claude builds it as a Stemma workspace, checks it, renders it and hands it to you;
+  `/stemma:new`, `/stemma:review` and `/stemma:from-code` start the common jobs, and after every edit a
+  hook tells Claude what it broke. Run `stemma open <workspace>` to watch it arrive and review it.
+- **A render says what is wrong with the picture** ([F-022](./.doc/features/F-022-render-geometry-and-layout-lint.md)).
+  `stemma render` now lists boxes that overlap, an arrow through a box, labels that collide, an arrow
+  hidden along another and how many arrows cross — by element id — and writes them, with the picture's
+  geometry, into the manifest. `--json` prints the whole result; `--fail-on-lint` turns a warning into
+  a failing build.
+
+**Changed**
+
+- `stemma validate` now also reports what the canvas marks in red — data-flow cycles and the other
+  built-in rules — and your own rules (B-026); an element declared but left out of `Model.Of(...)`
+  (B-025); and a `layoutMode` that arranges nothing (B-022). The seven-box warning applies to figures
+  only; an architecture view is told past thirty, as information (B-024).
+- Inspector: a field is offered only on the kinds that have it, the Identity rows say *System* and
+  *Container kind* instead of `systemId` and `kind`, and **Container kind** shows and saves the
+  container's kind — it showed nothing and refused to save before.
+
+**Fixed**
+
+- Under the publication profile, a line passing beneath a box no longer strikes through its name
+  (B-023), a label on an unrouted arrow sits beside its line, and a system boundary's name sits inside
+  the frame.
+- A headless render no longer captures the minimap when the picture reaches a corner (B-027).
+- Contrast: a card's kind line in dark mode (3.7:1 → 6.9:1), a system boundary (1.8:1 → 3.2:1) and the
+  Layout panel's explanations in dark mode (4.1:1 → 7.8:1).
+
 ### Faster on the canvas, clearer in the room — 2026-10-21
 
 Six things that make Stemma quicker to work in and easier to present with. Every one of them has a

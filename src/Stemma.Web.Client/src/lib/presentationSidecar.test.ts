@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Avoid real network for the debounced PUT.
 vi.mock('./api', () => ({ fetchLayout: vi.fn(async () => null), patchLayoutSidecar: vi.fn(async () => null), beforeLeavingWorkspace: vi.fn() }));
 
-import { setSidecarCacheForTest, sidecarMap, primeLayoutSidecar } from './layout';
+import { setSidecarCacheForTest, sidecarMap, primeLayoutSidecar, viewLayered } from './layout';
 import { loadNodeStyles, setNodeStyle } from './nodeStyles';
 import { loadNote, saveNote } from './elementNotes';
 import { loadCustomProps, setCustomProp } from './customProps';
@@ -70,5 +70,32 @@ describe('committed presentation sidecar', () => {
     await primeLayoutSidecar(ROOT);
     expect(loadNodeStyles(ROOT).mod_9?.fillColor).toBe('#abcdef');
     expect((sidecarMap(ROOT, 'nodeStyles') as Record<string, { fillColor?: string }>).mod_9.fillColor).toBe('#abcdef');
+  });
+});
+
+// F-021: the canvas lays a view out in layers by this, and whatever places a new card asks it first.
+describe('viewLayered', () => {
+  it('lays out a view nobody arranged, by default', () => {
+    expect(viewLayered(ROOT, 'moduleMap', ['mod_a', 'mod_b'])).toEqual({ constraint: { kind: 'layered' }, implicit: true });
+  });
+
+  it('takes the view\'s own layered constraint, with its settings', () => {
+    setSidecarCacheForTest(ROOT, { version: 1, views: { moduleMap: { layout: { kind: 'layered', direction: 'RIGHT' }, nodes: { mod_a: { x: 1, y: 2 } } } } });
+    expect(viewLayered(ROOT, 'moduleMap', ['mod_a'])).toEqual({ constraint: { kind: 'layered', direction: 'RIGHT' }, implicit: false });
+  });
+
+  it('leaves alone a view with a saved position for a card it draws, or another kind of layout', () => {
+    setSidecarCacheForTest(ROOT, { version: 1, views: { moduleMap: { nodes: { mod_b: { x: 1, y: 2 } } }, dependencyGraph: { layout: { kind: 'grid', columns: 2 } } } });
+    expect(viewLayered(ROOT, 'moduleMap', ['mod_a', 'mod_b'])).toBeNull();
+    expect(viewLayered(ROOT, 'dependencyGraph', ['mod_a'])).toBeNull();
+  });
+
+  it('ignores positions left behind by cards the view no longer draws', () => {
+    setSidecarCacheForTest(ROOT, { version: 1, views: { moduleMap: { nodes: { mod_gone: { x: 1, y: 2 } } } } });
+    expect(viewLayered(ROOT, 'moduleMap', ['mod_a'])?.implicit).toBe(true);
+  });
+
+  it('says nothing before the sidecar is read, when no saved position means not read yet', () => {
+    expect(viewLayered('/ws/never-read', 'moduleMap', ['mod_a'])).toBeNull();
   });
 });

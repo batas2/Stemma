@@ -50,7 +50,28 @@ so one ⌘Z undoes the last step whatever it was — a move, a look, an edit, or
 operations. Model undo is still the engine's; the journal only decides which stack and how many times.
 
 Saving a view is not an operation but goes the same way: `PUT /api/workspace/views` asks the engine,
-which edits the view's file in place rather than writing it from a template.
+which edits the view's file in place rather than writing it from a template. A field sent as null is
+left as the file has it, so a canvas that changed only the members keeps the view's scope and rules.
+
+Reading the views, the client gets each one as written and what it draws, resolved by the engine
+([ADR-0026](./decisions/0026-views-by-rule.md)) — never resolved again in the browser:
+
+```jsonc
+// GET /api/workspace/views
+[{
+  "id": "view_shop", "name": "Shop containers", "baseView": "container",
+  "elementIds": [],                       // as written; [] when there are none
+  "scope": "sys_shop", "include": ["kind:person"], "exclude": null,   // null when not written
+  "members": ["per_buyer", "sys_shop", "sys_payments", "cnt_web", "cnt_api"],
+  "provenance": { "per_buyer": "lens", "cnt_api": "lens" /* …or "elementIds", "include:<selector>" */ },
+  "implied": [{ "id": "__implied__cnt_api__sys_payments", "fromId": "cnt_api", "toId": "sys_payments",
+                "linkIds": ["flow_pay", "flow_refund"] }],
+  "problems": [{ "rule": "view/dangling-include", "severity": "warning", "message": "…" }]
+}]
+```
+
+`PUT` takes the same shape, ignores what it does not edit (`members`, `provenance`, …), and edits
+`name`, `baseView`, `elementIds`, `scope`, `include` and `exclude`.
 
 To add one, follow the procedure in [`engine-backend.md`](./engine-backend.md#adding-or-changing-an-operation-the-procedure).
 

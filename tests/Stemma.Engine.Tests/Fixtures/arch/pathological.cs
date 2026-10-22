@@ -18,7 +18,14 @@ public static class Architecture { public static Model Build() {
 	var modInvoicing = new Module(Id: "mod_invoicing", Name: "Invoicing");
 	/* the slow path */ var riskLatency = new Risk("risk_latency", "Checkout is slow");
 	var flowOrders = new DataFlow("flow_orders", "mod_checkout", "mod_invoicing", "Order");/* hot */
+	var perBuyer = new Person(Id: "per_buyer", Name: "Buyer", Role: "external");
+	var sysShop = new SoftwareSystem("sys_shop", /* ours */ "Shop");
+	var cntWeb = new Container("cnt_web", "Web Shop",
+		"sys_shop", "spa");
+	var cntStore = new Container(Id: "cnt_store", Name: "Order Store", SystemId: "sys_shop"); // no kind
+	var flowBrowse = new DataFlow(@"flow_browse", "per_buyer", "cnt_web", "search terms", Direction: "twoway");
 	Tag.For(modCheckout, lifecycle: new Lifecycle("current", "fidelity-critical"));
 	return Model.Of(ctxOrdering, /* contexts first */ ctxBilling,
+		perBuyer, sysShop, cntWeb, cntStore, flowBrowse, // C4
 		modCheckout, modInvoicing, riskLatency, flowOrders);
 }}

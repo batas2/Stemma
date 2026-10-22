@@ -66,6 +66,10 @@ else
 fi
 
 cp -r "$REPO/samples/StemmaArchitecture" "$WORK/workspace"
+# The self-model maps its containers to Stemma's projects, two folders up. The copy is away from the
+# repository, where that map points at nothing and validate rightly calls it an error; comparing the
+# model with the code is the test suite's job, run where the code is.
+rm "$WORK/workspace/Rules/Code.cs"
 
 echo "==> stemma --version"
 OUT="$(run "$STEMMA" --version)"

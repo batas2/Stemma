@@ -27,6 +27,12 @@ public sealed record RenderOptions
     /// <summary>Re-check the manifest against the workspace and exit non-zero on drift, writing nothing.</summary>
     public bool CheckOnly { get; init; }
 
+    /// <summary>Print the outcome as one JSON document instead of lines for a person (F-022).</summary>
+    public bool Json { get; init; }
+
+    /// <summary>Exit 1 when the layout lint finds anything worth a warning (F-022). The image is written either way.</summary>
+    public bool FailOnLint { get; init; }
+
     public const int ScaleMin = 1;
     public const int ScaleMax = 4;
 
@@ -55,6 +61,8 @@ public sealed record RenderOptions
           --timeout <seconds>  How long to wait for the canvas to settle. Default 60.
           --no-manifest        Skip the sibling .manifest.json.
           --check              Do not render; report whether the committed image is still current.
+          --json               Print the result — files, sizes, layout findings — as one JSON document.
+          --fail-on-lint       Exit 1 when the layout lint warns (overlaps, an edge through a box, …).
         """;
 
     /// <summary>Parsed options, or an error explaining what the command line got wrong.</summary>
@@ -72,7 +80,7 @@ public sealed record RenderOptions
         string? workspace = null, view = null, output = null, palette = null;
         var profile = "publication";
         List<string> themes = ["light"], formats = ["png"];
-        bool transparent = true, manifest = true, checkOnly = false;
+        bool transparent = true, manifest = true, checkOnly = false, json = false, failOnLint = false;
         int scale = 2, pad = 24, timeout = 60;
 
         string? Need(int i, string flag) => i + 1 < args.Count ? args[i + 1] : null;
@@ -92,6 +100,8 @@ public sealed record RenderOptions
                 case "--opaque": transparent = false; break;
                 case "--no-manifest": manifest = false; break;
                 case "--check": checkOnly = true; break;
+                case "--json": json = true; break;
+                case "--fail-on-lint": failOnLint = true; break;
                 case "--scale":
                     if (!int.TryParse(Need(i, a), out scale)) return new(null, "--scale needs a whole number");
                     i++; break;
@@ -138,6 +148,8 @@ public sealed record RenderOptions
             TimeoutSeconds = timeout,
             Manifest = manifest,
             CheckOnly = checkOnly,
+            Json = json,
+            FailOnLint = failOnLint,
         }, null);
     }
 

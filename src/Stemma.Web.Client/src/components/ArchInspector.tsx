@@ -26,7 +26,7 @@ import { loadNote, saveNote } from '@/lib/elementNotes';
 import { heldStyleFor, subscribeHeldStyle } from '@/lib/clipboard';
 import { placeOf, viewsShowing } from '@/lib/navigation';
 import { useCompareDiff } from '@/lib/compare';
-import type { ArchElement } from '@/lib/types';
+import type { ArchElement, ArchElementKind } from '@/lib/types';
 import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { hashtagProps } from '@/lib/hashtags';
 
@@ -278,7 +278,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
   // Built-in model fields, each editable where an operation exists for it. Rendered in the
   // Custom properties sub-section beside their show-on-canvas ticks.
   const bcs = arch.elements.filter((x) => x.kind === 'boundedContext');
-  const builtinRows: BuiltinRow[] = [
+  const allBuiltinRows: BuiltinRow[] = [
     { key: 'kind', value: e.kind },
     { key: 'name', value: e.name, commit: commitName },
     { key: 'id', value: e.id },
@@ -287,7 +287,11 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
       options: [{ value: '', label: '(none)' }, ...bcs.map((c) => ({ value: c.id, label: c.name }))],
     },
     { key: 'systemId', value: e.attributes.systemId ?? '', commit: (v) => commitElementAttr('systemId', v) },
-    { key: 'containerKind', value: e.attributes.containerKind ?? '', commit: (v) => commitElementAttr('containerKind', v) },
+    // The container's own kind is its `kind` argument; this row once read and wrote a `containerKind`
+    // the model never had, so it showed nothing and saving it was refused.
+    { key: 'containerKind', value: e.attributes.kind ?? '', commit: (v) => commitElementAttr('kind', v) },
+    { key: 'technology', value: e.attributes.technology ?? '', commit: (v) => commitElementAttr('technology', v) },
+    { key: 'description', value: e.attributes.description ?? '', commit: (v) => commitElementAttr('description', v) },
     { key: 'squad', value: squad, commit: (v) => { setSquad(v); commitOwnership(v, domain); } },
     { key: 'domain', value: domain, commit: (v) => { setDomain(v); commitOwnership(squad, v); } },
     {
@@ -296,6 +300,7 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
     },
     { key: 'phase', value: phase, commit: (v) => { setPhase(v); commitLifecycle(status, v); } },
   ];
+  const builtinRows = allBuiltinRows.filter((row) => rowAppliesTo(row.key, e.kind));
 
   function setStyle(s: Partial<NodeStyle>) {
     setNodeStyleFor(elementId, { ...userNodeStyle, ...s });
@@ -373,7 +378,8 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
             <Field label="Kind" value={e.kind} />
             <Field label="Id" value={e.id} mono />
             {Object.entries(e.attributes).filter(([k]) => k !== 'external').map(([k, v]) =>
-              v ? <Field key={k} label={k} value={v} mono /> : null
+              // Named as people say them, not as the C# argument is spelled; prose is not set in mono.
+              v ? <Field key={k} label={ATTRIBUTE_LABEL[k] ?? k} value={v} mono={k !== 'description'} /> : null
             )}
           </SubSection>
 
@@ -696,6 +702,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   const userStyle: EdgeStyle = edgeStyles[linkId] ?? DEFAULT_EDGE_STYLE;
 
   const [payloadEdit, setPayloadEdit] = useState('');
+  const [techEdit, setTechEdit] = useState('');
   const [kindEdit, setKindEdit] = useState('');
   const [linkStatus, setLinkStatus] = useState(tag?.lifecycle?.status ?? '');
   const [linkPhase, setLinkPhase] = useState(tag?.lifecycle?.phase ?? '');
@@ -707,6 +714,7 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
       const draft = useApp.getState().linkDraft;
       const mine = draft && draft.linkId === link.id ? draft : null;
       setPayloadEdit(mine?.field === 'payload' ? mine.value : (link.attributes.payload ?? ''));
+      setTechEdit(link.attributes.technology ?? '');
       // A dependency's kind, or a relation's label: whichever attribute the arrow is labelled with.
       setKindEdit(mine && mine.field === linkLabelField(link.kind) ? mine.value : linkLabel(link));
     }
@@ -774,6 +782,17 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
     });
     if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
     else setToast({ kind: 'success', text: 'Payload updated' });
+  }
+
+  async function handleTechnologySave() {
+    if (!link || !isDataFlow) return;
+    if ((techEdit.trim() || null) === (link.attributes.technology ?? null)) return;
+    const r = await applyOperation({
+      kind: 'SetLinkAttribute', opId: `op_${Date.now()}`,
+      linkId: link.id, attributeName: 'technology', value: techEdit.trim() || null,
+    });
+    if ('reason' in r) setToast({ kind: 'error', text: friendlyOpError(r) });
+    else setToast({ kind: 'success', text: 'Technology updated' });
   }
 
   async function handleKindSave() {
@@ -873,6 +892,15 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
               onCommit={handleKindSave}
               onPickType={applyRelType}
               placeholder={labelField === 'label' ? 'gated by, implemented by…' : 'uses, calls, reads…'}
+            />
+          )}
+          {isDataFlow && (
+            <LabeledInput
+              label="Technology"
+              value={techEdit}
+              onChange={setTechEdit}
+              onCommit={handleTechnologySave}
+              placeholder="e.g. HTTPS/JSON, Kafka"
             />
           )}
 
@@ -1311,6 +1339,34 @@ function LabeledInput({ label, value, onChange, onCommit, placeholder }: {
       />
     </div>
   );
+}
+
+/** The model's attribute names, as the Identity rows say them. An attribute not listed shows its own name. */
+const ATTRIBUTE_LABEL: Record<string, string> = {
+  systemId: 'System',
+  contextId: 'Context',
+  aboutId: 'About',
+  kind: 'Container kind',
+  role: 'Role',
+  technology: 'Technology',
+  description: 'Description',
+};
+
+/**
+ * Which kinds a model field belongs to. A row the kind does not have used to be offered anyway — a
+ * system id on a module — and saving it was refused as an unknown attribute.
+ */
+const ROW_KINDS: Partial<Record<NodeFieldKey, ArchElementKind[]>> = {
+  contextId: ['module', 'capability'],
+  systemId: ['container'],
+  containerKind: ['container'],
+  technology: ['container'],
+  description: ['person', 'softwareSystem', 'container'],
+};
+
+function rowAppliesTo(key: NodeFieldKey, kind: ArchElementKind): boolean {
+  const kinds = ROW_KINDS[key];
+  return !kinds || kinds.includes(kind);
 }
 
 /** A built-in (model) field shown in the properties panel: current value plus, where the model

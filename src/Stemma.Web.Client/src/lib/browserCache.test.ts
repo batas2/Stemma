@@ -340,3 +340,32 @@ describe('views are what Views/*.cs declares', () => {
     expect(s.useApp.getState().toast?.kind).toBe('error');
   });
 });
+
+describe('a view stated by rule, saved from the canvas (ADR-0026)', () => {
+  beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); });
+  afterEach(() => vi.useRealTimers());
+
+  const ruled: ServerView = {
+    id: 'view_c', name: 'Containers', baseView: 'container', elementIds: [], scope: 'sys_shop',
+    include: ['kind:person'], exclude: null, members: ['sys_shop', 'cnt_a', 'per_x'],
+    provenance: { sys_shop: 'lens', cnt_a: 'lens', per_x: 'include:kind:person' },
+  };
+
+  it('sends the scope and the include as null, so an edit made to them meanwhile is not put back', async () => {
+    const s = await session();
+    await open(s, empty(), [ruled]);
+    s.useApp.getState().setActiveCustomView('view_c');
+    s.useApp.getState().addElementToActiveView('cnt_b');
+    await flush();
+    expect(s.api.saveServerView).toHaveBeenCalledWith(expect.objectContaining({ elementIds: ['cnt_b'], scope: null, include: null, exclude: null }));
+  });
+
+  it('sends the exclude when the canvas changed it', async () => {
+    const s = await session();
+    await open(s, empty(), [ruled]);
+    s.useApp.getState().setActiveCustomView('view_c');
+    s.useApp.getState().removeElementFromActiveView('cnt_a');
+    await flush();
+    expect(s.api.saveServerView).toHaveBeenCalledWith(expect.objectContaining({ scope: null, include: null, exclude: ['cnt_a'] }));
+  });
+});

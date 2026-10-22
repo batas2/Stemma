@@ -403,27 +403,31 @@ public static class DslWriter
 
     // ── New code ────────────────────────────────────────────────────────────────────────────
 
-    private static StatementSyntax BuildLocalForElement(ArchElement e, string varName)
-    {
-        var args = new List<string> { Literal(e.Id).ToString(), Literal(e.Name).ToString() };
-        foreach (var attribute in DslVocabulary.ParametersOf(e.Kind.ToString())?.Skip(2) ?? [])
-        {
-            // Positional, so the first attribute the element lacks ends the list.
-            if (!e.Attributes.TryGetValue(attribute, out var value) || value is null) break;
-            args.Add(Literal(value).ToString());
-        }
-        return LocalDeclaration(varName, e.Kind.ToString(), args);
-    }
+    private static StatementSyntax BuildLocalForElement(ArchElement e, string varName) =>
+        LocalDeclaration(varName, e.Kind.ToString(),
+            [Literal(e.Id).ToString(), Literal(e.Name).ToString(), .. AttributeArguments(e.Kind.ToString(), 2, e.Attributes)]);
 
-    private static StatementSyntax BuildLocalForLink(ArchLink l, string varName)
+    private static StatementSyntax BuildLocalForLink(ArchLink l, string varName) =>
+        LocalDeclaration(varName, l.Kind.ToString(),
+            [Literal(l.Id).ToString(), Literal(l.FromId).ToString(), Literal(l.ToId).ToString(), .. AttributeArguments(l.Kind.ToString(), 3, l.Attributes)]);
+
+    /// <summary>
+    /// The attributes after the first <paramref name="skip"/> parameters, as arguments: positional while
+    /// every one before is there, then by name. Positional to the end, the first attribute missing —
+    /// a container's kind — ended the list, and took the technology after it along.
+    /// </summary>
+    private static IEnumerable<string> AttributeArguments(string typeName, int skip, IReadOnlyDictionary<string, string?> attributes)
     {
-        var args = new List<string> { Literal(l.Id).ToString(), Literal(l.FromId).ToString(), Literal(l.ToId).ToString() };
-        foreach (var attribute in DslVocabulary.ParametersOf(l.Kind.ToString())?.Skip(3) ?? [])
+        var named = false;
+        foreach (var attribute in DslVocabulary.ParametersOf(typeName)?.Skip(skip) ?? [])
         {
-            if (!l.Attributes.TryGetValue(attribute, out var value) || value is null) break;
-            args.Add(Literal(value).ToString());
+            if (!attributes.TryGetValue(attribute, out var value) || value is null)
+            {
+                named = true;
+                continue;
+            }
+            yield return named ? $"{DslVocabulary.ParameterName(attribute)}: {Literal(value)}" : Literal(value).ToString();
         }
-        return LocalDeclaration(varName, l.Kind.ToString(), args);
     }
 
     /// <summary>A new declaration with no trivia of its own; it is laid out where it is inserted.</summary>

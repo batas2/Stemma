@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Columns3, Rows3, Grid3x3, Layers, Trash2, RotateCcw } from 'lucide-react';
+import { Columns3, Rows3, Grid3x3, Layers, Trash2, RotateCcw, Network, ArrowDown, ArrowRight, ArrowUp, ArrowLeft } from 'lucide-react';
+import clsx from 'clsx';
 import { useApp } from '@/lib/store';
 import {
-  loadViewConstraint, saveViewConstraint, loadViewOffsets, clearViewOffsets,
+  loadViewConstraint, loadViewLayered, saveViewConstraint, loadViewOffsets, clearViewOffsets, loadLayout,
 } from '@/lib/layout';
+import type { LayeredConstraint, LayeredDirection } from '@/lib/layeredLayout';
+import type { ViewKind } from '@/lib/types';
 import { constraintIds, constraintFromSelection, danglingIds, type LayoutConstraint, type LayoutConstraintKind } from '@/lib/layoutDsl';
 
 /**
@@ -16,7 +19,18 @@ import { constraintIds, constraintFromSelection, danglingIds, type LayoutConstra
  * It is deliberately a small surface. A constraint is a *statement about the arrangement*, not a
  * drawing tool — the four shapes below are the ones that hold their meaning when a box is added
  * next week, which is the whole reason to prefer them over dragging.
+ *
+ * Layers (F-021) is the fifth and is different in kind: it governs the whole view rather than a
+ * selection, and ELK solves it — the arrangement for an architecture, where the four shapes are for a
+ * figure whose arrangement is its argument.
  */
+
+const DIRECTIONS: { value: LayeredDirection; label: string; icon: typeof ArrowDown }[] = [
+  { value: 'down', label: 'Top to bottom', icon: ArrowDown },
+  { value: 'right', label: 'Left to right', icon: ArrowRight },
+  { value: 'up', label: 'Bottom to top', icon: ArrowUp },
+  { value: 'left', label: 'Right to left', icon: ArrowLeft },
+];
 
 const SHAPES: { kind: LayoutConstraintKind; label: string; icon: typeof Grid3x3; hint: string }[] = [
   { kind: 'row', label: 'Row', icon: Columns3, hint: 'Left to right, in selection order.' },
@@ -32,6 +46,9 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
   const setToast = useApp((s) => s.setToast);
 
   const [constraint, setConstraint] = useState<LayoutConstraint | null>(null);
+  const [layered, setLayered] = useState<LayeredConstraint | null>(null);
+  // A view nobody has arranged is laid out in layers without saying so in the file (F-021 AC4).
+  const [unarranged, setUnarranged] = useState(false);
   const [nudgeCount, setNudgeCount] = useState(0);
   const [rows, setRows] = useState(2);
 
@@ -41,7 +58,11 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
     if (!workspace) return;
     function refresh() {
       if (!workspace) return;
-      setConstraint(loadViewConstraint(workspace.rootPath, layoutKey));
+      const shape = loadViewConstraint(workspace.rootPath, layoutKey);
+      const layers = loadViewLayered(workspace.rootPath, layoutKey);
+      setConstraint(shape);
+      setLayered(layers);
+      setUnarranged(!shape && !layers && Object.keys(loadLayout(workspace.rootPath, layoutKey as ViewKind)).length === 0);
       setNudgeCount(Object.keys(loadViewOffsets(workspace.rootPath, layoutKey)).length);
     }
     refresh();
@@ -63,9 +84,24 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
     // scatter the new one by whatever the old corrections happened to be.
     clearViewOffsets(workspace.rootPath, layoutKey);
     setConstraint(next);
+    setLayered(null);
     setNudgeCount(0);
     window.dispatchEvent(new CustomEvent('stemma:layout-changed'));
     setToast({ kind: 'success', text: `${kind} of ${selectedIds.length} elements` });
+  }
+
+  function applyLayers(direction: LayeredDirection = layered?.direction ?? 'down') {
+    if (!workspace) return;
+    const next: LayeredConstraint = { ...(layered ?? {}), kind: 'layered', direction };
+    if (next.direction === 'down') delete next.direction;
+    saveViewConstraint(workspace.rootPath, layoutKey, next);
+    clearViewOffsets(workspace.rootPath, layoutKey);
+    setLayered(next);
+    setConstraint(null);
+    setUnarranged(false);
+    setNudgeCount(0);
+    window.dispatchEvent(new CustomEvent('stemma:layout-changed'));
+    if (!layered) setToast({ kind: 'success', text: 'Laid out in layers, edges routed' });
   }
 
   function remove() {
@@ -75,7 +111,9 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
     saveViewConstraint(workspace.rootPath, layoutKey, null);
     clearViewOffsets(workspace.rootPath, layoutKey);
     setConstraint(null);
+    setLayered(null);
     setNudgeCount(0);
+    window.dispatchEvent(new CustomEvent('stemma:layout-changed'));
     setToast({ kind: 'info', text: 'Constraint removed; positions kept' });
   }
 
@@ -88,6 +126,7 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
   }
 
   const governed = constraint ? constraintIds(constraint).length : 0;
+  const active = constraint ?? layered;
   // A constraint naming an element that has since been removed places nothing and says nothing —
   // the box is simply absent from an arrangement that still claims to include it.
   const dangling = constraint && arch ? danglingIds(constraint, arch.elements.map((e) => e.id)) : [];
@@ -97,14 +136,58 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
       <header className="flex items-center justify-between">
         <h3 className="text-xs font-medium">Constraint</h3>
         {constraint && <span className="text-[10px] text-zinc-500">{constraint.kind} · {governed} elements</span>}
+        {layered && <span className="text-[10px] text-zinc-500">layers · whole view</span>}
       </header>
 
-      <p className="text-[11px] text-zinc-500 leading-snug">
+      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-snug">
         A constraint stays live: nudging one box records an offset against it instead of replacing
         it, so adding an element later re-solves and keeps your corrections.
       </p>
 
-      {constraint ? (
+      {layered && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-500">Direction</div>
+          <div
+            role="radiogroup"
+            aria-label="Direction of the layers"
+            className="inline-flex rounded-md border border-default overflow-hidden"
+            // A radio group is one stop for Tab, and the arrows move the choice, as a native one does.
+            onKeyDown={(ev) => {
+              const step = ev.key === 'ArrowRight' || ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowLeft' || ev.key === 'ArrowUp' ? -1 : 0;
+              if (!step) return;
+              ev.preventDefault();
+              // Held now: React clears an event's currentTarget once the handler returns.
+              const group = ev.currentTarget;
+              const at = DIRECTIONS.findIndex((d) => d.value === (layered.direction ?? 'down'));
+              const next = DIRECTIONS[(at + step + DIRECTIONS.length) % DIRECTIONS.length];
+              applyLayers(next.value);
+              requestAnimationFrame(() => (group.querySelector(`[data-direction="${next.value}"]`) as HTMLElement | null)?.focus());
+            }}
+          >
+            {DIRECTIONS.map(({ value, label, icon: Icon }) => {
+              const on = (layered.direction ?? 'down') === value;
+              return (
+                <button
+                  key={value}
+                  role="radio"
+                  aria-checked={on}
+                  aria-label={label}
+                  title={label}
+                  tabIndex={on ? 0 : -1}
+                  data-direction={value}
+                  onClick={() => { if (!on) applyLayers(value); }}
+                  className={clsx('px-2.5 py-1.5 transition-colors',
+                    on ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {active ? (
         <div className="flex items-center gap-2">
           <button className="btn btn-sm btn-ghost border-default" onClick={remove}>
             <Trash2 className="w-3 h-3" /> Remove
@@ -118,8 +201,23 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
             <RotateCcw className="w-3 h-3" /> Reset nudges{nudgeCount > 0 ? ` (${nudgeCount})` : ''}
           </button>
         </div>
+      ) : unarranged ? (
+        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-snug">
+          Nobody has arranged this view, so it is laid out in layers. Nudge a box, or choose a shape
+          below, and the arrangement becomes this view’s own.
+        </p>
       ) : (
         <p className="text-[11px] text-zinc-500">No constraint — positions on this view are absolute.</p>
+      )}
+
+      {!layered && (
+        <button
+          className="btn btn-sm btn-ghost border-default w-full justify-start"
+          title="Lay the whole view out in layers that follow its relationships, with every edge routed around the boxes"
+          onClick={() => applyLayers('down')}
+        >
+          <Network className="w-3 h-3" /> Lay out in layers
+        </button>
       )}
 
       {dangling.length > 0 && (

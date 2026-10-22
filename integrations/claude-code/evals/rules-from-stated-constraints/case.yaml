@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: rules-from-stated-constraints
+expected_outcome: |
+  A Stemma workspace with the clinic system modelled, and a Rules file that states both constraints as
+  checked rules — only the scheduling service may relate to the EHR system, and no front end may relate
+  to a database — each with a reason. stemma validate runs clean, so the model satisfies the rules.

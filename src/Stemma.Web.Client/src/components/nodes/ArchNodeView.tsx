@@ -164,6 +164,8 @@ const FIELD_LABEL: Record<NodeFieldKey, string> = {
   contextId: 'Context',
   systemId: 'System',
   containerKind: 'Container kind',
+  technology: 'Technology',
+  description: 'Description',
   squad: 'Squad',
   domain: 'Domain',
   status: 'Status',
@@ -172,14 +174,14 @@ const FIELD_LABEL: Record<NodeFieldKey, string> = {
 };
 
 export const ALL_FIELD_KEYS: NodeFieldKey[] = [
-  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind',
+  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind', 'technology', 'description',
   'squad', 'domain', 'status', 'phase',
 ];
 
 export function fieldLabel(k: NodeFieldKey): string { return FIELD_LABEL[k] ?? k; }
 
 const BUILTIN_KEYS = new Set<string>([
-  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind',
+  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind', 'technology', 'description',
   'squad', 'domain', 'status', 'phase', 'narrativePreview',
 ]);
 
@@ -274,6 +276,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
     return (
       <BcContainer
         id={id}
+        kind={e.kind === 'softwareSystem' ? 'softwareSystem' : 'boundedContext'}
         name={e.name}
         childCount={data.childCount}
         collapsed={data.collapsed}
@@ -301,6 +304,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           height={nodeStyle?.height}
           dashed={status === 'to-be-created' || status === 'proposed' || nodeStyle?.borderStyle === 'dashed'}
           accent={nodeStyle?.accentColor !== undefined || nodeStyle?.borderColor !== undefined}
+          caption={showField('technology') && e.attributes.technology ? `[${e.attributes.technology}]` : undefined}
         />
         {DOCK_HANDLES.map((h) => (
           <Handle key={h.id} type="source" id={h.id} position={h.position} style={h.style} />
@@ -389,7 +393,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           />
         )}
         {isPerson ? (
-          <div className="flex items-center gap-2 h-full">
+          <div className="flex flex-col justify-center h-full">
+          <div className="flex items-center gap-2">
             <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
             {showField('name') && (
               data.editing
@@ -403,6 +408,12 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
             )}
             {showField('status') && status && <StatusBadge status={status} size={scale.badge} tint={badgeTint} />}
           </div>
+          {/* A person's description sits under the name, as on a C4 person (ADR-0027). */}
+          {showField('description') && e.attributes.description && (
+            <div className={clsx('stemma-node-description text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5 pl-[22px]', scale.notes, scale.clamp && 'line-clamp-2')}
+              title={scale.clamp ? e.attributes.description : undefined}>{e.attributes.description}</div>
+          )}
+          </div>
         ) : (
           <>
             {/* Without the kind, the status needs no row of its own: it sits beside the name, which is
@@ -411,8 +422,12 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
               <div className={clsx('stemma-node-header border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0', scale.pad)}>
                 <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
                 {showField('kind') && (
-                  <span className={clsx('stemma-node-kind uppercase tracking-wider text-zinc-500 font-medium truncate', scale.kind)}>
+                  <span className={clsx('stemma-node-kind uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-medium truncate', scale.kind)}>
                     {labelForKind[e.kind]}
+                    {/* C4's "Container: .NET 8" — the technology rides on the kind line (ADR-0027). */}
+                    {showField('technology') && e.attributes.technology && (
+                      <span className="stemma-node-tech normal-case tracking-normal font-normal" title={`Technology: ${e.attributes.technology}`}> · {e.attributes.technology}</span>
+                    )}
                   </span>
                 )}
                 {isExternal && (
@@ -443,6 +458,12 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     {!showField('kind') && showField('status') && status && <span className="mt-0.5 ml-auto shrink-0"><StatusBadge status={status} size={scale.badge} tint={badgeTint} /></span>}
                   </div>
               )}
+              {showField('description') && e.attributes.description && !data.notesEditing && (
+                <div
+                  className={clsx('stemma-node-description text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5 shrink-0', scale.notes, scale.clamp && 'line-clamp-3')}
+                  title={scale.clamp ? e.attributes.description : undefined}
+                >{e.attributes.description}</div>
+              )}
               {data.notesEditing ? (
                 <RichTextEditor
                   value={data.noteFull ?? ''}
@@ -468,8 +489,10 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     {showField('systemId') && e.attributes.systemId && (
                       <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.systemId}</div>
                     )}
-                    {showField('containerKind') && e.attributes.containerKind && (
-                      <div className="text-[10px] text-zinc-500 truncate">{e.attributes.containerKind}</div>
+                    {/* A container's own kind (service, db, …) is its `kind` argument; the API never sent a
+                        `containerKind`, so this row and its inspector field showed and saved nothing. */}
+                    {showField('containerKind') && e.kind === 'container' && e.attributes.kind && (
+                      <div className="text-[10px] text-zinc-500 truncate">{e.attributes.kind}</div>
                     )}
                     {showField('squad') && tag?.ownership?.squad && (
                       <div className="text-[10px] text-zinc-500 truncate">👥 {tag.ownership.squad}</div>
@@ -522,7 +545,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
 /** A context frame's header chip, sized with the frame's `textSize` so it can be read from a room. */
 const BC_CHIP_TEXT: Record<string, string> = { sm: 'text-[10px]', base: 'text-[10px]', lg: 'text-[13px]', xl: 'text-[16px]' };
 
-function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel, revealed, diff }: {
+function BcContainer({ id, kind = 'boundedContext', name, childCount, collapsed, selected, editing, nodeStyle, onToggle, onCommit, onCancel, revealed, diff }: {
+  /** A context frames its modules; a system frames its containers — the C4 boundary (F-021). */
+  kind?: 'boundedContext' | 'softwareSystem';
   revealed?: boolean;
   diff?: 'added' | 'changed' | 'removed';
   id: string;
@@ -572,37 +597,51 @@ function BcContainer({ id, name, childCount, collapsed, selected, editing, nodeS
   if (nodeStyle?.borderWidth !== undefined) bodyStyle.borderWidth = `${nodeStyle.borderWidth}px`;
   if (fill) bodyStyle.background = fill;
 
+  // A system boundary is neutral ink, not a context's violet: in C4 it is the edge of what you own,
+  // and it must not compete with the cards inside it for attention.
+  const system = kind === 'softwareSystem';
   return (
     <div
       style={bodyStyle}
       className={clsx(
         'stemma-bc-frame rounded-2xl border-2 transition-colors',
+        system && 'stemma-system-frame',
         revealed && 'stemma-reveal',
         diff === 'added' && 'ring-2 ring-emerald-500/70',
         diff === 'changed' && 'ring-2 ring-amber-500/70',
         !nodeStyle?.borderStyle && 'border-dashed',
-        !border && (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40'),
-        !fill && (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]'),
+        !border && (system
+          // 3.2:1 and 3.5:1 against the canvas — a boundary carries meaning, so it clears the 3:1 a
+          // graphical object needs, where a hairline-grey dash at 1.8:1 vanished on a projector.
+          ? (selected ? 'border-zinc-600 dark:border-zinc-400' : 'border-zinc-500/80 dark:border-zinc-500/90')
+          : (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40')),
+        !fill && (system
+          ? (selected ? 'bg-zinc-500/[0.07]' : 'bg-zinc-500/[0.03] dark:bg-zinc-400/[0.04]')
+          : (selected ? 'bg-violet-500/[0.08]' : 'bg-violet-500/[0.04] dark:bg-violet-500/[0.06]')),
       )}
     >
       <div
         style={{ pointerEvents: 'auto', ...(border ? { background: border, borderColor: border, color: '#fff' } : {}) }}
-        title={`Bounded Context: ${name}`}
+        title={`${system ? 'Software System' : 'Bounded Context'}: ${name}`}
         className={clsx(
           'absolute left-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded border cursor-pointer',
           BC_CHIP_TEXT[nodeStyle?.textSize ?? 'base'] ?? 'text-[10px]',
           nodeStyle?.textSize === 'xl' ? '-top-4' : nodeStyle?.textSize === 'lg' ? '-top-3.5' : '-top-3',
-          !border && 'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30',
+          !border && (system
+            ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 border-zinc-400/50 dark:border-zinc-600'
+            : 'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30'),
         )}
       >
-        <button onClick={(ev) => { ev.stopPropagation(); onToggle?.(); }} title="Collapse" className="nodrag">
-          <ChevronDown className="w-3 h-3" />
-        </button>
-        <Layers className="w-3 h-3 shrink-0" />
+        {onToggle && (
+          <button onClick={(ev) => { ev.stopPropagation(); onToggle(); }} title="Collapse" aria-label={`Collapse ${name}`} className="nodrag">
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        )}
+        {system ? <Server className="w-3 h-3 shrink-0" /> : <Layers className="w-3 h-3 shrink-0" />}
         {editing
           ? <NameEditor id={id} initial={name} onCommit={onCommit} onCancel={onCancel} />
           : <span className="font-medium">{name}</span>}
-        {childCount !== undefined && childCount > 0 && <span className="opacity-80">· {childCount}</span>}
+        {childCount !== undefined && childCount > 0 && <span className="stemma-bc-count opacity-80">· {childCount}</span>}
         {diff && diff !== 'removed' && (
           <span className={clsx('ml-1 px-1.5 rounded-full font-semibold', diff === 'added' ? 'bg-emerald-700 text-white' : 'bg-amber-500 text-stone-900')}>
             {diff === 'added' ? 'New' : 'Changed'}

@@ -9,7 +9,17 @@ namespace Stemma.Cli;
 /// SVG, where transparency is a property of the markup rather than of an encoding. The manifest
 /// reports this rather than the request — see <see cref="PngFacts"/> and B-003.
 /// </param>
-public sealed record RenderedFile(string Path, string Theme, string Format, int NodeCount, int Width, int Height, bool? HasAlpha);
+public sealed record RenderedFile(string Path, string Theme, string Format, int NodeCount, int Width, int Height, bool? HasAlpha)
+{
+    /// <summary>What was drawn, in flow units — cards, frames, edge polylines, labels (F-022). Null from a page that does not publish it.</summary>
+    public JsonElement? Geometry { get; init; }
+
+    /// <summary>What the layout lint found wrong with the picture (F-022).</summary>
+    public IReadOnlyList<LayoutFinding> Lint { get; init; } = [];
+}
+
+/// <summary>One thing wrong with a picture's layout, said in ids an agent can act on (F-022).</summary>
+public sealed record LayoutFinding(string Severity, string Rule, string Message, IReadOnlyList<string> Ids);
 
 /// <summary>
 /// Drives the canvas's own render mode and captures what it draws.
@@ -85,6 +95,7 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
 
         var nodeCount = await page.Locator(".react-flow__node").CountAsync();
         var box = await ContentBoxAsync(page, o.Pad);
+        var (geometry, lint) = await GeometryAsync(page);
         var target = o.OutputFor(theme, format);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 
@@ -108,7 +119,38 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
         }
 
         var hasAlpha = format == "png" ? PngFacts.HasAlpha(target) : null;
-        return new RenderedFile(target, theme, format, nodeCount, (int)box.Width, (int)box.Height, hasAlpha);
+        return new RenderedFile(target, theme, format, nodeCount, (int)box.Width, (int)box.Height, hasAlpha)
+        {
+            Geometry = geometry,
+            Lint = lint,
+        };
+    }
+
+    /// <summary>
+    /// The geometry the page drew and what its layout lint found (F-022), read once the page is ready.
+    /// The lint is computed in the page, from the same numbers the picture was drawn with; this side only
+    /// carries it into the manifest and onto stdout.
+    /// </summary>
+    private static async Task<(JsonElement? Geometry, IReadOnlyList<LayoutFinding> Lint)> GeometryAsync(IPage page)
+    {
+        var raw = await page.EvaluateAsync<JsonElement?>("() => window.stemmaRender ? window.stemmaRender.geometry() : null");
+        if (raw is not { ValueKind: JsonValueKind.Object } result) return (null, []);
+        var lint = new List<LayoutFinding>();
+        if (result.TryGetProperty("lint", out var findings) && findings.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var f in findings.EnumerateArray())
+            {
+                var ids = f.TryGetProperty("ids", out var i) && i.ValueKind == JsonValueKind.Array
+                    ? i.EnumerateArray().Select(x => x.GetString() ?? "").ToList()
+                    : [];
+                lint.Add(new LayoutFinding(
+                    f.GetProperty("severity").GetString() ?? "info",
+                    f.GetProperty("rule").GetString() ?? "",
+                    f.GetProperty("message").GetString() ?? "",
+                    ids));
+            }
+        }
+        return (result.TryGetProperty("geometry", out var g) ? g.Clone() : null, lint);
     }
 
     /// <summary>
@@ -248,7 +290,8 @@ public sealed class DiagramRenderer(string baseUrl) : IAsyncDisposable
             const clones = g.querySelectorAll('path');
             for (let i = 0; i < clones.length && i < originals.length; i++) {
               const cs = getComputedStyle(originals[i]);
-              for (const prop of ['stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'fill']) {
+              // `mask` carries the publication profile's card cut-outs (B-023), defined in the copied defs.
+              for (const prop of ['stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'fill', 'mask']) {
                 const value = cs.getPropertyValue(prop);
                 if (value && value !== 'none' || prop === 'fill') clones[i].setAttribute(prop, value || 'none');
               }
