@@ -436,6 +436,77 @@ paragraph that says "follow the arrows". Every id is checked by `validate`.
 
 ---
 
+## 4a. Rules: what must hold
+
+`Architecture.cs` says what exists. The constraints a reviewer holds it to — *only the payment service
+talks to Stripe*, *the apps go through the gateway* — go in `Rules/*.cs`, beside it
+([ADR-0028](../architecture/decisions/0028-architecture-rules-as-code.md)). `stemma validate` checks them
+and the canvas marks the elements and the arrow that break one. Write the ones the user stated, in their
+words as the `because`, and the ones the design obviously implies.
+
+```csharp
+using Stemma.Model;
+
+namespace Dishwise;
+
+public static class PlatformRules
+{
+    public static RuleSet Define() => RuleSet.Of(
+        Rule.Use("c4"),
+
+        Rule.Only("rule_card_data", from: "cnt_payments", to: "sys_stripe",
+            because: "Card data stays inside one service, which keeps PCI scope to one team"),
+
+        Rule.Forbid("rule_clients_via_gateway", from: "kind:container[kind=mobile|spa]", to: "kind:container[kind=service|db|broker]",
+            because: "Every client call is authenticated at the gateway"),
+
+        Rule.Layers("rule_layers",
+            ["kind:person", "kind:container[kind=mobile|spa]", "kind:container[kind=gateway]",
+             "kind:container[kind=service|worker]", "kind:container[kind=db|broker]"],
+            because: "Requests flow down: people, clients, the edge, services, data"),
+
+        Rule.Require("rule_owned", of: "kind:container[kind=service]", has: "squad",
+            because: "Every service has a squad that is paged for it"));
+}
+```
+
+Any `.cs` file in a folder named `Rules` is read, at any depth; it is read off the syntax tree like the
+model, so it needs no project and is never run.
+
+| Rule | Says | A violation is |
+|---|---|---|
+| `Rule.Forbid(id, from, to, because?, via?, severity?)` | nothing `from` selects may have a relationship to anything `to` selects | each such relationship |
+| `Rule.Only(id, from, to, because?, via?, severity?)` | only what `from` selects may relate to what `to` selects | each relationship into `to` from anything else |
+| `Rule.Layers(id, layers, because?, via?, severity?)` | each element is in the first layer that selects it, the top first; relationships go down or sideways | each relationship from a lower layer to a higher one; an element no layer selects is not checked |
+| `Rule.Require(id, of, has, because?, severity?)` | everything `of` selects has a non-empty `has` | each one that does not |
+| `Rule.Use("c4")` | turns on the C4 checks: containers have a technology; people, systems and containers a description; data flows a payload, and a technology unless a person is at an end | — |
+
+- **A relationship** is a `DataFlow` or a `Dependency`, from its `fromId` to its `toId` as written — a
+  `twoway` flow included. `via: "dataFlow"` or `via: "dependency"` narrows a rule to one kind; without it,
+  both count. A `Relation` claims nothing and is never checked.
+- **Selectors** are the view selectors (§3) without the `->` forms. `Require`'s `of` may select links:
+  `link:dataFlow` or `link:dependency`, filtered over `payload`, `technology`, `direction`, `kind`, `label`.
+- **`has`** is any argument of the kind (`technology`, `description`, `kind`, `role`, …), `status` or
+  `phase` from the lifecycle, `squad` or `domain` from the ownership; for links, `payload`, `technology`,
+  `direction`, `kind`, `label`.
+- **`severity`** is `error` (the default for `Forbid`, `Only`, `Layers`), `warning` (the default for
+  `Require`) or `info`. `stemma.rules.json` regrades or switches off a rule by its id, for the canvas and
+  `validate` alike.
+- **Ids are strings.** A rule naming an element that does not exist checks nothing there, and `validate`
+  says so (`rule/dangling-id`).
+
+`validate` reports a broken rule as `rule/<id>`, naming the elements and the link, and ending with the
+`because`:
+
+```
+  error   rule/rule_clients_via_gateway data flow flow_app_orders from cnt_customer_app to cnt_orders is forbidden: nothing "kind:container[kind=mobile|spa]" selects may relate to what "kind:container[kind=service|db|broker]" selects — Every client call is authenticated at the gateway
+```
+
+When a rule fails, fix the architecture — or, if the rule is wrong, say so to whoever asked for it.
+Never delete or loosen a rule someone asked for to make a check pass.
+
+---
+
 ## 5. Three worked examples
 
 Each of these was built and rendered exactly as written.
@@ -638,7 +709,9 @@ What it catches, in rough order of how often it bites:
 | `model/duplicate-id`, `link/duplicate-id` | error | An element or a link id declared twice, in one file or two. Which one wins is arbitrary. |
 | `model/unreadable-declaration` | error / warning | An argument Stemma cannot read — an id written as a method call, a name built at run time. An error when the whole declaration is left out of the model, a warning when one argument is read as empty. Write it as a string literal or a constant. |
 | `model/not-collected` | warning | An element or link declared in `Build()` and left out of its `Model.Of(...)`: Stemma draws it, the compiled model does not have it. Named by file, line and variable. Not checked when the return is anything but `Model.Of` of plain locals. |
-| `rule/<rule-id>` | as the rule says, or as `stemma.rules.json` sets it | The engine's rules — the ones the canvas marks cards with: a data-flow cycle (`rule/no-circular-dataflows`), a flow into a deprecated element, a module whose context is not a bounded context. Switched off or re-graded in `stemma.rules.json` (`{ "rules": { "no-circular-dataflows": { "enabled": false } } }`), for the canvas and `validate` alike. |
+| `rule/<rule-id>` | as the rule says, or as `stemma.rules.json` sets it | The engine's rules — the ones the canvas marks cards with: a data-flow cycle (`rule/no-circular-dataflows`), a flow into a deprecated element, a module whose context is not a bounded context — and the workspace's own (§4a), under the id each declares, ending with its `because`. The C4 pack's are `rule/c4/container-technology` (warning), `rule/c4/described`, `rule/c4/flow-technology` (info) and `rule/c4/flow-labelled` (warning). Switched off or re-graded in `stemma.rules.json` (`{ "rules": { "no-circular-dataflows": { "enabled": false } } }`), for the canvas and `validate` alike. |
+| `rule/bad-selector`, `rule/dangling-id`, `rule/duplicate-id`, `rule/unreadable`, `rule/unknown` | error | A rule in `Rules/` that cannot be checked, named by file and line: a selector that is not one (with the character where it goes wrong), an id that is not an element, an id two rules share (or a built-in rule's, or a second `Code.At`), an argument that is not a literal or a constant or a required one missing, and a rule, pack, `via`, `severity`, `has` or parameter Stemma does not know. An unreadable `because` is a warning; the rule is still checked. |
+| `view/mixed-levels` | info | With `Rule.Use("c4")`: a view drawing containers and modules together — two levels of C4 in one frame. |
 | `view/duplicate-id` | error | Two view files with one id. The app opens and saves whichever it reads first. |
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |
 | `constraint/unknown-kind`, `constraint/bad-gap`, `constraint/no-members`, `constraint/dangling-id` | error | A `layout` the canvas cannot solve, a spacing of the wrong shape, a constraint that places nothing or an id that is not in the model. The canvas falls back to a default, which is a different picture with nothing said. |

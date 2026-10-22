@@ -1093,6 +1093,125 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().ContainSingle(f => f.Rule == "rule/no-circular-dataflows").Which.Severity.Should().Be(CheckSeverity.Error);
     }
 
+    // ---- the workspace's own rules (F-024) ---------------------------------------------------------
+    //
+    // Rules in Rules/*.cs run through the same RuleEngine as the built-in ones, so validate and the
+    // canvas say the same thing, under the id the rule declares and with its reason.
+
+    private void RulesFile(string body, string name = "Platform")
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "Rules"));
+        File.WriteAllText(Path.Combine(_root, "Rules", $"{name}.cs"), $$"""
+            using Stemma.Model;
+            namespace Probe;
+            public static class {{name}}
+            {
+                public static RuleSet Define() => RuleSet.Of(
+            {{body}});
+            }
+            """);
+    }
+
+    private static readonly string ShopWithAShortcut = """
+                    var shop = new SoftwareSystem("sys_shop", "Shop", "Sells things");
+                    var web = new Container("cnt_web", "Web", "sys_shop", "spa", "React", "The storefront");
+                    var api = new Container("cnt_api", "API", "sys_shop", "service", ".NET 8", "Takes orders");
+                    var db = new Container("cnt_db", "DB", "sys_shop", "db", "PostgreSQL", "Keeps orders");
+                    var call = new DataFlow("flow_call", "cnt_web", "cnt_api", "orders", Technology: "HTTPS");
+                    var save = new DataFlow("flow_save", "cnt_api", "cnt_db", "orders", Technology: "SQL");
+                    var peek = new DataFlow("flow_peek", "cnt_web", "cnt_db", "order totals", Technology: "SQL");
+                    return Model.Of(shop, web, api, db, call, save, peek);
+        """;
+
+    [Fact]
+    public void A_declared_rule_that_is_broken_is_reported_under_its_id_with_its_reason()
+    {
+        Model(ShopWithAShortcut);
+        RulesFile("""
+                    Rule.Forbid("rule_ui_db", from: "kind:container[kind=spa]", to: "kind:container[kind=db]",
+                        because: "Front ends reach data through the API")
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "rule/rule_ui_db").Which;
+
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.ElementId.Should().Be("cnt_web");
+        finding.Message.Should().Contain("flow_peek from cnt_web to cnt_db").And.EndWith("— Front ends reach data through the API");
+    }
+
+    [Fact]
+    public void A_declared_rule_that_holds_reports_nothing()
+    {
+        Model(ShopWithAShortcut);
+        RulesFile("""
+                    Rule.Only("rule_api_writes", from: "kind:container[kind=service|spa]", to: "cnt_db"),
+                    Rule.Require("rule_tech", of: "kind:container", has: "technology")
+        """);
+
+        Run().Should().NotContain(f => f.Rule.StartsWith("rule/"));
+    }
+
+    [Fact]
+    public void A_declared_rule_regraded_in_stemma_rules_json_is_reported_at_that_severity()
+    {
+        Model(ShopWithAShortcut);
+        RulesFile("""Rule.Forbid("rule_ui_db", "kind:container[kind=spa]", "kind:container[kind=db]")""");
+        File.WriteAllText(Path.Combine(_root, "stemma.rules.json"), """{ "rules": { "rule_ui_db": { "severity": "warning" } } }""");
+
+        Run().Should().ContainSingle(f => f.Rule == "rule/rule_ui_db").Which.Severity.Should().Be(CheckSeverity.Warning);
+    }
+
+    [Fact]
+    public void Mistakes_in_a_rules_file_are_reported_under_their_own_names()
+    {
+        Model(ShopWithAShortcut);
+        RulesFile("""
+                    Rule.Forbid("rule_a", from: "kind:contaner", to: "cnt_db"),
+                    Rule.Only("rule_b", from: "cnt_ap", to: "cnt_db"),
+                    Rule.Only("rule_b", from: "cnt_api", to: "cnt_db"),
+                    Rule.Require("rule_c", of: Selectors.All, has: "squad"),
+                    Rule.Allow("rule_d", "cnt_web", "cnt_api")
+        """);
+
+        var findings = Run();
+
+        findings.Should().ContainSingle(f => f.Rule == "rule/bad-selector").Which.Message
+            .Should().StartWith("Rules/Platform.cs:6:").And.Contain("unknown kind 'contaner'").And.Contain("(character 6)");
+        findings.Should().ContainSingle(f => f.Rule == "rule/dangling-id").Which.Message.Should().Contain("names 'cnt_ap'");
+        findings.Should().ContainSingle(f => f.Rule == "rule/duplicate-id").Which.Message.Should().StartWith("Rules/Platform.cs:8:");
+        findings.Should().ContainSingle(f => f.Rule == "rule/unreadable").Which.Message.Should().Contain("`Selectors.All`");
+        findings.Should().ContainSingle(f => f.Rule == "rule/unknown").Which.Message.Should().Contain("Rule.Allow");
+        findings.Where(f => f.Rule.StartsWith("rule/") && f.Rule != "rule/rule_b").Should().OnlyContain(f => f.Severity == CheckSeverity.Error);
+        findings.Should().NotContain(f => f.Rule.StartsWith("rule/rule/"));
+    }
+
+    [Fact]
+    public void The_C4_pack_is_reported_only_for_a_workspace_that_turns_it_on()
+    {
+        Model("""
+                    var shop = new SoftwareSystem("sys_shop", "Shop");
+                    var api = new Container("cnt_api", "API", "sys_shop");
+                    var checkout = new Module("mod_checkout", "Checkout");
+                    var uses = new Dependency("dep_api_checkout", "cnt_api", "mod_checkout");
+                    return Model.Of(shop, api, checkout, uses);
+        """);
+        View("Mixed", """new(Id: "view_mixed", Name: "Mixed", BaseView: "all", ElementIds: ["cnt_api", "mod_checkout"])""");
+
+        Run().Should().NotContain(f => f.Rule.StartsWith("rule/c4/") || f.Rule == "view/mixed-levels");
+
+        RulesFile("""Rule.Use("c4")""");
+        var findings = Run();
+
+        findings.Should().ContainSingle(f => f.Rule == "rule/c4/container-technology" && f.ElementId == "cnt_api")
+            .Which.Severity.Should().Be(CheckSeverity.Warning);
+        findings.Where(f => f.Rule == "rule/c4/described").Select(f => f.ElementId).Should().BeEquivalentTo(["sys_shop", "cnt_api"]);
+        findings.Should().ContainSingle(f => f.Rule == "view/mixed-levels").Which.Should().BeEquivalentTo(new
+        {
+            Severity = CheckSeverity.Info,
+            Message = "view 'view_mixed' draws 1 container(s) and 1 module(s) together; C4 draws one level of abstraction per diagram, so this is two diagrams in one frame",
+        });
+    }
+
     [Fact]
     public void A_dangling_endpoint_is_reported_once_not_once_by_each_checker()
     {
