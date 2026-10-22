@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Copy, Compass, GitCompareArrows, Search, MonitorSpeaker, ListOrdered, X } from 'lucide-react';
-import { SHORTCUT_HINTS } from '@/lib/shortcuts';
+import { Network, Server, ShieldCheck, FolderGit2, Bot, X } from 'lucide-react';
 
 /**
  * What's new (the changelog's "Faster on the canvas, clearer in the room"), said inside the app with
@@ -8,7 +7,7 @@ import { SHORTCUT_HINTS } from '@/lib/shortcuts';
  * the middle of a meeting — but offered once, quietly, in the status bar, and always from ⌘K.
  */
 
-export const WHATS_NEW_ID = '2026-10-21';
+export const WHATS_NEW_ID = '2026-10-22';
 const SEEN_KEY = 'stemma.whatsNewSeen';
 
 export function whatsNewSeen(): boolean {
@@ -19,40 +18,31 @@ export function markWhatsNewSeen(): void {
   try { localStorage.setItem(SEEN_KEY, WHATS_NEW_ID); } catch { /* private window */ }
 }
 
-function Keys({ children }: { children: string }) {
-  return <kbd className="px-1.5 py-0.5 rounded border border-default bg-zinc-100 dark:bg-zinc-800 font-mono text-[11px] text-body">{children}</kbd>;
-}
-
 const ITEMS = [
   {
-    icon: Copy,
-    title: 'Copy, paste, duplicate — and copy a look',
-    body: <>Select boxes, <Keys>{SHORTCUT_HINTS.copy}</Keys> then <Keys>{SHORTCUT_HINTS.paste}</Keys>; <Keys>{SHORTCUT_HINTS.duplicate}</Keys> duplicates. <Keys>{SHORTCUT_HINTS.copyStyle}</Keys> / <Keys>{SHORTCUT_HINTS.pasteStyle}</Keys> copy a style onto other boxes. One <Keys>{SHORTCUT_HINTS.undo}</Keys> undoes the last thing you did, whatever it was.</>,
+    icon: Network,
+    title: 'Diagrams lay themselves out',
+    body: <>A view nobody arranged is laid out in layers that follow its relationships, every arrow routed around the boxes. <strong>Layout &amp; arrange → Lay out in layers</strong> keeps it and turns it.</>,
   },
   {
-    icon: Compass,
-    title: 'Go anywhere, and back',
-    body: <><Keys>{SHORTCUT_HINTS.palette}</Keys> finds any view, book or element and takes you to it. <Keys>{SHORTCUT_HINTS.back}</Keys> / <Keys>{SHORTCUT_HINTS.forward}</Keys> go back and forward. An element's Properties say which views it appears in.</>,
+    icon: Server,
+    title: 'C4 views from a scope',
+    body: <>A <code>container</code> or <code>systemContext</code> view with a <code>Scope</code> draws the system's boundary and everything it talks to. Cards carry each container's technology and a description.</>,
   },
   {
-    icon: GitCompareArrows,
-    title: 'See what changed',
-    body: <><strong>Compare</strong> in the top bar draws the difference from the last commit, a tag or where your branch started: New, Changed, and ghosts of what was removed.</>,
+    icon: ShieldCheck,
+    title: 'Rules the architecture keeps',
+    body: <>Write what must hold in <code>Rules/*.cs</code> — only, forbid, layers, require — and a break is marked on the cards and named under <strong>Validation</strong>, with its reason.</>,
   },
   {
-    icon: Search,
-    title: 'Find on this view',
-    body: <><Keys>{SHORTCUT_HINTS.find}</Keys>, then a word or a chip — <code>status:target</code>, <code>squad:core</code>, <code>#tag</code>. What matches stays lit; <Keys>↩</Keys> walks through it.</>,
+    icon: FolderGit2,
+    title: 'Checked against your code',
+    body: <><code>Code.Map</code> ties a container to its .NET projects; Stemma says where the diagram and the project references disagree.</>,
   },
   {
-    icon: MonitorSpeaker,
-    title: 'A presenter view',
-    body: <>While presenting, <Keys>P</Keys> opens your notes, the next page and a timer in another window; the projector shows the diagram alone.</>,
-  },
-  {
-    icon: ListOrdered,
-    title: 'Steps',
-    body: <>In the book editor, <strong>Record</strong> and click arrows in the order things happen. Presenting, each Next lights the next one, numbered.</>,
+    icon: Bot,
+    title: 'Stemma for Claude Code',
+    body: <><code>/plugin install stemma@stemma</code>, then ask for an architecture. Claude builds, checks and renders it; <code>stemma open</code> shows it here as it arrives.</>,
   },
 ];
 

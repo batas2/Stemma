@@ -90,6 +90,25 @@ public class LayeredRenderTests : IDisposable
     }
 
     [RenderFact]
+    public void A_publication_svg_carries_the_mask_that_keeps_lines_out_of_the_boxes()
+    {
+        // B-023: a publication box has no fill, so a line beneath it struck through its name. The edge
+        // layer has the boxes cut out of it, and a file opened outside the browser must keep the cut.
+        var ws = RenderHarness.WorkspaceWithLinks(Path.Combine(_dir, "knockout"), "view_k",
+            ["con_a", "con_b", "con_c"],
+            [("rel_ab", "con_a", "con_b", "a to b"), ("rel_ac", "con_a", "con_c", "a to c")],
+            """{ "version": 1, "views": { "custom:view_k": { "layout": { "kind": "row", "ids": ["con_a", "con_b", "con_c"], "gap": 80 } } } }""");
+
+        var (exit, output) = RenderHarness.Render("--workspace", ws, "--view", "view_k", "--out", Out("k.svg"), "--format", "svg");
+
+        exit.Should().Be(0, "render reported: {0}", output);
+        var svg = File.ReadAllText(Out("k.svg"));
+        svg.Should().Contain("<mask id=\"stemma-knockout\"", "the mask is defined in the file");
+        svg.Should().MatchRegex("<path[^>]*mask=\"url\\(&quot;#stemma-knockout&quot;\\)\"|<path[^>]*mask=\"url\\(\"?#stemma-knockout\"?\\)\"",
+            "every edge path is drawn through it");
+    }
+
+    [RenderFact]
     public void Reports_the_back_edge_a_row_hides_and_fails_when_asked()
     {
         // The audit's probe: a → b → c in a row and c → a drawn straight back through b.
