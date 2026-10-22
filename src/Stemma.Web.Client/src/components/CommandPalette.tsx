@@ -11,6 +11,7 @@ import { startCompare, stopCompare } from '@/lib/compare';
 import { SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { LayoutGrid, Shapes } from 'lucide-react';
 import type { ArchElementKind, ViewKind } from '@/lib/types';
+import { membersOf } from '@/lib/viewFilter';
 
 const KIND_LABEL: Partial<Record<ArchElementKind, string>> = {
   module: 'Module', boundedContext: 'Bounded Context', softwareSystem: 'Software System', container: 'Container',
@@ -132,7 +133,7 @@ export function CommandPalette() {
               {customViews.map((v) => (
                 <Command.Item key={v.id} value={`view ${v.name} ${v.id}`} onSelect={() => { goTo({ view: view === 'concerns' ? 'moduleMap' : view, customViewId: v.id }); close(); }} className={item}>
                   <span className="flex items-center gap-2 min-w-0"><Shapes className="w-3.5 h-3.5 text-violet-500 shrink-0" aria-hidden /> <span className="truncate">{v.name}</span></span>
-                  <span className="text-[10px] font-mono text-zinc-500 shrink-0">{here === v.id ? 'current · ' : ''}{v.elementIds.length} element{v.elementIds.length === 1 ? '' : 's'}</span>
+                  <span className="text-[10px] font-mono text-zinc-500 shrink-0">{here === v.id ? 'current · ' : ''}{membersOf(v).length} element{membersOf(v).length === 1 ? '' : 's'}</span>
                 </Command.Item>
               ))}
             </Command.Group>

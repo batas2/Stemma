@@ -33,6 +33,27 @@ export function linkLabel(link: Pick<ArchLink, 'kind' | 'attributes'>): string {
 }
 
 /**
+ * What the edge says on the canvas: its label, and for a data flow its technology in brackets —
+ * C4's "places orders [HTTPS/JSON]" (ADR-0027). `linkLabel` stays the editable value: an inline edit
+ * must never write the technology into the payload.
+ */
+export function linkCaption(link: Pick<ArchLink, 'kind' | 'attributes'>): string {
+  const label = linkLabel(link);
+  const tech = link.kind === 'dataFlow' ? link.attributes.technology : null;
+  if (!tech) return label;
+  return label ? `${label} [${tech}]` : `[${tech}]`;
+}
+
+/**
+ * The caption of an implied relationship: what the relationships it stands for say, each once — two
+ * in full, then a count, so a busy system boundary does not grow a paragraph on one arrow.
+ */
+export function impliedCaption(links: Pick<ArchLink, 'kind' | 'attributes'>[]): string {
+  const said = [...new Set(links.map(linkCaption).filter(Boolean))];
+  return said.length <= 2 ? said.join(' · ') : `${said.slice(0, 2).join(' · ')} +${said.length - 2}`;
+}
+
+/**
  * Whether the edge is drawn dashed by default.
  *
  * Line style rather than colour, so the distinction survives greyscale — a dependency is a claim

@@ -41,7 +41,7 @@ import { loadShapes, primeShapeCache, type Shape } from '@/lib/shapes';
 import { resolveExportOptions, exportFileName, type ExportRequest } from '@/lib/exportImage';
 import { resolveLayout, offsetForDrag, constraintIds } from '@/lib/layoutDsl';
 import { solveLayered, layeredOffsetForDrag, FRAME_PAD, FRAME_HEADER, type LayeredConstraint, type LayeredInput, type LayeredResult } from '@/lib/layeredLayout';
-import { linkLabel, linkLabelField, linkIsDashedByDefault, LINK_FIELD_LABEL } from '@/lib/linkLabel';
+import { linkLabel, linkCaption, impliedCaption, linkLabelField, linkIsDashedByDefault, LINK_FIELD_LABEL } from '@/lib/linkLabel';
 import { sizesFor } from '@/lib/textMetrics';
 
 /** Bounding box of a shape (for the "fit everything" image export). */
@@ -141,7 +141,7 @@ function edgeMarkerSpec(a: EdgeArrow | undefined, color?: string): EdgeMarker | 
   }
 }
 import type { ArchElement, ArchElementKind, OperationEnvelope, ViewKind } from '@/lib/types';
-import { filterByView } from '@/lib/viewFilter';
+import { filterByView, type FilteredView } from '@/lib/viewFilter';
 
 const nodeTypes = { arch: ArchNodeView };
 const edgeTypes = { waypointed: WaypointEdge };
@@ -372,7 +372,7 @@ function CanvasInner() {
   }, [arch, collapsedBcs]);
 
   const filtered = useMemo(() => {
-    const base = arch ? filterByView(arch, view, activeCustomView) : { elements: [], links: [] };
+    const base: FilteredView = arch ? filterByView(arch, view, activeCustomView) : { elements: [], links: [], implied: [] };
     // Dependency view supports a per-kind filter so architects can mute "uses" while focusing on
     // "calls" / "consumes" without leaving the canvas.
     if (view !== 'dependencyGraph' || !depKindFilter) return base;
@@ -588,7 +588,8 @@ function CanvasInner() {
     const userStyle = edgeStyles[l.id] ?? DEFAULT_EDGE_STYLE;
     // While a draft edit is in flight (inline editor or inspector), the label shows it live.
     const draftValue = linkDraft && linkDraft.linkId === l.id ? linkDraft.value : null;
-    const label = draftValue ?? linkLabel(l);
+    // On the canvas a data flow reads `payload [technology]`; the inline editor edits the payload alone.
+    const label = draftValue ?? linkCaption(l);
     const dash = dashArrayFor(userStyle.lineStyle) ?? (linkIsDashedByDefault(l.kind) ? '4 4' : undefined);
     const waypoints = edgeWaypoints[l.id];
     // Dim edges that connect dimmed nodes in focus mode. Both endpoints have to be in
@@ -630,7 +631,7 @@ function CanvasInner() {
         onAddWaypoint: handleAddWaypoint,
         onRemoveWaypoint: handleRemoveWaypoint,
         editing: l.id === editingEdgeId,
-        editValue: draftValue ?? label,
+        editValue: draftValue ?? linkLabel(l),
         onEditStart: startEdgeEdit,
         onEditChange: handleEdgeEditChange,
         onEditCommit: commitEdgeEdit,
@@ -638,7 +639,7 @@ function CanvasInner() {
         arrowStartActive: arrowStart !== 'none',
         arrowEndActive: arrowEnd !== 'none',
         onToggleArrow: handleToggleEdgeArrow,
-        typeValue: label,
+        typeValue: linkLabel(l),
         onSetType: handleSetEdgeType,
       },
     };
@@ -688,7 +689,38 @@ function CanvasInner() {
     };
   }), [aboutRels, autoDocks]);
 
-  const baseEdges = useMemo<Edge[]>(() => aboutEdges.length ? [...edges, ...aboutEdges] : edges, [edges, aboutEdges]);
+  // A C4 lens draws a relationship to a container that is not in the view to its system instead — an
+  // implied relationship (ADR-0026). Derived by the engine and drawn like a link, but it has no
+  // declaration to select or edit; hovering its label lists the relationships it stands for.
+  const impliedEdges = useMemo<Edge[]>(() => {
+    if (filtered.implied.length === 0 || !arch) return [];
+    const linkById = new Map(arch.links.map((l) => [l.id, l]));
+    const nameOf = new Map(arch.elements.map((e) => [e.id, e.name]));
+    return filtered.implied.map((i) => {
+      const links = i.linkIds.map((id) => linkById.get(id)).filter((l): l is NonNullable<typeof l> => !!l);
+      const title = links.map((l) => `${nameOf.get(l.fromId) ?? l.fromId} → ${nameOf.get(l.toId) ?? l.toId}${linkCaption(l) ? `: ${linkCaption(l)}` : ''}`).join('\n');
+      const dock = autoDocks[i.id];
+      return {
+        id: i.id,
+        source: i.fromId,
+        target: i.toId,
+        sourceHandle: dock?.source,
+        targetHandle: dock?.target,
+        type: 'waypointed',
+        label: impliedCaption(links),
+        selectable: false,
+        reconnectable: false,
+        markerEnd: edgeMarkerSpec('closed', DEFAULT_EDGE_STYLE.color),
+        style: { strokeWidth: DEFAULT_EDGE_STYLE.thickness, stroke: DEFAULT_EDGE_STYLE.color },
+        data: { title: `Stands for:\n${title}` },
+      };
+    });
+  }, [filtered.implied, arch, autoDocks]);
+
+  const baseEdges = useMemo<Edge[]>(
+    () => (aboutEdges.length || impliedEdges.length ? [...edges, ...aboutEdges, ...impliedEdges] : edges),
+    [edges, aboutEdges, impliedEdges],
+  );
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
@@ -925,10 +957,11 @@ function CanvasInner() {
     }
     const edgesIn: LayeredInput['edges'] = [
       ...filtered.links.filter((l) => ids.has(l.fromId) && ids.has(l.toId)).map((l) => ({
-        id: l.id, source: l.fromId, target: l.toId, label: linkLabel(l) || undefined,
+        id: l.id, source: l.fromId, target: l.toId, label: linkCaption(l) || undefined,
         labelPx: LABEL_PX[edgeStyles[l.id]?.labelSize ?? 'base'],
       })),
       ...aboutRels.map((r) => ({ id: r.id, source: r.from, target: r.to, label: 'about', labelPx: 9 })),
+      ...impliedEdges.map((e) => ({ id: e.id, source: e.source, target: e.target, label: String(e.label ?? '') || undefined, labelPx: LABEL_PX.base })),
     ];
     const constraint = layered.constraint;
     const viewKey = String(layoutKey);
@@ -948,7 +981,7 @@ function CanvasInner() {
         }));
         setToast({ kind: 'error', text: 'This view could not be laid out automatically, so it is shown unarranged.' });
       });
-  }, [layered, nodes, filtered, hiddenIds, edgeStyles, aboutRels, layoutKey, layeredSolved, layeredFailed, setToast]);
+  }, [layered, nodes, filtered, hiddenIds, edgeStyles, aboutRels, impliedEdges, layoutKey, layeredSolved, layeredFailed, setToast]);
 
   const layeredHere = layered && layeredSolved?.viewKey === String(layoutKey) ? layeredSolved.result : null;
   const layeredGaveUp = !!layered && layeredWant !== null && layeredFailed === layeredWant;
@@ -2503,7 +2536,7 @@ function CanvasInner() {
   // A software system draws as a boundary around its containers on a view laid out in layers with
   // groups (F-021) — the C4 container picture. Elsewhere a system stays a card, as it always was, so
   // no committed arrangement changes under anyone.
-  const systemFrames = !!layered && layered.constraint.groups !== false;
+  const systemFrames = (!!layered && layered.constraint.groups !== false) || activeCustomView?.baseView === 'container';
   const nestedNodes = useMemo<Node[]>(() => {
     const nestable = view === 'moduleMap' || view === 'dependencyGraph' || activeCustomView !== null;
     if (!nestable) return nodes;

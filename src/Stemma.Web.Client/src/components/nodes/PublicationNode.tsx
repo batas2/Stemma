@@ -27,6 +27,9 @@ export const PUB_PADDING_X = PADDING_X / 2;
 export const PUB_PADDING_Y = BODY_PADDING_Y / 2;
 export const PUB_RADIUS = 8;
 export const PUB_STROKE_WIDTH = 1.6;
+/** The second, smaller line — a container's technology, C4's "[.NET 8]" (ADR-0027). */
+export const PUB_CAPTION_SIZE = 11;
+export const PUB_CAPTION_LINE = 15;
 
 /**
  * Break `text` into the lines the box will draw.
@@ -66,6 +69,8 @@ export interface PublicationNodeProps {
   dashed?: boolean;
   /** The one element the diagram is about takes the accent; everything else takes the stroke. */
   accent?: boolean;
+  /** A line in small type under the name: the technology, bracketed. */
+  caption?: string;
 }
 
 /** Width the box settles at, mirroring the estimator so a solved layout matches what is drawn. */
@@ -94,17 +99,20 @@ export function publicationHeight(name: string, width: number, explicit?: number
  * `vectorEffect="non-scaling-stroke"` keeps the hairline a hairline when the drawing is resized,
  * which is most of the reason to want vector output at all.
  */
-export function PublicationNode({ name, width, height, dashed, accent }: PublicationNodeProps) {
-  const w = publicationWidth(name, width);
+export function PublicationNode({ name, width, height, dashed, accent, caption }: PublicationNodeProps) {
+  // A caption longer than the name widens the box rather than overhanging it.
+  const captionWidth = caption ? Math.ceil(caption.length * PUB_CAPTION_SIZE * 0.52 + PUB_PADDING_X * 2) : 0;
+  const w = Math.max(publicationWidth(name, width), width ? 0 : Math.min(NODE_MAX_WIDTH, captionWidth));
   const lines = useMemo(() => wrapIntoLines(name, w), [name, w]);
-  const h = heightForLines(lines.length, height);
+  const h = height ?? heightForLines(lines.length) + (caption ? PUB_CAPTION_LINE : 0);
 
   const ink = accent ? 'var(--pub-accent)' : 'var(--pub-stroke)';
   const text = accent ? 'var(--pub-accent)' : 'var(--pub-text)';
 
   // Centred as a block: the first baseline sits so the whole run is vertically centred, which is
   // what the HTML card does and what a reader expects of a label in a box.
-  const firstBaseline = h / 2 - ((lines.length - 1) * PUB_LINE_HEIGHT) / 2 + PUB_FONT_SIZE / 3;
+  const block = (lines.length - 1) * PUB_LINE_HEIGHT + (caption ? PUB_CAPTION_LINE : 0);
+  const firstBaseline = h / 2 - block / 2 + PUB_FONT_SIZE / 3;
 
   return (
     <svg
@@ -138,6 +146,17 @@ export function PublicationNode({ name, width, height, dashed, accent }: Publica
           <tspan key={i} x={PUB_PADDING_X} dy={i === 0 ? 0 : PUB_LINE_HEIGHT}>{line}</tspan>
         ))}
       </text>
+      {caption && (
+        <text
+          className="stemma-pub-caption"
+          x={PUB_PADDING_X}
+          y={firstBaseline + (lines.length - 1) * PUB_LINE_HEIGHT + PUB_CAPTION_LINE}
+          fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
+          fontSize={PUB_CAPTION_SIZE}
+          fill={text}
+          fillOpacity={0.8}
+        >{caption}</text>
+      )}
     </svg>
   );
 }

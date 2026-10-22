@@ -19,6 +19,7 @@ import { confirmAction } from './ConfirmDialog';
 import { promptText } from './PromptDialog';
 import { suggestViewName, suggestElementName } from '@/lib/naming';
 import type { ArchElement, ArchElementKind } from '@/lib/types';
+import { membersOf } from '@/lib/viewFilter';
 
 type Tab = 'elements' | 'views';
 
@@ -456,7 +457,7 @@ export function Sidebar() {
                       <ul className="mt-0.5 ml-4 space-y-0.5">
                         {items.map((e) => {
                           const ElIcon = elementIcon[e.kind] ?? Box;
-                          const inActiveView = activeView ? activeView.elementIds.includes(e.id) : false;
+                          const inActiveView = activeView ? membersOf(activeView).includes(e.id) : false;
                           return (
                             <li
                               key={e.id}
@@ -540,7 +541,7 @@ export function Sidebar() {
                     <span title="Freeform — supports shapes & manual layout" className="text-violet-500/80 shrink-0">
                       <Shapes className="w-3 h-3" />
                     </span>
-                    <span className="text-[9px] text-zinc-500">{v.elementIds.length}</span>
+                    <span className="text-[9px] text-zinc-500">{membersOf(v).length}</span>
                     <button
                       onClick={() => handleRenameView(v.id, v.name)}
                       className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"

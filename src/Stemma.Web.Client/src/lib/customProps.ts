@@ -69,6 +69,6 @@ export function renameCustomProp(
 // Reserved keys that match built-in field renderers — can't be used as custom
 // prop names so the visible-fields checklist stays unambiguous.
 export const RESERVED_KEYS = new Set<string>([
-  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind',
+  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind', 'technology', 'description',
   'squad', 'domain', 'status', 'phase', 'narrativePreview',
 ]);

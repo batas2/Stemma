@@ -19,13 +19,17 @@ export type NodeFieldKey =
   | 'contextId'    // "in <ctx>" for modules
   | 'systemId'     // "in <sys>" for containers
   | 'containerKind'
+  | 'technology'   // a container's technology, beside its kind (ADR-0027)
+  | 'description'  // a person's, system's or container's sentence, under its name (ADR-0027)
   | 'squad'
   | 'domain'
   | 'status'       // status badge (lifecycle)
   | 'phase'
   | 'narrativePreview'; // first line of the capability narrative if loaded elsewhere
 
-export const DEFAULT_VISIBLE_FIELDS: NodeFieldKey[] = ['kind', 'name', 'contextId', 'squad', 'status'];
+// Technology and description are on by default: a C4 card says what C4 cards say, and an element
+// without them draws exactly as before.
+export const DEFAULT_VISIBLE_FIELDS: NodeFieldKey[] = ['kind', 'name', 'contextId', 'squad', 'status', 'technology', 'description'];
 
 export interface NodeStyle {
   fillColor?: string;     // CSS color (rgb / hex), undefined = theme default

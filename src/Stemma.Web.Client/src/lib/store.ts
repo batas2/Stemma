@@ -17,6 +17,7 @@ import {
   updatePage, type Book, type BookPage, type BooksSection, type PagePatch,
 } from './books';
 import { friendlyOpError } from './opError';
+import { viewHasRules } from './viewFilter';
 import { history } from './history';
 import { leave, step, type Place, type Trail } from './navigation';
 import type { Shape, ShapeKind } from './shapes';
@@ -85,11 +86,36 @@ function loadViewLayouts(root: string): Record<string, LayoutMode> {
  */
 const viewsInFlight = new Map<string, { root: string; view: CustomView | null }>();
 
+/**
+ * A view with these elements added: to the ids it lists, out of what it excludes, and — until the
+ * engine resolves it again — into what it draws, so the card appears at once.
+ */
+function withMembers(v: CustomView, ids: string[]): CustomView {
+  const elementIds = [...v.elementIds, ...ids.filter((id) => !v.elementIds.includes(id))];
+  const exclude = v.exclude ? v.exclude.filter((id) => !ids.includes(id)) : v.exclude;
+  const members = v.members ? [...v.members, ...ids.filter((id) => !v.members!.includes(id))] : v.members;
+  return { ...v, elementIds, exclude, members };
+}
+
+/**
+ * A view with an element taken out. When a rule brings elements into the view — a scope, an include —
+ * taking it off the list is not enough, the rule would bring it straight back; it is excluded instead,
+ * so the rule stays live and the view says, in its file, what was left out (ADR-0026).
+ */
+function withoutMember(v: CustomView, id: string): CustomView {
+  const elementIds = v.elementIds.filter((x) => x !== id);
+  const exclude = viewHasRules(v) && !(v.exclude ?? []).includes(id) ? [...(v.exclude ?? []), id] : v.exclude;
+  const members = v.members ? v.members.filter((x) => x !== id) : v.members;
+  return { ...v, elementIds, exclude, members };
+}
+
 /** The list the canvas shows: the code's, with what is still on its way laid over it. */
 function viewsFromCode(root: string, fromCode: ServerView[], known: CustomView[]): CustomView[] {
   const createdAt = new Map(known.map((v) => [v.id, v.createdAt]));
   const views: CustomView[] = fromCode.map((s) => ({
     id: s.id, name: s.name, baseView: s.baseView as CustomView['baseView'], elementIds: s.elementIds,
+    scope: s.scope ?? null, include: s.include ?? null, exclude: s.exclude ?? null,
+    members: s.members, provenance: s.provenance, implied: s.implied, problems: s.problems,
     createdAt: createdAt.get(s.id) ?? new Date().toISOString(),
   }));
   for (const [id, pending] of viewsInFlight) {
@@ -403,7 +429,7 @@ function sendView(get: () => AppState, id: string, view: CustomView | null): voi
   const pending = { root, view };
   viewsInFlight.set(id, pending);
   const request = view
-    ? saveServerView({ id: view.id, name: view.name, baseView: view.baseView, elementIds: view.elementIds })
+    ? saveServerView({ id: view.id, name: view.name, baseView: view.baseView, elementIds: view.elementIds, scope: view.scope ?? null, include: view.include ?? null, exclude: view.exclude ?? null })
     : deleteServerView(id);
   request
     .then((refused) => { if (refused) get().setToast({ kind: 'error', text: friendlyOpError(refused) }); })
@@ -623,11 +649,7 @@ export const useApp = create<AppState>((set, get) => ({
   addElementToActiveView: (elementId) => {
     const { activeCustomViewId, customViews, workspace } = get();
     if (!activeCustomViewId) return;
-    const next = customViews.map((v) =>
-      v.id === activeCustomViewId && !v.elementIds.includes(elementId)
-        ? { ...v, elementIds: [...v.elementIds, elementId] }
-        : v
-    );
+    const next = customViews.map((v) => (v.id === activeCustomViewId ? withMembers(v, [elementId]) : v));
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
     const updated = next.find((v) => v.id === activeCustomViewId);
@@ -637,9 +659,9 @@ export const useApp = create<AppState>((set, get) => ({
     const { activeCustomViewId, customViews, workspace } = get();
     if (!activeCustomViewId) return;
     const view = customViews.find((v) => v.id === activeCustomViewId);
-    const fresh = elementIds.filter((id) => !view?.elementIds.includes(id));
+    const fresh = elementIds.filter((id) => !view?.elementIds.includes(id) || view?.exclude?.includes(id));
     if (!view || fresh.length === 0) return;
-    const updated = { ...view, elementIds: [...view.elementIds, ...fresh] };
+    const updated = withMembers(view, fresh);
     const next = customViews.map((v) => (v.id === activeCustomViewId ? updated : v));
     set({ customViews: next });
     if (workspace) saveViews(workspace.rootPath, next);
@@ -648,12 +670,14 @@ export const useApp = create<AppState>((set, get) => ({
   removeElementFromActiveView: (elementId) => {
     const { activeCustomViewId, customViews, workspace } = get();
     if (!activeCustomViewId) return;
-    const next = customViews.map((v) =>
-      v.id === activeCustomViewId
-        ? { ...v, elementIds: v.elementIds.filter((id) => id !== elementId) }
-        : v
-    );
+    const before = customViews.find((v) => v.id === activeCustomViewId);
+    const next = customViews.map((v) => (v.id === activeCustomViewId ? withoutMember(v, elementId) : v));
     set({ customViews: next });
+    const after = next.find((v) => v.id === activeCustomViewId);
+    // Said, because the file changes in a place the person did not touch: the view's Exclude.
+    if (before && after && (after.exclude?.length ?? 0) > (before.exclude?.length ?? 0)) {
+      get().setToast({ kind: 'info', text: 'Hidden from this view. A rule brings it in, so it is listed under Exclude in the view’s file.' });
+    }
     if (workspace) saveViews(workspace.rootPath, next);
     const updated = next.find((v) => v.id === activeCustomViewId);
     if (updated) sendView(get, updated.id, updated);

@@ -4,6 +4,7 @@ import { getConnectionState } from '@/lib/signalr';
 import { startCompare, useUncommittedDiff } from '@/lib/compare';
 import { describeCounts } from '@/lib/modelDiff';
 import { whatsNewSeen } from './WhatsNew';
+import { membersOf } from '@/lib/viewFilter';
 
 export function StatusBar() {
   const ws = useApp((s) => s.workspace);
@@ -44,7 +45,7 @@ function ActiveViewBadge() {
   if (!active) return null;
   return (
     <span className="flex items-center gap-1.5">
-      <span className="text-indigo-600 dark:text-indigo-400">view: {active.name} ({active.elementIds.length})</span>
+      <span className="text-indigo-600 dark:text-indigo-400">view: {active.name} ({membersOf(active).length})</span>
     </span>
   );
 }

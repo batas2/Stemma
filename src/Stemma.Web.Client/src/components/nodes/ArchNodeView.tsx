@@ -164,6 +164,8 @@ const FIELD_LABEL: Record<NodeFieldKey, string> = {
   contextId: 'Context',
   systemId: 'System',
   containerKind: 'Container kind',
+  technology: 'Technology',
+  description: 'Description',
   squad: 'Squad',
   domain: 'Domain',
   status: 'Status',
@@ -172,14 +174,14 @@ const FIELD_LABEL: Record<NodeFieldKey, string> = {
 };
 
 export const ALL_FIELD_KEYS: NodeFieldKey[] = [
-  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind',
+  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind', 'technology', 'description',
   'squad', 'domain', 'status', 'phase',
 ];
 
 export function fieldLabel(k: NodeFieldKey): string { return FIELD_LABEL[k] ?? k; }
 
 const BUILTIN_KEYS = new Set<string>([
-  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind',
+  'kind', 'name', 'id', 'contextId', 'systemId', 'containerKind', 'technology', 'description',
   'squad', 'domain', 'status', 'phase', 'narrativePreview',
 ]);
 
@@ -302,6 +304,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           height={nodeStyle?.height}
           dashed={status === 'to-be-created' || status === 'proposed' || nodeStyle?.borderStyle === 'dashed'}
           accent={nodeStyle?.accentColor !== undefined || nodeStyle?.borderColor !== undefined}
+          caption={showField('technology') && e.attributes.technology ? `[${e.attributes.technology}]` : undefined}
         />
         {DOCK_HANDLES.map((h) => (
           <Handle key={h.id} type="source" id={h.id} position={h.position} style={h.style} />
@@ -390,7 +393,8 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
           />
         )}
         {isPerson ? (
-          <div className="flex items-center gap-2 h-full">
+          <div className="flex flex-col justify-center h-full">
+          <div className="flex items-center gap-2">
             <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
             {showField('name') && (
               data.editing
@@ -404,6 +408,12 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
             )}
             {showField('status') && status && <StatusBadge status={status} size={scale.badge} tint={badgeTint} />}
           </div>
+          {/* A person's description sits under the name, as on a C4 person (ADR-0027). */}
+          {showField('description') && e.attributes.description && (
+            <div className={clsx('stemma-node-description text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5 pl-[22px]', scale.notes, scale.clamp && 'line-clamp-2')}
+              title={scale.clamp ? e.attributes.description : undefined}>{e.attributes.description}</div>
+          )}
+          </div>
         ) : (
           <>
             {/* Without the kind, the status needs no row of its own: it sits beside the name, which is
@@ -414,6 +424,10 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                 {showField('kind') && (
                   <span className={clsx('stemma-node-kind uppercase tracking-wider text-zinc-500 font-medium truncate', scale.kind)}>
                     {labelForKind[e.kind]}
+                    {/* C4's "Container: .NET 8" — the technology rides on the kind line (ADR-0027). */}
+                    {showField('technology') && e.attributes.technology && (
+                      <span className="stemma-node-tech normal-case tracking-normal font-normal" title={`Technology: ${e.attributes.technology}`}> · {e.attributes.technology}</span>
+                    )}
                   </span>
                 )}
                 {isExternal && (
@@ -444,6 +458,12 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     {!showField('kind') && showField('status') && status && <span className="mt-0.5 ml-auto shrink-0"><StatusBadge status={status} size={scale.badge} tint={badgeTint} /></span>}
                   </div>
               )}
+              {showField('description') && e.attributes.description && !data.notesEditing && (
+                <div
+                  className={clsx('stemma-node-description text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5 shrink-0', scale.notes, scale.clamp && 'line-clamp-3')}
+                  title={scale.clamp ? e.attributes.description : undefined}
+                >{e.attributes.description}</div>
+              )}
               {data.notesEditing ? (
                 <RichTextEditor
                   value={data.noteFull ?? ''}
@@ -469,8 +489,10 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
                     {showField('systemId') && e.attributes.systemId && (
                       <div className="text-[10px] text-zinc-500 font-mono truncate">in {e.attributes.systemId}</div>
                     )}
-                    {showField('containerKind') && e.attributes.containerKind && (
-                      <div className="text-[10px] text-zinc-500 truncate">{e.attributes.containerKind}</div>
+                    {/* A container's own kind (service, db, …) is its `kind` argument; the API never sent a
+                        `containerKind`, so this row and its inspector field showed and saved nothing. */}
+                    {showField('containerKind') && e.kind === 'container' && e.attributes.kind && (
+                      <div className="text-[10px] text-zinc-500 truncate">{e.attributes.kind}</div>
                     )}
                     {showField('squad') && tag?.ownership?.squad && (
                       <div className="text-[10px] text-zinc-500 truncate">👥 {tag.ownership.squad}</div>

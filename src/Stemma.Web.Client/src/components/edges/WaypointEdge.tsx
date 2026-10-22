@@ -40,6 +40,8 @@ export interface WaypointEdgeData extends Record<string, unknown> {
   route?: { points: SavedPosition[]; label?: { x: number; y: number; w: number; h: number } };
   /** Its ends have not been placed yet by the layout; drawn when they are, so nothing jumps. */
   pending?: boolean;
+  /** Said on hover over the label — what an implied relationship stands for (ADR-0026). */
+  title?: string;
 }
 
 /** The label layer of each canvas, found once. */
@@ -340,8 +342,8 @@ export function WaypointEdge({
           <div
             style={{
               position: 'absolute', transform: `translate(${labelMid.x}px, ${labelMid.y}px) ${labelAnchor}`,
-              pointerEvents: data?.onEditStart ? 'all' : 'none',
-              cursor: data?.onEditStart ? 'text' : undefined,
+              pointerEvents: data?.onEditStart || data?.title ? 'all' : 'none',
+              cursor: data?.onEditStart ? 'text' : data?.title ? 'help' : undefined,
               fontSize: LABEL_PX[data?.labelSize ?? 'base'] ?? 10, padding: '1px 4px',
               background: data?.stepCurrent ? '#f59e0b' : selected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.85)',
               border: `1px solid ${data?.stepCurrent ? '#d97706' : selected ? SELECT_COLOR : 'rgba(0,0,0,0.08)'}`, borderRadius: 3,
@@ -353,7 +355,7 @@ export function WaypointEdge({
             }}
             className={data?.stepCurrent ? 'stemma-edge-label' : 'stemma-edge-label dark:!bg-zinc-900/85 dark:!text-zinc-200 dark:!border-zinc-700'}
             data-edge-id={id}
-            title={data?.onEditStart ? 'Double-click to edit' : undefined}
+            title={data?.title ?? (data?.onEditStart ? 'Double-click to edit' : undefined)}
             onDoubleClick={data?.onEditStart ? (ev) => { ev.stopPropagation(); data.onEditStart?.(id); } : undefined}
           >
             {label}

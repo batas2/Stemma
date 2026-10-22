@@ -5,7 +5,7 @@
  * rule, read here rather than restated, so "Appears in" can never list a view that does not draw it.
  */
 
-import { applyBuiltIn, applyKindFilter } from './viewFilter';
+import { applyBuiltIn, applyKindFilter, membersOf } from './viewFilter';
 import type { ArchElement, ArchModel, CustomView, ViewKind } from './types';
 
 /** Where the canvas is: a built-in lens, or a view from `Views/` drawn over its base lens. */
@@ -30,8 +30,8 @@ export const BUILTIN_NAMES: Record<ViewKind, string> = {
 const CONCERN_KINDS = new Set(['risk', 'question', 'assumption']);
 
 function drawnByCustomView(el: ArchElement, view: CustomView): boolean {
-  if (!view.elementIds.includes(el.id)) return false;
-  return view.baseView === 'all' || applyKindFilter([el], view.baseView as ViewKind).length > 0;
+  if (!membersOf(view).includes(el.id)) return false;
+  return (view.baseView !== 'moduleMap' && view.baseView !== 'dependencyGraph') || applyKindFilter([el], view.baseView).length > 0;
 }
 
 /** Every view that shows this element: the built-in lenses by kind, and each view from `Views/` that names it. */
