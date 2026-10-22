@@ -57,7 +57,9 @@ public static class WorkspaceCheck
 
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
         var viewFiles = WorkspaceViews.Read(workspaceRoot);
-        var views = viewFiles.Select(v => v.View).ToList();
+        // Each view resolved once, by the engine's rule (ADR-0026): what it draws is what every check
+        // below means by its members, as it is what the canvas and the render draw.
+        var views = viewFiles.Select(v => new ResolvedView(v.View, ViewProjection.Resolve(v.View, model))).ToList();
         findings.AddRange(UnreadableDeclarations(model));
         findings.AddRange(NotCollected(read.Partials));
         findings.AddRange(DuplicateIds(read.Partials));
@@ -67,7 +69,7 @@ public static class WorkspaceCheck
         findings.AddRange(DanglingAttributeReferences(model, ids));
         findings.AddRange(EngineRuleFindings(workspaceRoot, model, ids));
         findings.AddRange(RegisterFindings(model));
-        findings.AddRange(ViewFindings(views, model, ids));
+        findings.AddRange(ViewFindings(views, model));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
         findings.AddRange(ConstraintFindings(workspaceRoot, ids));
         findings.AddRange(LayoutModeFindings(workspaceRoot));
@@ -108,7 +110,7 @@ public static class WorkspaceCheck
     /// prevent: the deck still presents, and tells the room something about a system that is no
     /// longer true.
     /// </summary>
-    private static IEnumerable<CheckFinding> BookFindings(string workspaceRoot, IReadOnlyList<ArchView> views, HashSet<string> elementIds, HashSet<string> linkIds)
+    private static IEnumerable<CheckFinding> BookFindings(string workspaceRoot, IReadOnlyList<ResolvedView> views, HashSet<string> elementIds, HashSet<string> linkIds)
     {
         var path = LayoutSidecar.PathFor(workspaceRoot);
         if (!File.Exists(path)) yield break;
@@ -130,8 +132,8 @@ public static class WorkspaceCheck
 
             // A view declared twice is reported as `view/duplicate-id`; here the first one stands.
             var viewMembers = views
-                .GroupBy(v => v.Id, StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => g.First().ElementIds.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+                .GroupBy(v => v.View.Id, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Resolution.Members.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
             foreach (var book in books.EnumerateObject())
             {
@@ -283,7 +285,7 @@ public static class WorkspaceCheck
     /// words off the slide. This says which. A legend entry naming a status no element in the view
     /// carries is drawn as a plain swatch, which is a key to nothing.
     /// </summary>
-    private static IEnumerable<CheckFinding> HeaderFindings(string workspaceRoot, IReadOnlyList<ArchView> views, ArchModel model)
+    private static IEnumerable<CheckFinding> HeaderFindings(string workspaceRoot, IReadOnlyList<ResolvedView> views, ArchModel model)
     {
         var path = LayoutSidecar.PathFor(workspaceRoot);
         if (!File.Exists(path)) yield break;
@@ -298,7 +300,7 @@ public static class WorkspaceCheck
             if (!doc.RootElement.TryGetProperty("views", out var viewEntries) || viewEntries.ValueKind != JsonValueKind.Object) yield break;
 
             var codeViews = views
-                .GroupBy(v => v.Id, StringComparer.Ordinal)
+                .GroupBy(v => v.View.Id, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
             var statusOf = model.Tags
                 .Where(t => t.Lifecycle?.Status is not null)
@@ -356,7 +358,7 @@ public static class WorkspaceCheck
 
     /// <summary>The statuses carried by the elements a view draws, or null when the view is not known here.</summary>
     private static HashSet<string>? StatusesDrawn(
-        string viewKey, Dictionary<string, ArchView> codeViews, ArchModel model, Dictionary<string, string> statusOf)
+        string viewKey, Dictionary<string, ResolvedView> codeViews, ArchModel model, Dictionary<string, string> statusOf)
     {
         IEnumerable<ArchElement> drawn;
         if (viewKey == "moduleMap") drawn = model.Elements.Where(e => e.Kind != ArchElementKind.Concept);
@@ -365,9 +367,9 @@ public static class WorkspaceCheck
         {
             // Through the view's base lens, as the canvas draws it: the dependency lens keeps only
             // modules, contexts and capabilities, whatever else the view names.
-            var members = view.ElementIds.ToHashSet(StringComparer.Ordinal);
+            var members = view.Resolution.Members.ToHashSet(StringComparer.Ordinal);
             drawn = model.Elements.Where(e => members.Contains(e.Id)
-                && (view.BaseView != "dependencyGraph" || e.Kind is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability));
+                && (view.View.BaseView != "dependencyGraph" || e.Kind is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability));
         }
         else return null;
         return drawn.Select(e => statusOf.GetValueOrDefault(e.Id)).OfType<string>().ToHashSet(StringComparer.Ordinal);
@@ -856,13 +858,7 @@ public static class WorkspaceCheck
                 && v.ElementIds is [var module] && contextOf.GetValueOrDefault(module) is { } context && !ids.Contains(context))
                 continue;
 
-            var severity = v.Severity switch
-            {
-                Severity.Error => CheckSeverity.Error,
-                Severity.Warning => CheckSeverity.Warning,
-                _ => CheckSeverity.Info,
-            };
-            yield return new(severity, $"rule/{v.RuleId}", v.Message, v.ElementIds.FirstOrDefault() ?? v.LinkIds.FirstOrDefault());
+            yield return new(SeverityOf(v.Severity), $"rule/{v.RuleId}", v.Message, v.ElementIds.FirstOrDefault() ?? v.LinkIds.FirstOrDefault());
         }
     }
 
@@ -881,22 +877,38 @@ public static class WorkspaceCheck
         }
     }
 
-    private static IEnumerable<CheckFinding> ViewFindings(IReadOnlyList<ArchView> views, ArchModel model, HashSet<string> ids)
+    /// <summary>A view and what it draws.</summary>
+    private sealed record ResolvedView(ArchView View, ViewResolution Resolution);
+
+    private static CheckSeverity SeverityOf(Severity severity) => severity switch
+    {
+        Severity.Error => CheckSeverity.Error,
+        Severity.Warning => CheckSeverity.Warning,
+        _ => CheckSeverity.Info,
+    };
+
+    /// <summary>
+    /// Each view, as it resolves: what is wrong with how it is written — a member, a scope or a rule
+    /// that names nothing (<see cref="ViewProjection"/> says which) — and what is unusual about what it
+    /// draws.
+    /// </summary>
+    private static IEnumerable<CheckFinding> ViewFindings(IReadOnlyList<ResolvedView> views, ArchModel model)
     {
         // One pass over the model, not one per view member. A linear scan inside the loop makes this
         // quadratic in a workspace of any size, and this runs on every save in a build.
         var kindById = model.Elements
             .GroupBy(e => e.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.Ordinal);
+        var linkById = model.Links
+            .GroupBy(l => l.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-        foreach (var view in views)
+        foreach (var (view, resolution) in views)
         {
-            var members = view.ElementIds.Where(ids.Contains).ToList();
+            foreach (var problem in resolution.Problems)
+                yield return new(SeverityOf(problem.Severity), problem.Rule, problem.Message, problem.ElementId);
 
-            foreach (var missing in view.ElementIds.Where(id => !ids.Contains(id)))
-                yield return new(CheckSeverity.Error, "view/dangling-member",
-                    $"view '{view.Id}' lists '{missing}', which is not an element", missing);
-
+            var members = resolution.Members;
             var kinds = members.Select(id => kindById[id]).ToList();
             var conceptCount = kinds.Count(k => k == ArchElementKind.Concept);
 
@@ -926,16 +938,15 @@ public static class WorkspaceCheck
 
             // Links render only when *both* endpoints are in the view. A relationship that is in the
             // model and silently absent from the picture is the failure this catches: the diagram
-            // looks fine and is missing an arrow the author believes is there.
+            // looks fine and is missing an arrow the author believes is there. A C4 lens draws a
+            // relationship with a container it shows as its system as an implied link, so that one
+            // is not missing.
             var present = members.ToHashSet(StringComparer.Ordinal);
-            foreach (var link in model.Links)
+            foreach (var link in resolution.LeftOut.Select(id => linkById[id]))
             {
-                if (present.Contains(link.FromId) ^ present.Contains(link.ToId))
-                {
-                    var absent = present.Contains(link.FromId) ? link.ToId : link.FromId;
-                    yield return new(CheckSeverity.Info, "view/half-link",
-                        $"view '{view.Id}' includes one end of link '{link.Id}' but not '{absent}', so that relationship will not be drawn");
-                }
+                var absent = present.Contains(link.FromId) ? link.ToId : link.FromId;
+                yield return new(CheckSeverity.Info, "view/half-link",
+                    $"view '{view.Id}' includes one end of link '{link.Id}' but not '{absent}', so that relationship will not be drawn");
             }
         }
     }

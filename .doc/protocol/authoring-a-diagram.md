@@ -138,11 +138,101 @@ public static class PurchasePath
 ```
 
 `BaseView` is the lens: `moduleMap` (contexts as frames around their modules), `dependencyGraph`
-(layered, fan-in/out emphasis), or `all` (no lens — you place everything).
+(layered, fan-in/out emphasis), `all` (no lens — you place everything), or one of the two C4 lenses
+below.
 
 **A link is drawn only when both of its endpoints are in the view.** This is the single most common
 way a diagram comes out looking right and missing an arrow, so `validate` reports it as
 `view/half-link`.
+
+### A view by rule: scope, include, exclude
+
+A list of ids goes stale the day an element is added, and a missed id drops an arrow without a word. A
+view can say what it is about instead ([ADR-0026](../architecture/decisions/0026-views-by-rule.md)):
+
+```csharp
+public static class PlatformContainers
+{
+    public static View Define() => new(
+        Id: "view_containers",
+        Name: "The platform's containers",
+        BaseView: "container",
+        Scope: "sys_platform",
+        Exclude: ["cnt_console", "per_ops"]);
+}
+
+public static class OrderPath
+{
+    public static View Define() => new(
+        Id: "view_order_path",
+        Name: "Around the Order Service",
+        BaseView: "all",
+        ElementIds: ["per_customer"],
+        Include: ["->cnt_orders->", "kind:container[technology=Go]"],
+        Exclude: ["cnt_db"]);
+}
+```
+
+The members are the lens's, then `ElementIds`, then what `Include` selects, minus what `Exclude` selects.
+Every argument but the first three is optional.
+
+| Lens | `Scope` | Draws |
+|---|---|---|
+| `systemContext` | a software system | the system, and every person and software system related to it or to one of its containers (C4 level 1) |
+| `container` | a software system | the system as a boundary around its containers, and every person, software system and other system's container related to them (C4 level 2) |
+
+A container the view does not show but whose system it does — the scope's own in a system context,
+another system's in either — is drawn as its system: its relationships become **implied links** to the
+system, one per pair of ends and direction, with the payloads of the flows they stand for. None is drawn
+where a real link already joins the two ends.
+
+A selector is one of:
+
+| Selector | Selects |
+|---|---|
+| `cnt_orders` | that element |
+| `sys_platform.*` | its children: a system's containers, a context's modules and capabilities |
+| `*` | everything |
+| `kind:container` | every element of a kind (`person`, `softwareSystem`, `container`, `module`, `concept`, …) |
+| `kind:container[technology=Go]` | filtered: `[attr=value]`, `[attr!=value]`, `[attr=a\|b]`; any argument (`kind`, `role`, `technology`, `systemId`, `name`, …), and `status`, `phase`, `squad`, `domain` from the tags |
+| `->cnt_orders`, `cnt_orders->`, `->cnt_orders->` | the element and what relates to it, what it relates to, or both |
+
+Kinds, attribute names and values match whatever their case; ids are exact. A container written
+without its `kind` is a `service` to a filter, as it is to the compiler.
+
+**See what a rule selected** before rendering it:
+
+```
+$ stemma inspect --view view_order_path
+stemma inspect: view_order_path "Around the Order Service" — all
+
+Members (7)
+  per_customer             Person          elementIds
+  sys_payments             SoftwareSystem  include:->cnt_orders->
+  cnt_gateway              Container       include:->cnt_orders->
+  cnt_orders               Container       include:->cnt_orders->
+  cnt_dispatch             Container       include:kind:container[technology=Go]
+  cnt_bus                  Container       include:->cnt_orders->
+  cnt_pos_adapter          Container       include:->cnt_orders->
+
+Links drawn (6)
+  flow_place               cnt_gateway -> cnt_orders  "places orders [gRPC]"
+  …
+
+Implied links (0)
+
+Left out (8)
+  flow_browse              per_customer -> cnt_app  "browses and orders": 'cnt_app' is not in the view
+  …
+```
+
+`stemma inspect --view <id|name> [<path>] [--json]` lists every member and what brought it in, the links
+drawn, the implied links with the links each stands for, and the relationships left out. It exits `1`
+when the view has an error in how it is written, `2` when there is no such view. `--json` is the form to
+act on.
+
+Editing a rule-based view in the app keeps the rule: an element added on the canvas goes into
+`ElementIds`, one removed that a rule brought in goes into `Exclude`.
 
 How many boxes is too many depends on what the view is. A figure — a view of mostly `Concept`s — has
 a working maximum of seven: past that it has usually stopped answering one question, and `validate`
@@ -479,7 +569,11 @@ What it catches, in rough order of how often it bites:
 | Rule | Severity | Why it matters |
 |---|---|---|
 | `link/dangling-endpoint`, `element/dangling-reference`, `view/dangling-member` | error | A string id nothing else checks. The node or edge silently vanishes. |
-| `view/empty` | error | The render will report `empty`; better to know now. |
+| `view/empty` | error | The view resolves to no elements — its lens, list and rules together. The render will report `empty`; better to know now. |
+| `view/bad-scope` | error / warning | A C4 lens with no `Scope`, or one that is not a software system: the lens draws nothing (an error). A `Scope` on a lens that does not use one is ignored (a warning). |
+| `view/dangling-include` | error / warning | An `Include` naming an id that does not exist — `sys_x`, `sys_x.*`, `->sys_x` — brings in nothing (an error); a selector that selects nothing today is a warning. |
+| `view/bad-selector` | error | An `Include` or `Exclude` that is not a selector, with the character where it goes wrong. |
+| `view/dangling-exclude` | warning | An `Exclude` naming an id that does not exist: it excludes nothing, and has probably outlived what it was about. |
 | `model/duplicate-id`, `link/duplicate-id` | error | An element or a link id declared twice, in one file or two. Which one wins is arbitrary. |
 | `model/unreadable-declaration` | error / warning | An argument Stemma cannot read — an id written as a method call, a name built at run time. An error when the whole declaration is left out of the model, a warning when one argument is read as empty. Write it as a string literal or a constant. |
 | `model/not-collected` | warning | An element or link declared in `Build()` and left out of its `Model.Of(...)`: Stemma draws it, the compiled model does not have it. Named by file, line and variable. Not checked when the return is anything but `Model.Of` of plain locals. |
@@ -497,7 +591,7 @@ What it catches, in rough order of how often it bites:
 | `sidecar/malformed` | warning | A value of the wrong kind — `views` as a list, a shape that is a number, an id that is not text. Named by its path; the canvas skips it. |
 | `view/busy` | warning / info | A figure (mostly `Concept`s) past seven boxes has usually stopped answering one question: a warning. An architecture view past thirty has usually stopped being one diagram: a note. |
 | `view/mixed-register` | warning | Half the boxes claim something about a system and half claim nothing. |
-| `view/half-link` | info | One endpoint in the view, so the relationship is not drawn. Often deliberate. |
+| `view/half-link` | info | One endpoint in the view, so the relationship is not drawn. Often deliberate. A relationship a C4 lens draws as an implied link is not one. |
 | `layout/inert-mode` | info | A `layoutMode` of `force`, `hierarchical` or `byType` on a view with no positions and no `layout`: it records the Layout panel's choice and arranges nothing. Write `"layout": { "kind": "layered" }` instead. |
 | `model/is-a-figure` | info | Mostly `Concept`s. A fine thing to be. |
 

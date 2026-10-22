@@ -121,7 +121,7 @@ filter     := "[" attr ( "=" | "!=" ) value ( "|" value )* "]"
 | `sys_shop.*` | its children: a system's containers, a context's modules and capabilities |
 | `*` | every element |
 | `kind:container` | every element of a kind (`person`, `softwareSystem`, `container`, `module`, …) |
-| `kind:container[technology=PostgreSQL]` | filtered: `=`, `!=`, and `a|b` for any of several |
+| `kind:container[technology=PostgreSQL]` | filtered: `=`, `!=`, and `a\|b` for any of several |
 | `->cnt_api`, `cnt_api->`, `->cnt_api->` | the element and what relates to it, what it relates to, or both — over links of any kind |
 
 A filter reads the element's constructor arguments with their defaults (a container written without its

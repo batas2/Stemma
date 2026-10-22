@@ -1131,6 +1131,99 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().ContainSingle(f => f.Rule == "rule/module-has-at-most-one-context").Which.ElementId.Should().Be("mod_a");
     }
 
+    // ---- views by rule (F-023 AC8) ------------------------------------------------------------
+    //
+    // A view's members are resolved from its lens, its list and its rules, as the canvas draws them.
+
+    private static readonly string Shop = """
+                    var buyer = new Person("per_buyer", "Buyer", "external");
+                    var shop = new SoftwareSystem("sys_shop", "Shop");
+                    var payments = new SoftwareSystem("sys_payments", "Payments");
+                    var web = new Container("cnt_web", "Web Shop", "sys_shop", "spa");
+                    var api = new Container("cnt_api", "Order API", "sys_shop");
+                    var gateway = new Container("cnt_gateway", "Gateway", "sys_payments");
+                    var browse = new DataFlow("flow_browse", "per_buyer", "cnt_web", "search terms");
+                    var call = new DataFlow("flow_call", "cnt_web", "cnt_api", "orders");
+                    var pay = new DataFlow("flow_pay", "cnt_api", "cnt_gateway", "payment");
+                    return Model.Of(buyer, shop, payments, web, api, gateway, browse, call, pay);
+        """;
+
+    [Fact]
+    public void A_container_view_by_scope_alone_is_neither_empty_nor_missing_the_link_it_implies()
+    {
+        // Its list is empty and the payment goes to a container it draws as its system: before views
+        // were resolved this was view/empty, and the payment a half-link.
+        Model(Shop);
+        View("ShopContainers", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop")""");
+
+        var findings = Run().Where(f => f.Rule.StartsWith("view/")).ToList();
+
+        findings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_link_to_an_element_the_lens_does_not_lift_is_still_a_half_link()
+    {
+        Model(Shop.Replace("return Model.Of(buyer,", """
+                    var hr = new SoftwareSystem("sys_hr", "HR");
+                    var rota = new DataFlow("flow_rota", "sys_hr", "per_buyer", "rota");
+                    return Model.Of(hr, rota, buyer,
+            """));
+        View("ShopContainers", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop")""");
+
+        Run().Should().ContainSingle(f => f.Rule == "view/half-link").Which.Message.Should().Contain("flow_rota");
+    }
+
+    [Theory]
+    [InlineData("""new(Id: "view_c", Name: "C", BaseView: "container")""", "has no Scope")]
+    [InlineData("""new(Id: "view_c", Name: "C", BaseView: "systemContext", Scope: "cnt_api")""", "not a software system")]
+    [InlineData("""new(Id: "view_c", Name: "C", BaseView: "container", Scope: "sys_gone")""", "is not an element")]
+    public void A_C4_lens_without_a_system_to_draw_around_is_an_error(string define, string says)
+    {
+        Model(Shop);
+        View("C", define);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/bad-scope").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.Message.Should().Contain(says);
+    }
+
+    [Fact]
+    public void An_include_naming_an_id_that_does_not_exist_is_an_error_and_one_selecting_nothing_a_warning()
+    {
+        Model(Shop);
+        View("Rules", """new(Id: "view_r", Name: "R", BaseView: "all", ElementIds: new[] { "cnt_api" }, Include: new[] { "cnt_gone", "kind:module" })""");
+
+        var findings = Run().Where(f => f.Rule == "view/dangling-include").ToList();
+
+        findings.Should().HaveCount(2);
+        findings.Should().ContainSingle(f => f.Severity == CheckSeverity.Error && f.ElementId == "cnt_gone");
+        findings.Should().ContainSingle(f => f.Severity == CheckSeverity.Warning && f.Message.Contains("kind:module"));
+    }
+
+    [Fact]
+    public void A_selector_that_cannot_be_read_is_an_error_saying_where()
+    {
+        Model(Shop);
+        View("Rules", """new(Id: "view_r", Name: "R", BaseView: "all", Include: new[] { "kind:container[kind=" })""");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/bad-selector").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.Message.Should().Contain("character 21");
+    }
+
+    [Fact]
+    public void A_book_page_pointing_at_an_element_a_rule_brings_in_is_inside_its_view()
+    {
+        Model(Shop);
+        View("ShopContainers", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop")""");
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), """
+            { "version": 1, "books": { "b": { "name": "B", "pages": { "p": { "title": "P", "view": "view_shop", "focus": ["sys_payments", "cnt_gateway"] } } } } }
+            """);
+
+        Run().Where(f => f.Rule == "book/focus-outside-view").Select(f => f.ElementId).Should().Equal("cnt_gateway");
+    }
+
     // ---- Model.Of (B-025) ---------------------------------------------------------------------
     //
     // Stemma reads the declarations; the compiler reads Model.Of. A declaration left out of Model.Of
