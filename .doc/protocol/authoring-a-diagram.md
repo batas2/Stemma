@@ -131,8 +131,10 @@ public static class PurchasePath
 way a diagram comes out looking right and missing an arrow, so `validate` reports it as
 `view/half-link`.
 
-Seven boxes is the working maximum. Past that a diagram has usually stopped answering one question,
-and `validate` says so.
+How many boxes is too many depends on what the view is. A figure — a view of mostly `Concept`s — has
+a working maximum of seven: past that it has usually stopped answering one question, and `validate`
+warns. An architecture view is allowed far more: a container view of an ordinary system has fifteen to
+thirty, and `validate` only notes one past thirty, where it has usually stopped being one diagram.
 
 ---
 
@@ -477,7 +479,7 @@ What it catches, in rough order of how often it bites:
 | `book/legacy-file` | warning | `Concepts/view-book.stemma.yaml` is no longer read; its books have to move to `books`. |
 | `sidecar/unreadable` | warning | The canvas silently ignores it — every position in it is already lost. |
 | `sidecar/malformed` | warning | A value of the wrong kind — `views` as a list, a shape that is a number, an id that is not text. Named by its path; the canvas skips it. |
-| `view/busy` | warning | Past seven boxes a diagram has usually stopped answering one question. |
+| `view/busy` | warning / info | A figure (mostly `Concept`s) past seven boxes has usually stopped answering one question: a warning. An architecture view past thirty has usually stopped being one diagram: a note. |
 | `view/mixed-register` | warning | Half the boxes claim something about a system and half claim nothing. |
 | `view/half-link` | info | One endpoint in the view, so the relationship is not drawn. Often deliberate. |
 | `model/is-a-figure` | info | Mostly `Concept`s. A fine thing to be. |

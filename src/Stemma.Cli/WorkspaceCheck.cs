@@ -24,9 +24,14 @@ public sealed record CheckFinding(CheckSeverity Severity, string Rule, string Me
 /// </summary>
 public static class WorkspaceCheck
 {
-    /// <summary>Above this many boxes a diagram has stopped answering one question. From the blog's
-    /// own house style, and a warning rather than an error because it is a rule of thumb.</summary>
+    /// <summary>Above this many boxes a figure — a view of mostly Concepts — has stopped answering one
+    /// question. From the blog's own house style, and a warning rather than an error because it is a
+    /// rule of thumb.</summary>
     public const int BusyViewThreshold = 7;
+
+    /// <summary>Above this many boxes an architecture view has usually stopped being one diagram. An
+    /// info: a C4 container view of an ordinary system has fifteen to thirty (B-024).</summary>
+    public const int BusyArchitectureViewThreshold = 30;
 
     public static IReadOnlyList<CheckFinding> Run(string workspaceRoot)
     {
@@ -773,18 +778,29 @@ public static class WorkspaceCheck
                 yield return new(CheckSeverity.Error, "view/dangling-member",
                     $"view '{view.Id}' lists '{missing}', which is not an element", missing);
 
+            var kinds = members.Select(id => kindById[id]).ToList();
+            var conceptCount = kinds.Count(k => k == ArchElementKind.Concept);
+
+            // How many boxes are too many depends on what the view is. A view of mostly Concepts is a
+            // figure in an argument, and past seven it has usually stopped making one point. Any other
+            // view is architecture: a container view of a modest system has fifteen to thirty boxes,
+            // and warning at eight put a standing warning on every one of them, which teaches the
+            // reader to ignore warnings (B-024). Past thirty it has usually stopped being one diagram,
+            // said as information rather than as a fault.
             if (members.Count == 0)
                 yield return new(CheckSeverity.Error, "view/empty",
                     $"view '{view.Id}' resolves to no elements — a render of it has nothing to draw");
-            else if (members.Count > BusyViewThreshold)
+            else if (conceptCount > members.Count / 2 && members.Count > BusyViewThreshold)
                 yield return new(CheckSeverity.Warning, "view/busy",
-                    $"view '{view.Id}' has {members.Count} elements; past {BusyViewThreshold} a diagram has usually stopped answering one question");
+                    $"view '{view.Id}' has {members.Count} elements; past {BusyViewThreshold} a figure has usually stopped answering one question");
+            else if (conceptCount <= members.Count / 2 && members.Count > BusyArchitectureViewThreshold)
+                yield return new(CheckSeverity.Info, "view/busy",
+                    $"view '{view.Id}' has {members.Count} elements; past {BusyArchitectureViewThreshold} an architecture diagram has usually " +
+                    "stopped being one diagram — consider a view per system or per question");
 
             // A view holding both Concepts and structural kinds is mixing rhetorical registers: half
             // the boxes claim something about a system and half claim nothing, and the picture reads
             // as neither an argument nor an architecture.
-            var kinds = members.Select(id => kindById[id]).ToList();
-            var conceptCount = kinds.Count(k => k == ArchElementKind.Concept);
             if (conceptCount > 0 && conceptCount < kinds.Count)
                 yield return new(CheckSeverity.Warning, "view/mixed-register",
                     $"view '{view.Id}' mixes {conceptCount} Concept(s) with {kinds.Count - conceptCount} structural element(s); a diagram usually wants to be one or the other");

@@ -164,18 +164,48 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().Contain(f => f.Rule == "view/half-link" && f.Severity == CheckSeverity.Info);
     }
 
-    [Fact]
-    public void A_crowded_view_is_a_warning_rather_than_an_error()
+    /// <summary>A model of <paramref name="count"/> elements of <paramref name="kind"/>, and one view of all of them.</summary>
+    private void ViewOf(int count, string kind)
     {
-        var ids = string.Join("\n", Enumerable.Range(0, WorkspaceCheck.BusyViewThreshold + 2)
-            .Select(i => $"            var m{i} = new Module(\"mod_{i}\", \"M{i}\");"));
-        var all = string.Join(", ", Enumerable.Range(0, WorkspaceCheck.BusyViewThreshold + 2).Select(i => $"m{i}"));
-        Model($"{ids}\n            return Model.Of({all});");
-        View("Busy", $$"""new(Id: "view_busy", Name: "Busy", BaseView: "all", ElementIds: new[] { {{string.Join(", ", Enumerable.Range(0, WorkspaceCheck.BusyViewThreshold + 2).Select(i => $"\"mod_{i}\""))}} })""");
+        string Declare(int i) => kind == "Container"
+            ? $"            var e{i} = new Container(\"e_{i}\", \"E{i}\", \"sys_x\");"
+            : $"            var e{i} = new {kind}(\"e_{i}\", \"E{i}\");";
+        var system = kind == "Container" ? "            var sys = new SoftwareSystem(\"sys_x\", \"X\");\n" : "";
+        var declarations = string.Join("\n", Enumerable.Range(0, count).Select(Declare));
+        var collected = string.Join(", ", Enumerable.Range(0, count).Select(i => $"e{i}").Prepend(kind == "Container" ? "sys" : null).OfType<string>());
+        Model($"{system}{declarations}\n            return Model.Of({collected});");
+        var ids = string.Join(", ", Enumerable.Range(0, count).Select(i => $"\"e_{i}\""));
+        View("Busy", $$"""new(Id: "view_busy", Name: "Busy", BaseView: "all", ElementIds: new[] { {{ids}} })""");
+    }
+
+    [Fact]
+    public void A_crowded_figure_is_a_warning_rather_than_an_error()
+    {
+        ViewOf(WorkspaceCheck.BusyViewThreshold + 1, "Concept");
 
         var findings = Run();
-        findings.Should().Contain(f => f.Rule == "view/busy" && f.Severity == CheckSeverity.Warning);
+        findings.Should().ContainSingle(f => f.Rule == "view/busy").Which.Severity.Should().Be(CheckSeverity.Warning);
         findings.Where(f => f.Severity == CheckSeverity.Error).Should().BeEmpty("being busy is a rule of thumb, not a defect");
+    }
+
+    [Fact]
+    public void An_architecture_view_of_ordinary_size_is_not_busy()
+    {
+        // Seventeen containers is the audit's container view: an ordinary C4 diagram, and it carried a
+        // standing warning that taught the reader to ignore warnings (B-024).
+        ViewOf(17, "Container");
+
+        Run().Should().NotContain(f => f.Rule == "view/busy");
+    }
+
+    [Fact]
+    public void An_architecture_view_past_thirty_is_noted_rather_than_warned_about()
+    {
+        ViewOf(WorkspaceCheck.BusyArchitectureViewThreshold + 1, "Container");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/busy").Which;
+        finding.Severity.Should().Be(CheckSeverity.Info);
+        finding.Message.Should().Contain("31");
     }
 
     [Fact]

@@ -38,7 +38,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-021](./B-021-default-arrangement-ignores-links.md) | A view nobody arranged is drawn in one long row | S2 major | layout | In progress |
 | [B-022](./B-022-layout-mode-promised-to-run-on-open.md) | The protocol promises `layoutMode` re-arranges a view on open; it never has | S3 minor | docs | In progress |
 | [B-023](./B-023-publication-cards-let-lines-through-their-text.md) | Publication cards let a line run through their text | S2 major | canvas | In progress |
-| [B-024](./B-024-busy-warning-on-every-architecture-view.md) | `view/busy` warns on every architecture view | S3 minor | cli | In progress |
+| [B-024](./B-024-busy-warning-on-every-architecture-view.md) | `view/busy` warns on every architecture view | S3 minor | cli | Fixed |
 | [B-025](./B-025-element-left-out-of-model-of-is-unannounced.md) | An element left out of `Model.Of` is drawn, and nothing says the compiled model lacks it | S3 minor | cli | In progress |
 | [B-026](./B-026-validate-does-not-run-the-engine-rules.md) | `validate` does not run the rules the canvas shows | S2 major | cli | Fixed |
 

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-024 |
-| **Status** | In progress |
+| **Status** | Fixed |
 | **Severity** | S3 minor |
 | **Area** | `cli` |
 | **Reported by / Date** | Audit ([`agent-architecture-workflow.md`](../product/agent-architecture-workflow.md) §1, A8) / 2026-10-22 |
@@ -45,17 +45,21 @@ The rule was written for figures, when figures were the only agent workload.
   **30**, an *info* — the point where a C4 diagram has usually stopped being one diagram, said as
   information rather than as a fault.
 - **Affected files:** `src/Stemma.Cli/WorkspaceCheck.cs`, `.doc/protocol/authoring-a-diagram.md` §7.
-- [ ] Fix implemented
+- **Implementation notes:** "mostly `Concept`" is the test `model/is-a-figure` already makes — more
+  than half the view's members. The count is of the members the view resolves to (from F-023 on, its
+  lens and rules as well as its list).
+- [x] Fix implemented
 - [x] Inviolable rules respected
 - [x] No new data store / boundary intact
 
 ## 7. Regression test (required)
 
-- [ ] A test that **fails before** the fix and **passes after**
-- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs`
+- [x] A test that **fails before** the fix and **passes after**
+- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs` — `A_crowded_figure_is_a_warning_rather_than_an_error`,
+  `An_architecture_view_of_ordinary_size_is_not_busy`, `An_architecture_view_past_thirty_is_noted_rather_than_warned_about`
 - **What it asserts:** 17 containers produce no `view/busy`; 31 produce an info; 8 Concepts still
   produce a warning.
 
 ## 8. Verification
 
-- [ ] `dotnet test` green
+- [x] `dotnet test` green
