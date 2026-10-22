@@ -154,6 +154,55 @@ public sealed class SelectorTests
         selector.NamedId.Should().Be(named);
     }
 
+    [Theory]
+    [InlineData("link:dataFlow", new[] { "flow_browse", "flow_call", "flow_persist", "flow_pay", "flow_refund", "flow_settle", "flow_notify", "flow_confirm", "flow_rota" })]
+    [InlineData("link:DATAFLOW[technology=https/json]", new[] { "flow_call" })]
+    [InlineData("link:dataFlow[label=order|payment]", new[] { "flow_persist", "flow_pay" })]
+    [InlineData("link:dataFlow[technology!=HTTPS/JSON][direction=oneway]", new[] { "flow_browse", "flow_persist", "flow_pay", "flow_refund", "flow_settle", "flow_notify", "flow_confirm", "flow_rota" })]
+    [InlineData("link:dependency[kind=uses]", new[] { "dep_web_checkout" })]
+    [InlineData("link:dependency[label=uses]", new[] { "dep_web_checkout" })]
+    public void Where_links_are_asked_for_a_link_selector_selects_links_by_their_arguments_and_defaults(string text, string[] expected)
+    {
+        Selector.TryParse(text, out var selector, out var error, allowNeighbours: false, allowLinks: true).Should().BeTrue(error?.Message);
+
+        selector!.IsLinkSelector.Should().BeTrue();
+        selector.SelectLinks(Model).Select(l => l.Id).Should().Equal(expected);
+        selector.Select(Model).Should().BeEmpty("a link selector selects no elements");
+        selector.NamedId.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_link_selector_reads_a_link_s_tags()
+    {
+        var model = C4Model.Read(C4Model.Source.Replace("Tag.For(ledger,", "Tag.For(pay, lifecycle: new Lifecycle(Status: \"target\"));\n Tag.For(ledger,"));
+        Selector.TryParse("link:dataFlow[status=target]", out var selector, out _, allowNeighbours: false, allowLinks: true).Should().BeTrue();
+
+        selector!.SelectLinks(model).Select(l => l.Id).Should().Equal("flow_pay");
+    }
+
+    [Fact]
+    public void Where_links_are_not_asked_for_link_x_is_an_id_as_it_always_was()
+    {
+        Selector.TryParse("link:dataFlow", out var selector, out _).Should().BeTrue();
+
+        selector!.IsLinkSelector.Should().BeFalse();
+        selector.NamedId.Should().Be("link:dataFlow");
+    }
+
+    [Theory]
+    [InlineData("link:", 6, "expected a link kind")]
+    [InlineData("link:flow", 6, "unknown link kind 'flow'")]
+    [InlineData("link:relation", 6, "a relation claims nothing")]
+    [InlineData("link:dataFlow[payload=order", 14, "never closed")]
+    [InlineData("link:dataFlow->", 14, "unexpected '-'")]
+    public void A_link_selector_that_cannot_be_read_says_what_is_wrong_and_where(string text, int position, string says)
+    {
+        Selector.TryParse(text, out _, out var error, allowNeighbours: false, allowLinks: true).Should().BeFalse();
+
+        error!.Position.Should().Be(position);
+        error.Message.Should().Contain(says);
+    }
+
     [Fact]
     public void An_id_with_a_hyphen_or_a_dot_is_still_one_id()
     {
