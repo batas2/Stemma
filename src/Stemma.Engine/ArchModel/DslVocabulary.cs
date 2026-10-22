@@ -37,6 +37,19 @@ internal static class DslVocabulary
         _ => null,
     };
 
+    /// <summary>
+    /// The value a parameter has when a declaration leaves it out — <c>new Container("c", "C", "s")</c>
+    /// is a service — for a reader that asks what an element is rather than what its file says.
+    /// </summary>
+    public static string? DefaultOf(string typeName, string attribute) => (typeName, attribute) switch
+    {
+        ("Container", "kind") => "service",
+        ("Person", "role") => "user",
+        ("DataFlow", "direction") => "oneway",
+        ("Dependency", "kind") => "uses",
+        _ => null,
+    };
+
     /// <summary><c>ContextId</c> → <c>contextId</c>.</summary>
     public static string AttributeName(string parameter) =>
         parameter.Length == 0 ? parameter : char.ToLowerInvariant(parameter[0]) + parameter[1..];

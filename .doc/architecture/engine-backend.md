@@ -266,7 +266,7 @@ An outside edit is taken in without being written back
 | DSL read / write | `Stemma.Engine/ArchModel/DslReader.cs`, `DslWriter.cs`; constructor shapes in `DslVocabulary.cs` |
 | List and trivia edits | `Stemma.Engine/ArchModel/SeparatedEdits.cs` |
 | Type operations' syntax edits | `Stemma.Engine/Operations/TypeWriter.cs` |
-| Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` |
+| Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` (read, edit, new files); `ViewProjection.cs` (what a view draws: members, implied links, problems) and `Selectors.cs` (the selector language), both pure functions of the model |
 | Undo | `Stemma.Engine/Workspace/UndoStack.cs` |
 | Presentation sidecar | `Stemma.Engine/Workspace/LayoutSidecar.cs` (typed reading), `SidecarPatch.cs` (writing) |
 | Operation polymorphism | `Stemma.Engine/Operations/Operations.cs` |
