@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Stemma.Engine.ArchModel;
 
 /// <summary>
@@ -16,7 +18,35 @@ public sealed record ArchModel(
     /// is never dropped in silence.
     /// </summary>
     public IReadOnlyList<ArchReadProblem> Unreadable { get; init; } = [];
+
+    /// <summary>
+    /// Each element and link declared in <c>Build()</c>, with the local that holds it and where. Stemma
+    /// reads the model off these declarations; the compiler reads what <c>Model.Of(...)</c> collects.
+    /// Validation's business, not the canvas's, so not sent with the model.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<ArchLocal> Locals { get; init; } = [];
+
+    /// <summary>
+    /// The locals <c>return Model.Of(...)</c> collects, when that can be known: a <c>Model.Of</c> call
+    /// whose every argument is a local of <c>Build()</c> holding an element, a link or a tag. Null when
+    /// the return is written any other way, since nothing can then be said about what the compiled
+    /// model holds. Read per file: a merged model has none (<see cref="ArchModelMerge"/>).
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlySet<string>? Collected { get; init; }
+
+    /// <summary>
+    /// The declarations the canvas draws and the compiled model does not have: locals
+    /// <see cref="Collected"/> leaves out. Empty when that is not known.
+    /// </summary>
+    [JsonIgnore]
+    public IEnumerable<ArchLocal> NotCollected => Collected is { } collected ? Locals.Where(l => !collected.Contains(l.Variable)) : [];
 }
+
+/// <summary>An element or a link as <c>Build()</c> declares it: the local holding it, and the line.</summary>
+/// <param name="Line">1-based, so it matches what an editor shows.</param>
+public sealed record ArchLocal(string Variable, string Id, string FilePath, int Line);
 
 public enum ArchElementKind { Module, BoundedContext, SoftwareSystem, Container, Person, UseCase, Capability, Question, Assumption, Risk, Concept }
 public enum ArchLinkKind { DataFlow, Dependency, Relation }

@@ -15,6 +15,7 @@ public static class ArchModelMerge
         var links = new List<ArchLink>();
         var tags = new List<ArchTag>();
         var unreadable = new List<ArchReadProblem>();
+        var locals = new List<ArchLocal>();
         var seen = new HashSet<string>();
         foreach (var partial in partials)
         {
@@ -23,8 +24,11 @@ public static class ArchModelMerge
             foreach (var l in partial.Links) if (seen.Add($"l:{l.Id}")) links.Add(l);
             tags.AddRange(partial.Tags);
             unreadable.AddRange(partial.Unreadable);
+            locals.AddRange(partial.Locals);
         }
-        return new ArchModel(primaryPath, elements, links, tags) { Unreadable = unreadable };
+        // What each file's Model.Of collects is that file's own; checked against the file's own
+        // declarations, never against the merge, where a local in one file means nothing to another.
+        return new ArchModel(primaryPath, elements, links, tags) { Unreadable = unreadable, Locals = locals };
     }
 
     /// <summary>

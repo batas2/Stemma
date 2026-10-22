@@ -16,9 +16,10 @@ internal static class DslVocabulary
     {
         "Module" => ["id", "name", "contextId"],
         "BoundedContext" => ["id", "name"],
-        "SoftwareSystem" => ["id", "name"],
-        "Container" => ["id", "name", "systemId", "kind"],
-        "Person" => ["id", "name", "role"],
+        // Description and technology on the kinds C4 defines them for, and only those (ADR-0027).
+        "SoftwareSystem" => ["id", "name", "description"],
+        "Container" => ["id", "name", "systemId", "kind", "technology", "description"],
+        "Person" => ["id", "name", "role", "description"],
         "UseCase" => ["id", "name"],
         "Capability" => ["id", "name", "contextId"],
         "Question" => ["id", "name", "aboutId"],
@@ -27,12 +28,25 @@ internal static class DslVocabulary
         // Id and name, and nothing else. A Concept that acquired a contextId would be a Module with
         // extra steps, which is the thing this kind exists to avoid.
         "Concept" => ["id", "name"],
-        "DataFlow" => ["id", "fromId", "toId", "payload", "direction"],
+        "DataFlow" => ["id", "fromId", "toId", "payload", "direction", "technology"],
         "Dependency" => ["id", "fromId", "toId", "kind"],
         "Relation" => ["id", "fromId", "toId", "label"],
         "Lifecycle" => ["status", "phase", "validFrom", "validUntil"],
         "Ownership" => ["squad", "domain", "recommend", "agree", "perform", "input", "decide"],
-        "View" => ["id", "name", "baseView", "elementIds"],
+        "View" => ["id", "name", "baseView", "elementIds", "scope", "include", "exclude"],
+        _ => null,
+    };
+
+    /// <summary>
+    /// The value a parameter has when a declaration leaves it out — <c>new Container("c", "C", "s")</c>
+    /// is a service — for a reader that asks what an element is rather than what its file says.
+    /// </summary>
+    public static string? DefaultOf(string typeName, string attribute) => (typeName, attribute) switch
+    {
+        ("Container", "kind") => "service",
+        ("Person", "role") => "user",
+        ("DataFlow", "direction") => "oneway",
+        ("Dependency", "kind") => "uses",
         _ => null,
     };
 

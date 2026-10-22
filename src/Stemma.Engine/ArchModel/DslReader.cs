@@ -38,6 +38,10 @@ public static class DslReader
         var tags = new List<ArchTag>();
         var unreadable = new List<ArchReadProblem>();
         var varToId = new Dictionary<string, string>();
+        var locals = new List<ArchLocal>();
+        // Every local holding a `new` of a model kind, read or not: Model.Of may name one the reader
+        // left out, and that is still a local whose meaning is known.
+        var modelLocals = new HashSet<string>(StringComparer.Ordinal);
         var file = Path.GetFileName(filePath);
 
         // First pass: locals (elements, links).
@@ -50,6 +54,7 @@ public static class DslReader
                 if (typeName is null) continue;
                 var isElement = ElementTypeNames.Contains(typeName);
                 if (!isElement && !LinkTypeNames.Contains(typeName)) continue;
+                modelLocals.Add(v.Identifier.Text);
 
                 var args = Keyed(ExtractArgs(oc, semantic), DslVocabulary.ParametersOf(typeName)!);
                 // An id, or a link's end, that cannot be read leaves nothing to draw or to connect: the
@@ -100,6 +105,7 @@ public static class DslReader
                     links.Add(new ArchLink(id, from, to, kind, attrs));
                 }
                 varToId[v.Identifier.Text] = id;
+                locals.Add(new ArchLocal(v.Identifier.Text, id, filePath, LineOf(v)));
             }
         }
 
@@ -139,7 +145,13 @@ public static class DslReader
             tags.Add(new ArchTag(targetId, lifecycle, ownership));
         }
 
-        return new ArchModel(filePath, elements, links, tags) { Unreadable = unreadable };
+        modelLocals.UnionWith(sites.Select(s => s.Variable).OfType<string>());
+        return new ArchModel(filePath, elements, links, tags)
+        {
+            Unreadable = unreadable,
+            Locals = locals,
+            Collected = CollectedBy(buildBody, modelLocals),
+        };
 
         string? TargetOf(InvocationExpressionSyntax inv) =>
             inv.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax id && varToId.TryGetValue(id.Identifier.Text, out var resolved)
@@ -162,6 +174,34 @@ public static class DslReader
             }
             return fields;
         }
+    }
+
+    /// <summary>
+    /// The locals <c>return Model.Of(...)</c> names, or null when that is not all it names. The reader
+    /// takes the model from the declarations and the compiler from this call, and the two can
+    /// disagree: a declaration left out of it is drawn, and missing from every test an engineer writes
+    /// against <c>Architecture.Build()</c> (B-025). Anything but plain identifiers, each a local
+    /// holding an element, a link or a tag — an array, a helper's result, a field — could collect
+    /// anything, so nothing is said about it.
+    /// </summary>
+    private static IReadOnlySet<string>? CollectedBy(BlockSyntax build, HashSet<string> modelLocals)
+    {
+        if (build.Statements.OfType<ReturnStatementSyntax>().FirstOrDefault()?.Expression is not InvocationExpressionSyntax
+            {
+                Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Of", Expression: var owner },
+                ArgumentList.Arguments: var args,
+            }
+            || GetSimpleTypeName(owner as NameSyntax) != "Model")
+            return null;
+
+        var collected = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var arg in args)
+        {
+            if (arg.NameColon is not null || !arg.RefKindKeyword.IsKind(SyntaxKind.None)) return null;
+            if (arg.Expression is not IdentifierNameSyntax { Identifier.Text: var name } || !modelLocals.Contains(name)) return null;
+            collected.Add(name);
+        }
+        return collected;
     }
 
     private const string Advice = "Write it as a string literal, or as a const string declared in this file.";

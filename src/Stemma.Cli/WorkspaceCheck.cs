@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Stemma.Engine.ArchModel;
+using Stemma.Engine.Validation;
 using Stemma.Engine.Workspace;
 
 namespace Stemma.Cli;
@@ -23,9 +24,14 @@ public sealed record CheckFinding(CheckSeverity Severity, string Rule, string Me
 /// </summary>
 public static class WorkspaceCheck
 {
-    /// <summary>Above this many boxes a diagram has stopped answering one question. From the blog's
-    /// own house style, and a warning rather than an error because it is a rule of thumb.</summary>
+    /// <summary>Above this many boxes a figure — a view of mostly Concepts — has stopped answering one
+    /// question. From the blog's own house style, and a warning rather than an error because it is a
+    /// rule of thumb.</summary>
     public const int BusyViewThreshold = 7;
+
+    /// <summary>Above this many boxes an architecture view has usually stopped being one diagram. An
+    /// info: a C4 container view of an ordinary system has fifteen to thirty (B-024).</summary>
+    public const int BusyArchitectureViewThreshold = 30;
 
     public static IReadOnlyList<CheckFinding> Run(string workspaceRoot)
     {
@@ -51,17 +57,22 @@ public static class WorkspaceCheck
 
         var ids = model.Elements.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
         var viewFiles = WorkspaceViews.Read(workspaceRoot);
-        var views = viewFiles.Select(v => v.View).ToList();
+        // Each view resolved once, by the engine's rule (ADR-0026): what it draws is what every check
+        // below means by its members, as it is what the canvas and the render draw.
+        var views = viewFiles.Select(v => new ResolvedView(v.View, ViewProjection.Resolve(v.View, model))).ToList();
         findings.AddRange(UnreadableDeclarations(model));
+        findings.AddRange(NotCollected(read.Partials));
         findings.AddRange(DuplicateIds(read.Partials));
         findings.AddRange(DuplicateLinkIds(read.Partials));
         findings.AddRange(DuplicateViewIds(workspaceRoot, viewFiles));
         findings.AddRange(DanglingLinkEndpoints(model, ids));
         findings.AddRange(DanglingAttributeReferences(model, ids));
+        findings.AddRange(EngineRuleFindings(workspaceRoot, model, ids));
         findings.AddRange(RegisterFindings(model));
-        findings.AddRange(ViewFindings(views, model, ids));
+        findings.AddRange(ViewFindings(views, model));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
         findings.AddRange(ConstraintFindings(workspaceRoot, ids));
+        findings.AddRange(LayoutModeFindings(workspaceRoot));
         findings.AddRange(BookFindings(workspaceRoot, views, ids, model.Links.Select(l => l.Id).ToHashSet(StringComparer.Ordinal)));
         findings.AddRange(HeaderFindings(workspaceRoot, views, model));
         findings.AddRange(LegacyBookFindings(workspaceRoot));
@@ -99,7 +110,7 @@ public static class WorkspaceCheck
     /// prevent: the deck still presents, and tells the room something about a system that is no
     /// longer true.
     /// </summary>
-    private static IEnumerable<CheckFinding> BookFindings(string workspaceRoot, IReadOnlyList<ArchView> views, HashSet<string> elementIds, HashSet<string> linkIds)
+    private static IEnumerable<CheckFinding> BookFindings(string workspaceRoot, IReadOnlyList<ResolvedView> views, HashSet<string> elementIds, HashSet<string> linkIds)
     {
         var path = LayoutSidecar.PathFor(workspaceRoot);
         if (!File.Exists(path)) yield break;
@@ -121,8 +132,8 @@ public static class WorkspaceCheck
 
             // A view declared twice is reported as `view/duplicate-id`; here the first one stands.
             var viewMembers = views
-                .GroupBy(v => v.Id, StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => g.First().ElementIds.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+                .GroupBy(v => v.View.Id, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Resolution.Members.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
 
             foreach (var book in books.EnumerateObject())
             {
@@ -274,7 +285,7 @@ public static class WorkspaceCheck
     /// words off the slide. This says which. A legend entry naming a status no element in the view
     /// carries is drawn as a plain swatch, which is a key to nothing.
     /// </summary>
-    private static IEnumerable<CheckFinding> HeaderFindings(string workspaceRoot, IReadOnlyList<ArchView> views, ArchModel model)
+    private static IEnumerable<CheckFinding> HeaderFindings(string workspaceRoot, IReadOnlyList<ResolvedView> views, ArchModel model)
     {
         var path = LayoutSidecar.PathFor(workspaceRoot);
         if (!File.Exists(path)) yield break;
@@ -289,7 +300,7 @@ public static class WorkspaceCheck
             if (!doc.RootElement.TryGetProperty("views", out var viewEntries) || viewEntries.ValueKind != JsonValueKind.Object) yield break;
 
             var codeViews = views
-                .GroupBy(v => v.Id, StringComparer.Ordinal)
+                .GroupBy(v => v.View.Id, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
             var statusOf = model.Tags
                 .Where(t => t.Lifecycle?.Status is not null)
@@ -347,7 +358,7 @@ public static class WorkspaceCheck
 
     /// <summary>The statuses carried by the elements a view draws, or null when the view is not known here.</summary>
     private static HashSet<string>? StatusesDrawn(
-        string viewKey, Dictionary<string, ArchView> codeViews, ArchModel model, Dictionary<string, string> statusOf)
+        string viewKey, Dictionary<string, ResolvedView> codeViews, ArchModel model, Dictionary<string, string> statusOf)
     {
         IEnumerable<ArchElement> drawn;
         if (viewKey == "moduleMap") drawn = model.Elements.Where(e => e.Kind != ArchElementKind.Concept);
@@ -356,9 +367,9 @@ public static class WorkspaceCheck
         {
             // Through the view's base lens, as the canvas draws it: the dependency lens keeps only
             // modules, contexts and capabilities, whatever else the view names.
-            var members = view.ElementIds.ToHashSet(StringComparer.Ordinal);
+            var members = view.Resolution.Members.ToHashSet(StringComparer.Ordinal);
             drawn = model.Elements.Where(e => members.Contains(e.Id)
-                && (view.BaseView != "dependencyGraph" || e.Kind is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability));
+                && (view.View.BaseView != "dependencyGraph" || e.Kind is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability));
         }
         else return null;
         return drawn.Select(e => statusOf.GetValueOrDefault(e.Id)).OfType<string>().ToHashSet(StringComparer.Ordinal);
@@ -367,7 +378,7 @@ public static class WorkspaceCheck
     private static CheckFinding MalformedHeader(string message) => new(CheckSeverity.Warning, "header/malformed", message);
 
     private static readonly HashSet<string> ConstraintKinds =
-        new(StringComparer.Ordinal) { "grid", "row", "column", "stack" };
+        new(StringComparer.Ordinal) { "grid", "row", "column", "stack", "layered" };
 
     /// <summary>
     /// The `layout` constraint, which is the part of the sidecar most often written by hand.
@@ -417,10 +428,110 @@ public static class WorkspaceCheck
                     continue;
                 }
 
+                if (kind == "layered")
+                {
+                    foreach (var finding in LayeredFindings(view.Name, layout, elementIds)) yield return finding;
+                    continue;
+                }
                 foreach (var finding in GapFindings(view.Name, kind, layout)) yield return finding;
                 foreach (var finding in MemberFindings(view.Name, kind, layout, elementIds)) yield return finding;
             }
         }
+    }
+
+    /// <summary>The generators the Layout panel offers, and whose choice <c>layoutMode</c> records.</summary>
+    private static readonly HashSet<string> HeuristicLayoutModes = new(StringComparer.Ordinal) { "force", "hierarchical", "byType" };
+
+    /// <summary>
+    /// A <c>layoutMode</c> written by hand in the hope that it arranges the view. It does not: it is the
+    /// Layout panel's memory of which generator was last chosen, and nothing runs it on open — a
+    /// generator re-run on every open would be a picture that changes whenever the algorithm is tuned.
+    /// The protocol once said otherwise, and an agent that believed it got exactly the picture it would
+    /// have got without the setting (B-022). Said only where it makes a difference: a view with
+    /// positions, or with a constraint, is arranged by those.
+    /// </summary>
+    private static IEnumerable<CheckFinding> LayoutModeFindings(string workspaceRoot)
+    {
+        var path = LayoutSidecar.PathFor(workspaceRoot);
+        if (!File.Exists(path)) yield break;
+
+        JsonDocument? doc = null;
+        try { doc = JsonDocument.Parse(File.ReadAllText(path)); }
+        catch (JsonException) { yield break; }   // already reported by ShapeFindings
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) yield break;
+            if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind != JsonValueKind.Object) yield break;
+
+            foreach (var view in views.EnumerateObject())
+            {
+                if (view.Value.ValueKind != JsonValueKind.Object) continue;
+                if (!view.Value.TryGetProperty("layoutMode", out var mode) || mode.ValueKind != JsonValueKind.String) continue;
+                if (!HeuristicLayoutModes.Contains(mode.GetString()!)) continue;
+                var positioned = view.Value.TryGetProperty("nodes", out var nodes)
+                    && nodes.ValueKind == JsonValueKind.Object && nodes.EnumerateObject().Any();
+                var constrained = view.Value.TryGetProperty("layout", out var layout) && layout.ValueKind != JsonValueKind.Null;
+                if (positioned || constrained) continue;
+
+                yield return new(CheckSeverity.Info, "layout/inert-mode",
+                    $"view '{view.Name}' has layoutMode \"{mode.GetString()}\", which only records the Layout panel's choice and arranges " +
+                    "nothing when the view is opened or rendered; with no positions and no layout constraint the view gets the default " +
+                    "arrangement. To have it laid out, write \"layout\": { \"kind\": \"layered\" }");
+            }
+        }
+    }
+
+    private static readonly string[] LayeredDirections = ["down", "right", "up", "left"];
+    private static readonly string[] LayeredRoutings = ["orthogonal", "polyline", "spline"];
+
+    /// <summary>
+    /// The layered constraint (F-021, ADR-0025). It governs every node in the view, so it has no member
+    /// list to check; what it has is options, each with a shape the layout reads, and two lists of ids
+    /// to pin to the first and the last layer. A value the layout cannot use falls back to the default,
+    /// which is a different picture with nothing said — the failure <c>constraint/bad-gap</c> exists for.
+    /// </summary>
+    private static IEnumerable<CheckFinding> LayeredFindings(string view, JsonElement layout, HashSet<string> elementIds)
+    {
+        if (Present(layout, "direction", out var direction)
+            && (direction.ValueKind != JsonValueKind.String || !LayeredDirections.Contains(direction.GetString())))
+            yield return new(CheckSeverity.Error, "constraint/bad-direction",
+                $"view '{view}' has a layered `direction` of {direction.GetRawText()}, which the layout does not take, so it is laid out " +
+                $"downwards (a layered layout takes {string.Join(", ", LayeredDirections)})");
+
+        if (Present(layout, "spacing", out var spacing) && spacing.ValueKind != JsonValueKind.Number
+            && !(spacing.ValueKind == JsonValueKind.Array && spacing.GetArrayLength() == 2 && spacing.EnumerateArray().All(v => v.ValueKind == JsonValueKind.Number)))
+            yield return new(CheckSeverity.Error, "constraint/bad-spacing",
+                $"view '{view}' has a layered `spacing` the layout cannot use, so it falls back to its default spacing and the picture is " +
+                "not the one the file describes (a layered layout takes [between nodes, between layers] or one number)");
+
+        if (Present(layout, "routing", out var routing)
+            && (routing.ValueKind != JsonValueKind.String || !LayeredRoutings.Contains(routing.GetString())))
+            yield return new(CheckSeverity.Error, "constraint/bad-field",
+                $"view '{view}' has a layered `routing` of {routing.GetRawText()}, which the layout does not take, so its edges are " +
+                $"routed orthogonally (it takes {string.Join(", ", LayeredRoutings)})");
+
+        if (Present(layout, "groups", out var groups) && groups.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            yield return new(CheckSeverity.Error, "constraint/bad-field",
+                $"view '{view}' has a layered `groups` of {groups.GetRawText()}, which is not true or false, so the layout draws the boundaries as it would by default");
+
+        foreach (var end in new[] { "first", "last" })
+        {
+            if (!Present(layout, end, out var pinned)) continue;
+            if (pinned.ValueKind != JsonValueKind.Array)
+            {
+                yield return new(CheckSeverity.Error, "constraint/bad-field",
+                    $"view '{view}' has a layered `{end}` that is not a list of element ids, so nothing is pinned to the {end} layer");
+                continue;
+            }
+            foreach (var id in pinned.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!)
+                         .Distinct(StringComparer.Ordinal).Where(id => !elementIds.Contains(id)))
+                yield return new(CheckSeverity.Error, "constraint/dangling-id",
+                    $"view '{view}' pins '{id}' to the {end} layer, but it is not an element in the model, so nothing is pinned there for it", id);
+        }
+
+        static bool Present(JsonElement layout, string name, out JsonElement value) =>
+            layout.TryGetProperty(name, out value) && value.ValueKind != JsonValueKind.Null;
     }
 
     /// <summary>
@@ -649,6 +760,23 @@ public static class WorkspaceCheck
         model.Unreadable.Select(p => new CheckFinding(
             p.LeftOut ? CheckSeverity.Error : CheckSeverity.Warning, "model/unreadable-declaration", p.Message, p.Id));
 
+    /// <summary>
+    /// A declaration <c>Model.Of(...)</c> does not collect. Stemma reads the model off the declarations
+    /// in <c>Build()</c>, so it draws one; the compiler, and every test written against
+    /// <c>Architecture.Build()</c>, reads what <c>Model.Of</c> collects, so the compiled model lacks it.
+    /// Two readings of one file disagreed and nothing said so (B-025). Each file's declarations are
+    /// checked against that file's own return; a return that is not a <c>Model.Of</c> of plain locals
+    /// is not checked at all.
+    /// </summary>
+    private static IEnumerable<CheckFinding> NotCollected(IReadOnlyList<ArchModel> partials) =>
+        partials.SelectMany(p => p.NotCollected).Select(l =>
+        {
+            var at = $"{Path.GetFileName(l.FilePath)}:{l.Line}";
+            return new CheckFinding(CheckSeverity.Warning, "model/not-collected",
+                $"{l.Id} is declared in {at} but not collected in Model.Of(...); Stemma draws it, the compiled model does not have it. " +
+                $"Add `{l.Variable}` to Model.Of.", l.Id);
+        });
+
     private static IEnumerable<CheckFinding> RegisterFindings(ArchModel model)
     {
         var concepts = model.Elements.Count(e => e.Kind == ArchElementKind.Concept);
@@ -705,6 +833,35 @@ public static class WorkspaceCheck
         }
     }
 
+    /// <summary>
+    /// The engine's rules — the ones the canvas marks cards with — run with the workspace's
+    /// <c>stemma.rules.json</c>, so a rule switched off there is off here, and one made quieter is
+    /// reported at that severity. Without this, validate passed a model the canvas showed in red: a
+    /// data-flow cycle was the canvas's alone to see (B-026).
+    ///
+    /// Each violation is reported as <c>rule/&lt;rule-id&gt;</c>, except where a check above already
+    /// says the same thing: a link to a missing element is <c>link/dangling-endpoint</c>, an argument
+    /// the reader could not read is <c>model/unreadable-declaration</c>, and a module whose context
+    /// is not an element at all is <c>element/dangling-reference</c>. Said twice, a fix would appear to
+    /// leave half the problem behind.
+    /// </summary>
+    private static IEnumerable<CheckFinding> EngineRuleFindings(string workspaceRoot, ArchModel model, HashSet<string> ids)
+    {
+        var contextOf = model.Elements
+            .GroupBy(e => e.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Attributes.GetValueOrDefault("contextId"), StringComparer.Ordinal);
+
+        foreach (var v in RuleEngine.Default(workspaceRoot).Run(model))
+        {
+            if (v.RuleId is "link-endpoints-exist" or "model/unreadable-declaration") continue;
+            if (v.RuleId == "module-has-at-most-one-context"
+                && v.ElementIds is [var module] && contextOf.GetValueOrDefault(module) is { } context && !ids.Contains(context))
+                continue;
+
+            yield return new(SeverityOf(v.Severity), $"rule/{v.RuleId}", v.Message, v.ElementIds.FirstOrDefault() ?? v.LinkIds.FirstOrDefault());
+        }
+    }
+
     /// <summary>`contextId`, `systemId` and `aboutId` are string references the compiler never sees.</summary>
     private static IEnumerable<CheckFinding> DanglingAttributeReferences(ArchModel model, HashSet<string> ids)
     {
@@ -720,50 +877,76 @@ public static class WorkspaceCheck
         }
     }
 
-    private static IEnumerable<CheckFinding> ViewFindings(IReadOnlyList<ArchView> views, ArchModel model, HashSet<string> ids)
+    /// <summary>A view and what it draws.</summary>
+    private sealed record ResolvedView(ArchView View, ViewResolution Resolution);
+
+    private static CheckSeverity SeverityOf(Severity severity) => severity switch
+    {
+        Severity.Error => CheckSeverity.Error,
+        Severity.Warning => CheckSeverity.Warning,
+        _ => CheckSeverity.Info,
+    };
+
+    /// <summary>
+    /// Each view, as it resolves: what is wrong with how it is written — a member, a scope or a rule
+    /// that names nothing (<see cref="ViewProjection"/> says which) — and what is unusual about what it
+    /// draws.
+    /// </summary>
+    private static IEnumerable<CheckFinding> ViewFindings(IReadOnlyList<ResolvedView> views, ArchModel model)
     {
         // One pass over the model, not one per view member. A linear scan inside the loop makes this
         // quadratic in a workspace of any size, and this runs on every save in a build.
         var kindById = model.Elements
             .GroupBy(e => e.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.Ordinal);
+        var linkById = model.Links
+            .GroupBy(l => l.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-        foreach (var view in views)
+        foreach (var (view, resolution) in views)
         {
-            var members = view.ElementIds.Where(ids.Contains).ToList();
+            foreach (var problem in resolution.Problems)
+                yield return new(SeverityOf(problem.Severity), problem.Rule, problem.Message, problem.ElementId);
 
-            foreach (var missing in view.ElementIds.Where(id => !ids.Contains(id)))
-                yield return new(CheckSeverity.Error, "view/dangling-member",
-                    $"view '{view.Id}' lists '{missing}', which is not an element", missing);
+            var members = resolution.Members;
+            var kinds = members.Select(id => kindById[id]).ToList();
+            var conceptCount = kinds.Count(k => k == ArchElementKind.Concept);
 
+            // How many boxes are too many depends on what the view is. A view of mostly Concepts is a
+            // figure in an argument, and past seven it has usually stopped making one point. Any other
+            // view is architecture: a container view of a modest system has fifteen to thirty boxes,
+            // and warning at eight put a standing warning on every one of them, which teaches the
+            // reader to ignore warnings (B-024). Past thirty it has usually stopped being one diagram,
+            // said as information rather than as a fault.
             if (members.Count == 0)
                 yield return new(CheckSeverity.Error, "view/empty",
                     $"view '{view.Id}' resolves to no elements — a render of it has nothing to draw");
-            else if (members.Count > BusyViewThreshold)
+            else if (conceptCount > members.Count / 2 && members.Count > BusyViewThreshold)
                 yield return new(CheckSeverity.Warning, "view/busy",
-                    $"view '{view.Id}' has {members.Count} elements; past {BusyViewThreshold} a diagram has usually stopped answering one question");
+                    $"view '{view.Id}' has {members.Count} elements; past {BusyViewThreshold} a figure has usually stopped answering one question");
+            else if (conceptCount <= members.Count / 2 && members.Count > BusyArchitectureViewThreshold)
+                yield return new(CheckSeverity.Info, "view/busy",
+                    $"view '{view.Id}' has {members.Count} elements; past {BusyArchitectureViewThreshold} an architecture diagram has usually " +
+                    "stopped being one diagram — consider a view per system or per question");
 
             // A view holding both Concepts and structural kinds is mixing rhetorical registers: half
             // the boxes claim something about a system and half claim nothing, and the picture reads
             // as neither an argument nor an architecture.
-            var kinds = members.Select(id => kindById[id]).ToList();
-            var conceptCount = kinds.Count(k => k == ArchElementKind.Concept);
             if (conceptCount > 0 && conceptCount < kinds.Count)
                 yield return new(CheckSeverity.Warning, "view/mixed-register",
                     $"view '{view.Id}' mixes {conceptCount} Concept(s) with {kinds.Count - conceptCount} structural element(s); a diagram usually wants to be one or the other");
 
             // Links render only when *both* endpoints are in the view. A relationship that is in the
             // model and silently absent from the picture is the failure this catches: the diagram
-            // looks fine and is missing an arrow the author believes is there.
+            // looks fine and is missing an arrow the author believes is there. A C4 lens draws a
+            // relationship with a container it shows as its system as an implied link, so that one
+            // is not missing.
             var present = members.ToHashSet(StringComparer.Ordinal);
-            foreach (var link in model.Links)
+            foreach (var link in resolution.LeftOut.Select(id => linkById[id]))
             {
-                if (present.Contains(link.FromId) ^ present.Contains(link.ToId))
-                {
-                    var absent = present.Contains(link.FromId) ? link.ToId : link.FromId;
-                    yield return new(CheckSeverity.Info, "view/half-link",
-                        $"view '{view.Id}' includes one end of link '{link.Id}' but not '{absent}', so that relationship will not be drawn");
-                }
+                var absent = present.Contains(link.FromId) ? link.ToId : link.FromId;
+                yield return new(CheckSeverity.Info, "view/half-link",
+                    $"view '{view.Id}' includes one end of link '{link.Id}' but not '{absent}', so that relationship will not be drawn");
             }
         }
     }

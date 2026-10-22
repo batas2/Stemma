@@ -203,13 +203,16 @@ internal static class Trivia
 
     /// <summary>
     /// Only the whitespace and line endings: the layout of some trivia without its content. The space
-    /// that separated a removed comment from its comma would be left trailing, so it goes too.
+    /// that separated a removed comment from its comma would be left trailing, so it goes too; and the
+    /// spaces either side of a comment in the middle of a line — <c>, /* note */ "x"</c> — are one gap
+    /// once the comment is gone, not two.
     /// </summary>
     public static SyntaxTriviaList Layout(SyntaxTriviaList trivia)
     {
         var kept = trivia.Where(t => t.IsKind(SyntaxKind.WhitespaceTrivia) || t.IsKind(SyntaxKind.EndOfLineTrivia)).ToList();
         for (var i = kept.Count - 2; i >= 0; i--)
-            if (kept[i].IsKind(SyntaxKind.WhitespaceTrivia) && kept[i + 1].IsKind(SyntaxKind.EndOfLineTrivia))
+            if (kept[i].IsKind(SyntaxKind.WhitespaceTrivia)
+                && (kept[i + 1].IsKind(SyntaxKind.EndOfLineTrivia) || kept[i + 1].IsKind(SyntaxKind.WhitespaceTrivia)))
                 kept.RemoveAt(i);
         return SyntaxFactory.TriviaList(kept);
     }

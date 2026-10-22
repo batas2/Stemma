@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-025 |
-| **Status** | In progress |
+| **Status** | Fixed |
 | **Severity** | S3 minor |
 | **Area** | `cli` |
 | **Reported by / Date** | Audit ([`agent-architecture-workflow.md`](../product/agent-architecture-workflow.md) §1, A9) / 2026-10-22 |
@@ -49,17 +49,25 @@ declaration in `Build()` and never looks at the `return`. That is correct for St
   with plain identifiers is not checked (nothing can be said about it).
 - **Affected files:** `src/Stemma.Engine/ArchModel/DslReader.cs`, `ArchModel.cs`,
   `src/Stemma.Cli/WorkspaceCheck.cs`.
-- [ ] Fix implemented
+- **Implementation notes:** the reader records each element's and link's local and line
+  (`ArchModel.Locals`) and the locals `Model.Of` names (`ArchModel.Collected`, null when unknown). "Plain
+  identifiers" is read strictly: every argument must be a local of `Build()` holding an element, a link
+  or a tag (one the reader left out included). A local holding anything else — `var all = new object[]
+  { … }; return Model.Of(all);` — could collect anything, so that file is not checked. A merged model
+  keeps every file's locals and no collection of its own; `validate` checks each file's declarations
+  against that file's return.
+- [x] Fix implemented
 - [x] Inviolable rules respected
 - [x] No new data store / boundary intact
 
 ## 7. Regression test (required)
 
-- [ ] A test that **fails before** the fix and **passes after**
-- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs`, `tests/Stemma.Engine.Tests` reader test.
+- [x] A test that **fails before** the fix and **passes after**
+- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs` — the section *Model.Of (B-025)*;
+  `tests/Stemma.Engine.Tests/DslReaderTests.cs` — the section *what Model.Of collects (B-025)*.
 - **What it asserts:** a declared, uncollected element is reported with its variable; a collected one,
   a tag local and a model whose return is not `Model.Of` are not.
 
 ## 8. Verification
 
-- [ ] `dotnet test` green
+- [x] `dotnet test` green

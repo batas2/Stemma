@@ -164,18 +164,48 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().Contain(f => f.Rule == "view/half-link" && f.Severity == CheckSeverity.Info);
     }
 
-    [Fact]
-    public void A_crowded_view_is_a_warning_rather_than_an_error()
+    /// <summary>A model of <paramref name="count"/> elements of <paramref name="kind"/>, and one view of all of them.</summary>
+    private void ViewOf(int count, string kind)
     {
-        var ids = string.Join("\n", Enumerable.Range(0, WorkspaceCheck.BusyViewThreshold + 2)
-            .Select(i => $"            var m{i} = new Module(\"mod_{i}\", \"M{i}\");"));
-        var all = string.Join(", ", Enumerable.Range(0, WorkspaceCheck.BusyViewThreshold + 2).Select(i => $"m{i}"));
-        Model($"{ids}\n            return Model.Of({all});");
-        View("Busy", $$"""new(Id: "view_busy", Name: "Busy", BaseView: "all", ElementIds: new[] { {{string.Join(", ", Enumerable.Range(0, WorkspaceCheck.BusyViewThreshold + 2).Select(i => $"\"mod_{i}\""))}} })""");
+        string Declare(int i) => kind == "Container"
+            ? $"            var e{i} = new Container(\"e_{i}\", \"E{i}\", \"sys_x\");"
+            : $"            var e{i} = new {kind}(\"e_{i}\", \"E{i}\");";
+        var system = kind == "Container" ? "            var sys = new SoftwareSystem(\"sys_x\", \"X\");\n" : "";
+        var declarations = string.Join("\n", Enumerable.Range(0, count).Select(Declare));
+        var collected = string.Join(", ", Enumerable.Range(0, count).Select(i => $"e{i}").Prepend(kind == "Container" ? "sys" : null).OfType<string>());
+        Model($"{system}{declarations}\n            return Model.Of({collected});");
+        var ids = string.Join(", ", Enumerable.Range(0, count).Select(i => $"\"e_{i}\""));
+        View("Busy", $$"""new(Id: "view_busy", Name: "Busy", BaseView: "all", ElementIds: new[] { {{ids}} })""");
+    }
+
+    [Fact]
+    public void A_crowded_figure_is_a_warning_rather_than_an_error()
+    {
+        ViewOf(WorkspaceCheck.BusyViewThreshold + 1, "Concept");
 
         var findings = Run();
-        findings.Should().Contain(f => f.Rule == "view/busy" && f.Severity == CheckSeverity.Warning);
+        findings.Should().ContainSingle(f => f.Rule == "view/busy").Which.Severity.Should().Be(CheckSeverity.Warning);
         findings.Where(f => f.Severity == CheckSeverity.Error).Should().BeEmpty("being busy is a rule of thumb, not a defect");
+    }
+
+    [Fact]
+    public void An_architecture_view_of_ordinary_size_is_not_busy()
+    {
+        // Seventeen containers is the audit's container view: an ordinary C4 diagram, and it carried a
+        // standing warning that taught the reader to ignore warnings (B-024).
+        ViewOf(17, "Container");
+
+        Run().Should().NotContain(f => f.Rule == "view/busy");
+    }
+
+    [Fact]
+    public void An_architecture_view_past_thirty_is_noted_rather_than_warned_about()
+    {
+        ViewOf(WorkspaceCheck.BusyArchitectureViewThreshold + 1, "Container");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/busy").Which;
+        finding.Severity.Should().Be(CheckSeverity.Info);
+        finding.Message.Should().Contain("31");
     }
 
     [Fact]
@@ -550,6 +580,75 @@ public sealed class WorkspaceCheckTests : IDisposable
         Sidecar("""{ "nodes": { "mod_a": { "x": 0, "y": 0 } } }""");
 
         Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
+    }
+
+    // layoutMode is the Layout panel's memory, not an instruction; nothing runs it on open (B-022).
+
+    [Theory]
+    [InlineData("hierarchical")]
+    [InlineData("force")]
+    [InlineData("byType")]
+    public void A_heuristic_layout_mode_on_a_view_with_nothing_arranged_is_said_to_do_nothing(string mode)
+    {
+        Model(TwoModules);
+        Sidecar($$"""{ "layoutMode": "{{mode}}" }""");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "layout/inert-mode").Which;
+        finding.Severity.Should().Be(CheckSeverity.Info);
+        finding.Message.Should().Contain("custom:view_v").And.Contain("\"kind\": \"layered\"");
+    }
+
+    [Theory]
+    [InlineData("""{ "layoutMode": "hierarchical", "nodes": { "mod_a": { "x": 0, "y": 0 } } }""")]
+    [InlineData("""{ "layoutMode": "hierarchical", "layout": { "kind": "layered" } }""")]
+    [InlineData("""{ "layoutMode": "manual" }""")]
+    [InlineData("""{ "nodes": {} }""")]
+    public void A_layout_mode_beside_positions_or_a_constraint_is_not_reported(string view)
+    {
+        Model(TwoModules);
+        Sidecar(view);
+
+        Run().Should().NotContain(f => f.Rule == "layout/inert-mode");
+    }
+
+    // The layered constraint (F-021 AC8) governs every node in the view, so it names no members.
+
+    [Theory]
+    [InlineData("""{ "kind": "layered" }""")]
+    [InlineData("""{ "kind": "layered", "direction": "right", "spacing": [48, 72], "first": ["mod_a"], "last": ["mod_b"], "groups": false, "routing": "spline" }""")]
+    [InlineData("""{ "kind": "layered", "spacing": 40, "routing": "polyline" }""")]
+    public void A_layered_constraint_is_accepted_without_a_member_list(string layout)
+    {
+        Model(TwoModules);
+        Constraint(layout);
+
+        Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
+    }
+
+    [Theory]
+    [InlineData("""{ "kind": "layered", "direction": "sideways" }""", "constraint/bad-direction")]
+    [InlineData("""{ "kind": "layered", "direction": 2 }""", "constraint/bad-direction")]
+    [InlineData("""{ "kind": "layered", "spacing": "wide" }""", "constraint/bad-spacing")]
+    [InlineData("""{ "kind": "layered", "spacing": [1, 2, 3] }""", "constraint/bad-spacing")]
+    [InlineData("""{ "kind": "layered", "routing": "curvy" }""", "constraint/bad-field")]
+    [InlineData("""{ "kind": "layered", "groups": "yes" }""", "constraint/bad-field")]
+    [InlineData("""{ "kind": "layered", "first": "mod_a" }""", "constraint/bad-field")]
+    public void A_layered_option_the_layout_cannot_use_is_an_error(string layout, string rule)
+    {
+        Model(TwoModules);
+        Constraint(layout);
+
+        Run().Should().ContainSingle(f => f.Rule.StartsWith("constraint/"))
+            .Which.Should().Match<CheckFinding>(f => f.Rule == rule && f.Severity == CheckSeverity.Error);
+    }
+
+    [Fact]
+    public void An_id_pinned_to_the_first_or_last_layer_that_does_not_exist_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "layered", "first": ["mod_a", "mod_ghost"], "last": ["mod_gone"] }""");
+
+        Run().Where(f => f.Rule == "constraint/dangling-id").Select(f => f.ElementId).Should().Equal("mod_ghost", "mod_gone");
     }
 
     // ---- books --------------------------------------------------------------------------------
@@ -948,5 +1047,247 @@ public sealed class WorkspaceCheckTests : IDisposable
         """);
 
         Run().Should().NotContain(f => f.Rule == "model/duplicate-id");
+    }
+
+    // ---- the engine's rules (B-026) -----------------------------------------------------------
+    //
+    // The canvas marks cards from the engine's RuleEngine. validate never ran it, so an agent could
+    // produce a model that was red in the app and clean on the command line.
+
+    private static readonly string ThreeFlowCycle = """
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var c = new Module("mod_c", "C");
+                    var ab = new DataFlow("flow_ab", "mod_a", "mod_b", "order");
+                    var bc = new DataFlow("flow_bc", "mod_b", "mod_c", "invoice");
+                    var ca = new DataFlow("flow_ca", "mod_c", "mod_a", "receipt");
+                    return Model.Of(a, b, c, ab, bc, ca);
+        """;
+
+    [Fact]
+    public void A_data_flow_cycle_the_canvas_marks_is_reported_by_validate_too()
+    {
+        Model(ThreeFlowCycle);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "rule/no-circular-dataflows").Which;
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.Message.Should().Contain("mod_a").And.Contain("mod_b").And.Contain("mod_c");
+        finding.ElementId.Should().Be("mod_a");
+    }
+
+    [Fact]
+    public void A_rule_switched_off_in_the_rules_file_is_off_for_validate()
+    {
+        Model(ThreeFlowCycle);
+        File.WriteAllText(Path.Combine(_root, "stemma.rules.json"), """{ "rules": { "no-circular-dataflows": { "enabled": false } } }""");
+
+        Run().Should().NotContain(f => f.Rule == "rule/no-circular-dataflows");
+    }
+
+    [Fact]
+    public void A_rule_made_louder_in_the_rules_file_is_reported_at_that_severity()
+    {
+        Model(ThreeFlowCycle);
+        File.WriteAllText(Path.Combine(_root, "stemma.rules.json"), """{ "rules": { "no-circular-dataflows": { "severity": "error" } } }""");
+
+        Run().Should().ContainSingle(f => f.Rule == "rule/no-circular-dataflows").Which.Severity.Should().Be(CheckSeverity.Error);
+    }
+
+    [Fact]
+    public void A_dangling_endpoint_is_reported_once_not_once_by_each_checker()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var f = new DataFlow("flow_1", "mod_a", "mod_ghost", "payload");
+                    return Model.Of(a, f);
+        """);
+
+        var findings = Run();
+
+        findings.Should().ContainSingle(f => f.Message.Contains("mod_ghost"));
+        findings.Should().Contain(f => f.Rule == "link/dangling-endpoint");
+    }
+
+    [Fact]
+    public void A_context_that_is_not_an_element_is_reported_once()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A", "ctx_ghost");
+                    return Model.Of(a);
+        """);
+
+        Run().Should().ContainSingle(f => f.Message.Contains("ctx_ghost")).Which.Rule.Should().Be("element/dangling-reference");
+    }
+
+    [Fact]
+    public void A_context_that_is_an_element_of_another_kind_is_the_engine_rule_s_to_report()
+    {
+        Model("""
+                    var s = new SoftwareSystem("sys_x", "X");
+                    var a = new Module("mod_a", "A", "sys_x");
+                    return Model.Of(s, a);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "rule/module-has-at-most-one-context").Which.ElementId.Should().Be("mod_a");
+    }
+
+    // ---- views by rule (F-023 AC8) ------------------------------------------------------------
+    //
+    // A view's members are resolved from its lens, its list and its rules, as the canvas draws them.
+
+    private static readonly string Shop = """
+                    var buyer = new Person("per_buyer", "Buyer", "external");
+                    var shop = new SoftwareSystem("sys_shop", "Shop");
+                    var payments = new SoftwareSystem("sys_payments", "Payments");
+                    var web = new Container("cnt_web", "Web Shop", "sys_shop", "spa");
+                    var api = new Container("cnt_api", "Order API", "sys_shop");
+                    var gateway = new Container("cnt_gateway", "Gateway", "sys_payments");
+                    var browse = new DataFlow("flow_browse", "per_buyer", "cnt_web", "search terms");
+                    var call = new DataFlow("flow_call", "cnt_web", "cnt_api", "orders");
+                    var pay = new DataFlow("flow_pay", "cnt_api", "cnt_gateway", "payment");
+                    return Model.Of(buyer, shop, payments, web, api, gateway, browse, call, pay);
+        """;
+
+    [Fact]
+    public void A_container_view_by_scope_alone_is_neither_empty_nor_missing_the_link_it_implies()
+    {
+        // Its list is empty and the payment goes to a container it draws as its system: before views
+        // were resolved this was view/empty, and the payment a half-link.
+        Model(Shop);
+        View("ShopContainers", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop")""");
+
+        var findings = Run().Where(f => f.Rule.StartsWith("view/")).ToList();
+
+        findings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_link_to_an_element_the_lens_does_not_lift_is_still_a_half_link()
+    {
+        Model(Shop.Replace("return Model.Of(buyer,", """
+                    var hr = new SoftwareSystem("sys_hr", "HR");
+                    var rota = new DataFlow("flow_rota", "sys_hr", "per_buyer", "rota");
+                    return Model.Of(hr, rota, buyer,
+            """));
+        View("ShopContainers", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop")""");
+
+        Run().Should().ContainSingle(f => f.Rule == "view/half-link").Which.Message.Should().Contain("flow_rota");
+    }
+
+    [Theory]
+    [InlineData("""new(Id: "view_c", Name: "C", BaseView: "container")""", "has no Scope")]
+    [InlineData("""new(Id: "view_c", Name: "C", BaseView: "systemContext", Scope: "cnt_api")""", "not a software system")]
+    [InlineData("""new(Id: "view_c", Name: "C", BaseView: "container", Scope: "sys_gone")""", "is not an element")]
+    public void A_C4_lens_without_a_system_to_draw_around_is_an_error(string define, string says)
+    {
+        Model(Shop);
+        View("C", define);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/bad-scope").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.Message.Should().Contain(says);
+    }
+
+    [Fact]
+    public void An_include_naming_an_id_that_does_not_exist_is_an_error_and_one_selecting_nothing_a_warning()
+    {
+        Model(Shop);
+        View("Rules", """new(Id: "view_r", Name: "R", BaseView: "all", ElementIds: new[] { "cnt_api" }, Include: new[] { "cnt_gone", "kind:module" })""");
+
+        var findings = Run().Where(f => f.Rule == "view/dangling-include").ToList();
+
+        findings.Should().HaveCount(2);
+        findings.Should().ContainSingle(f => f.Severity == CheckSeverity.Error && f.ElementId == "cnt_gone");
+        findings.Should().ContainSingle(f => f.Severity == CheckSeverity.Warning && f.Message.Contains("kind:module"));
+    }
+
+    [Fact]
+    public void A_selector_that_cannot_be_read_is_an_error_saying_where()
+    {
+        Model(Shop);
+        View("Rules", """new(Id: "view_r", Name: "R", BaseView: "all", Include: new[] { "kind:container[kind=" })""");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "view/bad-selector").Which;
+        finding.Severity.Should().Be(CheckSeverity.Error);
+        finding.Message.Should().Contain("character 21");
+    }
+
+    [Fact]
+    public void A_book_page_pointing_at_an_element_a_rule_brings_in_is_inside_its_view()
+    {
+        Model(Shop);
+        View("ShopContainers", """new(Id: "view_shop", Name: "Shop", BaseView: "container", Scope: "sys_shop")""");
+        File.WriteAllText(Path.Combine(_root, "stemma.layout.json"), """
+            { "version": 1, "books": { "b": { "name": "B", "pages": { "p": { "title": "P", "view": "view_shop", "focus": ["sys_payments", "cnt_gateway"] } } } } }
+            """);
+
+        Run().Where(f => f.Rule == "book/focus-outside-view").Select(f => f.ElementId).Should().Equal("cnt_gateway");
+    }
+
+    // ---- Model.Of (B-025) ---------------------------------------------------------------------
+    //
+    // Stemma reads the declarations; the compiler reads Model.Of. A declaration left out of Model.Of
+    // is drawn on the canvas and missing from the compiled model, and nothing said so.
+
+    [Fact]
+    public void A_declared_element_left_out_of_Model_Of_is_reported_with_its_variable()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var orphan = new Module("mod_orphan", "Orphan");
+                    var t = Tag.For(a, lifecycle: new Lifecycle(Status: "current"));
+                    return Model.Of(a, t);
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "model/not-collected").Which;
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.ElementId.Should().Be("mod_orphan");
+        finding.Message.Should().Contain("Architecture.cs:8").And.Contain("Add `orphan` to Model.Of");
+    }
+
+    [Fact]
+    public void A_link_left_out_of_Model_Of_is_reported_too()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var f = new DataFlow("flow_1", "mod_a", "mod_b", "order");
+                    return Model.Of(a, b);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "model/not-collected").Which.ElementId.Should().Be("flow_1");
+    }
+
+    [Fact]
+    public void A_model_whose_return_is_not_Model_Of_is_not_checked()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var all = new object[] { a, b };
+                    return Model.Of(all);
+        """);
+
+        Run().Should().NotContain(f => f.Rule == "model/not-collected");
+    }
+
+    [Fact]
+    public void Each_model_file_is_checked_against_its_own_Model_Of()
+    {
+        // `b` is collected by Payments.cs, not by Architecture.cs, and a local of one file means nothing
+        // in the other.
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    return Model.Of(a);
+        """);
+        ModelFile("Payments.cs", "Payments", """
+                    var b = new Module("mod_b", "B");
+                    var c = new Module("mod_c", "C");
+                    return Model.Of(b);
+        """);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "model/not-collected").Which;
+        finding.ElementId.Should().Be("mod_c");
+        finding.Message.Should().Contain("Payments.cs:");
     }
 }
