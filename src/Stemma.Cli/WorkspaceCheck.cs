@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Stemma.Engine.ArchModel;
+using Stemma.Engine.Validation;
 using Stemma.Engine.Workspace;
 
 namespace Stemma.Cli;
@@ -58,6 +59,7 @@ public static class WorkspaceCheck
         findings.AddRange(DuplicateViewIds(workspaceRoot, viewFiles));
         findings.AddRange(DanglingLinkEndpoints(model, ids));
         findings.AddRange(DanglingAttributeReferences(model, ids));
+        findings.AddRange(EngineRuleFindings(workspaceRoot, model, ids));
         findings.AddRange(RegisterFindings(model));
         findings.AddRange(ViewFindings(views, model, ids));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
@@ -702,6 +704,41 @@ public static class WorkspaceCheck
             if (!ids.Contains(link.ToId))
                 yield return new(CheckSeverity.Error, "link/dangling-endpoint",
                     $"link '{link.Id}' ends at '{link.ToId}', which is not an element — the edge will not render", link.Id);
+        }
+    }
+
+    /// <summary>
+    /// The engine's rules — the ones the canvas marks cards with — run with the workspace's
+    /// <c>stemma.rules.json</c>, so a rule switched off there is off here, and one made quieter is
+    /// reported at that severity. Without this, validate passed a model the canvas showed in red: a
+    /// data-flow cycle was the canvas's alone to see (B-026).
+    ///
+    /// Each violation is reported as <c>rule/&lt;rule-id&gt;</c>, except where a check above already
+    /// says the same thing: a link to a missing element is <c>link/dangling-endpoint</c>, an argument
+    /// the reader could not read is <c>model/unreadable-declaration</c>, and a module whose context
+    /// is not an element at all is <c>element/dangling-reference</c>. Said twice, a fix would appear to
+    /// leave half the problem behind.
+    /// </summary>
+    private static IEnumerable<CheckFinding> EngineRuleFindings(string workspaceRoot, ArchModel model, HashSet<string> ids)
+    {
+        var contextOf = model.Elements
+            .GroupBy(e => e.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Attributes.GetValueOrDefault("contextId"), StringComparer.Ordinal);
+
+        foreach (var v in RuleEngine.Default(workspaceRoot).Run(model))
+        {
+            if (v.RuleId is "link-endpoints-exist" or "model/unreadable-declaration") continue;
+            if (v.RuleId == "module-has-at-most-one-context"
+                && v.ElementIds is [var module] && contextOf.GetValueOrDefault(module) is { } context && !ids.Contains(context))
+                continue;
+
+            var severity = v.Severity switch
+            {
+                Severity.Error => CheckSeverity.Error,
+                Severity.Warning => CheckSeverity.Warning,
+                _ => CheckSeverity.Info,
+            };
+            yield return new(severity, $"rule/{v.RuleId}", v.Message, v.ElementIds.FirstOrDefault() ?? v.LinkIds.FirstOrDefault());
         }
     }
 

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-026 |
-| **Status** | In progress |
+| **Status** | Fixed |
 | **Severity** | S2 major |
 | **Area** | `cli` |
 | **Reported by / Date** | Audit ([`agent-architecture-workflow.md`](../product/agent-architecture-workflow.md) §1, A10) / 2026-10-22 |
@@ -46,17 +46,22 @@ on the command line.
   `validate` check say the same thing (`link-endpoints-exist` and `link/dangling-endpoint`), the engine
   rule is not reported twice. From F-024 on, the same call carries the workspace's own rules.
 - **Affected files:** `src/Stemma.Cli/WorkspaceCheck.cs`.
-- [ ] Fix implemented
+- **Implementation notes:** besides `link-endpoints-exist`, two more engine rules overlap a `validate`
+  check and are not said twice: `model/unreadable-declaration` (validate's own rule of that name) and
+  `module-has-at-most-one-context` for a module whose context is not an element at all
+  (`element/dangling-reference`). A context that is an element of another kind is still the engine
+  rule's to report. The finding's element is the violation's first element, else its first link.
+- [x] Fix implemented
 - [x] Inviolable rules respected
 - [x] No new data store / boundary intact
 
 ## 7. Regression test (required)
 
-- [ ] A test that **fails before** the fix and **passes after**
-- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs`
+- [x] A test that **fails before** the fix and **passes after**
+- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs` — the section *the engine's rules (B-026)*
 - **What it asserts:** a three-flow cycle produces `rule/no-circular-dataflows`; disabling it in
   `stemma.rules.json` removes it; a dangling endpoint is reported once.
 
 ## 8. Verification
 
-- [ ] `dotnet test` green
+- [x] `dotnet test` green

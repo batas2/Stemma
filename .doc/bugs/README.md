@@ -40,7 +40,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-023](./B-023-publication-cards-let-lines-through-their-text.md) | Publication cards let a line run through their text | S2 major | canvas | In progress |
 | [B-024](./B-024-busy-warning-on-every-architecture-view.md) | `view/busy` warns on every architecture view | S3 minor | cli | In progress |
 | [B-025](./B-025-element-left-out-of-model-of-is-unannounced.md) | An element left out of `Model.Of` is drawn, and nothing says the compiled model lacks it | S3 minor | cli | In progress |
-| [B-026](./B-026-validate-does-not-run-the-engine-rules.md) | `validate` does not run the rules the canvas shows | S2 major | cli | In progress |
+| [B-026](./B-026-validate-does-not-run-the-engine-rules.md) | `validate` does not run the rules the canvas shows | S2 major | cli | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 

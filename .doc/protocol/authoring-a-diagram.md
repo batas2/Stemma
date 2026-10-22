@@ -467,6 +467,7 @@ What it catches, in rough order of how often it bites:
 | `view/empty` | error | The render will report `empty`; better to know now. |
 | `model/duplicate-id`, `link/duplicate-id` | error | An element or a link id declared twice, in one file or two. Which one wins is arbitrary. |
 | `model/unreadable-declaration` | error / warning | An argument Stemma cannot read — an id written as a method call, a name built at run time. An error when the whole declaration is left out of the model, a warning when one argument is read as empty. Write it as a string literal or a constant. |
+| `rule/<rule-id>` | as the rule says, or as `stemma.rules.json` sets it | The engine's rules — the ones the canvas marks cards with: a data-flow cycle (`rule/no-circular-dataflows`), a flow into a deprecated element, a module whose context is not a bounded context. Switched off or re-graded in `stemma.rules.json` (`{ "rules": { "no-circular-dataflows": { "enabled": false } } }`), for the canvas and `validate` alike. |
 | `view/duplicate-id` | error | Two view files with one id. The app opens and saves whichever it reads first. |
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |
 | `book/missing-view`, `book/dangling-focus` | error | A page that shows a view that is gone, or points at an element that is: a slide that outlived what it was about. |

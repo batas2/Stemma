@@ -949,4 +949,86 @@ public sealed class WorkspaceCheckTests : IDisposable
 
         Run().Should().NotContain(f => f.Rule == "model/duplicate-id");
     }
+
+    // ---- the engine's rules (B-026) -----------------------------------------------------------
+    //
+    // The canvas marks cards from the engine's RuleEngine. validate never ran it, so an agent could
+    // produce a model that was red in the app and clean on the command line.
+
+    private static readonly string ThreeFlowCycle = """
+                    var a = new Module("mod_a", "A");
+                    var b = new Module("mod_b", "B");
+                    var c = new Module("mod_c", "C");
+                    var ab = new DataFlow("flow_ab", "mod_a", "mod_b", "order");
+                    var bc = new DataFlow("flow_bc", "mod_b", "mod_c", "invoice");
+                    var ca = new DataFlow("flow_ca", "mod_c", "mod_a", "receipt");
+                    return Model.Of(a, b, c, ab, bc, ca);
+        """;
+
+    [Fact]
+    public void A_data_flow_cycle_the_canvas_marks_is_reported_by_validate_too()
+    {
+        Model(ThreeFlowCycle);
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "rule/no-circular-dataflows").Which;
+        finding.Severity.Should().Be(CheckSeverity.Warning);
+        finding.Message.Should().Contain("mod_a").And.Contain("mod_b").And.Contain("mod_c");
+        finding.ElementId.Should().Be("mod_a");
+    }
+
+    [Fact]
+    public void A_rule_switched_off_in_the_rules_file_is_off_for_validate()
+    {
+        Model(ThreeFlowCycle);
+        File.WriteAllText(Path.Combine(_root, "stemma.rules.json"), """{ "rules": { "no-circular-dataflows": { "enabled": false } } }""");
+
+        Run().Should().NotContain(f => f.Rule == "rule/no-circular-dataflows");
+    }
+
+    [Fact]
+    public void A_rule_made_louder_in_the_rules_file_is_reported_at_that_severity()
+    {
+        Model(ThreeFlowCycle);
+        File.WriteAllText(Path.Combine(_root, "stemma.rules.json"), """{ "rules": { "no-circular-dataflows": { "severity": "error" } } }""");
+
+        Run().Should().ContainSingle(f => f.Rule == "rule/no-circular-dataflows").Which.Severity.Should().Be(CheckSeverity.Error);
+    }
+
+    [Fact]
+    public void A_dangling_endpoint_is_reported_once_not_once_by_each_checker()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A");
+                    var f = new DataFlow("flow_1", "mod_a", "mod_ghost", "payload");
+                    return Model.Of(a, f);
+        """);
+
+        var findings = Run();
+
+        findings.Should().ContainSingle(f => f.Message.Contains("mod_ghost"));
+        findings.Should().Contain(f => f.Rule == "link/dangling-endpoint");
+    }
+
+    [Fact]
+    public void A_context_that_is_not_an_element_is_reported_once()
+    {
+        Model("""
+                    var a = new Module("mod_a", "A", "ctx_ghost");
+                    return Model.Of(a);
+        """);
+
+        Run().Should().ContainSingle(f => f.Message.Contains("ctx_ghost")).Which.Rule.Should().Be("element/dangling-reference");
+    }
+
+    [Fact]
+    public void A_context_that_is_an_element_of_another_kind_is_the_engine_rule_s_to_report()
+    {
+        Model("""
+                    var s = new SoftwareSystem("sys_x", "X");
+                    var a = new Module("mod_a", "A", "sys_x");
+                    return Model.Of(s, a);
+        """);
+
+        Run().Should().ContainSingle(f => f.Rule == "rule/module-has-at-most-one-context").Which.ElementId.Should().Be("mod_a");
+    }
 }
