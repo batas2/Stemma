@@ -65,10 +65,11 @@ public static class ConformanceCheck
         foreach (var map in declared.CodeMaps.Where(m => elements.Contains(m.ElementId)))
         {
             var full = Path.GetFullPath(map.Path, root);
+            IReadOnlyList<string> found = File.Exists(full) ? [full] : ProjectGraph.ProjectFilesUnder(full);
             var problem = File.Exists(full)
                 ? full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ? null : "which is a file but not a project file"
                 : Directory.Exists(full)
-                    ? ProjectGraph.ProjectFilesUnder(full).Count > 0 ? null : "which holds no project"
+                    ? found.Count > 0 ? null : "which holds no project"
                     : "which does not exist";
             if (problem is not null)
             {
@@ -78,7 +79,6 @@ public static class ConformanceCheck
                     [map.ElementId], []));
                 continue;
             }
-            IReadOnlyList<string> found = File.Exists(full) ? [full] : ProjectGraph.ProjectFilesUnder(full);
             foreach (var project in found)
             {
                 var owner = owners.TryGetValue(project, out var list) ? list : owners[project] = [];

@@ -242,6 +242,20 @@ public sealed class DeclaredRulesReaderTests : IDisposable
     }
 
     [Fact]
+    public void A_severity_is_read_by_its_name_whatever_its_case_and_never_as_a_number()
+    {
+        Rules("""
+                Rule.Forbid("rule_named", "a", "b", severity: "Warning"),
+                Rule.Forbid("rule_number", "a", "b", severity: "2")
+        """);
+
+        var read = Read();
+
+        read.Rules.Should().ContainSingle().Which.Severity.Should().Be(Severity.Warning);
+        read.Problems.Should().ContainSingle(p => p.Rule == DeclaredRules.Unknown).Which.Message.Should().Contain("severity \"2\"");
+    }
+
+    [Fact]
     public void An_id_declared_twice_or_taken_by_a_built_in_rule_and_a_second_Code_At_are_duplicates()
     {
         Rules("""

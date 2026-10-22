@@ -363,7 +363,9 @@ public sealed record DeclaredRules(
             var severity = kind == DeclaredRuleKind.Require ? Severity.Warning : Severity.Error;
             if (Value("severity") is { } severityText)
             {
-                if (Enum.TryParse<Severity>(severityText, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed)) severity = parsed;
+                // By name only: Enum.TryParse would take "2" for an error.
+                if (Enum.GetNames<Severity>().FirstOrDefault(n => n.Equals(severityText, StringComparison.OrdinalIgnoreCase)) is { } named)
+                    severity = Enum.Parse<Severity>(named);
                 else
                 {
                     Problem(Unknown, Severity.Error, args["severity"], $"{label} has severity \"{severityText}\", which is not error, warning or info, so it is not checked");
