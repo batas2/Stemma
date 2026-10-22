@@ -456,7 +456,8 @@ public static class StemmaWebHost
                 var match = views.FirstOrDefault(v => v.Id == view || v.Name == view);
                 if (match is not null)
                 {
-                    elementIds = match.ElementIds.ToHashSet(StringComparer.Ordinal);
+                    // What the view draws, its lens and rules resolved, not only the ids it lists.
+                    elementIds = ViewProjection.Resolve(match, arch).Members.ToHashSet(StringComparer.Ordinal);
                     layoutKey = $"custom:{match.Id}";
                 }
                 else
@@ -509,20 +510,33 @@ public static class StemmaWebHost
             return Results.File(bytes, "application/pdf", $"{safeName}.pdf");
         }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(BookPdfExporter.MaxRequestBytes));
 
+        // Each view as written, and what it draws: its lens and rules resolved by the engine, so the
+        // canvas draws what validate checks and render captures (ADR-0026). The client keeps only the
+        // kinds a lens draws; membership is decided here.
         workspaceApi.MapGet("/views", async (EngineHost host, CancellationToken ct) =>
         {
             using var lease = host.Use();
             if (lease is null) return Results.NotFound();
-            return Results.Ok(await ReadViewsAsync(lease.Engine, ct));
+            var engine = lease.Engine;
+            var views = await ReadViewsAsync(engine, ct);
+            var arch = await engine.ReadArchModelAsync(ct) ?? new ArchModel("", [], [], []);
+            return Results.Ok(views.Select(v => ViewListing.Of(v, ViewProjection.Resolve(v, arch))));
         });
 
         // Both go through the engine, so a view file is edited in place, compile-gated, and found by
         // the id it declares — never rewritten from a template or picked out by a text search (B-010).
-        workspaceApi.MapPut("/views", async (ArchView view, EngineHost host, CancellationToken ct) =>
+        // A field sent as null is left as the file has it: a canvas that changed the members keeps the
+        // view's scope and rules without having to know them.
+        workspaceApi.MapPut("/views", async (ViewEdit edit, EngineHost host, CancellationToken ct) =>
         {
+            if (string.IsNullOrWhiteSpace(edit.Id)) return Results.BadRequest(new { error = "a view needs an id" });
             using var lease = host.Use();
             if (lease is null) return Results.BadRequest(new { error = "no workspace open" });
             var engine = lease.Engine;
+            var current = (await ReadViewsAsync(engine, ct)).FirstOrDefault(v => v.Id == edit.Id);
+            if (current is null && string.IsNullOrWhiteSpace(edit.Name)) return Results.BadRequest(new { error = "a new view needs a name" });
+            var view = new ArchView(edit.Id, edit.Name ?? current!.Name, edit.BaseView ?? current?.BaseView ?? "all",
+                edit.ElementIds ?? current?.ElementIds ?? [], edit.Scope, edit.Include, edit.Exclude);
             var result = await engine.SaveViewAsync($"view_{Guid.NewGuid():N}", view, ct);
             return result is OperationFailed f
                 ? Results.Conflict(new { reason = f.Reason, message = f.Message })
@@ -786,6 +800,46 @@ public static class StemmaWebHost
         return layout.Nodes.ToDictionary(kv => kv.Key, kv => (kv.Value.X, kv.Value.Y), StringComparer.Ordinal);
     }
 }
+
+/// <summary>
+/// A view in <c>GET /api/workspace/views</c>: as its file writes it — <c>ElementIds</c> empty when it has
+/// none, the scope and rules null — and what it draws, as <see cref="ViewProjection"/> resolves it.
+/// </summary>
+/// <param name="Provenance">Each member and what brought it in: <c>lens</c>, <c>elementIds</c> or <c>include:&lt;selector&gt;</c>.</param>
+/// <param name="Implied">The relationships drawn to a container's system, with the links each stands for.</param>
+internal sealed record ViewListing(
+    string Id,
+    string Name,
+    string BaseView,
+    IReadOnlyList<string> ElementIds,
+    string? Scope,
+    IReadOnlyList<string>? Include,
+    IReadOnlyList<string>? Exclude,
+    IReadOnlyList<string> Members,
+    IReadOnlyDictionary<string, string> Provenance,
+    IReadOnlyList<ImpliedLink> Implied,
+    IReadOnlyList<ViewListing.Problem> Problems)
+{
+    internal sealed record Problem(string Rule, string Severity, string Message);
+
+    public static ViewListing Of(ArchView view, ViewResolution resolved) => new(
+        view.Id, view.Name, view.BaseView, view.ElementIds, view.Scope, view.Include, view.Exclude,
+        resolved.Members, resolved.Provenance, resolved.Implied,
+        resolved.Problems.Select(p => new Problem(p.Rule, p.Severity.ToString().ToLowerInvariant(), p.Message)).ToList());
+}
+
+/// <summary>
+/// The body of <c>PUT /api/workspace/views</c>: the shape the list gives, any extra field ignored. Null
+/// leaves a field as the file has it; for a new view, a name is needed and the rest defaults.
+/// </summary>
+internal sealed record ViewEdit(
+    string? Id,
+    string? Name,
+    string? BaseView,
+    List<string>? ElementIds,
+    string? Scope,
+    List<string>? Include,
+    List<string>? Exclude);
 
 /// <summary>
 /// The body of <c>PATCH /api/workspace/layout</c>: each change sets the value at a path of keys, or

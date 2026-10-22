@@ -141,7 +141,9 @@ nested type and a top-level one, which the model names alike.
 ### Views (`Views/*.cs`)
 
 Saved and deleted through `PUT` / `DELETE /api/workspace/views`, which call
-`StemmaEngine.SaveViewAsync` / `RemoveViewAsync`. A view is found by reading the id its `Define()`
+`StemmaEngine.SaveViewAsync` / `RemoveViewAsync`; listed by `GET`, each with what it draws as
+`ViewProjection` resolves it (the shape is in [`data-flow-and-sync.md`](./data-flow-and-sync.md)), and
+the draw.io export of a view takes the same members. A view is found by reading the id its `Define()`
 declares, never by searching file text. Before either, the workspace catches up with files a pull
 added or deleted ([B-015](../bugs/B-015-outside-changes-to-the-set-of-files-are-missed.md)): a new
 file is taken in when its project compiles it — by the project's evaluation, so one kept out with
