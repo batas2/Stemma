@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-021 |
-| **Status** | In progress |
+| **Status** | Fixed |
 | **Severity** | S2 major |
 | **Area** | `layout` |
 | **Reported by / Date** | Audit for the Architect's Agent ([`agent-architecture-workflow.md`](../product/agent-architecture-workflow.md) §1, A2) / 2026-10-22 |
@@ -58,18 +58,18 @@ stops at the kind tiers. Every person lands in tier 0 and every system and conta
   member has a position is laid out by the layered constraint (F-021) instead, which is what a
   picture nobody arranged should get. Nothing is written to the sidecar for either.
 - **Affected files:** `src/Stemma.Web.Client/src/components/ArchCanvas.tsx`, `lib/autoLayout.ts`.
-- [ ] Fix implemented
+- [x] Fix implemented
 - [x] Inviolable rules respected
 - [x] No new data store / boundary intact
 
 ## 7. Regression test (required)
 
-- [ ] A test that **fails before** the fix and **passes after**
+- [x] A test that **fails before** the fix and **passes after**
 - **Test location:** `src/Stemma.Web.Client/src/lib/autoLayout.test.ts`
 - **What it asserts:** the default arrangement of a chain a → b → c over three containers puts them in
   three different layers, not one.
 
 ## 8. Verification
 
-- [ ] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
-- [ ] The audit workspace re-rendered and looked at.
+- [x] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
+- [x] The audit workspace re-rendered and looked at.

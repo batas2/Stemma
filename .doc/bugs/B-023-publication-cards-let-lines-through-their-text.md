@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-023 |
-| **Status** | In progress |
+| **Status** | Fixed |
 | **Severity** | S2 major |
 | **Area** | `canvas` |
 | **Reported by / Date** | Audit ([`agent-architecture-workflow.md`](../product/agent-architecture-workflow.md) §1, A6) / 2026-10-22 |
@@ -51,20 +51,23 @@ transparency — the same PNG must sit on a light and a dark page.
   constraints that do not route (grid, row, column) and hand-placed views.
 - **Affected files:** `components/ArchCanvas.tsx` (or a small `EdgeKnockout` component),
   `src/Stemma.Cli/DiagramRenderer.cs` if the serialiser must carry the mask.
-- [ ] Fix implemented
+- [x] Fix implemented
 - [x] Inviolable rules respected
 - [x] No new data store / boundary intact
 
 ## 7. Regression test (required)
 
-- [ ] A test that **fails before** the fix and **passes after**
+- [x] A test that **fails before** the fix and **passes after**
 - **Test location:** `src/Stemma.Web.Client/src/lib/edgeKnockout.test.ts` (the rectangles the mask
-  cuts, from the node boxes) and a render check in `tests/Stemma.Cli.Tests` that the serialised SVG
-  carries the mask.
+  cuts, from the node boxes) and `tests/Stemma.Cli.Tests/LayeredRenderTests.cs` — an exported publication
+  SVG defines the mask and draws every edge through it.
 - **What it asserts:** a card's box is cut from the edge layer; a frame (a bounded context or a system
   boundary) is not — lines cross into a boundary on purpose.
 
 ## 8. Verification
 
-- [ ] `tsc` clean · `vite build` clean · `vitest` green
-- [ ] The audit render re-made and looked at, PNG and SVG.
+- [x] `tsc` clean · `vite build` clean · `vitest` green
+- [x] The audit render re-made and looked at, PNG and SVG.
+
+Also fixed with it: a label on an unrouted edge, which has no plate in print, sits beside its line
+rather than on it; and a system boundary's name sits inside its frame.

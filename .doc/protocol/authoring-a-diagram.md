@@ -786,7 +786,10 @@ What it catches, in rough order of how often it bites:
   set both.
 - **Node titles wrap; other rows do not.** A prose label is fine as a name and is truncated
   everywhere else, so put the sentence in the name.
-- **Default edge docking is left/right.** For an arrow that must leave a specific side, set
+- **Edges are routed only on a layered view.** There they leave and enter where the layout plans and
+  go around the boxes. On a hand-arranged view or under a grid, row or column they dock on the sides
+  facing each other and take the shortest curve, which can cross a box — the render's lint says when
+  (`layout/edge-through-node`). For an arrow that must leave a specific side, set
   `views.<key>.edges.<linkId>.handles`.
 - **Do not add an element to make a picture work.** That is what shapes are for. An element is a
   claim about the system, and it will outlive the diagram.
@@ -797,3 +800,8 @@ What it catches, in rough order of how often it bites:
 - [`../../schema/stemma.layout.schema.json`](../../schema/stemma.layout.schema.json) — the sidecar, exhaustively.
 - [`../product/agent-authored-diagrams.md`](../product/agent-authored-diagrams.md) — why any of this exists, and what is still missing.
 - [`../../samples/AuroraRail/`](../../samples/AuroraRail/) — a full architecture, four views, every structural kind.
+- [`../../samples/FoodDelivery/`](../../samples/FoodDelivery/) — C4 views stated by scope and selectors, rules, and no
+  sidecar at all: every view laid out for you.
+- [`../product/agent-architecture-workflow.md`](../product/agent-architecture-workflow.md) — the audit behind layered
+  layout, the lint, the C4 lenses, rules and conformance.
+- [`../../integrations/claude-code/`](../../integrations/claude-code/) — this contract packaged for Claude Code.

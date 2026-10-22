@@ -36,12 +36,12 @@ Living feature records — one Markdown file per feature, created from
 | [F-018](./F-018-find-on-the-view.md) | Find on the view — light what matches, fade the rest | Shipped | Later → built | Bartosz |
 | [F-019](./F-019-presenter-view.md) | The presenter view — notes, next page and a timer on your screen, the picture on theirs | Shipped | Next | Bartosz |
 | [F-020](./F-020-flow-steps.md) | Steps — a book page plays a flow one arrow at a time | Shipped | Next | Bartosz |
-| [F-021](./F-021-layered-layout-and-routed-edges.md) | Layered layout and routed edges — ELK, live, the default for a view nobody arranged ([ADR-0025](../architecture/decisions/0025-layered-layout-is-a-live-constraint.md)) | In progress | Next | Bartosz |
-| [F-022](./F-022-render-geometry-and-layout-lint.md) | The render says what is wrong with the picture — geometry and a layout lint | In progress | Next | Bartosz |
-| [F-023](./F-023-c4-views-and-views-by-rule.md) | C4 views and views by rule — system context and container lenses, selectors, description and technology ([ADR-0026](../architecture/decisions/0026-views-by-rule.md), [ADR-0027](../architecture/decisions/0027-description-and-technology.md)) | In progress | Next | Bartosz |
-| [F-024](./F-024-architecture-rules-as-code.md) | Architecture rules as code — `Rules/*.cs` ([ADR-0028](../architecture/decisions/0028-architecture-rules-as-code.md)) | In progress | Next | Bartosz |
-| [F-025](./F-025-conformance-with-the-implementation.md) | Conformance with the implementation — elements mapped to projects, `stemma scan` ([ADR-0029](../architecture/decisions/0029-conformance-against-the-implementation.md)) | In progress | Next | Bartosz |
-| [F-026](./F-026-stemma-for-claude-code.md) | Stemma for Claude Code — a plugin: skill, commands, a hook that validates ([ADR-0030](../architecture/decisions/0030-agents-reach-stemma-through-the-cli.md)) | In progress | Next | Bartosz |
+| [F-021](./F-021-layered-layout-and-routed-edges.md) | Layered layout and routed edges — ELK, live, the default for a view nobody arranged ([ADR-0025](../architecture/decisions/0025-layered-layout-is-a-live-constraint.md)) | Shipped | Next | Bartosz |
+| [F-022](./F-022-render-geometry-and-layout-lint.md) | The render says what is wrong with the picture — geometry and a layout lint | Shipped | Next | Bartosz |
+| [F-023](./F-023-c4-views-and-views-by-rule.md) | C4 views and views by rule — system context and container lenses, selectors, description and technology ([ADR-0026](../architecture/decisions/0026-views-by-rule.md), [ADR-0027](../architecture/decisions/0027-description-and-technology.md)) | Shipped | Next | Bartosz |
+| [F-024](./F-024-architecture-rules-as-code.md) | Architecture rules as code — `Rules/*.cs` ([ADR-0028](../architecture/decisions/0028-architecture-rules-as-code.md)) | Shipped | Next | Bartosz |
+| [F-025](./F-025-conformance-with-the-implementation.md) | Conformance with the implementation — elements mapped to projects, `stemma scan` ([ADR-0029](../architecture/decisions/0029-conformance-against-the-implementation.md)) | Shipped | Next | Bartosz |
+| [F-026](./F-026-stemma-for-claude-code.md) | Stemma for Claude Code — a plugin: skill, commands, a hook that validates ([ADR-0030](../architecture/decisions/0030-agents-reach-stemma-through-the-cli.md)) | Shipped | Next | Bartosz |
 
 F-011 **blocked F-002** — the desktop shell's "backend failed to start" state needs a log file to
 point at, and now names `~/.stemma/logs/` in that surface.

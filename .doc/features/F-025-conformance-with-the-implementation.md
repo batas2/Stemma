@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-025 |
-| **Status** | In progress — built and dogfooded; awaiting review |
+| **Status** | Shipped |
 | **Owner** | Bartosz |
 | **Persona served** | The Architect's Agent ("Theo"); Senior Engineer ("Sam") |
 | **Roadmap horizon** | Next |
@@ -93,11 +93,11 @@
 
 ## 8. Definition of Done
 
-- [ ] All ACs met and demoed
+- [x] All ACs met and demoed
 - [x] `dotnet test` green
 - [x] No new data store
 - [x] Docs: protocol (rules section), `domain-model.md`, engine-backend
-- [ ] Reviewed against all four pillars
+- [x] Reviewed against all four pillars
 
 ## 9. Notes / open questions
 

@@ -73,3 +73,7 @@ idea; it landed with `stemma validate`.
 Still open: whether the fingerprint should cover node *sizes*. They depend on the font, so including them
 makes the check machine-sensitive; excluding them means a font change can alter the picture without
 the manifest noticing.
+
+> **Extended 2026-10-22 by [F-022](./F-022-render-geometry-and-layout-lint.md):** the manifest also carries
+> `lint` — what is wrong with the picture's layout, in element ids — and `geometry`, every box, frame, edge
+> polyline and label in flow units. Neither is part of the fingerprint `--check` compares.

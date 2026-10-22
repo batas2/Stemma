@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-026 |
-| **Status** | In progress |
+| **Status** | Shipped |
 | **Owner** | Bartosz |
 | **Persona served** | The Architect's Agent ("Theo"); the architect who drives it |
 | **Roadmap horizon** | Next |
@@ -29,24 +29,24 @@
 > architecture in words**, so that **the agent builds it in Stemma, checks it, looks at it, and hands me
 > something I can review and present**.
 
-- [ ] **AC1 — Installable.** `/plugin marketplace add batas2/Stemma` then `/plugin install stemma@stemma`;
+- [x] **AC1 — Installable.** `/plugin marketplace add batas2/Stemma` then `/plugin install stemma@stemma`;
   `claude plugin validate` passes on the plugin and the marketplace.
-- [ ] **AC2 — The skill.** `stemma:architecture` triggers when the agent works on a Stemma workspace or is
+- [x] **AC2 — The skill.** `stemma:architecture` triggers when the agent works on a Stemma workspace or is
   asked for an architecture diagram. It carries the loop — model → views → rules → `validate` →
   `render` → read the lint → look → hand over — the vocabulary, the C4 lenses and selectors, the rules,
   the layout choices, and a worked example; detail lives in reference files loaded on demand.
-- [ ] **AC3 — Three entry points.** `/stemma:new <what to design>` starts a workspace from a description;
+- [x] **AC3 — Three entry points.** `/stemma:new <what to design>` starts a workspace from a description;
   `/stemma:review` critiques the current model against the C4 checklist and the rules, renders, reads the
   lint, and reports; `/stemma:from-code <path>` builds an as-is model from a .NET codebase with
   `stemma scan` and maps it with `Code.Map`.
-- [ ] **AC4 — Checked on every edit.** A `PostToolUse` hook runs after each write to a workspace file
+- [x] **AC4 — Checked on every edit.** A `PostToolUse` hook runs after each write to a workspace file
   (`Architecture/`, `Views/`, `Rules/`, `stemma.layout.json`): it calls `stemma hook post-edit`, which
   validates the workspace and, when there are errors, tells the agent what they are and where. Edits
   outside a workspace cost nothing.
-- [ ] **AC5 — Proven end to end.** Headless Claude Code with only this plugin, given the audit's prompt
+- [x] **AC5 — Proven end to end.** Headless Claude Code with only this plugin, given the audit's prompt
   (the food-delivery platform), produces a workspace that `validate`s with no errors and renders with no
   layout warnings, without a coordinate in its sidecar. The run is recorded in the record.
-- [ ] **AC6 — The workspace brief points at it.** `STEMMA.md`, written into every new workspace, names the
+- [x] **AC6 — The workspace brief points at it.** `STEMMA.md`, written into every new workspace, names the
   plugin, the layered default, the C4 lenses and the rules.
 
 ## 3. Architecture impact
@@ -81,14 +81,29 @@
 
 ## 7. Test plan
 
-- [ ] `claude plugin validate --strict` on the plugin and the marketplace.
-- [ ] `HookCommand` tests: a path outside a workspace (silent, 0), a workspace file with an error (exit 2,
+- [x] `claude plugin validate --strict` on the plugin and the marketplace.
+- [x] `HookCommand` tests: a path outside a workspace (silent, 0), a workspace file with an error (exit 2,
   the finding on stderr), a clean workspace (0).
-- [ ] The end-to-end run of AC5.
+- [x] The end-to-end run of AC5.
 
 ## 8. Definition of Done
 
-- [ ] All ACs met and demoed
-- [ ] `dotnet test` green
-- [ ] Docs: protocol §0 (where to start), README, the brief
-- [ ] Reviewed against all four pillars
+- [x] All ACs met and demoed
+- [x] `dotnet test` green
+- [x] Docs: protocol §0 (where to start), README, the brief
+- [x] Reviewed against all four pillars
+
+## 9. Notes / open questions
+
+- **AC5, run 2026-10-22.** Headless Claude Code 2.1.308, the plugin loaded with `--plugin-dir`, `stemma` on
+  `PATH`, the audit's prompt (which does not mention Stemma). The `architecture` skill triggered on its own;
+  35 turns, 4.6 minutes, USD 1.14. It wrote a model of 20 elements with descriptions and technologies, a
+  system context and a container view stated by scope, rules for every constraint it inferred plus the C4
+  pack, rendered both, and handed over with the decisions it made and a gap it found (no service owns
+  menus). Checked independently: `validate` 0 errors and 1 warning (a data-flow cycle through push
+  notifications, which it explained); the container render has no lint warning (7 crossings, info); the
+  sidecar holds a layered constraint and no coordinate.
+- **A comparison, not a control.** The same prompt without the plugin, told to use Stemma, also produced
+  a clean workspace, in 50 turns, 5.7 minutes and USD 1.75 — but it found Stemma's repository through the
+  path of the `stemma` shim and read the protocol reference, so it is "with the documentation, without the
+  skill and the hook", not "without knowledge". A clean control needs `stemma` installed from the package.

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-024 |
-| **Status** | In progress — engine, `validate` and samples done; the violations panel's separate *because* row (§5) is the client's |
+| **Status** | Shipped |
 | **Owner** | Bartosz |
 | **Persona served** | The Architect's Agent ("Theo"); Solution Architect ("Aria") |
 | **Roadmap horizon** | Next |
@@ -99,12 +99,12 @@
 
 ## 8. Definition of Done
 
-- [ ] All ACs met and demoed
-- [ ] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green — `dotnet test` green; the
+- [x] All ACs met and demoed
+- [x] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green — `dotnet test` green; the
   client is untouched by this change
 - [x] Model/presentation boundary respected; no new data store
 - [x] Docs: `domain-model.md`, protocol (a section on rules), engine-backend
-- [ ] Reviewed against all four pillars
+- [x] Reviewed against all four pillars
 
 ## 9. Implementation notes
 
@@ -158,3 +158,7 @@ Where the record left a call open, this is the call made.
 - **Samples.** Dishwise's `rule_layers` failed: the model had the event bus pushing up to the services
   that consume from it. The model was fixed, not the rule — the consumers now point at the bus
   (`flow_dispatch_bus`, `flow_notify_bus`, *consumes …*), as a service points at its database.
+- **The violations panel (2026-10-22).** No separate *because* row was needed: a violation is said by name
+  and by reason — *Customer App → Orders DB (flow_app_db) is not allowed — Every client call is authenticated
+  at the gateway* — and the panel shows the message as it is. The selectors are said only for a rule with no
+  `because`. A bare declared id that would print as a mistake (`dangling-id`) is reserved (review).

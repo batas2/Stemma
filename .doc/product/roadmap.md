@@ -39,7 +39,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 - **Presenting, finished** (*built 2026-10-21*) — a presenter view on a second screen
   ([F-019](../features/F-019-presenter-view.md)) and flows played one arrow at a time
   ([F-020](../features/F-020-flow-steps.md)), the two pieces F-013 deferred.
-- **Agent-built architecture, reviewed in Stemma** (*in progress 2026-10-22*) — what a coding agent needs
+- **Agent-built architecture, reviewed in Stemma** (*built 2026-10-22*) — what a coding agent needs
   to build an architecture from a prompt as fluently as in Mermaid, and the human to check and present
   it: layered layout with routed edges as the default ([F-021](../features/F-021-layered-layout-and-routed-edges.md)),
   a render that reports what is wrong with the picture ([F-022](../features/F-022-render-geometry-and-layout-lint.md)),

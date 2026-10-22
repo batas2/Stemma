@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-022 |
-| **Status** | In progress |
+| **Status** | Shipped |
 | **Owner** | Bartosz |
 | **Persona served** | The Architect's Agent ("Theo"); the Essayist's Agent ("Ada") |
 | **Roadmap horizon** | Next |
@@ -28,10 +28,10 @@
 > As **an agent that cannot see well**, I want **the render to tell me, in words and ids, what is wrong
 > with the picture** so that **I can fix it without guessing from pixels**.
 
-- [ ] **AC1 — Geometry in the manifest.** Every render writes, beside the existing fields, `geometry`:
+- [x] **AC1 — Geometry in the manifest.** Every render writes, beside the existing fields, `geometry`:
   each card's box, each frame's box, each edge's polyline, each edge label's box — in flow units — and
   the content bounds.
-- [ ] **AC2 — A layout lint.** Computed from that geometry and written to the manifest as `lint`:
+- [x] **AC2 — A layout lint.** Computed from that geometry and written to the manifest as `lint`:
   - `layout/node-overlap` (warning) — two cards' boxes intersect.
   - `layout/edge-through-node` (warning) — an edge passes through a card that is neither of its ends.
   - `layout/label-overlap` (warning) — an edge label covers another label or a card.
@@ -39,15 +39,15 @@
     told apart (the audit's A5).
   - `layout/crossings` (info) — how many times edges cross; a warning when there are more crossings
     than edges.
-- [ ] **AC3 — Said on stdout.** `stemma render` prints one line per finding — severity, rule, the ids —
+- [x] **AC3 — Said on stdout.** `stemma render` prints one line per finding — severity, rule, the ids —
   and a summary (`wrote 1 file · 2 layout warnings`).
-- [ ] **AC4 — Machine-readable.** `--json` prints the result of the whole render as one JSON document:
+- [x] **AC4 — Machine-readable.** `--json` prints the result of the whole render as one JSON document:
   files, sizes, node and edge counts, findings.
-- [ ] **AC5 — Opt-in failure.** `--fail-on-lint` exits 1 when there is any warning; without it, lint never
+- [x] **AC5 — Opt-in failure.** `--fail-on-lint` exits 1 when there is any warning; without it, lint never
   changes the exit code.
-- [ ] **AC6 — Not part of the fingerprint.** `--check` ignores geometry and lint: they are a function of
+- [x] **AC6 — Not part of the fingerprint.** `--check` ignores geometry and lint: they are a function of
   what the fingerprint already covers.
-- [ ] **AC7 — One implementation.** The geometry is read from the live canvas and the lint is a pure
+- [x] **AC7 — One implementation.** The geometry is read from the live canvas and the lint is a pure
   module in the client, so the numbers are the ones the picture was drawn with.
 
 ## 3. Architecture impact
@@ -83,20 +83,24 @@
 
 ## 7. Test plan
 
-- [ ] `layoutLint.test.ts` — each rule on hand-built geometry, including the A5 case (a back edge along
+- [x] `layoutLint.test.ts` — each rule on hand-built geometry, including the A5 case (a back edge along
   a row), and no finding for an edge that merely touches its own ends.
-- [ ] `renderGeometry` exercised through the render: the audit workspace's manifest carries geometry
+- [x] `renderGeometry` exercised through the render: the audit workspace's manifest carries geometry
   and the expected findings before F-021 (grid) and none after (layered).
-- [ ] CLI tests: `--json` shape, `--fail-on-lint` exit code, `--check` unaffected.
+- [x] CLI tests: `--json` shape, `--fail-on-lint` exit code, `--check` unaffected.
 
 ## 8. Definition of Done
 
-- [ ] All ACs met and demoed
-- [ ] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
-- [ ] Docs: protocol §6, the manifest description in F-008
-- [ ] Reviewed against all four pillars
+- [x] All ACs met and demoed
+- [x] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
+- [x] Docs: protocol §6, the manifest description in F-008
+- [x] Reviewed against all four pillars
 
 ## 9. Notes / open questions
 
 - Bézier edges are sampled into polylines every few units; routed edges are exact.
 - A finding names ids, never coordinates, because ids are what the agent can change.
+
+- **As built (2026-10-22).** The lint runs in the page (`lib/layoutLint.ts`) over geometry read from the
+  drawn canvas (`lib/renderGeometry.ts`), exposed to the renderer as `window.stemmaRender.geometry()`. The
+  showing in the app is still a later decision.

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-023 |
-| **Status** | In progress |
+| **Status** | Shipped |
 | **Owner** | Bartosz |
 | **Persona served** | The Architect's Agent ("Theo"); Solution Architect ("Aria") |
 | **Roadmap horizon** | Next |
@@ -32,26 +32,26 @@
 - [x] **AC1 — Views by rule.** `View` takes `Scope`, `Include` and `Exclude`; `ElementIds` becomes
   optional. Members are: the lens's members (AC2–AC3), then `ElementIds`, then what `Include` selects,
   minus what `Exclude` selects — de-duplicated, in that order.
-- [ ] **AC2 — System context lens.** `BaseView: "systemContext"`, `Scope: "<system id>"` draws the
+- [x] **AC2 — System context lens.** `BaseView: "systemContext"`, `Scope: "<system id>"` draws the
   system, and every person and software system related to it or to any of its containers. A relationship
   to a container is drawn to its system ("implied"), and implied relationships between the same two
   ends are drawn once, their labels combined.
-- [ ] **AC3 — Container lens.** `BaseView: "container"`, `Scope: "<system id>"` draws the system as a
+- [x] **AC3 — Container lens.** `BaseView: "container"`, `Scope: "<system id>"` draws the system as a
   boundary around its containers, and every person, software system and other system's container
   related to them — the last drawn as its own system, implied as in AC2.
 - [x] **AC4 — Selectors.** `Include`/`Exclude` take selector strings ([ADR-0026](../architecture/decisions/0026-views-by-rule.md)):
   an id; `<id>.*` (its children — a system's containers, a context's modules and capabilities);
   `*`; `kind:<kind>`; filters `[attr=value]`, `[attr!=value]`, `[attr=a|b]` on any attribute, lifecycle
   status/phase and ownership squad/domain; and `->X`, `X->`, `->X->` for X and its neighbours.
-- [ ] **AC5 — One resolution.** Members and implied links are resolved in the engine; the canvas, the
+- [x] **AC5 — One resolution.** Members and implied links are resolved in the engine; the canvas, the
   report, `validate`, `render` and `inspect` all use that result.
-- [ ] **AC6 — Description and technology** ([ADR-0027](../architecture/decisions/0027-description-and-technology.md)):
+- [x] **AC6 — Description and technology** ([ADR-0027](../architecture/decisions/0027-description-and-technology.md)):
   `Person.Description`, `SoftwareSystem.Description`, `Container.Technology` and `Container.Description`,
   `DataFlow.Technology` — read, drawn (the card's kind line carries the technology, its body the
   description; a flow's label reads `payload [technology]`; the publication card adds the technology in
   small type under the name), and edited in the inspector through `SetElementAttribute` /
   `SetLinkAttribute`, each with fidelity fixtures.
-- [ ] **AC7 — Editing a rule-based view.** Adding an element on the canvas writes it to `ElementIds`.
+- [x] **AC7 — Editing a rule-based view.** Adding an element on the canvas writes it to `ElementIds`.
   Removing one that a rule brought in writes it to `Exclude`, so the rule stays live. Saving edits the
   view in place and keeps `Scope`, `Include` and `Exclude` as written.
 - [x] **AC8 — Checked.** `view/bad-scope` (error: a C4 lens without a scope, or a scope that is not a
@@ -60,7 +60,7 @@
   respects implied links.
 - [x] **AC9 — See what a rule selected.** `stemma inspect --view <id> [--json]` lists the members and what
   brought each one in, the links drawn, the implied links, and the relationships left out.
-- [ ] **AC10 — Laid out.** A C4 lens with no layout is laid out by F-021 with its boundary as a group.
+- [x] **AC10 — Laid out.** A C4 lens with no layout is laid out by F-021 with its boundary as a group.
 
 ## 3. Architecture impact
 
@@ -116,17 +116,17 @@
   three `arch` fixtures; `ViewsAdapter.Edit` keeping `Scope`/`Include` and adding to `Exclude`, in the
   forms a view can be written in (`FidelityCases`, `ViewRulesWriteTests`).
 - [x] `WorkspaceCheckTests` — the new findings; `InspectCommand` output (`InspectCommandTests`); the views API (`ViewEndpointTests`).
-- [ ] Client — `viewFilter` with members and implied links; the canvas draws a boundary.
-- [ ] A C4 sample (`samples/FoodDelivery`) with a system context and a container view.
+- [x] Client — `viewFilter` with members and implied links; the canvas draws a boundary.
+- [x] A C4 sample (`samples/FoodDelivery`) with a system context and a container view.
 
 ## 8. Definition of Done
 
-- [ ] All ACs met and demoed
-- [ ] States handled; accessibility bar met
-- [ ] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
-- [ ] Model/presentation boundary respected; no new data store
-- [ ] Docs: `domain-model.md`, protocol §2–§3, the operations catalog
-- [ ] Reviewed against all four pillars
+- [x] All ACs met and demoed
+- [x] States handled; accessibility bar met
+- [x] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
+- [x] Model/presentation boundary respected; no new data store
+- [x] Docs: `domain-model.md`, protocol §2–§3, the operations catalog
+- [x] Reviewed against all four pillars
 
 ## 9. Notes / open questions
 
@@ -166,3 +166,9 @@
   null too, refuses a save with no id, and clears a scope sent as `""`. Removing a whole `Include` or
   `Exclude` is done by sending `[]`.
 - **`stemma inspect` exits `1`** when the view has an error-severity problem, like `validate`.
+
+- **Client, as built (2026-10-22).** The canvas draws resolved members and implied links (not selectable,
+  hover lists what each stands for); a container lens draws its scope as a neutral boundary; the card's
+  kind line carries the technology and its body the description; the inspector edits both and offers a
+  field only on the kinds that have it. A canvas save sends only what it changed (null for scope and
+  include, the exclude only when it changed), so an agent's edit made meanwhile is never put back.

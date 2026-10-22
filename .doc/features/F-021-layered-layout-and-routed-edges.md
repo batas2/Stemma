@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | F-021 |
-| **Status** | In progress |
+| **Status** | Shipped |
 | **Owner** | Bartosz |
 | **Persona served** | The Architect's Agent ("Theo"); every architect who opens a view nobody arranged |
 | **Roadmap horizon** | Next |
@@ -29,34 +29,34 @@
 > As **the Architect's Agent**, I want to **write the model and the view and get a laid-out,
 > routed picture** so that **I never author a coordinate and the human never has to tidy up after me**.
 
-- [ ] **AC1 — A layered constraint.** `"layout": { "kind": "layered" }` on a view lays out every node in
+- [x] **AC1 — A layered constraint.** `"layout": { "kind": "layered" }` on a view lays out every node in
   it with ELK's layered algorithm: cards do not overlap; edges are routed orthogonally around cards;
   edge labels are placed so they overlap neither cards nor each other.
-- [ ] **AC2 — Deterministic.** The same model, sizes and sidecar give the same positions and the same
+- [x] **AC2 — Deterministic.** The same model, sizes and sidecar give the same positions and the same
   routes, run after run and in the app and the render. Elements and links are given to ELK in the
   order the model declares them, and that order breaks ties — so declaring in reading order is a way
   to ask for an order.
-- [ ] **AC3 — Options.** `direction` (`down` default, `right`, `up`, `left`); `spacing` (a number, or
+- [x] **AC3 — Options.** `direction` (`down` default, `right`, `up`, `left`); `spacing` (a number, or
   `[between nodes, between layers]`, default `[48, 72]`); `first` and `last` (ids pinned to the first
   or last layer); `groups` (default `true`: a bounded context is laid out around its modules and a
   software system around its containers, when both the parent and a child are in the view, and the
   boundary is drawn); `routing` (`orthogonal` default, `polyline`, `spline`).
-- [ ] **AC4 — The default for a view nobody arranged.** A view — custom or built-in — with no `layout`
+- [x] **AC4 — The default for a view nobody arranged.** A view — custom or built-in — with no `layout`
   and no saved position for any of its members is laid out as `{ "kind": "layered" }`. Nothing is
   written to the sidecar on open, in the app or the render.
-- [ ] **AC5 — Nudges.** Dragging a card on a layered view records an offset against its solved position
+- [x] **AC5 — Nudges.** Dragging a card on a layered view records an offset against its solved position
   (the Q6 contract); the constraint stays. An edge touching a nudged card is drawn with the view's
   ordinary routing instead of its ELK route. On a view laid out by default, the first drag writes
   `"layout": { "kind": "layered" }` and the offset — the arrangement the person was looking at becomes
   the committed one.
-- [ ] **AC6 — In the Layout panel.** "Layered" is offered beside grid, row, column and stack, with
+- [x] **AC6 — In the Layout panel.** "Layered" is offered beside grid, row, column and stack, with
   direction and spacing; removing it bakes the drawn positions, as for the other constraints.
-- [ ] **AC7 — The render waits for it.** `stemma render` captures only after the layout has settled; a
+- [x] **AC7 — The render waits for it.** `stemma render` captures only after the layout has settled; a
   layout that fails reports `error` with the reason, never a picture of the fallback.
-- [ ] **AC8 — Checked.** The schema documents the kind; `stemma validate` reports `constraint/dangling-id`
+- [x] **AC8 — Checked.** The schema documents the kind; `stemma validate` reports `constraint/dangling-id`
   for `first`/`last`, `constraint/bad-direction`, and accepts the kind where it reported
   `constraint/unknown-kind`.
-- [ ] **AC9 — The audit passes.** The food-delivery container view from the audit renders with no card
+- [x] **AC9 — The audit passes.** The food-delivery container view from the audit renders with no card
   overlap and no edge through a card (measured by F-022's lint), from a sidecar with no coordinates.
 
 ## 3. Architecture impact
@@ -103,21 +103,21 @@
 
 ## 7. Test plan
 
-- [ ] `layeredLayout.test.ts` — properties on real ELK: no overlaps; no route segment through a card
+- [x] `layeredLayout.test.ts` — properties on real ELK: no overlaps; no route segment through a card
   that is not one of its ends; the same input twice gives identical output; `first`/`last` honoured;
   `direction` changes the axis; children inside their parent's frame.
-- [ ] `layoutDsl.test.ts` — the guard accepts the kind; ids include `first`/`last`.
-- [ ] `WorkspaceCheckTests` — the new findings.
-- [ ] Render: the audit workspace, looked at; F-022's lint reports no overlap or edge-through-card.
+- [x] `layoutDsl.test.ts` — the guard accepts the kind; ids include `first`/`last`.
+- [x] `WorkspaceCheckTests` — the new findings.
+- [x] Render: the audit workspace, looked at; F-022's lint reports no overlap or edge-through-card.
 
 ## 8. Definition of Done
 
-- [ ] All ACs met and demoed
-- [ ] States handled; accessibility bar met
-- [ ] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
-- [ ] Model/presentation boundary respected; no new data store
-- [ ] Docs: protocol §4 and §8, schema, `layoutDsl.ts` header, Q6 cross-reference
-- [ ] Reviewed against all four pillars
+- [x] All ACs met and demoed
+- [x] States handled; accessibility bar met
+- [x] `dotnet test` green · `tsc` clean · `vite build` clean · `vitest` green
+- [x] Model/presentation boundary respected; no new data store
+- [x] Docs: protocol §4 and §8, schema, `layoutDsl.ts` header, Q6 cross-reference
+- [x] Reviewed against all four pillars
 
 ## 9. Notes / open questions
 
@@ -133,3 +133,9 @@
   (the `bad-gap` test: a number or two numbers), and a `routing` outside the three, a `groups` that is not
   a boolean or a `first`/`last` that is not a list is `constraint/bad-field` — each an error, since the
   layout falls back to its default for it. Tests: `WorkspaceCheckTests`, the layered cases.
+
+- **As built (2026-10-22).** AC9 measured: the audit's food-delivery container view, from a sidecar with no
+  coordinates, renders with no lint warning (it reported four on the hand-written grid). Determinism is
+  held by a render test that compares two renders' geometry. A layered view is fitted only once it is
+  laid out; the Layout panel's generators replace a layered arrangement rather than nudging it (review);
+  edges dock from real positions, never from the placeholders shown before the sidecar is read.
