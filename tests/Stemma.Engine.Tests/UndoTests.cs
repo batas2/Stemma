@@ -236,6 +236,39 @@ public sealed class UndoTests
     }
 
     [Fact]
+    public async Task The_fallback_restore_keeps_a_technology_and_a_description_whatever_comes_before_them()
+    {
+        // The re-declaration wrote its attributes by position and stopped at the first one missing, so a
+        // container with no kind came back without the technology and the description after it.
+        var (root, file) = await CreateAsync();
+        await File.WriteAllTextAsync(file, Source.Replace(
+            "        var flow = new Relation(",
+            "        var api = new Container(\"cnt_api\", \"API\", \"sys_x\", Technology: \"Go\", Description: \"Takes orders\");\n" +
+            "        var call = new DataFlow(\"flow_call\", \"cnt_api\", \"mod_001\", \"order\", Technology: \"gRPC\");\n" +
+            "        var flow = new Relation(")
+            .Replace("Model.Of(ctx, modCheckout, riskSlow, flow)", "Model.Of(ctx, modCheckout, riskSlow, api, call, flow)"));
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            Applied(await engine.ApplyAsync(new RemoveElementOp("op", "cnt_api")));
+            Applied(await engine.ApplyAsync(new RemoveLinkOp("op2", "flow_call")));
+            await File.AppendAllTextAsync(file, "// edited outside\n");
+            (await engine.ApplyAsync(new RenameElementOp("probe", "ctx_001", "Sales"))).Should().BeOfType<OperationFailed>()
+                .Which.Reason.Should().Be("ChangedOnDisk");
+
+            Applied(await engine.UndoAsync("undo"));
+            Applied(await engine.UndoAsync("undo"));
+
+            var source = await File.ReadAllTextAsync(file);
+            // Re-declared, not put back: under a variable named after its id, before the return.
+            source.Should().Contain("        var cntApi = new Container(\"cnt_api\", \"API\", \"sys_x\", Technology: \"Go\", Description: \"Takes orders\");\n")
+                .And.Contain("        var flowCall = new DataFlow(\"flow_call\", \"cnt_api\", \"mod_001\", \"order\", Technology: \"gRPC\");\n")
+                .And.EndWith("// edited outside\n");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task A_new_declaration_never_takes_a_variable_name_already_declared()
     {
         // A generated id's variable is mod001; a hand-written model may already use that name for

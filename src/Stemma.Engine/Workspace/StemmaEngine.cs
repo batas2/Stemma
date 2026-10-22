@@ -1903,6 +1903,8 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.ContainerKind is not null) attrs["kind"] = op.ContainerKind;
         if (op.Role is not null) attrs["role"] = op.Role;
         if (op.AboutId is not null) attrs["aboutId"] = op.AboutId;
+        if (op.Technology is not null) attrs["technology"] = op.Technology;
+        if (op.Description is not null) attrs["description"] = op.Description;
         var element = new ArchModel.ArchElement(op.ElementId, op.Name, op.ElementKind, attrs);
         var newRoot = RestoreTag(DslWriter.AddElement(root, element), op.ElementId, op.Lifecycle, op.Ownership);
         var oldSolution = _workspace.CurrentSolution;
@@ -1923,6 +1925,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (op.Direction is not null) attrs["direction"] = op.Direction;
         if (op.DependencyKind is not null) attrs["kind"] = op.DependencyKind;
         if (op.Label is not null) attrs["label"] = op.Label;
+        if (op.Technology is not null) attrs["technology"] = op.Technology;
         var link = new ArchModel.ArchLink(op.LinkId, op.FromId, op.ToId, op.LinkKind, attrs);
         var newRoot = RestoreTag(DslWriter.AddLink(root, link), op.LinkId, op.Lifecycle, op.Ownership);
         var oldSolution = _workspace.CurrentSolution;
@@ -1993,6 +1996,10 @@ public sealed class StemmaEngine : IAsyncDisposable
             if (await doc.GetSyntaxRootAsync(ct) is not { } root || ViewsAdapter.TryReadOne(root) is not { } view) continue;
             taken.Add(view.Id);
             taken.UnionWith(view.ElementIds);
+            // A view's scope and rules name ids too; a plain id among them is a reference like a member.
+            if (view.Scope is not null) taken.Add(view.Scope);
+            taken.UnionWith(view.Include ?? []);
+            taken.UnionWith(view.Exclude ?? []);
         }
         AddJsonStrings(LayoutSidecar.PathFor(_model.RootPath), taken);
         AddJsonStrings(CommentsSidecar.PathFor(_model.RootPath), taken);

@@ -29,6 +29,15 @@ public static class Architecture
         // ── How it connects ──────────────────────────────────────────────────
         var flowOrders = new DataFlow("flow_orders", "mod_checkout", "mod_invoicing", "Order");
 
+        // ── Who buys, and where ──────────────────────────────────────────────
+        var perBuyer = new Person("per_buyer", "Buyer", "external"); // anyone with a basket
+        var sysShop = new SoftwareSystem("sys_shop", "Shop");
+        var cntWeb = new Container("cnt_web", "Web Shop", "sys_shop", "spa"); // the storefront
+        // Its kind is left to the default: it is a service until someone says otherwise.
+        var cntStore = new Container("cnt_store", "Order Store", "sys_shop");
+        var flowBrowse = new DataFlow("flow_browse", "per_buyer", "cnt_web",
+            "search terms", "twoway");
+
         // ── Lifecycle and ownership ──────────────────────────────────────────
         // RAPID on the one decision that actually gets argued about.
         Tag.For(modCheckout,
@@ -37,6 +46,7 @@ public static class Architecture
                 Recommend: ["Core"], Agree: ["QA"], Decide: ["Architect"]));
 
         return Model.Of(
+            perBuyer, sysShop, cntWeb, cntStore, flowBrowse,
             ctxOrdering, ctxBilling,
             modCheckout, modInvoicing,
             riskLatency,

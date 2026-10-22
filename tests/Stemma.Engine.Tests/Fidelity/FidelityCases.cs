@@ -75,6 +75,18 @@ public static class FidelityCases
                 (tag, "")),
             Case("SetOwnership.add", new SetOwnershipOp(Op, "mod_checkout", "Payments", "Ordering"),
                 ("new Lifecycle(Status: \"current\"));", "new Lifecycle(Status: \"current\"), ownership: new Ownership(Squad: \"Payments\", Domain: \"Ordering\"));")),
+            // Description and technology (ADR-0027): the C4 fields, through the operations every field takes.
+            Case("SetElementAttribute.technology", new SetElementAttributeOp(Op, "cnt_web", "technology", "React"),
+                ("\"sys_shop\", \"spa\")", "\"sys_shop\", \"spa\", \"React\")")),
+            Case("SetElementAttribute.technology-without-kind", new SetElementAttributeOp(Op, "cnt_store", "technology", "PostgreSQL"),
+                // The kind before it is not written, so the technology cannot go by position.
+                ("\"Order Store\", \"sys_shop\")", "\"Order Store\", \"sys_shop\", Technology: \"PostgreSQL\")")),
+            Case("SetElementAttribute.description-of-a-person", new SetElementAttributeOp(Op, "per_buyer", "description", "Places orders"),
+                ("\"Buyer\", \"external\")", "\"Buyer\", \"external\", \"Places orders\")")),
+            Case("SetElementAttribute.description-of-a-system", new SetElementAttributeOp(Op, "sys_shop", "description", "Where orders are placed"),
+                ("\"sys_shop\", \"Shop\")", "\"sys_shop\", \"Shop\", \"Where orders are placed\")")),
+            Case("SetLinkAttribute.technology", new SetLinkAttributeOp(Op, "flow_browse", "technology", "HTTPS"),
+                ("\"search terms\", \"twoway\")", "\"search terms\", \"twoway\", \"HTTPS\")")),
         ];
     }
 
@@ -139,6 +151,18 @@ public static class FidelityCases
                 ("Squad: \"Core\"", "Squad: \"Payments\"")),
             Case("SetOwnership.clear", new SetOwnershipOp(Op, "mod_checkout", null, null),
                 ("new Ownership(Squad: \"Core\", Domain: \"Ordering\",\n", "new Ownership(\n")),
+            Case("SetElementAttribute.technology", new SetElementAttributeOp(Op, "cnt_web", "technology", "React"),
+                // The comment closing the line stays where it is, after the declaration.
+                ("\"spa\"); // the storefront", "\"spa\", \"React\"); // the storefront")),
+            Case("SetElementAttribute.technology-without-kind", new SetElementAttributeOp(Op, "cnt_store", "technology", "PostgreSQL"),
+                ("\"Order Store\", \"sys_shop\")", "\"Order Store\", \"sys_shop\", Technology: \"PostgreSQL\")")),
+            Case("SetElementAttribute.description-of-a-person", new SetElementAttributeOp(Op, "per_buyer", "description", "Places orders"),
+                ("\"external\"); // anyone with a basket", "\"external\", \"Places orders\"); // anyone with a basket")),
+            Case("SetElementAttribute.description-of-a-system", new SetElementAttributeOp(Op, "sys_shop", "description", "Where orders are placed"),
+                ("\"sys_shop\", \"Shop\")", "\"sys_shop\", \"Shop\", \"Where orders are placed\")")),
+            Case("SetLinkAttribute.technology", new SetLinkAttributeOp(Op, "flow_browse", "technology", "HTTPS"),
+                // Split over two lines: the new argument goes on the line of the last, where it would be typed.
+                ("            \"search terms\", \"twoway\");", "            \"search terms\", \"twoway\", \"HTTPS\");")),
         ];
     }
 
@@ -206,6 +230,19 @@ public static class FidelityCases
                 ("new Lifecycle(\"current\", \"fidelity-critical\")", "new Lifecycle(null, \"fidelity-critical\")")),
             Case("SetOwnership.add", new SetOwnershipOp(Op, "mod_checkout", "Payments", "Ordering"),
                 ("\"fidelity-critical\"));", "\"fidelity-critical\"), ownership: new Ownership(Squad: \"Payments\", Domain: \"Ordering\"));")),
+            Case("SetElementAttribute.technology", new SetElementAttributeOp(Op, "cnt_web", "technology", "React"),
+                // Split over two lines, positional: added on the last line, by position.
+                ("\t\t\"sys_shop\", \"spa\");\r\n", "\t\t\"sys_shop\", \"spa\", \"React\");\r\n")),
+            Case("SetElementAttribute.technology-without-kind", new SetElementAttributeOp(Op, "cnt_store", "technology", "PostgreSQL"),
+                ("SystemId: \"sys_shop\"); // no kind", "SystemId: \"sys_shop\", Technology: \"PostgreSQL\"); // no kind")),
+            Case("SetElementAttribute.description-of-a-person", new SetElementAttributeOp(Op, "per_buyer", "description", "Places orders"),
+                // The call names its arguments, so the new one is named too.
+                ("Role: \"external\")", "Role: \"external\", Description: \"Places orders\")")),
+            Case("SetElementAttribute.description-of-a-system", new SetElementAttributeOp(Op, "sys_shop", "description", "Where orders are placed"),
+                // The comment inside the list is the name's, and stays in front of it.
+                ("/* ours */ \"Shop\")", "/* ours */ \"Shop\", \"Where orders are placed\")")),
+            Case("SetLinkAttribute.technology", new SetLinkAttributeOp(Op, "flow_browse", "technology", "HTTPS"),
+                ("Direction: \"twoway\")", "Direction: \"twoway\", Technology: \"HTTPS\")")),
         ];
     }
 }

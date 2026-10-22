@@ -59,9 +59,9 @@ public static class Architecture
 
 | Kind | Arguments | Use it for |
 |---|---|---|
-| `Person` | id, name, role | An actor. `role` is free text; `external` is conventional. |
-| `SoftwareSystem` | id, name | A C4 system — yours or a neighbour's. |
-| `Container` | id, name, systemId, kind | A deployable inside a system. `kind` is free text (`service`, `db`, `spa`, `broker`, …). |
+| `Person` | id, name, role?, description? | An actor. `role` is free text; `external` is conventional. |
+| `SoftwareSystem` | id, name, description? | A C4 system — yours or a neighbour's. |
+| `Container` | id, name, systemId, kind?, technology?, description? | A deployable inside a system. `kind` is free text (`service`, `db`, `spa`, `broker`, …); `technology` is what it is built with (`.NET 8`, `PostgreSQL`). |
 | `BoundedContext` | id, name | A DDD context. Renders as a frame around its modules. |
 | `Module` | id, name, contextId? | A unit of cohesion inside a context. |
 | `Capability` | id, name, contextId? | A business capability. |
@@ -78,12 +78,22 @@ them into `Module` writes a falsehood into a file other people copy from. See
 
 | Kind | Arguments | Renders as |
 |---|---|---|
-| `DataFlow` | id, from, to, payload, direction? | Solid arrow labelled with the payload. |
+| `DataFlow` | id, from, to, payload, direction?, technology? | Solid arrow labelled with the payload, and the technology after it: `places orders [HTTPS/JSON]`. |
 | `Dependency` | id, from, to, kind? | Dashed arrow labelled with the kind (default `uses`). |
 | `Relation` | id, from, to, label? | Solid arrow labelled with the label; an unlabelled one is a bare arrow. |
 
 `Relation` is the counterpart to `Concept`: an arrow that claims nothing beyond its label
 ([ADR-0019](../architecture/decisions/0019-relation-link-kind.md)).
+
+A C4 element says what it is in a sentence, and a container and a flow what they are built with
+([ADR-0027](../architecture/decisions/0027-description-and-technology.md)). Optional arguments are
+easiest to write by name, so a container without a `kind` can still have a `technology`:
+
+```csharp
+var orders = new Container("cnt_orders", "Order Service", "sys_platform",
+    Technology: ".NET 8", Description: "Accepts orders and tracks their state");
+var place  = new DataFlow("flow_place", "cnt_app", "cnt_orders", "places orders", Technology: "HTTPS/JSON");
+```
 
 ### Tags
 

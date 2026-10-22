@@ -11,9 +11,9 @@ All elements derive from `ModelElement(string Id, string Name)`.
 
 | Record | Signature | Meaning |
 |---|---|---|
-| `Person` | `(Id, Name, Role = "user")` | A C4 actor (e.g. `"external"`, `"internal"`). |
-| `SoftwareSystem` | `(Id, Name)` | A C4 software system (often an external/neighbouring system). |
-| `Container` | `(Id, Name, SystemId, Kind = "service")` | A deployable unit inside a system (`service`, `worker`, `cronjob`, `job`, `tool`, `db`…). |
+| `Person` | `(Id, Name, Role = "user", Description = null)` | A C4 actor (e.g. `"external"`, `"internal"`). |
+| `SoftwareSystem` | `(Id, Name, Description = null)` | A C4 software system (often an external/neighbouring system). |
+| `Container` | `(Id, Name, SystemId, Kind = "service", Technology = null, Description = null)` | A deployable unit inside a system (`service`, `worker`, `cronjob`, `job`, `tool`, `db`…). `Kind` is what sort of thing it is; `Technology` what it is built with. |
 | `BoundedContext` | `(Id, Name)` | A DDD bounded context — a grouping lane on the canvas. |
 | `Module` | `(Id, Name, ContextId = null)` | A unit of cohesion; nests visually under its `BoundedContext`. |
 | `Capability` | `(Id, Name, ContextId = null)` | A business capability. |
@@ -25,13 +25,21 @@ All elements derive from `ModelElement(string Id, string Name)`.
 `Risk`/`Question`/`Assumption` render as dotted **"about"** edges to their `AboutId` target — and the
 auto-layout pulls them toward that target so annotations cluster with what they describe.
 
+**Description and technology** ([ADR-0027](./decisions/0027-description-and-technology.md)) are on the
+kinds C4 defines them for and no others: a person, a system and a container say what they are in a
+sentence (`Description`); a container and a data flow say what they are built with or carried over
+(`Technology`). A C4 container card reads *Order Service — .NET 8 — accepts orders and tracks them*,
+and a flow's label *places orders [HTTPS/JSON]*. Modules, contexts and capabilities keep their prose in
+their notes; a `Concept` stays poor (ADR-0018). Both are edited by `SetElementAttribute` /
+`SetLinkAttribute` like any argument.
+
 ## Relationships (edges)
 
 All links derive from `ModelLink(string Id, string FromId, string ToId)`.
 
 | Record | Signature | Meaning |
 |---|---|---|
-| `DataFlow` | `(Id, FromId, ToId, Payload, Direction = "oneway")` | A flow of data; `Payload` is the message/call name shown as the edge label. |
+| `DataFlow` | `(Id, FromId, ToId, Payload, Direction = "oneway", Technology = null)` | A flow of data; `Payload` is the message/call name shown as the edge label, `Technology` how it travels (`HTTPS/JSON`, `AMQP`). |
 | `Dependency` | `(Id, FromId, ToId, Kind = "uses")` | A structural dependency (`uses`, `calls`, `reads`, `publishes`, `consumes`…). |
 
 ## Tags (metadata, attach by id)
@@ -55,8 +63,8 @@ its own, `Tag.For(modRiskAgg, ...);`, and edits either in place. A `Tag.For` ins
 
 ## Views (perspectives)
 
-A `View(Id, Name, BaseView, IReadOnlyList<string> ElementIds)` is a named subset of the model with a
-base lens. Base lenses: `moduleMap` (BCs as lanes with nested modules), `dependencyGraph` (layered,
+A `View(Id, Name, BaseView, ElementIds = null, Scope = null, Include = null, Exclude = null)` is a
+named subset of the model with a base lens. Base lenses: `moduleMap` (BCs as lanes with nested modules), `dependencyGraph` (layered,
 fan-in/out), or `all`. Each view is a `Views/<Name>.cs` file with a static `Define()`:
 
 ```csharp

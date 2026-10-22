@@ -49,7 +49,7 @@ public sealed class OperationFidelityTests
     public async Task Every_fixture_reads_as_the_same_model(string fixture)
     {
         // The cases only mean the same thing across fixtures if the fixtures do. Named arguments, a
-        // verbatim id and a declaration split over five lines are all still the same six elements.
+        // verbatim id and a declaration split over five lines are all still the same nine elements.
         await using var ws = await FixtureWorkspace.CreateAsync(fixture);
         await using var engine = await StemmaEngine.OpenAsync(ws.RootPath);
         var arch = await engine.ReadArchModelAsync();
@@ -58,11 +58,17 @@ public sealed class OperationFidelityTests
         arch!.Elements.Select(e => (e.Id, e.Name)).Should().BeEquivalentTo(new[]
         {
             ("ctx_ordering", "Ordering"), ("ctx_billing", "Billing"), ("mod_checkout", "Checkout"),
-            ("mod_invoicing", "Invoicing"), ("risk_latency", "Checkout is slow"),
+            ("mod_invoicing", "Invoicing"), ("risk_latency", "Checkout is slow"), ("per_buyer", "Buyer"),
+            ("sys_shop", "Shop"), ("cnt_web", "Web Shop"), ("cnt_store", "Order Store"),
         });
         arch.Elements.Single(e => e.Id == "mod_checkout").Attributes["contextId"].Should().Be("ctx_ordering");
         arch.Links.Should().ContainSingle(l => l.Id == "flow_orders" && l.FromId == "mod_checkout" && l.ToId == "mod_invoicing");
         arch.Links[0].Attributes["payload"].Should().Be("Order");
         arch.Tags.Should().ContainSingle(t => t.TargetId == "mod_checkout").Which.Lifecycle!.Status.Should().Be("current");
+        arch.Elements.Single(e => e.Id == "per_buyer").Attributes["role"].Should().Be("external");
+        arch.Elements.Single(e => e.Id == "cnt_web").Attributes.Should().Contain(new Dictionary<string, string?> { ["systemId"] = "sys_shop", ["kind"] = "spa" });
+        arch.Elements.Single(e => e.Id == "cnt_store").Attributes.Should().NotContainKey("kind");
+        var browse = arch.Links.Single(l => l.Id == "flow_browse");
+        (browse.FromId, browse.ToId, browse.Attributes["payload"], browse.Attributes["direction"]).Should().Be(("per_buyer", "cnt_web", "search terms", "twoway"));
     }
 }

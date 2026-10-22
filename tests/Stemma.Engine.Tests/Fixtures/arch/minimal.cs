@@ -12,8 +12,13 @@ public static class Architecture
         var modInvoicing = new Module("mod_invoicing", "Invoicing");
         var riskLatency = new Risk("risk_latency", "Checkout is slow");
         var flowOrders = new DataFlow("flow_orders", "mod_checkout", "mod_invoicing", "Order");
+        var perBuyer = new Person("per_buyer", "Buyer", "external");
+        var sysShop = new SoftwareSystem("sys_shop", "Shop");
+        var cntWeb = new Container("cnt_web", "Web Shop", "sys_shop", "spa");
+        var cntStore = new Container("cnt_store", "Order Store", "sys_shop");
+        var flowBrowse = new DataFlow("flow_browse", "per_buyer", "cnt_web", "search terms", "twoway");
         Tag.For(modCheckout, lifecycle: new Lifecycle(Status: "current"));
 
-        return Model.Of(ctxOrdering, ctxBilling, modCheckout, modInvoicing, riskLatency, flowOrders);
+        return Model.Of(perBuyer, sysShop, cntWeb, cntStore, flowBrowse, ctxOrdering, ctxBilling, modCheckout, modInvoicing, riskLatency, flowOrders);
     }
 }
