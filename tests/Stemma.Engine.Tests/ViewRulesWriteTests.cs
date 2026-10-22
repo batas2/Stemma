@@ -101,6 +101,41 @@ public sealed class ViewRulesWriteTests
             "        Include: new[] { \"kind:person\" },\n        Exclude: [\"cnt_store\"]);"));
     }
 
+    /// <summary>Leading commas, and a comment in front of one of them on its line.</summary>
+    private const string LeadingCommas = """
+        using Stemma.Model;
+
+        namespace Scratch;
+
+        public static class LeadingCommas
+        {
+            public static View Define() => new(
+                Id: "view_lead",
+                Name: "Leading commas",
+                BaseView: "container",
+                Scope: "sys_shop",
+                Exclude: new[]
+                {
+                    "cnt_web"
+                    /* kept out on purpose */ , "per_buyer"
+                });
+        }
+        """;
+
+    [Fact]
+    public async Task A_new_id_after_a_commented_leading_comma_keeps_the_line_s_indentation()
+    {
+        // The comma's leading trivia is the line's indentation, the comment and a space. Laid out without
+        // the comment it must keep the indentation: dropping it instead put the new comma at column 1.
+        var saved = await SaveAsync("LeadingCommas.cs", LeadingCommas,
+            new ArchView("view_lead", "Leading commas", "container", [], Exclude: ["cnt_web", "per_buyer", "cnt_store"]));
+
+        saved.Should().Be(LeadingCommas.Replace(
+            "/* kept out on purpose */ , \"per_buyer\"\n",
+            "/* kept out on purpose */ , \"per_buyer\"\n            , \"cnt_store\"\n"),
+            "the new id starts its own line, its comma at the indentation of the one above and without its comment");
+    }
+
     [Fact]
     public async Task A_scope_and_an_include_sent_back_as_they_were_change_nothing()
     {
