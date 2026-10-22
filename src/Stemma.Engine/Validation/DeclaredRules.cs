@@ -74,7 +74,7 @@ public sealed record DeclaredRules(
     public static readonly IReadOnlyList<string> MistakeIds = [BadSelector, DanglingId, DuplicateId, Unreadable, Unknown];
 
     /// <summary>The packs <c>Rule.Use</c> can turn on.</summary>
-    public static readonly IReadOnlyList<string> KnownPacks = ["c4"];
+    public static readonly IReadOnlyList<string> KnownPacks = [C4Pack.Name];
 
     public static readonly DeclaredRules None = new([], [], [], [], [], []);
 
@@ -190,10 +190,10 @@ public sealed record DeclaredRules(
             read.SelectMany(r => r.Maps).ToList(), problems);
     }
 
-    /// <summary>The ids a declared rule may not take: the built-in rules' and the mistakes'.</summary>
+    /// <summary>The ids a declared rule may not take: the built-in rules', the packs' and the mistakes'.</summary>
     private static readonly Lazy<HashSet<string>> ReservedIds = new(() =>
         RuleEngine.DiscoverRulesIn(typeof(IRule).Assembly).Select(r => r.Id)
-            .Concat(MistakeIds)
+            .Concat(C4Pack.Ids).Concat(MistakeIds)
             .ToHashSet(StringComparer.Ordinal));
 
     private sealed record FileRules(

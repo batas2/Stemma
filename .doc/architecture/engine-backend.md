@@ -195,6 +195,20 @@ workspace; the second parses the model files at a revision with `DslReader` and 
 refused unless it is shaped like one — no leading `-`, no `..`, a short safe alphabet — and every
 argument goes through `ArgumentList`, never a shell. Nothing is written or cached.
 
+### Rules (`Rules/*.cs`, read only)
+
+The engine reads a workspace's architecture rules and never writes them: there is no operation on a
+rules file, and none is planned ([ADR-0028](./decisions/0028-architecture-rules-as-code.md)). Rules are
+read off the syntax tree — `DeclaredRules`, from every `.cs` file in a folder named `Rules`, found by the
+view files' rule — and never compiled or run. They are read from disk each time the violations are
+asked for, which the canvas does every second and a half; a file is parsed again only when its time or
+length changes, so an edit made outside Stemma shows on the canvas at the next poll without the watcher.
+`RuleEngine.Default(root)` runs them beside the built-in rules (`WorkspaceRules`): each declared rule under
+its own id, evaluated by `DeclaredRuleEvaluator` as a pure function of the model and the selector scope;
+one rule per kind of mistake in the files; and the C4 pack when a file asks for it (`C4Pack`). The same
+engine is what `GET /api/workspace/violations` and `stemma validate` run, and `stemma.rules.json` applies
+to all of it by id.
+
 ### The comments (`comments.stemma.json`)
 
 Written through `PATCH /api/workspace/comments`, which calls `StemmaEngine.PatchCommentsAsync` with
@@ -269,6 +283,7 @@ An outside edit is taken in without being written back
 | List and trivia edits | `Stemma.Engine/ArchModel/SeparatedEdits.cs` |
 | Type operations' syntax edits | `Stemma.Engine/Operations/TypeWriter.cs` |
 | Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` (read, edit, new files); `ViewProjection.cs` (what a view draws: members, implied links, problems) and `Selectors.cs` (the selector language), both pure functions of the model |
+| Architecture rules (read only) | `Stemma.Engine/Validation/DeclaredRules.cs` (the reader), `DeclaredRuleEvaluator.cs` (what each says), `C4Pack.cs`, `WorkspaceRules.cs` (how they join the `RuleEngine`) |
 | Undo | `Stemma.Engine/Workspace/UndoStack.cs` |
 | Presentation sidecar | `Stemma.Engine/Workspace/LayoutSidecar.cs` (typed reading), `SidecarPatch.cs` (writing) |
 | Operation polymorphism | `Stemma.Engine/Operations/Operations.cs` |
