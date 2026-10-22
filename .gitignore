@@ -48,6 +48,7 @@ src/Stemma.Web/wwwroot/assets/
 src/Stemma.Web/wwwroot/index.html
 src/Stemma.Web/wwwroot/*.svg
 src/Stemma.Web/wwwroot/*.png
+src/Stemma.Web/wwwroot/*.txt
 
 # Editor / tool caches
 .tsbuildinfo
