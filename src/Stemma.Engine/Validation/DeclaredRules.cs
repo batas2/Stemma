@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Stemma.Engine.ArchModel;
+using Stemma.Engine.Conformance;
 using Stemma.Engine.Workspace;
 
 namespace Stemma.Engine.Validation;
@@ -190,10 +191,10 @@ public sealed record DeclaredRules(
             read.SelectMany(r => r.Maps).ToList(), problems);
     }
 
-    /// <summary>The ids a declared rule may not take: the built-in rules', the packs' and the mistakes'.</summary>
+    /// <summary>The ids a declared rule may not take: the built-in rules', the packs', the mistakes' and conformance's.</summary>
     private static readonly Lazy<HashSet<string>> ReservedIds = new(() =>
         RuleEngine.DiscoverRulesIn(typeof(IRule).Assembly).Select(r => r.Id)
-            .Concat(C4Pack.Ids).Concat(MistakeIds)
+            .Concat(C4Pack.Ids).Concat(MistakeIds).Concat(ConformanceCheck.Ids)
             .ToHashSet(StringComparer.Ordinal));
 
     private sealed record FileRules(

@@ -198,6 +198,34 @@ technology, unless a person is at either end: using an app goes over no protocol
 (warning — a data flow with an empty payload), and, in `stemma validate` only, `view/mixed-levels` (info — a
 view drawing containers and modules together).
 
+### The code map
+
+The same `RuleSet.Of(...)` may say which .NET projects implement the model
+([ADR-0029](./decisions/0029-conformance-against-the-implementation.md),
+[F-025](../features/F-025-conformance-with-the-implementation.md)):
+
+```csharp
+Code.At("../src"),                                   // where the code is, relative to the workspace (default: the workspace)
+Code.Map("cnt_api", "Shop.Api/Shop.Api.csproj"),     // a project file, relative to Code.At
+Code.Map("cnt_worker", "Shop.Worker"),               // or a folder: every project in it is the element's
+```
+
+An element may be mapped more than once (an API and the class library beside it). A `ProjectReference`
+from a project of A to a project of B, A and B mapped and different, is a relationship in the code, and
+the model is compared with it:
+
+| Finding | Severity | When |
+|---|---|---|
+| `conformance/undeclared-dependency` | warning | a project of A references a project of B, and the model has no `DataFlow` or `Dependency` from A to B — named by both projects. A data flow declares it as well as a dependency does: a caller usually references its callee's client library. |
+| `conformance/unrealised-dependency` | info | the model has a `Dependency` A → B, and no project of A references a project of B. A data flow is never expected to be a reference. |
+| `conformance/missing-code` | error | `Code.At` or a mapped path does not exist, holds no project, or holds one that is not readable XML |
+| `conformance/ambiguous-map` | warning | one project is mapped to two elements; its references are compared for neither |
+| `conformance/unmapped-project` | info | projects under `Code.At` that nothing maps — ten named, then a count. Not listed while a map points at nothing. |
+
+Project files are read as XML — no MSBuild, no SDK: conditions are not followed (a conditional
+reference counts), imports are not read, and a project naming no target framework takes the nearest
+`Directory.Build.props`'s. Results are violations like any rule's, recomputed and never stored.
+
 ## Authoring rules
 
 - **Ids are stable and referenced as strings** in flows/deps/aboutIds/views. The C# compiler does

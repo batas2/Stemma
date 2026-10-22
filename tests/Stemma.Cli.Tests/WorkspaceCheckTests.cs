@@ -1212,6 +1212,63 @@ public sealed class WorkspaceCheckTests : IDisposable
         });
     }
 
+    // ---- conformance with the code (F-025) ---------------------------------------------------------
+
+    private void Project(string relative, params string[] references)
+    {
+        var path = Path.Combine(_root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>{string.Concat(references.Select(r => $"<ProjectReference Include=\"{r}\" />"))}</ItemGroup>
+            </Project>
+            """);
+    }
+
+    [Fact]
+    public void Where_the_model_and_the_project_references_disagree_validate_says_so_by_name()
+    {
+        Model(ShopWithAShortcut);
+        Project("src/Web/Web.csproj", @"..\Api\Api.csproj");
+        Project("src/Api/Api.csproj");
+        Project("src/Tools/Tools.csproj");
+        RulesFile("""
+                    Code.At("src"),
+                    Code.Map("cnt_web", "Web"),
+                    Code.Map("cnt_api", "Api/Api.csproj")
+        """, "Code");
+
+        var findings = Run();
+
+        // flow_call declares web → api, so the reference is declared; Tools is mapped by nothing.
+        findings.Should().NotContain(f => f.Rule == "conformance/undeclared-dependency");
+        findings.Should().ContainSingle(f => f.Rule == "conformance/unmapped-project").Which.Should().BeEquivalentTo(new
+        {
+            Severity = CheckSeverity.Info,
+            Message = "1 project(s) under Code.At(\"src\") is mapped to no element: Tools/Tools.csproj",
+        });
+
+        Project("src/Api/Api.csproj", @"..\Tools\Tools.csproj", @"..\Web\Web.csproj");
+        RulesFile("""
+                    Code.At("src"),
+                    Code.Map("cnt_web", "Web"),
+                    Code.Map("cnt_api", "Api/Api.csproj"),
+                    Code.Map("cnt_db", "Db")
+        """, "Code");
+
+        findings = Run();
+
+        findings.Should().ContainSingle(f => f.Rule == "conformance/undeclared-dependency").Which.Should().BeEquivalentTo(new
+        {
+            Severity = CheckSeverity.Warning,
+            ElementId = "cnt_api",
+            Message = "Api references Web (Api/Api.csproj → Web/Web.csproj), so cnt_api depends on cnt_web in the code, " +
+                      "and the model has no data flow or dependency from cnt_api to cnt_web",
+        });
+        findings.Should().ContainSingle(f => f.Rule == "conformance/missing-code").Which.Severity.Should().Be(CheckSeverity.Error);
+        findings.Should().NotContain(f => f.Rule.StartsWith("rule/conformance"));
+    }
+
     [Fact]
     public void A_dangling_endpoint_is_reported_once_not_once_by_each_checker()
     {

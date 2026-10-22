@@ -209,6 +209,16 @@ one rule per kind of mistake in the files; and the C4 pack when a file asks for 
 engine is what `GET /api/workspace/violations` and `stemma validate` run, and `stemma.rules.json` applies
 to all of it by id.
 
+When the rules map elements to code (`Code.At`, `Code.Map`), `ConformanceCheck` compares the model with
+the project graph ([ADR-0029](./decisions/0029-conformance-against-the-implementation.md)). `ProjectGraph`
+reads `.csproj` files as XML with `System.Xml.Linq` and nothing else — no MSBuild evaluation, no
+`MSBuildLocator`, no SDK — resolving each `ProjectReference` against the referencing project's folder;
+conditions are not followed and imports are not read, except that a project naming no target framework
+takes the nearest `Directory.Build.props`'s. Its walk never enters `bin`, `obj`, `node_modules`, `.git` or a
+dot-folder. A project file is parsed again only when its time or length changes, so the poll walks the
+tree and parses nothing that has not changed. Results are violations like any rule's, recomputed on
+every ask and never stored.
+
 ### The comments (`comments.stemma.json`)
 
 Written through `PATCH /api/workspace/comments`, which calls `StemmaEngine.PatchCommentsAsync` with
@@ -284,6 +294,7 @@ An outside edit is taken in without being written back
 | Type operations' syntax edits | `Stemma.Engine/Operations/TypeWriter.cs` |
 | Views | `Stemma.Engine/ArchModel/ViewsAdapter.cs` (read, edit, new files); `ViewProjection.cs` (what a view draws: members, implied links, problems) and `Selectors.cs` (the selector language), both pure functions of the model |
 | Architecture rules (read only) | `Stemma.Engine/Validation/DeclaredRules.cs` (the reader), `DeclaredRuleEvaluator.cs` (what each says), `C4Pack.cs`, `WorkspaceRules.cs` (how they join the `RuleEngine`) |
+| Conformance with the code | `Stemma.Engine/Conformance/ProjectGraph.cs` (project files as XML), `ConformanceCheck.cs` (the comparison) |
 | Undo | `Stemma.Engine/Workspace/UndoStack.cs` |
 | Presentation sidecar | `Stemma.Engine/Workspace/LayoutSidecar.cs` (typed reading), `SidecarPatch.cs` (writing) |
 | Operation polymorphism | `Stemma.Engine/Operations/Operations.cs` |

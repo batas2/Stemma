@@ -505,6 +505,28 @@ model, so it needs no project and is never run.
 When a rule fails, fix the architecture — or, if the rule is wrong, say so to whoever asked for it.
 Never delete or loosen a rule someone asked for to make a check pass.
 
+### Conformance: the model against the code
+
+When the system is .NET, the same `RuleSet.Of(...)` can say which projects implement which containers
+or modules, and `validate` compares the model with the project references
+([ADR-0029](../architecture/decisions/0029-conformance-against-the-implementation.md)):
+
+```csharp
+Code.At("../src"),                                   // where the code is, relative to the workspace
+Code.Map("cnt_api", "Shop.Api/Shop.Api.csproj"),     // a project file, relative to Code.At
+Code.Map("cnt_worker", "Shop.Worker"),               // or a folder: every project in it
+```
+
+A project of A referencing a project of B must be declared by a `DataFlow` or a `Dependency` from A to B,
+or `validate` warns (`conformance/undeclared-dependency`, naming both projects); a `Dependency` no
+reference realises is noted (`conformance/unrealised-dependency`). A mapped path with no project in it is
+an error (`conformance/missing-code`), a project mapped twice a warning (`conformance/ambiguous-map`), and
+the projects nothing maps are listed (`conformance/unmapped-project`) — often a container not modelled
+yet. Project files are read as XML: conditions and imports are not followed.
+
+When a reference is undeclared, the code is the evidence: add the dependency the code has, or, if the
+reference should not exist, say so — never map a project to the wrong element to make the finding go.
+
 ---
 
 ## 5. Three worked examples
@@ -712,6 +734,11 @@ What it catches, in rough order of how often it bites:
 | `rule/<rule-id>` | as the rule says, or as `stemma.rules.json` sets it | The engine's rules — the ones the canvas marks cards with: a data-flow cycle (`rule/no-circular-dataflows`), a flow into a deprecated element, a module whose context is not a bounded context — and the workspace's own (§4a), under the id each declares, ending with its `because`. The C4 pack's are `rule/c4/container-technology` (warning), `rule/c4/described`, `rule/c4/flow-technology` (info) and `rule/c4/flow-labelled` (warning). Switched off or re-graded in `stemma.rules.json` (`{ "rules": { "no-circular-dataflows": { "enabled": false } } }`), for the canvas and `validate` alike. |
 | `rule/bad-selector`, `rule/dangling-id`, `rule/duplicate-id`, `rule/unreadable`, `rule/unknown` | error | A rule in `Rules/` that cannot be checked, named by file and line: a selector that is not one (with the character where it goes wrong), an id that is not an element, an id two rules share (or a built-in rule's, or a second `Code.At`), an argument that is not a literal or a constant or a required one missing, and a rule, pack, `via`, `severity`, `has` or parameter Stemma does not know. An unreadable `because` is a warning; the rule is still checked. |
 | `view/mixed-levels` | info | With `Rule.Use("c4")`: a view drawing containers and modules together — two levels of C4 in one frame. |
+| `conformance/missing-code` | error | `Code.At` or a `Code.Map` path that does not exist, holds no project, or holds one that is not readable: the element is compared with no code. |
+| `conformance/undeclared-dependency` | warning | A project of A references a project of B and the model has no data flow or dependency from A to B. The diagram says less than the code does. |
+| `conformance/ambiguous-map` | warning | One project mapped to two elements; its references are compared for neither. |
+| `conformance/unrealised-dependency` | info | A `Dependency` A → B that no project reference realises. |
+| `conformance/unmapped-project` | info | Projects under `Code.At` that nothing maps, ten named and then a count; not listed while a map points at nothing. |
 | `view/duplicate-id` | error | Two view files with one id. The app opens and saves whichever it reads first. |
 | `shape/dangling-anchor` | error | The arrow detaches to its last coordinates and looks like carelessness. |
 | `constraint/unknown-kind`, `constraint/bad-gap`, `constraint/no-members`, `constraint/dangling-id` | error | A `layout` the canvas cannot solve, a spacing of the wrong shape, a constraint that places nothing or an id that is not in the model. The canvas falls back to a default, which is a different picture with nothing said. |

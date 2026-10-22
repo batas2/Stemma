@@ -1,14 +1,15 @@
 using Stemma.Engine.ArchModel;
+using Stemma.Engine.Conformance;
 
 namespace Stemma.Engine.Validation;
 
 /// <summary>
 /// The rules a workspace adds to the built-in ones, as <see cref="IRule"/>s the <see cref="RuleEngine"/> runs
 /// beside them (ADR-0028 decision 4): each rule its <c>Rules/*.cs</c> files declare, under its own id; one
-/// rule per kind of mistake in those files (<c>rule/unreadable</c>, <c>rule/bad-selector</c>, …); and the
-/// packs they turn on. So the canvas and <c>stemma validate</c> show the same violations, and
-/// <c>stemma.rules.json</c> switches any of them off or changes its severity by its id, as it does a
-/// built-in rule's.
+/// rule per kind of mistake in those files (<c>rule/unreadable</c>, <c>rule/bad-selector</c>, …); the packs
+/// they turn on; and, when they map the model to code, the conformance check (ADR-0029). So the canvas and
+/// <c>stemma validate</c> show the same violations, and <c>stemma.rules.json</c> switches any of them off or
+/// changes its severity by its id, as it does a built-in rule's.
 /// </summary>
 public static class WorkspaceRules
 {
@@ -23,6 +24,7 @@ public static class WorkspaceRules
         rules.AddRange(declared.Rules.Select(r => new DeclaredRuleCheck(r, scopes)));
         rules.AddRange(DeclaredRules.MistakeIds.Select(id => new RuleMistakes(id, declared, scopes)));
         if (declared.Uses(C4Pack.Name)) rules.AddRange(C4Pack.Rules(scopes));
+        if (declared.CodeRoots.Count > 0 || declared.CodeMaps.Count > 0) rules.AddRange(ConformanceCheck.Rules(workspaceRoot, declared));
         return rules;
     }
 }
