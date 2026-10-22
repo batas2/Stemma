@@ -527,6 +527,23 @@ yet. Project files are read as XML: conditions and imports are not followed.
 When a reference is undeclared, the code is the evidence: add the dependency the code has, or, if the
 reference should not exist, say so — never map a project to the wrong element to make the finding go.
 
+To start a model from an existing codebase, list what is there first:
+
+```
+$ stemma scan src
+stemma scan: 3 project(s) under /home/me/shop/src
+
+  Shop.Api     Exe      net8.0           Shop.Api/Shop.Api.csproj
+    -> Shop.Core
+    -> Payments.Client  (external: ../vendor/Payments.Client/Payments.Client.csproj)
+  …
+```
+
+`stemma scan [<path>] [--json]` lists every project under the path — name, path, SDK, output type, target
+frameworks — and its project references, an external one marked. It exits `2` for a path that does not
+exist. Projects are evidence, not architecture: an API and the class libraries only it uses are one
+container, mapped with one `Code.Map` per folder.
+
 ---
 
 ## 5. Three worked examples

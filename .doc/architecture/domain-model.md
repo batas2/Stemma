@@ -225,6 +225,8 @@ the model is compared with it:
 Project files are read as XML — no MSBuild, no SDK: conditions are not followed (a conditional
 reference counts), imports are not read, and a project naming no target framework takes the nearest
 `Directory.Build.props`'s. Results are violations like any rule's, recomputed and never stored.
+`stemma scan <path> [--json]` prints the same graph — each project's name, path, SDK, output type, target
+frameworks and references, an external one marked — for an agent starting a model from the code.
 
 ## Authoring rules
 
