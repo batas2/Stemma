@@ -1136,7 +1136,7 @@ public sealed class WorkspaceCheckTests : IDisposable
 
         finding.Severity.Should().Be(CheckSeverity.Error);
         finding.ElementId.Should().Be("cnt_web");
-        finding.Message.Should().Contain("flow_peek from cnt_web to cnt_db").And.EndWith("— Front ends reach data through the API");
+        finding.Message.Should().Be("Web → DB (flow_peek) is not allowed — Front ends reach data through the API");
     }
 
     [Fact]

@@ -8,8 +8,10 @@ namespace Stemma.Engine.Validation;
 /// A relationship is a data flow or a dependency between two elements of the model, as declared — from
 /// its <c>FromId</c> to its <c>ToId</c>; a two-way flow is still one relationship, from where it is written
 /// from. <c>via</c> narrows them to one of the two kinds. A <c>Relation</c> claims nothing and is never
-/// one. Each violation names the elements and the link by id, so the canvas marks them, and ends with
-/// the rule's <c>because</c>, so whoever reads it knows what is at stake.
+/// one. Each violation carries the elements and the link by id, so the canvas marks them, and is said
+/// for the room it is read in: the elements by name, then the rule's <c>because</c>. The selectors are
+/// said only when there is no because to say instead — "nothing kind:container[kind=spa] selects may
+/// relate to …" is what the rule is, not why it matters.
 /// </summary>
 public static class DeclaredRuleEvaluator
 {
@@ -30,8 +32,8 @@ public static class DeclaredRuleEvaluator
         var from = Selected(rule.From!, scope);
         var to = Selected(rule.To!, scope);
         foreach (var link in Relationships(rule, scope).Where(l => from.Contains(l.FromId) && to.Contains(l.ToId)))
-            yield return Broken(rule, link,
-                $"{Describe(link)} is forbidden: nothing \"{rule.From}\" selects may relate to what \"{rule.To}\" selects");
+            yield return Broken(rule, link, $"{Describe(link, scope)} is not allowed",
+                $"nothing \"{rule.From}\" selects may relate to what \"{rule.To}\" selects");
     }
 
     /// <summary>Only what <c>from</c> selects may have a relationship to what <c>to</c> selects.</summary>
@@ -40,8 +42,8 @@ public static class DeclaredRuleEvaluator
         var from = Selected(rule.From!, scope);
         var to = Selected(rule.To!, scope);
         foreach (var link in Relationships(rule, scope).Where(l => to.Contains(l.ToId) && !from.Contains(l.FromId)))
-            yield return Broken(rule, link,
-                $"{Describe(link)} is not allowed: only what \"{rule.From}\" selects may relate to what \"{rule.To}\" selects");
+            yield return Broken(rule, link, $"{Describe(link, scope)} is not allowed",
+                $"only what \"{rule.From}\" selects may relate to what \"{rule.To}\" selects");
     }
 
     /// <summary>
@@ -58,8 +60,8 @@ public static class DeclaredRuleEvaluator
         foreach (var link in Relationships(rule, scope))
         {
             if (!layerOf.TryGetValue(link.FromId, out var from) || !layerOf.TryGetValue(link.ToId, out var to) || from <= to) continue;
-            yield return Broken(rule, link,
-                $"{Describe(link)} goes up the layers, from layer {from + 1} (\"{rule.Layers[from]}\") to layer {to + 1} (\"{rule.Layers[to]}\")");
+            yield return Broken(rule, link, $"{Describe(link, scope)} goes up the layers, from layer {from + 1} to layer {to + 1}",
+                $"layer {from + 1} is \"{rule.Layers[from]}\" and layer {to + 1} \"{rule.Layers[to]}\"");
         }
     }
 
@@ -72,7 +74,7 @@ public static class DeclaredRuleEvaluator
         {
             foreach (var link in of.SelectLinks(scope).Where(l => string.IsNullOrWhiteSpace(scope.LinkAttribute(l, has))))
                 yield return new Violation(rule.Id, rule.Severity,
-                    $"{Describe(link)} has no {has}, which every \"{rule.Of}\" must have{Because(rule)}",
+                    Said(rule, $"{Describe(link, scope)} has no {has}", $"every \"{rule.Of}\" must have one"),
                     [link.FromId, link.ToId], [link.Id]);
             yield break;
         }
@@ -80,7 +82,7 @@ public static class DeclaredRuleEvaluator
         {
             if (!string.IsNullOrWhiteSpace(scope.Attribute(scope.Element(id)!, has))) continue;
             yield return new Violation(rule.Id, rule.Severity,
-                $"{id} has no {has}, which everything \"{rule.Of}\" selects must have{Because(rule)}", [id], []);
+                Said(rule, $"{Named(id, scope)} has no {has}", $"everything \"{rule.Of}\" selects must have one"), [id], []);
         }
     }
 
@@ -123,11 +125,20 @@ public static class DeclaredRuleEvaluator
             ? selector
             : throw new InvalidOperationException($"\"{text}\" is not a selector: {error.Message}");
 
-    private static Violation Broken(DeclaredRule rule, ArchLink link, string message) =>
-        new(rule.Id, rule.Severity, message + Because(rule), [link.FromId, link.ToId], [link.Id]);
+    private static Violation Broken(DeclaredRule rule, ArchLink link, string what, string rather) =>
+        new(rule.Id, rule.Severity, Said(rule, what, rather), [link.FromId, link.ToId], [link.Id]);
 
-    private static string Describe(ArchLink link) =>
-        $"{(link.Kind == ArchLinkKind.DataFlow ? "data flow" : "dependency")} {link.Id} from {link.FromId} to {link.ToId}";
+    /// <summary>What happened, then why it matters — the rule's because, or failing that what the rule says.</summary>
+    private static string Said(DeclaredRule rule, string what, string rather) =>
+        rule.Because is { } because ? $"{what} — {because}" : $"{what}: {rather}";
 
-    private static string Because(DeclaredRule rule) => rule.Because is { } because ? $" — {because}" : "";
+    /// <summary>`Customer App → Orders DB (flow_app_db)`: names for the room, the id for whoever fixes it.</summary>
+    private static string Describe(ArchLink link, SelectorScope scope) =>
+        $"{NameOf(link.FromId, scope)} → {NameOf(link.ToId, scope)} ({link.Id})";
+
+    /// <summary>`Order Service (cnt_orders)`.</summary>
+    private static string Named(string id, SelectorScope scope) =>
+        scope.Element(id) is { } element && element.Name != id ? $"{element.Name} ({id})" : id;
+
+    private static string NameOf(string id, SelectorScope scope) => scope.Element(id)?.Name ?? id;
 }

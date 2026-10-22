@@ -32,6 +32,9 @@ public sealed class DeclaredRuleEvaluatorTests
         return new RuleEngine(WorkspaceRules.For(Root, declared), RulesConfig.Empty).Run(model ?? C4Model.Read());
     }
 
+    /// <summary>An element's name in the test model, as a violation says it.</summary>
+    private static string Name(string id) => C4Model.Read().Elements.Single(e => e.Id == id).Name;
+
     [Fact]
     public void Forbid_reports_each_relationship_from_what_from_selects_to_what_to_selects()
     {
@@ -42,9 +45,9 @@ public sealed class DeclaredRuleEvaluatorTests
         violation.Severity.Should().Be(Severity.Error);
         violation.ElementIds.Should().Equal("cnt_web", "cnt_api");
         violation.LinkIds.Should().Equal("flow_call");
+        // Said for the room: the elements by name, the link by id, then why it matters.
         violation.Message.Should().Be(
-            "data flow flow_call from cnt_web to cnt_api is forbidden: nothing \"kind:container[kind=spa]\" selects may relate to what " +
-            "\"kind:container[kind=service]\" selects — The shop talks to its API through the gateway");
+            $"{Name("cnt_web")} → {Name("cnt_api")} (flow_call) is not allowed — The shop talks to its API through the gateway");
 
         Run("""Rule.Forbid("rule_spa_db", from: "kind:container[kind=spa]", to: "kind:container[kind=db]")""").Should().BeEmpty();
     }
@@ -60,8 +63,9 @@ public sealed class DeclaredRuleEvaluatorTests
             ElementIds = new[] { "cnt_web", "cnt_api" },
             LinkIds = new[] { "flow_call" },
         });
-        violations[0].Message.Should().StartWith("data flow flow_call from cnt_web to cnt_api is not allowed: only what \"cnt_gateway\" selects may relate to what \"cnt_api\" selects")
-            .And.EndWith(" — Only payments calls back");
+        violations[0].Message.Should().Be($"{Name("cnt_web")} → {Name("cnt_api")} (flow_call) is not allowed — Only payments calls back");
+        Run("""Rule.Only("rule_api_bare", from: "cnt_gateway", to: "cnt_api")""")[0].Message
+            .Should().EndWith("is not allowed: only what \"cnt_gateway\" selects may relate to what \"cnt_api\" selects", "with no because, the rule says what it is");
 
         Run("""Rule.Only("rule_gateway", from: "cnt_api", to: "cnt_gateway")""").Should().BeEmpty("only the API calls the gateway");
     }
@@ -78,9 +82,7 @@ public sealed class DeclaredRuleEvaluatorTests
         """);
 
         violations.Select(v => v.LinkIds.Single()).Should().Equal("flow_persist", "flow_settle");
-        violations[0].Message.Should().Be(
-            "data flow flow_persist from cnt_api to cnt_db goes up the layers, from layer 2 (\"kind:container[kind=service]\") to layer 1 " +
-            "(\"kind:container[kind=db]\") — Data on top");
+        violations[0].Message.Should().Be($"{Name("cnt_api")} → {Name("cnt_db")} (flow_persist) goes up the layers, from layer 2 to layer 1 — Data on top");
     }
 
     [Fact]
@@ -100,7 +102,7 @@ public sealed class DeclaredRuleEvaluatorTests
 
         violations.Select(v => v.ElementIds.Single()).Should().Equal("cnt_gateway", "cnt_ledger");
         violations.Should().OnlyContain(v => v.Severity == Severity.Warning && v.LinkIds.Count == 0);
-        violations[0].Message.Should().Be("cnt_gateway has no technology, which everything \"kind:container\" selects must have — Ops needs to know");
+        violations[0].Message.Should().Be($"{Name("cnt_gateway")} (cnt_gateway) has no technology — Ops needs to know");
 
         Run("""
                 Rule.Require("rule_shop_tech", of: "sys_shop.*", has: "technology"),
@@ -117,7 +119,7 @@ public sealed class DeclaredRuleEvaluatorTests
 
         violations.Should().HaveCount(2);
         violations[0].Should().BeEquivalentTo(new { LinkIds = new[] { "flow_persist" }, ElementIds = new[] { "cnt_api", "cnt_db" } });
-        violations[0].Message.Should().Be("data flow flow_persist from cnt_api to cnt_db has no technology, which every \"link:dataFlow[label=order|payment]\" must have");
+        violations[0].Message.Should().Be($"{Name("cnt_api")} → {Name("cnt_db")} (flow_persist) has no technology: every \"link:dataFlow[label=order|payment]\" must have one");
 
         Run("""Rule.Require("rule_call_tech", of: "link:dataFlow[payload=orders]", has: "technology")""").Should().BeEmpty();
         Run("""Rule.Require("rule_dep_kind", of: "link:dependency", has: "kind")""").Should().BeEmpty("a dependency's kind defaults to uses");
