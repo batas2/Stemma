@@ -22,5 +22,9 @@ stemma render --workspace samples/FoodDelivery --view view_containers --out cont
 | `Views/OrderToDoor.cs` | A flow stated by `Include` and `Exclude` selectors. |
 | `Rules/PlatformRules.cs` | The C4 checks, card data in one service, clients through the gateway, layering, owned services. |
 
+`stemma validate` checks every rule and reports none broken. The layering rule is why the event bus's
+consumers point at it — `cnt_dispatch` *consumes OrderReady* from `cnt_bus` — as a service points at its
+database: the first version drew the bus pushing up to the services, and the rule said so.
+
 There is no `stemma.layout.json`. Every view is laid out in layers that follow its relationships, and
 every edge is routed around the boxes; nothing here was placed by hand.

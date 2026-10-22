@@ -70,6 +70,9 @@ public static class WorkspaceCheck
         findings.AddRange(EngineRuleFindings(workspaceRoot, model, ids));
         findings.AddRange(RegisterFindings(model));
         findings.AddRange(ViewFindings(views, model));
+        // The C4 pack's one rule about views, which only validate resolves; the rest of it is the
+        // engine's, and arrived with the engine rules above.
+        if (DeclaredRules.Read(workspaceRoot).Uses("c4")) findings.AddRange(MixedLevelFindings(views, model));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
         findings.AddRange(ConstraintFindings(workspaceRoot, ids));
         findings.AddRange(LayoutModeFindings(workspaceRoot));
@@ -837,13 +840,16 @@ public static class WorkspaceCheck
     /// The engine's rules — the ones the canvas marks cards with — run with the workspace's
     /// <c>stemma.rules.json</c>, so a rule switched off there is off here, and one made quieter is
     /// reported at that severity. Without this, validate passed a model the canvas showed in red: a
-    /// data-flow cycle was the canvas's alone to see (B-026).
+    /// data-flow cycle was the canvas's alone to see (B-026). The engine runs the rules the
+    /// workspace declares in <c>Rules/</c> beside the built-in ones (ADR-0028), so they arrive here too.
     ///
-    /// Each violation is reported as <c>rule/&lt;rule-id&gt;</c>, except where a check above already
-    /// says the same thing: a link to a missing element is <c>link/dangling-endpoint</c>, an argument
-    /// the reader could not read is <c>model/unreadable-declaration</c>, and a module whose context
-    /// is not an element at all is <c>element/dangling-reference</c>. Said twice, a fix would appear to
-    /// leave half the problem behind.
+    /// Each violation is reported as <c>rule/&lt;rule-id&gt;</c> — a declared rule's under the id it
+    /// declares — except where a check above already says the same thing: a link to a missing element
+    /// is <c>link/dangling-endpoint</c>, an argument the reader could not read is
+    /// <c>model/unreadable-declaration</c>, and a module whose context is not an element at all is
+    /// <c>element/dangling-reference</c>. Said twice, a fix would appear to leave half the problem
+    /// behind. A mistake in a rules file (<c>rule/bad-selector</c>, …) and a conformance finding
+    /// (<c>conformance/…</c>) are already named that way, and keep their names.
     /// </summary>
     private static IEnumerable<CheckFinding> EngineRuleFindings(string workspaceRoot, ArchModel model, HashSet<string> ids)
     {
@@ -858,7 +864,10 @@ public static class WorkspaceCheck
                 && v.ElementIds is [var module] && contextOf.GetValueOrDefault(module) is { } context && !ids.Contains(context))
                 continue;
 
-            yield return new(SeverityOf(v.Severity), $"rule/{v.RuleId}", v.Message, v.ElementIds.FirstOrDefault() ?? v.LinkIds.FirstOrDefault());
+            var rule = DeclaredRules.MistakeIds.Contains(v.RuleId) || v.RuleId.StartsWith("conformance/", StringComparison.Ordinal)
+                ? v.RuleId
+                : $"rule/{v.RuleId}";
+            yield return new(SeverityOf(v.Severity), rule, v.Message, v.ElementIds.FirstOrDefault() ?? v.LinkIds.FirstOrDefault());
         }
     }
 
@@ -879,6 +888,31 @@ public static class WorkspaceCheck
 
     /// <summary>A view and what it draws.</summary>
     private sealed record ResolvedView(ArchView View, ViewResolution Resolution);
+
+    /// <summary>
+    /// A view drawing containers and modules together (<c>view/mixed-levels</c>, the C4 pack's, F-024 AC6).
+    /// C4 draws one level of abstraction per diagram — containers inside a system, components inside a
+    /// container — so a picture holding both is two diagrams in one frame. Counted as the canvas draws the
+    /// view: the dependency lens keeps only modules, contexts and capabilities, whatever else it names.
+    /// </summary>
+    private static IEnumerable<CheckFinding> MixedLevelFindings(IReadOnlyList<ResolvedView> views, ArchModel model)
+    {
+        var kindById = model.Elements
+            .GroupBy(e => e.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Kind, StringComparer.Ordinal);
+        foreach (var (view, resolution) in views)
+        {
+            var drawn = resolution.Members.Select(id => kindById[id])
+                .Where(k => view.BaseView != "dependencyGraph" || k is ArchElementKind.Module or ArchElementKind.BoundedContext or ArchElementKind.Capability)
+                .ToList();
+            var containers = drawn.Count(k => k == ArchElementKind.Container);
+            var modules = drawn.Count(k => k == ArchElementKind.Module);
+            if (containers > 0 && modules > 0)
+                yield return new(CheckSeverity.Info, "view/mixed-levels",
+                    $"view '{view.Id}' draws {containers} container(s) and {modules} module(s) together; C4 draws one level of " +
+                    "abstraction per diagram, so this is two diagrams in one frame");
+        }
+    }
 
     private static CheckSeverity SeverityOf(Severity severity) => severity switch
     {

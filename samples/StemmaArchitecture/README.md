@@ -66,6 +66,20 @@ warning. If a box you asked for is missing, check the lens before you check your
 about. The first version did not, and four `about` edges crossed the whole diagram to find their
 targets.
 
+## Checked against its own code
+
+`Rules/Code.cs` maps the containers and modules that are .NET projects to those projects —
+`Code.At("../..")`, then `src/Stemma.Web`, `src/Stemma.Cli`, `src/Stemma.Desktop`, `src/Stemma.Engine`,
+`src/Stemma.Model` ([F-025](../../.doc/features/F-025-conformance-with-the-implementation.md)). `validate`
+compares their project references with the model's data flows and dependencies, and warns about a
+reference the model does not declare. The first run found two: the CLI reads workspaces through the
+engine, and the engine compiles against Stemma.Model, and neither was drawn. Both are in the model now
+(`dep_cli_engine`, `dep_engine_concepts`). The canvas is TypeScript, so it is not mapped; the test projects
+and the samples are listed as unmapped, as a note — they are not part of what ships.
+
+The map points two folders up, so it holds only where it is: a copy of this workspace taken out of
+the repository reports the map's paths as missing code.
+
 ## The one warning it ships with
 
 ```

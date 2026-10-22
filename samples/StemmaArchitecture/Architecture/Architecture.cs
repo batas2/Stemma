@@ -148,6 +148,8 @@ public static class Architecture
         var depEngineYaml = new Dependency("dep_engine_yaml", "mod_engine", "mod_yaml", "uses");
         var depEngineRules = new Dependency("dep_engine_rules", "mod_engine", "mod_rules", "uses");
         var depEngineExport = new Dependency("dep_engine_export", "mod_engine", "mod_export", "uses");
+        // Stemma.Engine references Stemma.Model: a model-only workspace is compiled against it.
+        var depEngineConcepts = new Dependency("dep_engine_concepts", "mod_engine", "mod_concepts", "compiles against");
         var depReaderRoslyn = new Dependency("dep_reader_roslyn", "mod_reader", "sys_roslyn", "uses");
         var depReaderConcepts = new Dependency("dep_reader_concepts", "mod_reader", "mod_concepts", "reads");
         var depWriterConcepts = new Dependency("dep_writer_concepts", "mod_writer", "mod_concepts", "reads");
@@ -179,6 +181,8 @@ public static class Architecture
         var depWebHostsEngine = new Dependency("dep_web_engine", "cnt_web", "mod_engine", "hosts");
         var depClientBundles = new Dependency("dep_client_canvas", "cnt_client", "mod_canvas", "bundles");
         var depCliRender = new Dependency("dep_cli_render", "cnt_cli", "mod_render", "hosts");
+        // Stemma.Cli references Stemma.Engine: validate, inspect and scan read the workspace in-process.
+        var depCliEngine = new Dependency("dep_cli_engine", "cnt_cli", "mod_engine", "reads through");
         var depDesktopWeb = new Dependency("dep_desktop_web", "cnt_desktop", "cnt_web", "hosts");
 
         // ── The three rules, as boxes that assert nothing about a system ─────────────────────
@@ -269,14 +273,14 @@ public static class Architecture
             flowAuthor, flowInvoke, flowSpawn, flowImage,
             flowReview, flowPrompt,
             depEngineReader, depEngineWriter, depEngineOps, depEngineSidecar, depEngineYaml,
-            depEngineRules, depEngineExport,
+            depEngineRules, depEngineExport, depEngineConcepts,
             depReaderRoslyn, depReaderConcepts, depWriterConcepts,
             depModelOfConcepts, depRulesConcepts, depSidecarGit, depYamlGit,
             depRestEngine, depScaffoldEngine, depLlmEngine,
             depCanvasStore, depCanvasLayout, depCanvasAuto, depInspectorStore, depBooksStore, depBooksLayout,
             depRenderShellCanvas, depRenderChromium, depRenderShellDep, depManifestRender, depCheckRules,
             depFidelityWriter, depFidelityOps,
-            depWebHostsEngine, depClientBundles, depCliRender, depDesktopWeb,
+            depWebHostsEngine, depClientBundles, depCliRender, depCliEngine, depDesktopWeb,
             relFidelityWriter, relFidelityFixtures, relStoreSidecar, relStoreGit, relPurityEngine,
             riskTrivia, riskSecondStore, riskRefetch, riskDangling, riskExitZero, riskSingleton,
             qMethodBodies, qConflict, qLanguages,

@@ -2,8 +2,9 @@
 
 The canonical model is written by architects as plain C# records in `src/Stemma.Model`
 (`Concepts.cs`). A workspace's `Architecture/Architecture.cs` constructs them inside a static
-`Build()` method and returns `Model.Of(...)`. Views are separate `Views/*.cs` files. This file is
-the contract for what those records mean.
+`Build()` method and returns `Model.Of(...)`. Views are separate `Views/*.cs` files, and what the
+architecture must satisfy is `Rules/*.cs` (`src/Stemma.Model/Rules.cs`). This file is the contract for
+what those records mean.
 
 ## Elements (nodes)
 
@@ -127,14 +128,105 @@ filter     := "[" attr ( "=" | "!=" ) value ( "|" value )* "]"
 A filter reads the element's constructor arguments with their defaults (a container written without its
 kind is a `service`), its `id` and `name`, `status` and `phase` from its lifecycle, and `squad` and
 `domain` from its ownership. Kinds and attribute names match whatever their case, and so do values;
-ids are exact. The same language, without the neighbourhood forms, is what architecture rules will be
-written in ([ADR-0028](./decisions/0028-architecture-rules-as-code.md)).
+ids are exact. The same language, without the neighbourhood forms, is what architecture rules are
+written in ([below](#rules-what-must-hold)).
 
 Resolution happens once, in the engine (`ViewProjection`, `Selectors`): the canvas gets members, what
 brought each one in, the implied links and the view's problems from `GET /api/workspace/views`, and
 `stemma validate`, `stemma render`, `stemma inspect` and the draw.io export use the same answer.
 Editing a rule-based view keeps the rule: an element added on the canvas goes into `ElementIds`, one
 removed that a rule brought in goes into `Exclude`.
+
+## Rules (what must hold)
+
+What the architecture must satisfy is written beside it, in any `.cs` file in a folder named `Rules`
+inside the workspace — found the way view files are, at any depth from the workspace root and never in
+build output or a dot-folder ([ADR-0028](./decisions/0028-architecture-rules-as-code.md),
+[F-024](../features/F-024-architecture-rules-as-code.md)). Each is a static class whose `Define()` returns
+`RuleSet.Of(...)`; the records are in `src/Stemma.Model/Rules.cs`.
+
+```csharp
+public static class PlatformRules
+{
+    public static RuleSet Define() => RuleSet.Of(
+        Rule.Use("c4"),
+        Rule.Only("rule_card_data", from: "cnt_payments", to: "sys_stripe",
+            because: "Card data stays inside one service"),
+        Rule.Forbid("rule_clients_via_gateway", from: "kind:container[kind=mobile|spa]", to: "kind:container[kind=service|db]",
+            because: "Every client call is authenticated at the gateway"),
+        Rule.Layers("rule_layers", ["kind:person", "kind:container[kind=mobile|spa]", "kind:container[kind=gateway]",
+            "kind:container[kind=service|worker]", "kind:container[kind=db|broker]"]),
+        Rule.Require("rule_owned", of: "kind:container[kind=service]", has: "squad"));
+}
+```
+
+| Call | Says | A violation is |
+|---|---|---|
+| `Rule.Forbid(id, from, to, because?, via?, severity = "error")` | no relationship from anything `from` selects to anything `to` selects | each such relationship |
+| `Rule.Only(id, from, to, because?, via?, severity = "error")` | only what `from` selects may have a relationship to what `to` selects | each relationship into `to` from anything else |
+| `Rule.Layers(id, layers, because?, via?, severity = "error")` | each element is in the first layer that selects it, the top first; relationships go down or sideways | each relationship from a lower layer to a higher one. An element no layer selects is not checked |
+| `Rule.Require(id, of, has, because?, severity = "warning")` | everything `of` selects has a non-empty `has` | each element, or link, without it |
+| `Rule.Use(pack)` | turns on a built-in pack — `"c4"`, below | — |
+
+- **A relationship** is a `DataFlow` or a `Dependency` between two elements, as declared: from its `FromId`
+  to its `ToId`. A `twoway` flow is still one relationship, from where it is written from. `via` narrows
+  them to `dataFlow` or `dependency`; without it, both count. A `Relation` claims nothing and is never one.
+- **Selectors** are the view selectors above without `->`. `Require`'s `of` may select links instead:
+  `link:dataFlow` or `link:dependency`, with the same filters over a link's arguments with their defaults
+  (`payload`, `technology`, `direction`, `kind`), its `label` (a flow's payload, a dependency's kind), its
+  `id` and its tags. A `Relation` cannot be selected.
+- **`has`** is any constructor argument of the kind, with its default (`technology`, `description`, `kind`,
+  `role`, `contextId`, …), `id`, `name`, `status` / `phase` from the lifecycle, `squad` / `domain` from the
+  ownership — or, for links, what a link filter reads.
+- **A violation** names the elements and the link by id and ends with the rule's `because`; the canvas
+  marks them through the violations it already shows, and `stemma validate` reports it as `rule/<id>`.
+  `stemma.rules.json` switches a declared rule off or changes its severity by its id, as it does a
+  built-in rule's.
+- **Arguments** are read as the model's are: literals, `const` strings in the file, `+` and interpolation
+  over those, positional or named, a list as `[ … ]` or `new[] { … }`. A rule that cannot be checked is
+  reported, never skipped: `rule/unreadable` (an argument that is not a literal or a constant, a required
+  one missing, a rule built with `new ArchitectureRule(…)`), `rule/bad-selector` (with the character where it
+  goes wrong), `rule/dangling-id` (an id a selector or the code map names that is not an element),
+  `rule/duplicate-id` (two rules with one id, a rule with a built-in rule's id, a second `Code.At`) and
+  `rule/unknown` (`Rule.Something`, a pack, a `via`, a `severity`, a `has` or a parameter Stemma does not
+  know). An unreadable `because` is a warning and keeps the rule.
+
+**The C4 pack** (`Rule.Use("c4")`) is the C4 notation checklist, for a workspace that asks for it:
+`c4/container-technology` (warning — a container without a technology), `c4/described` (info — a person,
+software system or container without a description), `c4/flow-technology` (info — a data flow without a
+technology, unless a person is at either end: using an app goes over no protocol), `c4/flow-labelled`
+(warning — a data flow with an empty payload), and, in `stemma validate` only, `view/mixed-levels` (info — a
+view drawing containers and modules together).
+
+### The code map
+
+The same `RuleSet.Of(...)` may say which .NET projects implement the model
+([ADR-0029](./decisions/0029-conformance-against-the-implementation.md),
+[F-025](../features/F-025-conformance-with-the-implementation.md)):
+
+```csharp
+Code.At("../src"),                                   // where the code is, relative to the workspace (default: the workspace)
+Code.Map("cnt_api", "Shop.Api/Shop.Api.csproj"),     // a project file, relative to Code.At
+Code.Map("cnt_worker", "Shop.Worker"),               // or a folder: every project in it is the element's
+```
+
+An element may be mapped more than once (an API and the class library beside it). A `ProjectReference`
+from a project of A to a project of B, A and B mapped and different, is a relationship in the code, and
+the model is compared with it:
+
+| Finding | Severity | When |
+|---|---|---|
+| `conformance/undeclared-dependency` | warning | a project of A references a project of B, and the model has no `DataFlow` or `Dependency` from A to B — named by both projects. A data flow declares it as well as a dependency does: a caller usually references its callee's client library. |
+| `conformance/unrealised-dependency` | info | the model has a `Dependency` A → B, and no project of A references a project of B. A data flow is never expected to be a reference. |
+| `conformance/missing-code` | error | `Code.At` or a mapped path does not exist, holds no project, or holds one that is not readable XML |
+| `conformance/ambiguous-map` | warning | one project is mapped to two elements; its references are compared for neither |
+| `conformance/unmapped-project` | info | projects under `Code.At` that nothing maps — ten named, then a count. Not listed while a map points at nothing. |
+
+Project files are read as XML — no MSBuild, no SDK: conditions are not followed (a conditional
+reference counts), imports are not read, and a project naming no target framework takes the nearest
+`Directory.Build.props`'s. Results are violations like any rule's, recomputed and never stored.
+`stemma scan <path> [--json]` prints the same graph — each project's name, path, SDK, output type, target
+frameworks and references, an external one marked — for an agent starting a model from the code.
 
 ## Authoring rules
 

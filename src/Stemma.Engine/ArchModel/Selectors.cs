@@ -28,27 +28,32 @@ public sealed record SelectorError(int Position, string Message);
 /// what it relates to, <c>->X-></c> both — over links of any kind.
 ///
 /// The same language reads rules (ADR-0028), which have no neighbourhood: those forms can be refused
-/// when parsing.
+/// when parsing. A rule's <c>Require</c> may select links instead — <c>link:dataFlow</c> or
+/// <c>link:dependency</c>, with the same filters over a link's arguments (<c>payload</c>, <c>technology</c>,
+/// <c>kind</c>, <c>direction</c>), its <c>label</c> and its tags. A <c>Relation</c> claims nothing, so no
+/// rule selects one. That form is parsed only where it is asked for; anywhere else <c>link:x</c> is an id.
 /// </summary>
 public sealed class Selector
 {
-    private enum BaseKind { All, Id, Children, OfKind }
+    private enum BaseKind { All, Id, Children, OfKind, Links }
 
     private sealed record Filter(string Attribute, bool Negated, IReadOnlyList<string> Values);
 
     private readonly BaseKind _base;
     private readonly string? _id;
     private readonly ArchElementKind? _kind;
+    private readonly ArchLinkKind? _linkKind;
     private readonly IReadOnlyList<Filter> _filters;
     private readonly bool _incoming;
     private readonly bool _outgoing;
 
-    private Selector(string text, BaseKind @base, string? id, ArchElementKind? kind, IReadOnlyList<Filter> filters, bool incoming, bool outgoing)
+    private Selector(string text, BaseKind @base, string? id, ArchElementKind? kind, ArchLinkKind? linkKind, IReadOnlyList<Filter> filters, bool incoming, bool outgoing)
     {
         Text = text;
         _base = @base;
         _id = id;
         _kind = kind;
+        _linkKind = linkKind;
         _filters = filters;
         _incoming = incoming;
         _outgoing = outgoing;
@@ -66,17 +71,22 @@ public sealed class Selector
     /// <summary>Whether the selector is an id and nothing more.</summary>
     public bool IsPlainId => _base == BaseKind.Id && _filters.Count == 0 && !_incoming && !_outgoing;
 
+    /// <summary>Whether it selects links (<c>link:dataFlow</c>) rather than elements.</summary>
+    public bool IsLinkSelector => _base == BaseKind.Links;
+
     /// <summary>
     /// Read <paramref name="text"/> as a selector. Refused, <paramref name="error"/> says what is wrong
     /// and at which character.
     /// </summary>
     /// <param name="allowNeighbours">False where <c>->X</c> means nothing, as in a rule.</param>
-    public static bool TryParse(string text, [NotNullWhen(true)] out Selector? selector, [NotNullWhen(false)] out SelectorError? error, bool allowNeighbours = true)
+    /// <param name="allowLinks">True where links may be selected, as in a rule's <c>Require</c>.</param>
+    public static bool TryParse(string text, [NotNullWhen(true)] out Selector? selector, [NotNullWhen(false)] out SelectorError? error,
+        bool allowNeighbours = true, bool allowLinks = false)
     {
         selector = null;
         try
         {
-            selector = new Parser(text, allowNeighbours).Parse();
+            selector = new Parser(text, allowNeighbours, allowLinks).Parse();
             error = null;
             return true;
         }
@@ -92,6 +102,7 @@ public sealed class Selector
 
     internal IReadOnlyList<string> Select(SelectorScope scope)
     {
+        if (_base == BaseKind.Links) return [];
         IEnumerable<ArchElement> candidates = _base switch
         {
             BaseKind.All => scope.Elements,
@@ -112,9 +123,19 @@ public sealed class Selector
         return scope.InModelOrder(selected);
     }
 
-    private static bool Matches(SelectorScope scope, ArchElement element, Filter filter)
+    /// <summary>The links a <c>link:</c> selector selects, in the order the model declares them; none for any other.</summary>
+    public IReadOnlyList<ArchLink> SelectLinks(ArchModel model) => SelectLinks(new SelectorScope(model));
+
+    internal IReadOnlyList<ArchLink> SelectLinks(SelectorScope scope) =>
+        _base != BaseKind.Links
+            ? []
+            : scope.Links.Where(l => l.Kind == _linkKind && _filters.All(f => Matches(scope.LinkAttribute(l, f.Attribute), f))).ToList();
+
+    private static bool Matches(SelectorScope scope, ArchElement element, Filter filter) =>
+        Matches(scope.Attribute(element, filter.Attribute), filter);
+
+    private static bool Matches(string? value, Filter filter)
     {
-        var value = scope.Attribute(element, filter.Attribute);
         var any = value is not null && filter.Values.Any(v => string.Equals(v, value, StringComparison.OrdinalIgnoreCase));
         return filter.Negated ? !any : any;
     }
@@ -125,13 +146,14 @@ public sealed class Selector
     }
 
     /// <summary>A hand-written recursive descent over the grammar, keeping the position of every fault.</summary>
-    private sealed class Parser(string text, bool allowNeighbours)
+    private sealed class Parser(string text, bool allowNeighbours, bool allowLinks)
     {
         private int _at;
 
         public Selector Parse()
         {
             SkipSpace();
+            if (allowLinks && text.AsSpan(_at).StartsWith("link:", StringComparison.OrdinalIgnoreCase)) return ParseLinks();
             var incoming = Arrow();
             SkipSpace();
             if (_at >= text.Length) throw Fault("expected an id, *, or kind:<kind>");
@@ -182,7 +204,31 @@ public sealed class Selector
             var outgoing = Arrow();
             SkipSpace();
             if (_at < text.Length) throw Fault($"unexpected '{text[_at]}'");
-            return new Selector(text, @base, id, kind, filters, incoming, outgoing);
+            return new Selector(text, @base, id, kind, null, filters, incoming, outgoing);
+        }
+
+        /// <summary><c>"link:" kind filter*</c> — the links of a kind that claims something.</summary>
+        private Selector ParseLinks()
+        {
+            _at += "link:".Length;
+            var start = _at;
+            while (_at < text.Length && char.IsLetter(text[_at])) _at++;
+            var name = text[start.._at];
+            if (name.Length == 0) throw Fault("expected a link kind after link: (dataFlow or dependency)");
+            if (!Enum.TryParse<ArchLinkKind>(name, ignoreCase: true, out var kind) || !Enum.IsDefined(kind))
+                throw new SelectorSyntaxException(start, $"unknown link kind '{name}' (known: dataFlow, dependency)");
+            if (kind == ArchLinkKind.Relation)
+                throw new SelectorSyntaxException(start, "a relation claims nothing, so no rule checks one (known: dataFlow, dependency)");
+
+            var filters = new List<Filter>();
+            SkipSpace();
+            while (_at < text.Length && text[_at] == '[')
+            {
+                filters.Add(ParseFilter());
+                SkipSpace();
+            }
+            if (_at < text.Length) throw Fault($"unexpected '{text[_at]}'");
+            return new Selector(text, BaseKind.Links, null, null, kind, filters, false, false);
         }
 
         private Filter ParseFilter()
@@ -239,7 +285,8 @@ public sealed class Selector
 
 /// <summary>
 /// What evaluating selectors against one model needs, worked out once: each element's attributes as
-/// a selector reads them, each element's children, and who relates to whom.
+/// a selector reads them, each element's children, who relates to whom, and the links between elements.
+/// A tag names its target by id, and is read for an element or a link alike.
 /// </summary>
 internal sealed class SelectorScope
 {
@@ -250,10 +297,12 @@ internal sealed class SelectorScope
     private readonly Dictionary<string, List<string>> _incoming = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<string>> _outgoing = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, string>> _attributes = new(StringComparer.Ordinal);
+    private readonly List<ArchLink> _links = [];
 
     public SelectorScope(ArchModel model)
     {
         Model = model;
+        var linkIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var e in model.Elements)
         {
             if (!_byId.TryAdd(e.Id, e)) continue;
@@ -267,12 +316,13 @@ internal sealed class SelectorScope
         foreach (var link in model.Links)
         {
             if (!_byId.ContainsKey(link.FromId) || !_byId.ContainsKey(link.ToId)) continue;
+            if (linkIds.Add(link.Id)) _links.Add(link);
             (_incoming.TryGetValue(link.ToId, out var into) ? into : _incoming[link.ToId] = []).Add(link.FromId);
             (_outgoing.TryGetValue(link.FromId, out var outOf) ? outOf : _outgoing[link.FromId] = []).Add(link.ToId);
         }
         foreach (var tag in model.Tags)
         {
-            if (!_byId.ContainsKey(tag.TargetId)) continue;
+            if (!_byId.ContainsKey(tag.TargetId) && !linkIds.Contains(tag.TargetId)) continue;
             var attributes = _attributes.TryGetValue(tag.TargetId, out var a) ? a : _attributes[tag.TargetId] = new(StringComparer.OrdinalIgnoreCase);
             foreach (var (name, value) in new[]
                      {
@@ -289,6 +339,9 @@ internal sealed class SelectorScope
     public IReadOnlyList<ArchElement> Elements => _elements;
 
     public ArchElement? Element(string id) => _byId.GetValueOrDefault(id);
+
+    /// <summary>Every link whose ends are both elements, the first of an id only, in the order the model declares them.</summary>
+    public IReadOnlyList<ArchLink> Links => _links;
 
     public IEnumerable<ArchElement> ChildrenOf(string id) => _children.GetValueOrDefault(id) ?? [];
 
@@ -311,5 +364,22 @@ internal sealed class SelectorScope
         var parameter = DslVocabulary.ParametersOf(element.Kind.ToString())?.FirstOrDefault(p => p.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (parameter is not null && DslVocabulary.DefaultOf(element.Kind.ToString(), parameter) is { } byDefault) return byDefault;
         return _attributes.GetValueOrDefault(element.Id)?.GetValueOrDefault(name);
+    }
+
+    /// <summary>
+    /// A link's attribute as a rule reads it: written, defaulted (a flow is <c>oneway</c>, a dependency
+    /// <c>uses</c>), its <c>id</c>, its <c>label</c> — what the canvas writes on it, a flow's payload or a
+    /// dependency's kind — or carried by a tag.
+    /// </summary>
+    public string? LinkAttribute(ArchLink link, string name)
+    {
+        if (name.Equals("id", StringComparison.OrdinalIgnoreCase)) return link.Id;
+        if (name.Equals("label", StringComparison.OrdinalIgnoreCase))
+            name = link.Kind switch { ArchLinkKind.DataFlow => "payload", ArchLinkKind.Dependency => "kind", _ => "label" };
+        foreach (var (key, value) in link.Attributes)
+            if (key.Equals(name, StringComparison.OrdinalIgnoreCase)) return value;
+        var parameter = DslVocabulary.ParametersOf(link.Kind.ToString())?.FirstOrDefault(p => p.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (parameter is not null && DslVocabulary.DefaultOf(link.Kind.ToString(), parameter) is { } byDefault) return byDefault;
+        return _attributes.GetValueOrDefault(link.Id)?.GetValueOrDefault(name);
     }
 }

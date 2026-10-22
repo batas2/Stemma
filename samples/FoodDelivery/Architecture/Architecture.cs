@@ -54,8 +54,10 @@ public static class Architecture
         var saveOrder = new DataFlow("flow_orders_db", "cnt_orders", "cnt_orders_db", "orders", Technology: "SQL");
         var charge = new DataFlow("flow_orders_pay", "cnt_orders", "cnt_payments", "charge requests", Technology: "gRPC");
         var placed = new DataFlow("flow_orders_bus", "cnt_orders", "cnt_bus", "OrderPlaced, OrderReady", Technology: "Kafka");
-        var assign = new DataFlow("flow_bus_dispatch", "cnt_bus", "cnt_dispatch", "OrderReady", Technology: "Kafka");
-        var tell = new DataFlow("flow_bus_notify", "cnt_bus", "cnt_notify", "order and courier events", Technology: "Kafka");
+        // A consumer reads from the bus, so the arrow starts at the consumer, as a service's reads from
+        // its database do: the bus pushes nothing up to the services (rule_layers).
+        var assign = new DataFlow("flow_dispatch_bus", "cnt_dispatch", "cnt_bus", "consumes OrderReady", Technology: "Kafka");
+        var tell = new DataFlow("flow_notify_bus", "cnt_notify", "cnt_bus", "consumes order and courier events", Technology: "Kafka");
         var track = new DataFlow("flow_dispatch_db", "cnt_dispatch", "cnt_dispatch_db", "assignments, positions", Technology: "SQL");
         var eta = new DataFlow("flow_dispatch_maps", "cnt_dispatch", "sys_maps", "routes and ETAs", Technology: "HTTPS");
         var card = new DataFlow("flow_pay_stripe", "cnt_payments", "sys_stripe", "charges and payouts", "twoway", Technology: "HTTPS");
