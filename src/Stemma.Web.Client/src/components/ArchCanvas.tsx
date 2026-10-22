@@ -1189,7 +1189,9 @@ function CanvasInner() {
   const hasCards = nodes.length > 0;
   const fitFor = `${layoutKey}|${arch?.filePath ?? ''}`;
   useEffect(() => {
-    if (!hasCards || fittedFor.current === fitFor) return;
+    // A view being laid out (F-021) has its cards hidden at placeholder positions: fitted now, it would
+    // frame where the cards are about to stop being and open off to one side.
+    if (!hasCards || layeredBusy || fittedFor.current === fitFor) return;
     // A sidecar that is never read — the server gone, say — must not leave the view unfitted for good.
     const wait = positionsRead ? 80 : 1500;
     const id = setTimeout(() => {
@@ -1204,7 +1206,7 @@ function CanvasInner() {
       fitWholeView(paddingUnderHeader(0.2), 0);
     }, wait);
     return () => clearTimeout(id);
-  }, [fitFor, hasCards, positionsRead]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fitFor, hasCards, positionsRead, layeredBusy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A book page frames its view: the whole of it, or only what it points at. Moving between pages
   // of one view is a camera move, which is what turns "first the context, then the detail" from a

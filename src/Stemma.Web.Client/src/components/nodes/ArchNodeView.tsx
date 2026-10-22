@@ -422,7 +422,7 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
               <div className={clsx('stemma-node-header border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 shrink-0', scale.pad)}>
                 <Icon className={clsx('stemma-node-icon w-3.5 h-3.5 shrink-0', accent)} />
                 {showField('kind') && (
-                  <span className={clsx('stemma-node-kind uppercase tracking-wider text-zinc-500 font-medium truncate', scale.kind)}>
+                  <span className={clsx('stemma-node-kind uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-medium truncate', scale.kind)}>
                     {labelForKind[e.kind]}
                     {/* C4's "Container: .NET 8" — the technology rides on the kind line (ADR-0027). */}
                     {showField('technology') && e.attributes.technology && (
@@ -611,7 +611,9 @@ function BcContainer({ id, kind = 'boundedContext', name, childCount, collapsed,
         diff === 'changed' && 'ring-2 ring-amber-500/70',
         !nodeStyle?.borderStyle && 'border-dashed',
         !border && (system
-          ? (selected ? 'border-zinc-500' : 'border-zinc-400/70 dark:border-zinc-500/60')
+          // 3.2:1 and 3.5:1 against the canvas — a boundary carries meaning, so it clears the 3:1 a
+          // graphical object needs, where a hairline-grey dash at 1.8:1 vanished on a projector.
+          ? (selected ? 'border-zinc-600 dark:border-zinc-400' : 'border-zinc-500/80 dark:border-zinc-500/90')
           : (selected ? 'border-violet-500' : 'border-violet-400/50 dark:border-violet-500/40')),
         !fill && (system
           ? (selected ? 'bg-zinc-500/[0.07]' : 'bg-zinc-500/[0.03] dark:bg-zinc-400/[0.04]')

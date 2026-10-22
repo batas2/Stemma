@@ -378,7 +378,8 @@ function ElementInspectorBody({ elementId }: { elementId: string }) {
             <Field label="Kind" value={e.kind} />
             <Field label="Id" value={e.id} mono />
             {Object.entries(e.attributes).filter(([k]) => k !== 'external').map(([k, v]) =>
-              v ? <Field key={k} label={k} value={v} mono /> : null
+              // Named as people say them, not as the C# argument is spelled; prose is not set in mono.
+              v ? <Field key={k} label={ATTRIBUTE_LABEL[k] ?? k} value={v} mono={k !== 'description'} /> : null
             )}
           </SubSection>
 
@@ -1339,6 +1340,17 @@ function LabeledInput({ label, value, onChange, onCommit, placeholder }: {
     </div>
   );
 }
+
+/** The model's attribute names, as the Identity rows say them. An attribute not listed shows its own name. */
+const ATTRIBUTE_LABEL: Record<string, string> = {
+  systemId: 'System',
+  contextId: 'Context',
+  aboutId: 'About',
+  kind: 'Container kind',
+  role: 'Role',
+  technology: 'Technology',
+  description: 'Description',
+};
 
 /**
  * Which kinds a model field belongs to. A row the kind does not have used to be offered anyway — a

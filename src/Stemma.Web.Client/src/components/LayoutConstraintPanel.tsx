@@ -139,7 +139,7 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
         {layered && <span className="text-[10px] text-zinc-500">layers · whole view</span>}
       </header>
 
-      <p className="text-[11px] text-zinc-500 leading-snug">
+      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-snug">
         A constraint stays live: nudging one box records an offset against it instead of replacing
         it, so adding an element later re-solves and keeps your corrections.
       </p>
@@ -147,7 +147,23 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
       {layered && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wider text-zinc-500">Direction</div>
-          <div role="radiogroup" aria-label="Direction of the layers" className="inline-flex rounded-md border border-default overflow-hidden">
+          <div
+            role="radiogroup"
+            aria-label="Direction of the layers"
+            className="inline-flex rounded-md border border-default overflow-hidden"
+            // A radio group is one stop for Tab, and the arrows move the choice, as a native one does.
+            onKeyDown={(ev) => {
+              const step = ev.key === 'ArrowRight' || ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowLeft' || ev.key === 'ArrowUp' ? -1 : 0;
+              if (!step) return;
+              ev.preventDefault();
+              // Held now: React clears an event's currentTarget once the handler returns.
+              const group = ev.currentTarget;
+              const at = DIRECTIONS.findIndex((d) => d.value === (layered.direction ?? 'down'));
+              const next = DIRECTIONS[(at + step + DIRECTIONS.length) % DIRECTIONS.length];
+              applyLayers(next.value);
+              requestAnimationFrame(() => (group.querySelector(`[data-direction="${next.value}"]`) as HTMLElement | null)?.focus());
+            }}
+          >
             {DIRECTIONS.map(({ value, label, icon: Icon }) => {
               const on = (layered.direction ?? 'down') === value;
               return (
@@ -157,6 +173,8 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
                   aria-checked={on}
                   aria-label={label}
                   title={label}
+                  tabIndex={on ? 0 : -1}
+                  data-direction={value}
                   onClick={() => { if (!on) applyLayers(value); }}
                   className={clsx('px-2.5 py-1.5 transition-colors',
                     on ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800')}
@@ -184,9 +202,9 @@ export function LayoutConstraintPanel({ layoutKey }: { layoutKey: string }) {
           </button>
         </div>
       ) : unarranged ? (
-        <p className="text-[11px] text-zinc-500">
+        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-snug">
           Nobody has arranged this view, so it is laid out in layers. Nudge a box, or choose a shape
-          below, and the arrangement becomes this view&apos;s own.
+          below, and the arrangement becomes this view’s own.
         </p>
       ) : (
         <p className="text-[11px] text-zinc-500">No constraint — positions on this view are absolute.</p>
