@@ -2689,6 +2689,7 @@ function CanvasInner() {
   // of it instead — a line beneath a card is not drawn, and the ground stays transparent.
   const publicationProfile = typeof document !== 'undefined'
     && document.documentElement.getAttribute('data-stemma-profile') === 'publication';
+  const renderBare = currentRenderParams()?.bare ?? false;
   const knockout = useMemo(() => {
     if (!publicationProfile) return null;
     return knockoutRects(renderedNodes.map((n) => {
@@ -2882,9 +2883,12 @@ function CanvasInner() {
         proOptions={{ hideAttribution: true }}
         colorMode={isDark ? 'dark' : 'light'}
       >
-        {!presenting && !capturing && <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={dotColor} />}
-        {!presenting && !capturing && <Controls />}
-        {!presenting && !capturing && <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />}
+        {/* A headless render is bare unless asked otherwise (B-027): the minimap and the controls are
+            panels for a person, and a picture wide enough to reach a corner of the viewport captured
+            them with it. */}
+        {!presenting && !capturing && !renderBare && <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color={dotColor} />}
+        {!presenting && !capturing && !renderBare && <Controls />}
+        {!presenting && !capturing && !renderBare && <MiniMap pannable zoomable nodeColor={() => 'rgb(99 102 241)'} />}
         {shapesEnabled && workspace && (
           <ShapeLayer viewKey={layoutKey} workspaceRoot={workspace.rootPath} enabled={!presenting} />
         )}

@@ -65,6 +65,31 @@ public class LayeredRenderTests : IDisposable
     }
 
     [RenderFact]
+    public void An_app_render_that_fills_the_viewport_does_not_capture_the_minimap()
+    {
+        // B-027: a grid in the viewport's own proportions fills it, so the content box reaches the
+        // bottom-right corner, where the minimap sits. The minimap draws its nodes in indigo
+        // (99, 102, 241); the cards do not.
+        var ids = Enumerable.Range(1, 36).Select(i => $"con_{i:00}").ToList();
+        var columns = string.Join(", ", ids.Chunk(6).Select(c => "[" + string.Join(", ", c.Select(i => $"\"{i}\"")) + "]"));
+        var ws = RenderHarness.Workspace(Path.Combine(_dir, "wide"), "view_w", ids,
+            $$"""{ "version": 1, "views": { "custom:view_w": { "layout": { "kind": "grid", "columns": [{{columns}}], "gap": [60, 120] } } } }""");
+
+        var (exit, output) = RenderHarness.Render("--workspace", ws, "--view", "view_w", "--out", Out("w.png"), "--scale", "1", "--profile", "app", "--opaque");
+
+        exit.Should().Be(0, "render reported: {0}", output);
+        var png = PngPixels.Read(Out("w.png"));
+        var indigo = 0;
+        for (var y = Math.Max(0, png.Height - 200); y < png.Height; y++)
+            for (var x = Math.Max(0, png.Width - 260); x < png.Width; x++)
+            {
+                var (r, g, b, _) = png.At(x, y);
+                if (Math.Abs(r - 99) < 12 && Math.Abs(g - 102) < 12 && Math.Abs(b - 241) < 12) indigo++;
+            }
+        indigo.Should().Be(0, "the minimap is a panel for a person and has no place in a rendered picture");
+    }
+
+    [RenderFact]
     public void Reports_the_back_edge_a_row_hides_and_fails_when_asked()
     {
         // The audit's probe: a → b → c in a row and c → a drawn straight back through b.

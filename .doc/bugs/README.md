@@ -41,6 +41,7 @@ Living bug records — one Markdown file per bug, created from
 | [B-024](./B-024-busy-warning-on-every-architecture-view.md) | `view/busy` warns on every architecture view | S3 minor | cli | Fixed |
 | [B-025](./B-025-element-left-out-of-model-of-is-unannounced.md) | An element left out of `Model.Of` is drawn, and nothing says the compiled model lacks it | S3 minor | cli | Fixed |
 | [B-026](./B-026-validate-does-not-run-the-engine-rules.md) | `validate` does not run the rules the canvas shows | S2 major | cli | Fixed |
+| [B-027](./B-027-app-render-captures-the-minimap.md) | An app-profile render can capture the minimap and the controls | S3 minor | web | Fixed |
 
 ## Known failure modes to check first (Stemma-specific)
 
