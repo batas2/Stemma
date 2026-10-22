@@ -70,6 +70,7 @@ public static class WorkspaceCheck
         findings.AddRange(ViewFindings(views, model, ids));
         findings.AddRange(ShapeFindings(workspaceRoot, ids));
         findings.AddRange(ConstraintFindings(workspaceRoot, ids));
+        findings.AddRange(LayoutModeFindings(workspaceRoot));
         findings.AddRange(BookFindings(workspaceRoot, views, ids, model.Links.Select(l => l.Id).ToHashSet(StringComparer.Ordinal)));
         findings.AddRange(HeaderFindings(workspaceRoot, views, model));
         findings.AddRange(LegacyBookFindings(workspaceRoot));
@@ -432,6 +433,49 @@ public static class WorkspaceCheck
                 }
                 foreach (var finding in GapFindings(view.Name, kind, layout)) yield return finding;
                 foreach (var finding in MemberFindings(view.Name, kind, layout, elementIds)) yield return finding;
+            }
+        }
+    }
+
+    /// <summary>The generators the Layout panel offers, and whose choice <c>layoutMode</c> records.</summary>
+    private static readonly HashSet<string> HeuristicLayoutModes = new(StringComparer.Ordinal) { "force", "hierarchical", "byType" };
+
+    /// <summary>
+    /// A <c>layoutMode</c> written by hand in the hope that it arranges the view. It does not: it is the
+    /// Layout panel's memory of which generator was last chosen, and nothing runs it on open — a
+    /// generator re-run on every open would be a picture that changes whenever the algorithm is tuned.
+    /// The protocol once said otherwise, and an agent that believed it got exactly the picture it would
+    /// have got without the setting (B-022). Said only where it makes a difference: a view with
+    /// positions, or with a constraint, is arranged by those.
+    /// </summary>
+    private static IEnumerable<CheckFinding> LayoutModeFindings(string workspaceRoot)
+    {
+        var path = LayoutSidecar.PathFor(workspaceRoot);
+        if (!File.Exists(path)) yield break;
+
+        JsonDocument? doc = null;
+        try { doc = JsonDocument.Parse(File.ReadAllText(path)); }
+        catch (JsonException) { yield break; }   // already reported by ShapeFindings
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) yield break;
+            if (!doc.RootElement.TryGetProperty("views", out var views) || views.ValueKind != JsonValueKind.Object) yield break;
+
+            foreach (var view in views.EnumerateObject())
+            {
+                if (view.Value.ValueKind != JsonValueKind.Object) continue;
+                if (!view.Value.TryGetProperty("layoutMode", out var mode) || mode.ValueKind != JsonValueKind.String) continue;
+                if (!HeuristicLayoutModes.Contains(mode.GetString()!)) continue;
+                var positioned = view.Value.TryGetProperty("nodes", out var nodes)
+                    && nodes.ValueKind == JsonValueKind.Object && nodes.EnumerateObject().Any();
+                var constrained = view.Value.TryGetProperty("layout", out var layout) && layout.ValueKind != JsonValueKind.Null;
+                if (positioned || constrained) continue;
+
+                yield return new(CheckSeverity.Info, "layout/inert-mode",
+                    $"view '{view.Name}' has layoutMode \"{mode.GetString()}\", which only records the Layout panel's choice and arranges " +
+                    "nothing when the view is opened or rendered; with no positions and no layout constraint the view gets the default " +
+                    "arrangement. To have it laid out, write \"layout\": { \"kind\": \"layered\" }");
             }
         }
     }

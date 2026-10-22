@@ -582,6 +582,35 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
     }
 
+    // layoutMode is the Layout panel's memory, not an instruction; nothing runs it on open (B-022).
+
+    [Theory]
+    [InlineData("hierarchical")]
+    [InlineData("force")]
+    [InlineData("byType")]
+    public void A_heuristic_layout_mode_on_a_view_with_nothing_arranged_is_said_to_do_nothing(string mode)
+    {
+        Model(TwoModules);
+        Sidecar($$"""{ "layoutMode": "{{mode}}" }""");
+
+        var finding = Run().Should().ContainSingle(f => f.Rule == "layout/inert-mode").Which;
+        finding.Severity.Should().Be(CheckSeverity.Info);
+        finding.Message.Should().Contain("custom:view_v").And.Contain("\"kind\": \"layered\"");
+    }
+
+    [Theory]
+    [InlineData("""{ "layoutMode": "hierarchical", "nodes": { "mod_a": { "x": 0, "y": 0 } } }""")]
+    [InlineData("""{ "layoutMode": "hierarchical", "layout": { "kind": "layered" } }""")]
+    [InlineData("""{ "layoutMode": "manual" }""")]
+    [InlineData("""{ "nodes": {} }""")]
+    public void A_layout_mode_beside_positions_or_a_constraint_is_not_reported(string view)
+    {
+        Model(TwoModules);
+        Sidecar(view);
+
+        Run().Should().NotContain(f => f.Rule == "layout/inert-mode");
+    }
+
     // The layered constraint (F-021 AC8) governs every node in the view, so it names no members.
 
     [Theory]

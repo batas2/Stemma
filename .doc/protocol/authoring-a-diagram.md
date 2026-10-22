@@ -488,6 +488,7 @@ What it catches, in rough order of how often it bites:
 | `view/busy` | warning / info | A figure (mostly `Concept`s) past seven boxes has usually stopped answering one question: a warning. An architecture view past thirty has usually stopped being one diagram: a note. |
 | `view/mixed-register` | warning | Half the boxes claim something about a system and half claim nothing. |
 | `view/half-link` | info | One endpoint in the view, so the relationship is not drawn. Often deliberate. |
+| `layout/inert-mode` | info | A `layoutMode` of `force`, `hierarchical` or `byType` on a view with no positions and no `layout`: it records the Layout panel's choice and arranges nothing. Write `"layout": { "kind": "layered" }` instead. |
 | `model/is-a-figure` | info | Mostly `Concept`s. A fine thing to be. |
 
 ---
@@ -496,8 +497,10 @@ What it catches, in rough order of how often it bites:
 
 - **A link needs both ends in the view.** The most common cause of "why is that arrow missing".
 - **Positions are in flow units, not pixels.** They scale with zoom; the render fits and crops for you.
-- **The layout mode and a constraint are different things.** `layoutMode: "force"` re-runs a
-  generator and overwrites positions on open. A `layout` constraint is solved and stays live. Do not
+- **The layout mode and a constraint are different things.** `layoutMode` only records which
+  generator the Layout panel last ran; nothing reads it on open or in a render, so writing it arranges
+  nothing (`validate` notes it as `layout/inert-mode`). To have a view laid out without placing a box,
+  write `"layout": { "kind": "layered" }`. A `layout` constraint is solved and stays live. Do not
   set both.
 - **Node titles wrap; other rows do not.** A prose label is fine as a name and is truncated
   everywhere else, so put the sentence in the name.

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **ID** | B-022 |
-| **Status** | In progress |
+| **Status** | Fixed |
 | **Severity** | S3 minor |
 | **Area** | `docs` |
 | **Reported by / Date** | Audit ([`agent-architecture-workflow.md`](../product/agent-architecture-workflow.md) §1, A3) / 2026-10-22 |
@@ -50,18 +50,22 @@ generator re-run on every open is a picture that changes when the algorithm is t
   the deterministic thing the agent wanted. `stemma validate` notes a heuristic `layoutMode` on a
   view with no positions — `layout/inert-mode` (info) — and says what to write instead.
 - **Affected files:** `.doc/protocol/authoring-a-diagram.md`, `src/Stemma.Cli/WorkspaceCheck.cs`.
-- [ ] Fix implemented
+- **Implementation notes:** "no positions" is a view whose `nodes` is absent, null or empty; "no
+  constraint" is a `layout` that is absent or null. A view with either is arranged by it, so its
+  `layoutMode` is not reported. `manual` and any other value are not generators and are not reported.
+- [x] Fix implemented
 - [x] Inviolable rules respected
 - [x] No new data store / boundary intact
 
 ## 7. Regression test (required)
 
-- [ ] A test that **fails before** the fix and **passes after**
-- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs`
+- [x] A test that **fails before** the fix and **passes after**
+- **Test location:** `tests/Stemma.Cli.Tests/WorkspaceCheckTests.cs` — `A_heuristic_layout_mode_on_a_view_with_nothing_arranged_is_said_to_do_nothing`,
+  `A_layout_mode_beside_positions_or_a_constraint_is_not_reported`
 - **What it asserts:** a view with `layoutMode: "hierarchical"` and no positions is reported as
   `layout/inert-mode`; one with positions, or with a `layout` constraint, is not.
 
 ## 8. Verification
 
-- [ ] `dotnet test` green
-- [ ] Protocol re-read against behaviour.
+- [x] `dotnet test` green
+- [x] Protocol re-read against behaviour: §8 says what `layoutMode` is and points at the `layered` constraint.
