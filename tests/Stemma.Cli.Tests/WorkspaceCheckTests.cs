@@ -582,6 +582,46 @@ public sealed class WorkspaceCheckTests : IDisposable
         Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
     }
 
+    // The layered constraint (F-021 AC8) governs every node in the view, so it names no members.
+
+    [Theory]
+    [InlineData("""{ "kind": "layered" }""")]
+    [InlineData("""{ "kind": "layered", "direction": "right", "spacing": [48, 72], "first": ["mod_a"], "last": ["mod_b"], "groups": false, "routing": "spline" }""")]
+    [InlineData("""{ "kind": "layered", "spacing": 40, "routing": "polyline" }""")]
+    public void A_layered_constraint_is_accepted_without_a_member_list(string layout)
+    {
+        Model(TwoModules);
+        Constraint(layout);
+
+        Run().Should().NotContain(f => f.Rule.StartsWith("constraint/"));
+    }
+
+    [Theory]
+    [InlineData("""{ "kind": "layered", "direction": "sideways" }""", "constraint/bad-direction")]
+    [InlineData("""{ "kind": "layered", "direction": 2 }""", "constraint/bad-direction")]
+    [InlineData("""{ "kind": "layered", "spacing": "wide" }""", "constraint/bad-spacing")]
+    [InlineData("""{ "kind": "layered", "spacing": [1, 2, 3] }""", "constraint/bad-spacing")]
+    [InlineData("""{ "kind": "layered", "routing": "curvy" }""", "constraint/bad-field")]
+    [InlineData("""{ "kind": "layered", "groups": "yes" }""", "constraint/bad-field")]
+    [InlineData("""{ "kind": "layered", "first": "mod_a" }""", "constraint/bad-field")]
+    public void A_layered_option_the_layout_cannot_use_is_an_error(string layout, string rule)
+    {
+        Model(TwoModules);
+        Constraint(layout);
+
+        Run().Should().ContainSingle(f => f.Rule.StartsWith("constraint/"))
+            .Which.Should().Match<CheckFinding>(f => f.Rule == rule && f.Severity == CheckSeverity.Error);
+    }
+
+    [Fact]
+    public void An_id_pinned_to_the_first_or_last_layer_that_does_not_exist_is_an_error()
+    {
+        Model(TwoModules);
+        Constraint("""{ "kind": "layered", "first": ["mod_a", "mod_ghost"], "last": ["mod_gone"] }""");
+
+        Run().Where(f => f.Rule == "constraint/dangling-id").Select(f => f.ElementId).Should().Equal("mod_ghost", "mod_gone");
+    }
+
     // ---- books --------------------------------------------------------------------------------
     //
     // A page points at a view and at elements by id, in a presentation file the engine stores without

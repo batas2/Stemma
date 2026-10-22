@@ -375,7 +375,7 @@ public static class WorkspaceCheck
     private static CheckFinding MalformedHeader(string message) => new(CheckSeverity.Warning, "header/malformed", message);
 
     private static readonly HashSet<string> ConstraintKinds =
-        new(StringComparer.Ordinal) { "grid", "row", "column", "stack" };
+        new(StringComparer.Ordinal) { "grid", "row", "column", "stack", "layered" };
 
     /// <summary>
     /// The `layout` constraint, which is the part of the sidecar most often written by hand.
@@ -425,10 +425,67 @@ public static class WorkspaceCheck
                     continue;
                 }
 
+                if (kind == "layered")
+                {
+                    foreach (var finding in LayeredFindings(view.Name, layout, elementIds)) yield return finding;
+                    continue;
+                }
                 foreach (var finding in GapFindings(view.Name, kind, layout)) yield return finding;
                 foreach (var finding in MemberFindings(view.Name, kind, layout, elementIds)) yield return finding;
             }
         }
+    }
+
+    private static readonly string[] LayeredDirections = ["down", "right", "up", "left"];
+    private static readonly string[] LayeredRoutings = ["orthogonal", "polyline", "spline"];
+
+    /// <summary>
+    /// The layered constraint (F-021, ADR-0025). It governs every node in the view, so it has no member
+    /// list to check; what it has is options, each with a shape the layout reads, and two lists of ids
+    /// to pin to the first and the last layer. A value the layout cannot use falls back to the default,
+    /// which is a different picture with nothing said — the failure <c>constraint/bad-gap</c> exists for.
+    /// </summary>
+    private static IEnumerable<CheckFinding> LayeredFindings(string view, JsonElement layout, HashSet<string> elementIds)
+    {
+        if (Present(layout, "direction", out var direction)
+            && (direction.ValueKind != JsonValueKind.String || !LayeredDirections.Contains(direction.GetString())))
+            yield return new(CheckSeverity.Error, "constraint/bad-direction",
+                $"view '{view}' has a layered `direction` of {direction.GetRawText()}, which the layout does not take, so it is laid out " +
+                $"downwards (a layered layout takes {string.Join(", ", LayeredDirections)})");
+
+        if (Present(layout, "spacing", out var spacing) && spacing.ValueKind != JsonValueKind.Number
+            && !(spacing.ValueKind == JsonValueKind.Array && spacing.GetArrayLength() == 2 && spacing.EnumerateArray().All(v => v.ValueKind == JsonValueKind.Number)))
+            yield return new(CheckSeverity.Error, "constraint/bad-spacing",
+                $"view '{view}' has a layered `spacing` the layout cannot use, so it falls back to its default spacing and the picture is " +
+                "not the one the file describes (a layered layout takes [between nodes, between layers] or one number)");
+
+        if (Present(layout, "routing", out var routing)
+            && (routing.ValueKind != JsonValueKind.String || !LayeredRoutings.Contains(routing.GetString())))
+            yield return new(CheckSeverity.Error, "constraint/bad-field",
+                $"view '{view}' has a layered `routing` of {routing.GetRawText()}, which the layout does not take, so its edges are " +
+                $"routed orthogonally (it takes {string.Join(", ", LayeredRoutings)})");
+
+        if (Present(layout, "groups", out var groups) && groups.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            yield return new(CheckSeverity.Error, "constraint/bad-field",
+                $"view '{view}' has a layered `groups` of {groups.GetRawText()}, which is not true or false, so the layout draws the boundaries as it would by default");
+
+        foreach (var end in new[] { "first", "last" })
+        {
+            if (!Present(layout, end, out var pinned)) continue;
+            if (pinned.ValueKind != JsonValueKind.Array)
+            {
+                yield return new(CheckSeverity.Error, "constraint/bad-field",
+                    $"view '{view}' has a layered `{end}` that is not a list of element ids, so nothing is pinned to the {end} layer");
+                continue;
+            }
+            foreach (var id in pinned.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!)
+                         .Distinct(StringComparer.Ordinal).Where(id => !elementIds.Contains(id)))
+                yield return new(CheckSeverity.Error, "constraint/dangling-id",
+                    $"view '{view}' pins '{id}' to the {end} layer, but it is not an element in the model, so nothing is pinned there for it", id);
+        }
+
+        static bool Present(JsonElement layout, string name, out JsonElement value) =>
+            layout.TryGetProperty(name, out value) && value.ValueKind != JsonValueKind.Null;
     }
 
     /// <summary>

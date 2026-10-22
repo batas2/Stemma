@@ -127,3 +127,9 @@
 - **Edge routes are not committed.** They are a function of the positions, like the solved positions
   themselves.
 - **Bundle:** ELK is about 1.4 MB unminified; it is a separate chunk loaded the first time a view needs it.
+- **AC8, the `validate` half (done; the schema is the client track's).** `WorkspaceCheck` accepts
+  `layered` and reports no `constraint/no-members` for it. Besides `constraint/bad-direction` and
+  `constraint/dangling-id` for `first`/`last`, a `spacing` of the wrong shape is `constraint/bad-spacing`
+  (the `bad-gap` test: a number or two numbers), and a `routing` outside the three, a `groups` that is not
+  a boolean or a `first`/`last` that is not a list is `constraint/bad-field` — each an error, since the
+  layout falls back to its default for it. Tests: `WorkspaceCheckTests`, the layered cases.
