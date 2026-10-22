@@ -13,3 +13,12 @@ looking and an agent cannot.
 
 Everything in it has been run. The three worked examples are transcripts rather than sketches, which
 is the only way a reference of this kind stays true.
+
+## With a coding agent
+
+For Claude Code, the same contract ships as a plugin: [`integrations/claude-code/`](../../integrations/claude-code/)
+— a skill that carries this reference and the workflow around it (model → views → rules → `validate` →
+`render` and its lint → look → hand over), three commands (`/stemma:new`, `/stemma:review`,
+`/stemma:from-code`), and a hook that validates after every edit ([F-026](../features/F-026-stemma-for-claude-code.md),
+[ADR-0030](../architecture/decisions/0030-agents-reach-stemma-through-the-cli.md)). Any other agent can be
+pointed at the skill's Markdown: the CLI is the interface.
