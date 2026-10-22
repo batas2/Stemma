@@ -43,12 +43,19 @@ public static class ConformanceCheck
     /// <summary>How many unmapped projects are named before the rest are counted.</summary>
     public const int UnmappedNamed = 10;
 
+    /// <summary>A path written on Windows read on any machine: `Shop.Api\Shop.Api.csproj` names the same file.</summary>
+    private static string Portable(string path) => path.Replace('\\', '/');
+
+    private static bool TwoWay(ArchLink link) =>
+        link.Kind == ArchLinkKind.DataFlow
+        && string.Equals(link.Attributes.GetValueOrDefault("direction"), "twoway", StringComparison.OrdinalIgnoreCase);
+
     public static IReadOnlyList<Violation> Run(ArchModel.ArchModel model, string workspaceRoot, DeclaredRules declared)
     {
         var violations = new List<Violation>();
         var workspace = Path.GetFullPath(workspaceRoot);
         var at = declared.CodeRoots.FirstOrDefault();
-        var root = Path.GetFullPath(at?.Path ?? ".", workspace);
+        var root = Path.GetFullPath(Portable(at?.Path ?? "."), workspace);
         string Shown(string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
         var where = at is null ? "the workspace" : $"Code.At(\"{at.Path}\")";
         if (!Directory.Exists(root))
@@ -64,7 +71,7 @@ public static class ConformanceCheck
         var mapsMissing = false;
         foreach (var map in declared.CodeMaps.Where(m => elements.Contains(m.ElementId)))
         {
-            var full = Path.GetFullPath(map.Path, root);
+            var full = Path.GetFullPath(Portable(map.Path), root);
             IReadOnlyList<string> found = File.Exists(full) ? [full] : ProjectGraph.ProjectFilesUnder(full);
             var problem = File.Exists(full)
                 ? full.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ? null : "which is a file but not a project file"
@@ -111,7 +118,10 @@ public static class ConformanceCheck
         }
 
         var relationships = model.Links.Where(l => l.Kind is ArchLinkKind.DataFlow or ArchLinkKind.Dependency).ToList();
-        var declaredPairs = relationships.Select(l => (l.FromId, l.ToId)).ToHashSet();
+        // A two-way flow claims both directions, so it declares a reference either way round.
+        var declaredPairs = relationships.Select(l => (l.FromId, l.ToId))
+            .Concat(relationships.Where(TwoWay).Select(l => (l.ToId, l.FromId)))
+            .ToHashSet();
         foreach (var ((from, to), evidence) in inCode.Where(c => !declaredPairs.Contains(c.Key)))
         {
             var (p, q) = evidence[0];
@@ -124,7 +134,11 @@ public static class ConformanceCheck
 
         foreach (var dependency in relationships.Where(l => l.Kind == ArchLinkKind.Dependency && l.FromId != l.ToId).DistinctBy(l => l.Id))
         {
-            if (!projectsOf.TryGetValue(dependency.FromId, out var mine) || !projectsOf.TryGetValue(dependency.ToId, out var theirs)) continue;
+            if (!projectsOf.TryGetValue(dependency.FromId, out var mapped) || !projectsOf.TryGetValue(dependency.ToId, out var theirs)) continue;
+            // Only projects whose references were read and count for this element alone: a project that could
+            // not be read has no references to find, and one mapped twice is compared for neither (as above).
+            var mine = mapped.Where(path => single.ContainsKey(path) && projects[path].Problem is null).ToList();
+            if (mine.Count == 0) continue;
             var targets = theirs.ToHashSet(ProjectGraph.PathComparer);
             if (mine.Any(path => projects[path].References.Any(r => targets.Contains(r.Path)))) continue;
             violations.Add(new(UnrealisedDependency, Severity.Info,

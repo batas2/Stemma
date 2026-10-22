@@ -56,7 +56,7 @@ public sealed class SampleRulesTests
             var broken = findings.Where(f => f.Rule.StartsWith("rule/")).Should().ContainSingle().Subject;
             broken.Rule.Should().Be("rule/rule_clients_via_gateway");
             broken.Severity.Should().Be(CheckSeverity.Error);
-            broken.Message.Should().Contain("flow_shortcut from cnt_customer_app to cnt_orders_db")
+            broken.Message.Should().StartWith("Customer App → Orders DB (flow_shortcut) is not allowed")
                 .And.EndWith("— Every client call is authenticated at the gateway");
         }
         finally { Directory.Delete(copy, recursive: true); }

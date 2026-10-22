@@ -278,6 +278,18 @@ public sealed class DeclaredRulesReaderTests : IDisposable
     }
 
     [Fact]
+    public void A_bare_id_that_would_print_as_a_mistake_is_taken_too()
+    {
+        // A declared rule is reported as rule/<id>; `dangling-id` would print exactly as the mistake does.
+        Rules("""
+                Rule.Require("dangling-id", of: "kind:container", has: "squad")
+        """, "Rules/One.cs");
+
+        Read().Problems.Should().ContainSingle(p => p.Rule == DeclaredRules.DuplicateId)
+            .Which.Message.Should().Contain("'dangling-id' is the id of a built-in rule");
+    }
+
+    [Fact]
     public void A_rules_file_changed_on_disk_is_read_again()
     {
         Rules("""Rule.Forbid("rule_a", "a", "b")""");

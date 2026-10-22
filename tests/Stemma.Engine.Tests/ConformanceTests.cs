@@ -242,6 +242,50 @@ public sealed class ConformanceTests : IDisposable
     }
 
     [Fact]
+    public void A_two_way_flow_declares_a_reference_either_way_round()
+    {
+        // Orders references Dispatch; the model writes the request and its reply from Dispatch's side.
+        Check("""
+                var sync = new DataFlow("flow_sync", "cnt_dispatch", "cnt_orders", "jobs", "twoway");
+                var uses = new Dependency("dep_shared", "cnt_orders", "cnt_shared");
+        """).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_path_written_with_backslashes_names_the_same_project()
+    {
+        Check("""
+                var call = new DataFlow("flow_dispatch", "cnt_orders", "cnt_dispatch", "jobs");
+                var uses = new Dependency("dep_shared", "cnt_orders", "cnt_shared");
+        """, """
+                Code.At("..\\src"),
+                Code.Map("cnt_orders", "Orders\\Orders.csproj"),
+                Code.Map("cnt_dispatch", "Dispatch"),
+                Code.Map("cnt_shared", "Shared")
+        """).Should().BeEmpty("a map written on Windows is read the same on any machine");
+    }
+
+    [Fact]
+    public void A_project_that_could_not_be_read_is_not_said_to_realise_nothing()
+    {
+        Write("src/Broken/Broken.csproj", "this is not a project");
+        var violations = Check("""
+                var call = new DataFlow("flow_dispatch", "cnt_orders", "cnt_dispatch", "jobs");
+                var uses = new Dependency("dep_shared", "cnt_orders", "cnt_shared");
+                var claim = new Dependency("dep_shared_orders", "cnt_shared", "cnt_orders");
+        """, """
+                Code.At("../src"),
+                Code.Map("cnt_orders", "Orders/Orders.csproj"),
+                Code.Map("cnt_dispatch", "Dispatch"),
+                Code.Map("cnt_shared", "Broken")
+        """);
+
+        violations.Should().Contain(v => v.RuleId == ConformanceCheck.MissingCode, "the project could not be read, and that is said");
+        violations.Should().NotContain(v => v.RuleId == ConformanceCheck.UnrealisedDependency && v.LinkIds.Contains("dep_shared_orders"),
+            "the unreadable project's references were never read, so nothing can be said about what it does not reference");
+    }
+
+    [Fact]
     public void A_path_that_does_not_exist_or_holds_no_project_is_missing_code()
     {
         Directory.CreateDirectory(Path.Combine(Src, "Empty"));

@@ -100,6 +100,8 @@ public sealed record DeclaredRules(
     {
         if (!Directory.Exists(workspaceRoot)) return [];
         var root = Path.GetFullPath(workspaceRoot);
+        // Walked on every ask: a workspace is a handful of folders, and a rules file added a moment ago must be
+        // checked on the next poll. The expensive walk is the code's (ProjectGraph), which is the one remembered.
         return ModelWorkspaceLoader.SourcesIn(root).Where(f => IsRulesFile(root, f)).Order(StringComparer.Ordinal).ToList();
     }
 
@@ -192,9 +194,11 @@ public sealed record DeclaredRules(
     }
 
     /// <summary>The ids a declared rule may not take: the built-in rules', the packs', the mistakes' and conformance's.</summary>
+    // A declared rule is reported as `rule/<id>`, so a bare `dangling-id` would print exactly as the
+    // mistake `rule/dangling-id` does; both spellings are reserved.
     private static readonly Lazy<HashSet<string>> ReservedIds = new(() =>
         RuleEngine.DiscoverRulesIn(typeof(IRule).Assembly).Select(r => r.Id)
-            .Concat(C4Pack.Ids).Concat(MistakeIds).Concat(ConformanceCheck.Ids)
+            .Concat(C4Pack.Ids).Concat(MistakeIds).Concat(MistakeIds.Select(id => id["rule/".Length..])).Concat(ConformanceCheck.Ids)
             .ToHashSet(StringComparer.Ordinal));
 
     private sealed record FileRules(

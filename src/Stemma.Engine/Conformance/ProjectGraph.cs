@@ -72,10 +72,22 @@ public sealed class ProjectGraph
     }
 
     /// <summary>The project files under <paramref name="folder"/>, in path order, never from build output or a dot-folder.</summary>
-    public static IReadOnlyList<string> ProjectFilesUnder(string folder) =>
-        Directory.Exists(folder)
-            ? ModelWorkspaceLoader.EnumerateFiles(Path.GetFullPath(folder), "*.csproj").Order(PathComparer).ToList()
-            : [];
+    public static IReadOnlyList<string> ProjectFilesUnder(string folder)
+    {
+        if (!Directory.Exists(folder)) return [];
+        var full = Path.GetFullPath(folder);
+        // The canvas's violations poll asks every second and a half; walking a large repository that often is
+        // constant disk work for an answer that changes when someone adds a project. A few seconds is fresh enough.
+        if (Walks.TryGetValue(full, out var known) && DateTime.UtcNow - known.At < WalkFreshFor) return known.Files;
+        var files = ModelWorkspaceLoader.EnumerateFiles(full, "*.csproj").Order(PathComparer).ToList();
+        Walks[full] = (DateTime.UtcNow, files);
+        return files;
+    }
+
+    /// <summary>How long a walk of a folder's project files is trusted before it is walked again.</summary>
+    internal static readonly TimeSpan WalkFreshFor = TimeSpan.FromSeconds(5);
+
+    private static readonly ConcurrentDictionary<string, (DateTime At, IReadOnlyList<string> Files)> Walks = new(PathComparer);
 
     private sealed record Parsed(string? Sdk, string? OutputType, IReadOnlyList<string> TargetFrameworks, IReadOnlyList<(string Include, string Path)> References, string? Problem);
 
