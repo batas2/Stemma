@@ -97,7 +97,7 @@ import {
   pasteOrigin, planPaste, CASCADE, type Clip, type Point,
 } from '@/lib/clipboard';
 import { executePaste } from '@/lib/paste';
-import { focusIsOnCanvas, keyBelongsToFocus, SHORTCUT_HINTS } from '@/lib/shortcuts';
+import { focusIsOnCanvas, isTextEntry, keyBelongsToFocus, SHORTCUT_HINTS } from '@/lib/shortcuts';
 import { history, type PresentationChange } from '@/lib/history';
 import { viewRendersKind } from '@/lib/lenses';
 import { positionsAt, sizesAt, useCompareDiff } from '@/lib/compare';
@@ -112,7 +112,7 @@ import { friendlyOpError } from '@/lib/opError';
 import { relink } from '@/lib/relink';
 import { applyOrSay } from '@/lib/applyOp';
 import { confirmAndRemoveElements } from './removeElements';
-import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewLayered, saveViewConstraint, loadViewOffsets, saveViewOffset, clearViewOffsets, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
+import { isSidecarPrimed, loadLayout, saveLayout, loadEdgeWaypoints, saveEdgeWaypoints, loadEdgeHandles, saveEdgeHandles, loadViewConstraint, loadViewLayered, saveViewConstraint, loadViewOffsets, saveViewOffset, clearViewOffsets, viewLayered, type EdgeHandlePair, type SavedPosition } from '@/lib/layout';
 import { autoDock, type DockId, type DockRect } from '@/lib/edgeDock';
 import { loadNote, loadNotes, saveNote } from '@/lib/elementNotes';
 import { hashtagProps } from '@/lib/hashtags';
@@ -925,13 +925,8 @@ function CanvasInner() {
   // its edges routed. Decided only once the sidecar is read: before that, "no saved position" means
   // "not read yet", and laying out a view that has a committed arrangement would draw over it.
   const layered = useMemo<{ constraint: LayeredConstraint; implicit: boolean } | null>(() => {
-    if (!workspace || !arch || !isSidecarPrimed(workspace.rootPath)) return null;
-    const key = String(layoutKey);
-    const explicit = loadViewLayered(workspace.rootPath, key);
-    if (explicit) return { constraint: explicit, implicit: false };
-    if (loadViewConstraint(workspace.rootPath, key)) return null;
-    const saved = loadLayout(workspace.rootPath, layoutKey as ViewKind);
-    return filtered.elements.some((e) => saved[e.id]) ? null : { constraint: { kind: 'layered' }, implicit: true };
+    if (!workspace || !arch) return null;
+    return viewLayered(workspace.rootPath, String(layoutKey), filtered.elements.map((e) => e.id));
   }, [workspace, arch, layoutKey, filtered.elements, sidecarTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const layeredRef = useRef(layered);
   layeredRef.current = layered;
@@ -1191,6 +1186,11 @@ function CanvasInner() {
   }, [workspace?.rootPath]); // eslint-disable-line react-hooks/exhaustive-deps
   const hasCards = nodes.length > 0;
   const fitFor = `${layoutKey}|${arch?.filePath ?? ''}`;
+  // Where the canvas stood when this view opened. The first fit can wait — for the sidecar, for a layered
+  // layout — and someone who has zoomed or panned in the meantime has said where they want to look: a fit
+  // landing after that would take the canvas back from them.
+  const openedAt = useRef<{ key: string; x: number; y: number; zoom: number } | null>(null);
+  useEffect(() => { openedAt.current = { key: memoryKey, ...getViewport() }; }, [memoryKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     // A view being laid out (F-021) has its cards hidden at placeholder positions: fitted now, it would
     // frame where the cards are about to stop being and open off to one side.
@@ -1202,6 +1202,9 @@ function CanvasInner() {
       settledFor.current = memoryKey;
       // An element on its way to being revealed decides where the canvas goes.
       if (revealPending.current || bookPageApplies.current) return;
+      const opened = openedAt.current, now = getViewport();
+      if (opened?.key === memoryKey
+          && (Math.abs(now.zoom - opened.zoom) > 1e-3 || Math.abs(now.x - opened.x) > 1 || Math.abs(now.y - opened.y) > 1)) return;
       const remembered = viewportMemory.get(memoryKey);
       if (remembered) { setViewport(remembered, { duration: 0 }); return; }
       // At once rather than animated: a view should open where it is going to stay, and an animated
@@ -1525,7 +1528,9 @@ function CanvasInner() {
         setNodes((current) => current.map((n) => (n.selected === (n.id === detail.nodeId) ? n : { ...n, selected: n.id === detail.nodeId })));
         // Keyboard focus goes with the selection while it is on the canvas, so Tab and a screen reader
         // are on the box that is selected.
-        if (focusIsOnCanvas()) {
+        // Not out of a field, though: a card created into its own name field is revealed too, and focus
+        // moved off the field would close it before a letter was typed.
+        if (focusIsOnCanvas() && !isTextEntry(document.activeElement)) {
           (document.querySelector(`.react-flow__node[data-id="${CSS.escape(detail.nodeId)}"]`) as HTMLElement | null)?.focus({ preventScroll: true });
         }
         try {
@@ -2149,6 +2154,8 @@ function CanvasInner() {
         const id = addedId(r);
         if (!id) return null;
         ids.push(id);
+        // A view laid out in layers places the template's boxes with the others (F-021).
+        if (layeredRef.current) continue;
         const positions = loadLayout(workspace.rootPath, layoutKey as ViewKind);
         const at = { x: pos.x + part.dx, y: pos.y };
         saveLayout(workspace.rootPath, layoutKey as ViewKind, { ...positions, [id]: at });

@@ -80,6 +80,9 @@ test('a reload comes back to the view and the element in the address', async ({ 
 
 test('a view opens at the pan and zoom it was left at, and a view never seen is fitted', async ({ page }) => {
   const zoom = () => page.locator('.react-flow__viewport').evaluate((el) => +/scale\(([-\d.]+)\)/.exec((el as HTMLElement).style.transform)![1]);
+  // A view nobody arranged is fitted once it is laid out (F-021), which on a cold server is later than a
+  // fixed wait: wait for the layout, then for the fit.
+  await page.waitForFunction(() => document.documentElement.dataset.stemmaLayout !== 'pending', null, { timeout: 30_000 });
   await page.waitForTimeout(500);
   const fitted = await zoom();
   await page.getByRole('button', { name: 'Zoom In' }).click();

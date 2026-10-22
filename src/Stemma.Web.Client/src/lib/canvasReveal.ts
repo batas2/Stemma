@@ -9,7 +9,7 @@
 import { useApp } from './store';
 import { lensForKind, viewRendersKind } from './lenses';
 import { BUILTIN_NAMES, placeFor, placeId, samePlace, type Place } from './navigation';
-import { loadLayout, saveLayout } from './layout';
+import { loadLayout, saveLayout, viewLayered } from './layout';
 import { addedId } from './signalr';
 import type { ArchElementKind, OperationResult, ViewKind } from './types';
 
@@ -67,10 +67,13 @@ export async function revealNewElement(
   }
 
   const ws = st.workspace;
-  if (ws && opts.dropPos) {
-    const layoutKey = inCustomView ? `custom:${st.activeCustomViewId}` : finalView;
+  const layoutKey = inCustomView ? `custom:${st.activeCustomViewId}` : finalView;
+  // A view laid out in layers places the new card with the others (F-021). Writing where it was dropped
+  // would freeze one card, and in a view laid out by default it would take every card off the layout.
+  const dropPos = ws && viewLayered(ws.rootPath, layoutKey, (st.arch?.elements ?? []).map((e) => e.id)) ? undefined : opts.dropPos;
+  if (ws && dropPos) {
     const positions = loadLayout(ws.rootPath, layoutKey as ViewKind);
-    positions[newId] = opts.dropPos;
+    positions[newId] = dropPos;
     saveLayout(ws.rootPath, layoutKey as ViewKind, positions);
   }
 
@@ -80,8 +83,8 @@ export async function revealNewElement(
   setTimeout(() => {
     useApp.getState().selectElement(newId!);
     if (typeof window !== 'undefined') {
-      if (opts.dropPos) {
-        window.dispatchEvent(new CustomEvent('stemma:place-node', { detail: { nodeId: newId, pos: opts.dropPos } }));
+      if (dropPos) {
+        window.dispatchEvent(new CustomEvent('stemma:place-node', { detail: { nodeId: newId, pos: dropPos } }));
       }
       window.dispatchEvent(new CustomEvent('stemma:focus-node', { detail: { nodeId: newId } }));
     }
