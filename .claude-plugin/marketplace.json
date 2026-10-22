@@ -1,0 +1,12 @@
+{
+  "name": "stemma",
+  "owner": { "name": "Bartosz Frąckowiak", "url": "https://github.com/batas2" },
+  "description": "Stemma — architecture models as C#, drawn, checked and presented. Plugins for coding agents.",
+  "plugins": [
+    {
+      "name": "stemma",
+      "source": "./integrations/claude-code",
+      "description": "Build, check, render and review software architecture in Stemma: C4 models as C#, laid out and routed automatically, validated against your own rules and your code."
+    }
+  ]
+}

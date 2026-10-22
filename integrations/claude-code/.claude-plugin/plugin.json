@@ -1,0 +1,10 @@
+{
+  "name": "stemma",
+  "description": "Build, check, render and review software architecture in Stemma: C4 models as C#, laid out and routed automatically, validated against your own rules and your code.",
+  "version": "0.2.0",
+  "author": { "name": "Bartosz Frąckowiak", "url": "https://github.com/batas2" },
+  "homepage": "https://bfrackowiak.pl/stemma/",
+  "repository": "https://github.com/batas2/Stemma",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "keywords": ["architecture", "c4", "diagrams", "csharp", "architecture-as-code"]
+}

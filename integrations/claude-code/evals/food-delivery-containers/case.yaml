@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: food-delivery-containers
+expected_outcome: |
+  A Stemma workspace whose model declares the people, the platform system with its containers, and the
+  external systems, with described elements and labelled data flows that carry a technology. It has a
+  container view stated by scope (BaseView "container", Scope naming the platform) rather than a long
+  list of ids, and a system context view. stemma validate reports no errors, the render of the container
+  view reports no layout warnings, and stemma.layout.json, if it exists, holds no hand-written node
+  positions.
