@@ -773,6 +773,34 @@ What it catches, in rough order of how often it bites:
 | `layout/inert-mode` | info | A `layoutMode` of `force`, `hierarchical` or `byType` on a view with no positions and no `layout`: it records the Layout panel's choice and arranges nothing. Write `"layout": { "kind": "layered" }` instead. |
 | `model/is-a-figure` | info | Mostly `Concept`s. A fine thing to be. |
 
+### Review comments, and the change in words
+
+A person reviews the model in the app by leaving comments on the cards; they are in
+`comments.stemma.json`, beside the model ([F-027](../features/F-027-the-review-loop.md)).
+
+```
+stemma comments [<path>] [--all] [--on <id>] [--json]       # the open ones, each with what it is on
+stemma comments reply   <id> <text>   [--workspace <path>]  # <text> may be `-` for standard input
+stemma comments resolve <id> [<text>] [--workspace <path>]  # with <text>: reply, then resolve
+stemma comments reopen  <id>          [--workspace <path>]
+stemma comments add --on <element|link|view id> <text> [--workspace <path>]
+```
+
+Each write is one change to the file as it is, made the way the app makes it, so a comment posted
+meanwhile is kept, and the open app shows it at once. A file that does not parse is refused and left
+alone (exit `3`); an unknown comment or target is exit `2`. The author is `--author`, else
+`$STEMMA_AUTHOR`, else `Claude` inside Claude Code, else Git's `user.name`.
+
+```
+stemma diff [<path>] [--base <rev>] [--markdown | --json]
+```
+
+What changed in the model between a revision and the working tree — by default where the current
+branch started from the default branch, or the last commit — added, removed and changed, with what
+changed about each in the words the app's *What changed* uses, and the review comments resolved and
+opened since. `--markdown` is a pull-request section. Exit `2` outside a repository or for a revision
+that is not one.
+
 ---
 
 ## 8. Things that will catch you out

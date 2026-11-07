@@ -4,6 +4,10 @@
  *
  * Pure: the canvas recomputes it on every edit, which is what makes comparing with the last commit a
  * running answer to "what have I changed". Each change says, in words, what changed about it.
+ *
+ * The engine has the same comparison for `stemma diff` (`ModelDiff.cs`, ADR-0031). Both are held to
+ * one set of cases, `tests/shared/model-diff.cases.json`: change the wording here and there, or the
+ * cases fail.
  */
 
 import type { ArchElement, ArchLink, ArchModel, ArchTagInfo } from './types';
@@ -52,8 +56,24 @@ function quoted(v: string | null | undefined): string {
   return v ? `“${v}”` : 'none';
 }
 
+/**
+ * One tag per target. A target may have two `Tag.For` calls — a lifecycle in one, an ownership in the
+ * other — and the reader keeps both, so each part is taken from the last tag that has it.
+ */
 function tagsOf(model: ArchModel): Map<string, ArchTagInfo> {
-  return new Map(model.tags.map((t) => [t.targetId, t]));
+  const out = new Map<string, ArchTagInfo>();
+  for (const t of model.tags) {
+    const was = out.get(t.targetId);
+    out.set(t.targetId, was ? { ...t, lifecycle: t.lifecycle ?? was.lifecycle, ownership: t.ownership ?? was.ownership } : t);
+  }
+  return out;
+}
+
+/** By id, the first of each — as the merge keeps the first of an id two files declare. */
+function byId<T>(items: T[], id: (item: T) => string): Map<string, T> {
+  const out = new Map<string, T>();
+  for (const item of items) if (!out.has(id(item))) out.set(id(item), item);
+  return out;
 }
 
 /** "X → Y", naming referenced elements by name where the model they come from has them. */
@@ -77,8 +97,8 @@ function tagDetails(before: ArchTagInfo | undefined, after: ArchTagInfo | undefi
 
 export function diffModels(beforeModel: ArchModel | null, after: ArchModel): ModelDiff {
   const before = beforeModel ?? EMPTY;
-  const beforeById = new Map(before.elements.map((e) => [e.id, e]));
-  const afterById = new Map(after.elements.map((e) => [e.id, e]));
+  const beforeById = byId(before.elements, (e) => e.id);
+  const afterById = byId(after.elements, (e) => e.id);
   const tagsBefore = tagsOf(before);
   const tagsAfter = tagsOf(after);
   const nameBefore = (id: string) => quoted(beforeById.get(id)?.name ?? id);
@@ -91,19 +111,20 @@ export function diffModels(beforeModel: ArchModel | null, after: ArchModel): Mod
     const details: string[] = [];
     if (was.name !== e.name) details.push(`Renamed from ${quoted(was.name)}`);
     if (was.kind !== e.kind) details.push(`Now a ${KIND_LABEL[e.kind] ?? e.kind} (was a ${KIND_LABEL[was.kind] ?? was.kind})`);
-    if ((was.attributes.contextId ?? null) !== (e.attributes.contextId ?? null)) {
-      details.push(moved('Moved to', was.attributes.contextId, e.attributes.contextId, nameBefore, nameAfter));
-    }
-    if ((was.attributes.systemId ?? null) !== (e.attributes.systemId ?? null)) {
-      details.push(moved('Now part of', was.attributes.systemId, e.attributes.systemId, nameBefore, nameAfter));
-    }
-    if ((was.attributes.aboutId ?? null) !== (e.attributes.aboutId ?? null)) {
-      details.push(moved('Now about', was.attributes.aboutId, e.attributes.aboutId, nameBefore, nameAfter));
+    // An empty reference is no reference: "" and absent are the same, and naming nothing is not a move.
+    for (const [key, label] of [['contextId', 'Moved to'], ['systemId', 'Now part of'], ['aboutId', 'Now about']] as const) {
+      const a = was.attributes[key] || null, b = e.attributes[key] || null;
+      if (a !== b) details.push(moved(label, a, b, nameBefore, nameAfter));
     }
     for (const key of ['kind', 'role'] as const) {
       const a = was.attributes[key] ?? null, b = e.attributes[key] ?? null;
       if (a !== b) details.push(`${key === 'kind' ? 'Container kind' : 'Role'} ${a ?? 'none'} → ${b ?? 'none'}`);
     }
+    // Description and technology (ADR-0027) came after this comparison, and it said nothing about them.
+    const techA = was.attributes.technology ?? null, techB = e.attributes.technology ?? null;
+    if (techA !== techB) details.push(`Technology ${quoted(techA)} → ${quoted(techB)}`);
+    const descA = was.attributes.description ?? null, descB = e.attributes.description ?? null;
+    if (descA !== descB) details.push(!descA ? 'Description added' : !descB ? 'Description removed' : 'Description changed');
     details.push(...tagDetails(tagsBefore.get(e.id), tagsAfter.get(e.id)));
     if (details.length > 0) elements.push({ id: e.id, change: 'changed', element: e, details });
   }
@@ -111,8 +132,8 @@ export function diffModels(beforeModel: ArchModel | null, after: ArchModel): Mod
     if (!afterById.has(e.id)) elements.push({ id: e.id, change: 'removed', element: e, details: [] });
   }
 
-  const linksBefore = new Map(before.links.map((l) => [l.id, l]));
-  const linksAfter = new Map(after.links.map((l) => [l.id, l]));
+  const linksBefore = byId(before.links, (l) => l.id);
+  const linksAfter = byId(after.links, (l) => l.id);
   const links: LinkChange[] = [];
   for (const l of after.links) {
     const was = linksBefore.get(l.id);
@@ -120,7 +141,7 @@ export function diffModels(beforeModel: ArchModel | null, after: ArchModel): Mod
     const details: string[] = [];
     if (was.fromId !== l.fromId) details.push(`Now from ${nameAfter(l.fromId)} (was ${nameBefore(was.fromId)})`);
     if (was.toId !== l.toId) details.push(`Now to ${nameAfter(l.toId)} (was ${nameBefore(was.toId)})`);
-    for (const key of ['payload', 'kind', 'direction', 'label']) {
+    for (const key of ['payload', 'kind', 'direction', 'label', 'technology']) {
       const a = was.attributes[key] ?? null, b = l.attributes[key] ?? null;
       if (a !== b) details.push(`${key[0].toUpperCase()}${key.slice(1)} ${quoted(a)} → ${quoted(b)}`);
     }

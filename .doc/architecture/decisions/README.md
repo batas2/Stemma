@@ -41,6 +41,7 @@ removed).
 | [0028](./0028-architecture-rules-as-code.md) | **Architecture rules are C# in `Rules/`**, read off the syntax tree, never executed; run with the built-in rules. | 🟡 Proposed — see [F-024](../../features/F-024-architecture-rules-as-code.md). |
 | [0029](./0029-conformance-against-the-implementation.md) | **Conformance is a rule** — elements mapped to projects; project references compared with declared links; never stored. | 🟡 Proposed — see [F-025](../../features/F-025-conformance-with-the-implementation.md). |
 | [0030](./0030-agents-reach-stemma-through-the-cli.md) | **Agents reach Stemma through the CLI**, packaged as a Claude Code plugin; MCP deferred. | 🟡 Proposed — see [F-026](../../features/F-026-stemma-for-claude-code.md). |
+| [0031](./0031-the-review-loop-through-the-files.md) | **The review loop runs through the files** — `stemma comments` writes with the app's writer, the change is computed by a pure `ModelDiff` held to the client's cases, Git read through the shared `GitHistory`. | 🟡 Proposed — see [F-027](../../features/F-027-the-review-loop.md). |
 
 ## Legend
 

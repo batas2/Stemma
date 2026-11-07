@@ -29,6 +29,8 @@ try
         "inspect" => await InspectCommand.RunAsync(rest),
         "scan" => await ScanCommand.RunAsync(rest),
         "hook" => await HookCommand.RunAsync(rest),
+        "comments" => await CommentsCommand.RunAsync(rest),
+        "diff" => await DiffCommand.RunAsync(rest),
         _ => Cli.Fail($"unknown command '{command}'"),
     };
 }
@@ -50,6 +52,8 @@ namespace Stemma.Cli
               stemma validate  Check a workspace for the things the compiler cannot see.
               stemma inspect   Show what a view draws, and what brought each element in.
               stemma scan      List the .NET projects under a path, and what each references.
+              stemma comments  Read and answer the review comments left on the cards.
+              stemma diff      What changed in the model since a revision, in the model's own words.
               stemma hook      Entry points for agent hooks (the Claude Code plugin's post-edit check).
 
             Run a command with --help for its options, or `stemma --version` for which Stemma this is.
