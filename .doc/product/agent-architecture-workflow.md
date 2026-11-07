@@ -122,6 +122,7 @@ comments was left for later). Ordered by what each unblocks.
 **Not chosen, recorded so it is not lost:** the review loop — the agent reading open comments from
 `comments.stemma.json` as its to-do list, replying and resolving, with a semantic `stemma diff`
 for the pull request. Every piece it needs exists (comments, What changed, the watcher).
+*Built 2026-11-07* as [F-027](../features/F-027-the-review-loop.md).
 
 ## 5. What stays true
 

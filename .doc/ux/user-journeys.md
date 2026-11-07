@@ -107,6 +107,23 @@ menu, not the selection behind it).
 4. The architect imports the pack (inspector → Comments → import); threads merge idempotently into
    `comments.stemma.json`, anchored to the elements they concern. Act, re-export, repeat.
 
+## J6e — Review what an agent built ([F-027](../features/F-027-the-review-loop.md))
+
+1. **Comment on the cards.** Open the workspace (`stemma open`), select a card, **Comments**, write what
+   is wrong or unclear — one point per comment, on the element, relationship or view it is about.
+2. **Ask the agent to respond.** In Claude Code, `/stemma:respond`. It reads the open comments with what
+   each is on (`stemma comments`), changes the model, checks and renders it, replies on each card and
+   resolves what it did; what it could not decide, it asks on the card and leaves open.
+3. **Read the answers where you left the questions.** A card with open comments shows how many; press
+   the count to open them. Replies arrive while the app is open, signed as the agent. Resolve what is
+   settled, reply to what is not, and ask again.
+4. **Merge with the change said in words.** `stemma diff --markdown` is the pull request's section:
+   what was added, removed and changed in the model, and which review comments were resolved.
+
+**Must-handle:** a comment on something the change removed — listed as *no longer in the model*, and
+answered rather than lost; a comments file a merge broke — refused by the command line and by the app
+alike, and never written over; presenting — no counts on the cards.
+
 ## J6d — Show a change ([F-017](../features/F-017-what-changed.md))
 
 1. **Compare** in the top bar: *the last commit* (what you have changed, counted), *where this branch
