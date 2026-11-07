@@ -153,6 +153,12 @@ public sealed class UndoStack
                 return new SetLinkAttributeOp($"undo_{Guid.NewGuid():N}", set.LinkId, set.AttributeName, prev);
             }
 
+            case SetLinkEndsOp ends when archBefore is not null:
+            {
+                var prior = archBefore.Links.FirstOrDefault(l => l.Id == ends.LinkId);
+                return prior is null ? null : new SetLinkEndsOp($"undo_{Guid.NewGuid():N}", ends.LinkId, prior.FromId, prior.ToId);
+            }
+
             case SetLifecycleOp setL when archBefore is not null:
             {
                 var prior = archBefore.Tags.FirstOrDefault(t => t.TargetId == setL.TargetId)?.Lifecycle;

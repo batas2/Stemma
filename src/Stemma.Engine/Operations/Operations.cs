@@ -22,6 +22,7 @@ namespace Stemma.Engine.Operations;
 [JsonDerivedType(typeof(Stemma.Engine.ArchModel.AddLinkOp), "AddLink")]
 [JsonDerivedType(typeof(Stemma.Engine.ArchModel.RemoveLinkOp), "RemoveLink")]
 [JsonDerivedType(typeof(Stemma.Engine.ArchModel.SetLinkAttributeOp), "SetLinkAttribute")]
+[JsonDerivedType(typeof(Stemma.Engine.ArchModel.SetLinkEndsOp), "SetLinkEnds")]
 [JsonDerivedType(typeof(Stemma.Engine.ArchModel.SetLifecycleOp), "SetLifecycle")]
 [JsonDerivedType(typeof(Stemma.Engine.ArchModel.SetOwnershipOp), "SetOwnership")]
 [JsonDerivedType(typeof(Stemma.Engine.Workspace.RestoreElementOp), "RestoreElement")]

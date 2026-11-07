@@ -495,7 +495,9 @@ function CanvasInner() {
   // explicit choice (drawing / reconnecting) is persisted and always wins; otherwise an auto dock
   // is computed once per edge from geometry (see the effect below) so it never churns as boxes move.
   const [edgeHandles, setEdgeHandles] = useState<Record<string, EdgeHandlePair>>({});
-  const [autoDocks, setAutoDocks] = useState<Record<string, { source: DockId; target: DockId }>>({});
+  // Each auto dock remembers the ends it was chosen for: a relationship reversed or reconnected keeps its
+  // id (B-028), and the dots chosen for its old ends would put it on the wrong side of both boxes.
+  const [autoDocks, setAutoDocks] = useState<Record<string, { source: DockId; target: DockId; from: string; to: string }>>({});
   // Dots chosen while drawing/reconnecting, waiting for the engine-assigned link id to come back.
   const pendingDock = useRef<{ from: string; to: string; handles: EdgeHandlePair }[]>([]);
   useEffect(() => {
@@ -750,11 +752,11 @@ function CanvasInner() {
       let changed = false;
       const next = { ...prev };
       const consider = (id: string, from: string, to: string) => {
-        if (next[id] || edgeHandles[id]) return;
+        if ((next[id] && next[id].from === from && next[id].to === to) || edgeHandles[id]) return;
         const a = rectById.get(from);
         const b = rectById.get(to);
         if (!a || !b) return;
-        next[id] = autoDock(a, b);
+        next[id] = { ...autoDock(a, b), from, to };
         changed = true;
       };
       for (const l of filtered.links) consider(l.id, l.fromId, l.toId);
@@ -2081,10 +2083,9 @@ function CanvasInner() {
           id: 'reverse', label: 'Reverse direction', icon: ContextIcons.ArrowLeftRight, disabled: !link,
           onClick: async () => {
             if (!link) return;
-            const { id, error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
+            const { error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
             if (error) setToast({ kind: 'error', text: error });
             else setToast({ kind: 'success', text: 'Relationship reversed' });
-            selectLink(id);
           },
         },
         { id: 'sep', label: '', onClick: () => {}, separator: true },
@@ -2280,8 +2281,8 @@ function CanvasInner() {
   };
 
   // Drag a relationship endpoint to a new dot/box (draw.io-style). Same boxes, different dot →
-  // presentation only (re-anchor the persisted handle). Different box → a model change (the old
-  // link is removed and a new one added between the new endpoints).
+  // presentation only (re-anchor the persisted handle). Different box → a model change: the link's
+  // ends move in its declaration (SetLinkEnds), and it stays the same link.
   const onReconnect = useCallback(async (oldEdge: Edge, conn: Connection) => {
     if (oldEdge.id.startsWith('__about__') || !conn.source || !conn.target) return;
     const handles: EdgeHandlePair = { source: conn.sourceHandle ?? undefined, target: conn.targetHandle ?? undefined };
@@ -2290,12 +2291,11 @@ function CanvasInner() {
       setEdgeHandles((prev) => ({ ...prev, [oldEdge.id]: handles }));
       return;
     }
-    // The same relationship with a new end — its kind, label and look kept — not a new one of
-    // whichever kind the view usually draws.
+    // The same relationship with a new end — its id, kind, every argument and its look kept (B-028) —
+    // docked to the dots it was dropped on.
     const link = arch?.links.find((l) => l.id === oldEdge.id);
     if (!link) return;
-    pendingDock.current.push({ from: conn.source, to: conn.target, handles });
-    const { error } = await relink(link, conn.source, conn.target, 'Reconnect relationship');
+    const { error } = await relink(link, conn.source, conn.target, 'Reconnect relationship', { view: String(layoutKey), handles });
     if (error) setToast({ kind: 'error', text: error });
     else setToast({ kind: 'success', text: 'Relationship reconnected' });
   }, [arch, workspace, layoutKey, setToast]);

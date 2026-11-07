@@ -132,6 +132,7 @@ export function describeOperation(op: OperationEnvelope): string {
     case 'AddLink': return 'Add relationship';
     case 'RemoveLink': return 'Delete relationship';
     case 'SetLinkAttribute': return 'Edit relationship';
+    case 'SetLinkEnds': return 'Move relationship';
     case 'SetLifecycle': return 'Set status';
     case 'SetOwnership': return 'Set owner';
     case 'SetElementContext': return 'Move to bounded context';

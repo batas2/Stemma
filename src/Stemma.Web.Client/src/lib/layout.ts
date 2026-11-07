@@ -753,6 +753,23 @@ export function loadEdgeHandles(workspaceRoot: string, view: ViewKind | string):
   return out;
 }
 
+/**
+ * How one relationship is drawn on every view that has an entry for it: the dots its ends are docked to
+ * and its bends. Reversing a relationship turns each of these round (B-028).
+ */
+export function edgeDrawings(workspaceRoot: string, edgeId: string): { view: string; handles?: EdgeHandlePair; waypoints?: SavedPosition[] }[] {
+  if (sidecarCache?.rootPath !== workspaceRoot) return [];
+  const out: { view: string; handles?: EdgeHandlePair; waypoints?: SavedPosition[] }[] = [];
+  for (const [view, entry] of Object.entries(sidecarCache.sidecar.views ?? {})) {
+    const e = (entry as { edges?: Record<string, unknown> } | undefined)?.edges?.[edgeId];
+    if (!isPlainObject(e)) continue;
+    const h = isPlainObject(e.handles) ? (e.handles as EdgeHandlePair) : undefined;
+    const w = Array.isArray(e.waypoints) && e.waypoints.length > 0 ? (e.waypoints as SavedPosition[]) : undefined;
+    if ((h && (h.source || h.target)) || w) out.push({ view, handles: h && (h.source || h.target) ? { ...h } : undefined, waypoints: w && structuredClone(w) });
+  }
+  return out;
+}
+
 /** Persist (or clear) one edge's dock-handle anchors, preserving any waypoints on the same entry. */
 export function saveEdgeHandles(
   workspaceRoot: string,

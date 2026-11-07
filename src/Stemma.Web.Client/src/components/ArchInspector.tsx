@@ -848,10 +848,9 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   // Reverse the relationship in the model (swap source ↔ target): the same relationship, kept whole.
   async function reverseLink() {
     if (!link) return;
-    const { id, error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
+    const { error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
     if (error) setToast({ kind: 'error', text: error });
     else setToast({ kind: 'success', text: 'Relationship reversed' });
-    selectLink(id);
   }
 
   return (

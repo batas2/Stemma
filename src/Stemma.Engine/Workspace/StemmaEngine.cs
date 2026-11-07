@@ -551,6 +551,7 @@ public sealed class StemmaEngine : IAsyncDisposable
             AddLinkOp x => await AddArchLinkAsync(x, ct),
             RemoveLinkOp x => await RemoveArchLinkAsync(x, ct),
             SetLinkAttributeOp x => await SetLinkAttributeAsync(x, ct),
+            SetLinkEndsOp x => await SetLinkEndsAsync(x, ct),
             SetLifecycleOp x => await SetLifecycleAsync(x, ct),
             SetOwnershipOp x => await SetOwnershipAsync(x, ct),
             RestoreElementOp x => await RestoreArchElementAsync(x, ct),
@@ -610,6 +611,7 @@ public sealed class StemmaEngine : IAsyncDisposable
         AddLinkOp x => $"Add {x.LinkKind}",
         RemoveLinkOp _ => "Remove link",
         SetLinkAttributeOp x => $"Set {x.AttributeName}",
+        SetLinkEndsOp _ => "Move relationship ends",
         SetLifecycleOp _ => "Set lifecycle",
         SetOwnershipOp _ => "Set ownership",
         SetElementContextOp _ => "Move to bounded context",
@@ -1848,6 +1850,35 @@ public sealed class StemmaEngine : IAsyncDisposable
         try { newRoot = DslWriter.SetAttribute(root, op.LinkId, op.AttributeName, op.Value); }
         catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
         if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "No change");
+
+        var oldSolution = _workspace.CurrentSolution;
+        var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;
+        return await CommitAsync(op.OpId, oldSolution, newSolution,
+            () => new OperationApplied(op.OpId, []), ct);
+    }
+
+    /// <summary>
+    /// A link's ends, moved in its own declaration (B-028). Both ends are checked against the whole model,
+    /// as <see cref="AddArchLinkAsync"/> checks them, so an end declared in another model file is an
+    /// element like any other and an id nothing declares is refused before anything is written.
+    /// </summary>
+    private async Task<OperationResult> SetLinkEndsAsync(SetLinkEndsOp op, CancellationToken ct)
+    {
+        var current = await ReadArchModelAsync(ct);
+        if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
+        if (!current.Links.Any(l => l.Id == op.LinkId)) return new OperationFailed(op.OpId, "LinkNotFound", op.LinkId);
+        if (!current.Elements.Any(e => e.Id == op.FromId)) return new OperationFailed(op.OpId, "FromNotFound", op.FromId);
+        if (!current.Elements.Any(e => e.Id == op.ToId)) return new OperationFailed(op.OpId, "ToNotFound", op.ToId);
+
+        var doc = FindDocumentForId(op.LinkId) ?? FindArchitectureDocument();
+        if (doc is null) return new OperationFailed(op.OpId, "NoArchitectureFile", "No Architecture file");
+        var root = await doc.GetSyntaxRootAsync(ct);
+        if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
+
+        SyntaxNode newRoot;
+        try { newRoot = DslWriter.SetLinkEnds(root, op.LinkId, op.FromId, op.ToId); }
+        catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
+        if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "The relationship already runs that way");
 
         var oldSolution = _workspace.CurrentSolution;
         var newSolution = doc.WithSyntaxRoot(newRoot).Project.Solution;

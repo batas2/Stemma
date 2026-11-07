@@ -35,6 +35,13 @@ public sealed record RemoveLinkOp(string OpId, string LinkId) : OperationBase(Op
 
 public sealed record SetLinkAttributeOp(string OpId, string LinkId, string AttributeName, string? Value) : OperationBase(OpId);
 
+/// <summary>
+/// Move a link's ends: both, to reverse it, or one, to reconnect it to another element. The link keeps
+/// its id and its declaration, so what names it — comments, book steps, a view's ids, its look — still
+/// does (B-028).
+/// </summary>
+public sealed record SetLinkEndsOp(string OpId, string LinkId, string FromId, string ToId) : OperationBase(OpId);
+
 public sealed record SetLifecycleOp(
     string OpId,
     string TargetId,

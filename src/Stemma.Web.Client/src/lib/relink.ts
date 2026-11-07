@@ -1,63 +1,86 @@
 /**
- * Moving a relationship's ends: reversing it, or reconnecting one end to another box.
+ * Moving a relationship's ends: reversing it, or reconnecting one end to another box (B-028).
  *
- * There is no operation that moves an end, so it is the link removed and added again. The added link
- * has to be the same relationship: its kind — a Relation reversed came back as a Dependency with a new
- * id — its label, payload, direction or dependency kind, its status and owner, and its look. It is
- * one step of the undo history, and if adding fails the removal is undone, so the model never loses
- * the relationship.
+ * One operation, `SetLinkEnds`, rewrites the two ends in the link's own declaration. The link keeps its
+ * id, and with it everything that names it: every argument (a data flow's technology included), its
+ * status and owner, its look, its comments, the book steps that play it. Until this operation existed
+ * the link was removed and added again, which gave it a new id, a new line at the end of `Build()`, and
+ * lost whatever the new declaration did not carry.
+ *
+ * Reversing also turns the drawing round on every view that has one: the dot each end was docked to
+ * goes with that end, and the bends are walked the other way, so the arrow keeps its path and only its
+ * head moves. Reconnecting docks the moved end to the dot it was dropped on. Model and drawing are one
+ * step of the undo history.
  */
 
-import { addedId, applyOperation, fetchUndoState } from './signalr';
-import { history } from './history';
+import { applyOperation } from './signalr';
+import { history, type PresentationChange } from './history';
+import { edgeDrawings, saveEdgeHandles, saveEdgeWaypoints, type EdgeHandlePair } from './layout';
 import { friendlyOpError } from './opError';
-import { format } from './shortcuts';
 import { useApp } from './store';
-import type { ArchLink, OperationEnvelope } from './types';
+import type { ArchLink } from './types';
 
 let seq = 0;
 const opId = () => `op_${Date.now()}_rl${seq++}`;
 
-export async function relink(link: ArchLink, fromId: string, toId: string, description: string): Promise<{ id: string | null; error: string | null }> {
+/** The dots the moved ends were dropped on, on the view they were dropped on. */
+export interface Docking {
+  view: string;
+  handles: EdgeHandlePair;
+}
+
+export async function relink(
+  link: ArchLink,
+  fromId: string,
+  toId: string,
+  description: string,
+  docking?: Docking,
+): Promise<{ id: string | null; error: string | null }> {
   if (!history.beginGroup(description)) return { id: null, error: 'Another change is still being written. Try again in a moment.' };
   try {
-    const removed = await applyOperation({ kind: 'RemoveLink', opId: opId(), linkId: link.id });
-    if ('reason' in removed) return { id: null, error: friendlyOpError(removed) };
+    const result = await applyOperation({ kind: 'SetLinkEnds', opId: opId(), linkId: link.id, fromId, toId });
+    if ('reason' in result) return { id: null, error: friendlyOpError(result) };
 
-    const added = await applyOperation({
-      kind: 'AddLink', opId: opId(), linkKind: link.kind, fromId, toId,
-      payload: link.kind === 'dataFlow' ? link.attributes.payload ?? 'Event' : null,
-      direction: link.kind === 'dataFlow' ? link.attributes.direction ?? null : null,
-      dependencyKind: link.kind === 'dependency' ? link.attributes.kind ?? 'uses' : null,
-    } as OperationEnvelope);
-    if ('reason' in added) {
-      // The relationship must not be lost because its new ends were refused: the removal is undone.
-      const restored = await history.takeBackInGroup().catch(() => false);
-      const why = friendlyOpError(added);
-      return { id: null, error: restored ? why : `${why} The relationship was removed; press ${format({ key: 'z', primary: true, description: '', handler: () => {} })} to bring it back.` };
+    const root = useApp.getState().workspace?.rootPath;
+    if (root) {
+      const reversed = fromId === link.toId && toId === link.fromId && fromId !== toId;
+      const changes = reversed ? turnedRound(root, link.id) : [];
+      if (docking) changes.push(docked(root, link.id, docking));
+      write(root, changes);
+      history.recordPresentation(changes, description);
     }
-    const id = addedId(added);
-    if (!id) return { id: null, error: null };
-
-    const st = useApp.getState();
-    const follow: Omit<OperationEnvelope, 'opId'>[] = [];
-    if (link.kind === 'relation' && link.attributes.label) follow.push({ kind: 'SetLinkAttribute', linkId: id, attributeName: 'label', value: link.attributes.label });
-    const tag = st.arch?.tags.find((t) => t.targetId === link.id);
-    const life = tag?.lifecycle;
-    if (life && (life.status || life.phase || life.validFrom || life.validUntil)) {
-      follow.push({ kind: 'SetLifecycle', targetId: id, status: life.status, phase: life.phase, validFrom: life.validFrom, validUntil: life.validUntil });
-    }
-    const own = tag?.ownership;
-    if (own && (own.squad || own.domain)) follow.push({ kind: 'SetOwnership', targetId: id, squad: own.squad, domain: own.domain });
-    for (const op of follow) {
-      const r = await applyOperation({ ...op, opId: opId() } as OperationEnvelope);
-      if ('reason' in r) return { id, error: friendlyOpError(r) };
-    }
-    const look = st.edgeStyles[link.id];
-    if (look) st.setEdgeStyleFor(id, look);
-    return { id, error: null };
+    return { id: link.id, error: null };
   } finally {
-    const top = await fetchUndoState().then((s) => s.undoTop).catch(() => null);
-    history.endGroup(top);
+    history.endGroup();
   }
+}
+
+/** Each view's drawing of the relationship, the other way round. */
+function turnedRound(root: string, linkId: string): PresentationChange[] {
+  const changes: PresentationChange[] = [];
+  for (const { view, handles, waypoints } of edgeDrawings(root, linkId)) {
+    if (handles) {
+      const next: EdgeHandlePair = {};
+      if (handles.target) next.source = handles.target;
+      if (handles.source) next.target = handles.source;
+      changes.push({ section: 'handles', id: linkId, view, before: handles, after: next });
+    }
+    if (waypoints) changes.push({ section: 'waypoints', id: linkId, view, before: waypoints, after: [...waypoints].reverse() });
+  }
+  return changes;
+}
+
+function docked(root: string, linkId: string, docking: Docking): PresentationChange {
+  const before = edgeDrawings(root, linkId).find((d) => d.view === docking.view)?.handles;
+  const after = docking.handles.source || docking.handles.target ? { ...docking.handles } : undefined;
+  return { section: 'handles', id: linkId, view: docking.view, before, after };
+}
+
+function write(root: string, changes: PresentationChange[]): void {
+  if (changes.length === 0) return;
+  for (const c of changes) {
+    if (c.section === 'handles') saveEdgeHandles(root, c.view!, c.id, (c.after as EdgeHandlePair | undefined) ?? null);
+    else if (c.section === 'waypoints') saveEdgeWaypoints(root, c.view!, c.id, (c.after as { x: number; y: number }[]) ?? []);
+  }
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('stemma:layout-changed'));
 }

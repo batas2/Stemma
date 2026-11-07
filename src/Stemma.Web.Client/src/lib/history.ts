@@ -24,9 +24,10 @@
  * A presentation section a step can change: one entry, keyed by element or relationship id — or,
  * for `position`, where an element sits on one view (`view` names it); for `viewMembers`, the elements
  * a view from `Views/` names (`id` is the view's id); for `shapes`, a view's free-form shapes, whole
- * (`id` is the view's key); for `waypoints`, the bends of one relationship on one view (`view` names it).
+ * (`id` is the view's key); for `waypoints`, the bends of one relationship on one view (`view` names it);
+ * for `handles`, the dots its ends are docked to on one view.
  */
-export type PresentationSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'position' | 'viewMembers' | 'shapes' | 'waypoints';
+export type PresentationSection = 'nodeStyles' | 'edgeStyles' | 'notes' | 'customProps' | 'position' | 'viewMembers' | 'shapes' | 'waypoints' | 'handles';
 
 export interface PresentationChange {
   section: PresentationSection;

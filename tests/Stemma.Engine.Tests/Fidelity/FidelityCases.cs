@@ -87,6 +87,11 @@ public static class FidelityCases
                 ("\"sys_shop\", \"Shop\")", "\"sys_shop\", \"Shop\", \"Where orders are placed\")")),
             Case("SetLinkAttribute.technology", new SetLinkAttributeOp(Op, "flow_browse", "technology", "HTTPS"),
                 ("\"search terms\", \"twoway\")", "\"search terms\", \"twoway\", \"HTTPS\")")),
+            // A link's ends, moved in place (B-028): the id, the line and everything after the ends stay.
+            Case("SetLinkEnds.reverse", new SetLinkEndsOp(Op, "flow_orders", "mod_invoicing", "mod_checkout"),
+                ("\"flow_orders\", \"mod_checkout\", \"mod_invoicing\"", "\"flow_orders\", \"mod_invoicing\", \"mod_checkout\"")),
+            Case("SetLinkEnds.reconnect-to", new SetLinkEndsOp(Op, "flow_orders", "mod_checkout", "cnt_store"),
+                ("\"mod_checkout\", \"mod_invoicing\", \"Order\"", "\"mod_checkout\", \"cnt_store\", \"Order\"")),
         ];
     }
 
@@ -163,6 +168,11 @@ public static class FidelityCases
             Case("SetLinkAttribute.technology", new SetLinkAttributeOp(Op, "flow_browse", "technology", "HTTPS"),
                 // Split over two lines: the new argument goes on the line of the last, where it would be typed.
                 ("            \"search terms\", \"twoway\");", "            \"search terms\", \"twoway\", \"HTTPS\");")),
+            Case("SetLinkEnds.reverse", new SetLinkEndsOp(Op, "flow_browse", "cnt_web", "per_buyer"),
+                // Split over two lines: the ends change on the first, and the payload's line is not touched.
+                ("\"flow_browse\", \"per_buyer\", \"cnt_web\",\n", "\"flow_browse\", \"cnt_web\", \"per_buyer\",\n")),
+            Case("SetLinkEnds.reconnect-from", new SetLinkEndsOp(Op, "flow_orders", "cnt_web", "mod_invoicing"),
+                ("\"flow_orders\", \"mod_checkout\", \"mod_invoicing\"", "\"flow_orders\", \"cnt_web\", \"mod_invoicing\"")),
         ];
     }
 
@@ -243,6 +253,15 @@ public static class FidelityCases
                 ("/* ours */ \"Shop\")", "/* ours */ \"Shop\", \"Where orders are placed\")")),
             Case("SetLinkAttribute.technology", new SetLinkAttributeOp(Op, "flow_browse", "technology", "HTTPS"),
                 ("Direction: \"twoway\")", "Direction: \"twoway\", Technology: \"HTTPS\")")),
+            Case("SetLinkEnds.reverse", new SetLinkEndsOp(Op, "flow_orders", "mod_invoicing", "mod_checkout"),
+                // The block comment after the statement is not part of the arguments, and stays.
+                ("\"flow_orders\", \"mod_checkout\", \"mod_invoicing\"", "\"flow_orders\", \"mod_invoicing\", \"mod_checkout\"")),
+            Case("SetLinkEnds.reverse-named", new SetLinkEndsOp(Op, "flow_browse", "cnt_web", "per_buyer"),
+                // Named out of order: the literals swap and the names stay where they are written, with
+                // the comment in front of the start's value.
+                ("ToId: \"cnt_web\", FromId: /* the shopper */ \"per_buyer\"", "ToId: \"per_buyer\", FromId: /* the shopper */ \"cnt_web\"")),
+            Case("SetLinkEnds.reconnect-to-named", new SetLinkEndsOp(Op, "flow_browse", "per_buyer", "cnt_store"),
+                ("ToId: \"cnt_web\"", "ToId: \"cnt_store\"")),
         ];
     }
 }

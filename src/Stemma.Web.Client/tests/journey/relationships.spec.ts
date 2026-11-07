@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url';
 /**
  * Relationships on the canvas, driven through the app on a scratch copy of the self-model.
  *
- * Reversing is the link removed and added again, and it once added "a dependency" whatever it had been:
- * a Relation came back as `new Dependency(…, "uses")`, its label gone. The reversed link is the same
- * relationship pointing the other way, and one ⌘Z puts every byte back.
+ * Reversing once removed the link and added it again: a Relation came back as `new Dependency(…, "uses")`,
+ * its label gone, and later as a new declaration under a new id at the end of the file (B-028). It is
+ * the same declaration with its two ends swapped — the diff is those two literals — and one ⌘Z puts
+ * every byte back.
  *
  * And a picture at rest is still: every dependency and relation once flowed by default, which redrew
  * the whole canvas each frame.
@@ -61,9 +62,12 @@ test('reversing a relation keeps it a relation, with its label — and one undo 
   await page.getByText('Style — line, routing, ends, colour').click();
   await page.getByTitle('Reverse direction (swap start ↔ end)').click();
 
-  await expect.poll(async () => /new Relation\("[^"]+", "mod_fidelity", "con_fidelity", "gated by"\)/.test(await read()), { timeout: 20_000 }).toBe(true);
+  const declared = 'new Relation("rel_fidelity_fixtures", "con_fidelity", "mod_fidelity", "gated by")';
+  const reversed = 'new Relation("rel_fidelity_fixtures", "mod_fidelity", "con_fidelity", "gated by")';
+  await expect.poll(async () => (await read()).includes(reversed), { timeout: 20_000 }).toBe(true);
   const after = await read();
-  expect(after).not.toContain('"con_fidelity", "mod_fidelity"');
+  // The same declaration, on the same line, under the same id: nothing else in the file moves.
+  expect(after).toBe(original.toString('utf8').replace(declared, reversed));
   expect(after.match(/new Dependency\(/g)!.length).toBe(dependencies);
   await expect(page.getByText('Relationship reversed')).toBeVisible();
 
