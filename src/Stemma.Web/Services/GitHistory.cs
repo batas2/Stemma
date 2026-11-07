@@ -11,6 +11,9 @@ namespace Stemma.Web.Services;
 /// <summary>
 /// What the model was at a revision, read from Git and kept nowhere (ADR-0024, F-017).
 ///
+/// Compiled into the command line too, from this one file, for <c>stemma diff</c> (ADR-0031): one rule
+/// for what a revision may look like, and one for how the model at a revision is read.
+///
 /// The <c>git</c> command, never a shell: every argument is its own entry in <c>ArgumentList</c>, and a
 /// revision is refused unless it looks like one, so nothing a request carries can become an option or
 /// a command. The model files at a revision are parsed by the engine's own reader and merged by the
@@ -124,6 +127,17 @@ public static class GitHistory
             catch (JsonException) { layout = null; }
         }
         return new ModelAt(rev, sha, arch, layout);
+    }
+
+    /// <summary>
+    /// A file of the workspace as it was at <paramref name="sha"/> (a commit <see cref="ModelAtAsync"/>
+    /// resolved), by its path relative to the workspace; null when the commit has no such file.
+    /// </summary>
+    public static async Task<string?> FileAtAsync(string root, string sha, string relativePath, CancellationToken ct = default)
+    {
+        if (!IsRevision(sha)) throw new RevisionNotFound($"\"{sha}\" is not a revision.");
+        var text = await RunAsync(root, ct, "show", $"{sha}:./{relativePath.Replace('\\', '/')}");
+        return text.ExitCode == 0 ? text.Output : null;
     }
 
     private static History Unavailable(string reason) => new(false, reason, null, null, null, [], []);

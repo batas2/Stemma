@@ -103,7 +103,7 @@ public static class ValidateCommand
         }
         else if (findings.Count == 0)
         {
-            Console.WriteLine($"stemma validate: {Path.GetFileName(workspace)} — nothing to report");
+            Console.WriteLine($"stemma validate: {Path.GetFileName(Path.TrimEndingDirectorySeparator(workspace))} — nothing to report");
         }
         else
         {

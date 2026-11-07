@@ -9,6 +9,44 @@ within one, entries are dated. How a release is cut:
 
 ## Unreleased
 
+### The review loop — 2026-11-07
+
+Review an architecture in Stemma the way you review code: comment on the cards, ask Claude to respond,
+and read the answers where you left the questions. The pull request then says what changed, in the
+model's own words.
+
+**Added**
+
+- **The cards say where the review is** ([F-027](./.doc/features/F-027-the-review-loop.md)). A card with
+  open comments carries a small count in its top-left corner. Press it to select the card and open its
+  comments; the **Comments** icon in the inspector shows the count too. Comments written anywhere else —
+  another window, a pull, the command line — appear without a reload. The count is not drawn while
+  presenting, in a headless render or in an exported image.
+- **`stemma comments`** lists the open comments, each with what it is on — *data flow “Order API → Order
+  DB”*, or *no longer in the model* — and its thread; `--all`, `--on <id>`, `--json`.
+  `stemma comments reply <id> "…"`, `resolve <id> "what was done"` and `reopen <id>` answer them;
+  `stemma comments add --on <id> "…"` starts one. Each is one change to `comments.stemma.json`, written
+  the way the app writes it, so a comment posted meanwhile is kept. A reply from Claude Code is signed
+  *Claude*, never with your name.
+- **`stemma diff`** says what changed in the model since a revision — by default where your branch
+  started — element by element and link by link: *Container “API”: Technology “.NET 8” → “Go”*, *Data
+  flow …: Now from “Order Queue” (was “API”)*; and which review comments were resolved and opened since.
+  `--markdown` writes a section for the pull request; `--json` is for an agent.
+- **`/stemma:respond`** in the Claude Code plugin works through the open comments: it changes the model
+  where a comment asks for it, checks and renders, answers each comment on its card, resolves what it
+  did, and ends with `stemma diff`. **`/stemma:review`** can now leave its findings as comments on the
+  cards instead of only in the chat.
+
+**Changed**
+
+- **Reversing a relationship, or dragging one of its ends to another box, keeps the relationship**
+  (B-028). It used to be deleted and declared again: a new id, a new line at the end of the file, and
+  a data flow's technology, its comments and the book steps that play it left behind. Now the diff is
+  the two ends, on the line where they were, and the arrow keeps its docked dots and its bends — only
+  its head moves. One **⌘Z** puts it all back.
+- *What changed* (Compare) now says when a container's technology, a description or a data flow's
+  technology changed.
+
 ### Architecture built by an agent, reviewed in Stemma — 2026-10-22
 
 Ask Claude Code for an architecture in your own words and get a Stemma model that is laid out, checked

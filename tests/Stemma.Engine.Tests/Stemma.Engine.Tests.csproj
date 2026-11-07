@@ -19,5 +19,9 @@
     <None Update="Fixtures\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- The model-diff cases the client runs too (ADR-0031): one file, read by both suites. -->
+    <None Include="..\shared\model-diff.cases.json" Link="Shared\model-diff.cases.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

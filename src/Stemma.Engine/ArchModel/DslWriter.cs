@@ -91,11 +91,51 @@ public static class DslWriter
         var (stmt, _, creation) = FindDeclaration(root, id) ?? throw new InvalidOperationException($"No declaration with id {id}");
         var typeName = DslReader.ExtractTypeName(creation, stmt.Declaration.Type) ?? "";
         var parameters = DslVocabulary.ParametersOf(typeName);
+        if (attribute is "fromId" or "toId")
+            throw new DslEditRefusedException("UnknownAttribute",
+                $"A link's ends are not an attribute: they are moved with SetLinkEnds, which checks that the element they name exists.");
         if (parameters is null || attribute is "id" or "name" || !parameters.Contains(attribute))
             throw new DslEditRefusedException("UnknownAttribute", $"A {typeName} has no attribute '{attribute}' that can be set.");
 
         var edited = SetArgument(creation.ArgumentList!, parameters, attribute, value, typeName, nullablePlaceholder: false);
         return edited is null ? root : root.ReplaceNode(creation.ArgumentList!, edited);
+    }
+
+    // ── Moving a link's ends ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Point the link declared with <paramref name="id"/> from <paramref name="fromId"/> to
+    /// <paramref name="toId"/>; a null end is one that does not move, and is not looked at — it may be a
+    /// constant this syntax tree alone cannot read, which is no reason to refuse moving the other. Each
+    /// end is the literal of its own argument, found by name or by position, and only an end that
+    /// changes is written: reconnecting one end leaves the other's bytes alone, and reversing a named
+    /// call swaps the two literals rather than the order of its arguments.
+    /// The declaration, its variable, its tag and its place in the file stay, which is the point — a
+    /// link removed and added again lost its id and everything that named it (B-028). Returns
+    /// <paramref name="root"/> itself when the link already runs that way.
+    /// </summary>
+    public static SyntaxNode SetLinkEnds(SyntaxNode root, string id, string? fromId, string? toId)
+    {
+        var (stmt, _, creation) = FindDeclaration(root, id) ?? throw new InvalidOperationException($"No declaration with id {id}");
+        var typeName = DslReader.ExtractTypeName(creation, stmt.Declaration.Type) ?? "";
+        var parameters = DslVocabulary.ParametersOf(typeName);
+        if (parameters is null || !parameters.Contains("fromId") || !parameters.Contains("toId"))
+            throw new DslEditRefusedException("LinkNotFound", $"{id} is a {typeName}, not a link, and has no ends to move.");
+
+        var list = creation.ArgumentList!;
+        var args = list.Arguments;
+        var changed = false;
+        foreach (var (end, value) in new[] { ("fromId", fromId), ("toId", toId) })
+        {
+            if (value is null) continue;
+            var arg = ArgumentFor(list, parameters, end) ?? throw new InvalidOperationException($"{id} has no {end} argument");
+            if (DslReader.AlreadySays(arg.Expression, value, $"{(end == "fromId" ? "start" : "end")} of {id}")) continue;
+            // By index into the list being built: the other end may already have been replaced in it.
+            var at = list.Arguments.IndexOf(arg);
+            args = args.Replace(args[at], arg.WithExpression(Literal(value).WithTriviaFrom(arg.Expression)));
+            changed = true;
+        }
+        return changed ? root.ReplaceNode(list, list.WithArguments(args)) : root;
     }
 
     /// <summary>

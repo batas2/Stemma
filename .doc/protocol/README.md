@@ -18,7 +18,8 @@ is the only way a reference of this kind stays true.
 
 For Claude Code, the same contract ships as a plugin: [`integrations/claude-code/`](../../integrations/claude-code/)
 — a skill that carries this reference and the workflow around it (model → views → rules → `validate` →
-`render` and its lint → look → hand over), three commands (`/stemma:new`, `/stemma:review`,
-`/stemma:from-code`), and a hook that validates after every edit ([F-026](../features/F-026-stemma-for-claude-code.md),
-[ADR-0030](../architecture/decisions/0030-agents-reach-stemma-through-the-cli.md)). Any other agent can be
+`render` and its lint → look → hand over), four commands (`/stemma:new`, `/stemma:review`,
+`/stemma:from-code`, and `/stemma:respond`, which answers the review comments left on the cards), and a
+hook that validates after every edit ([F-026](../features/F-026-stemma-for-claude-code.md),
+[F-027](../features/F-027-the-review-loop.md), [ADR-0030](../architecture/decisions/0030-agents-reach-stemma-through-the-cli.md)). Any other agent can be
 pointed at the skill's Markdown: the CLI is the interface.

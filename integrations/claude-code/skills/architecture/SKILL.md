@@ -169,6 +169,9 @@ the user cares about missing? Are labels saying something?
   user did not state, and anything `validate` still reports.
 
 To review an existing model against the C4 checklist, see [reference/review.md](reference/review.md).
+When the architect has reviewed it in the app, their comments are on the cards: `stemma comments
+<workspace>` lists them, and "The review loop" in the same file says how to answer them and how to
+say what a change did (`stemma diff`).
 
 ## Things that go wrong
 

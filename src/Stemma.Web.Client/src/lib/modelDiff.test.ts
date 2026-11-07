@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { describeCounts, diffModels } from './modelDiff';
 import type { ArchModel } from './types';
@@ -78,5 +80,23 @@ describe('diffModels', () => {
     const d = diffModels(null, base);
     expect(d.counts.added).toBe(base.elements.length + base.links.length);
     expect(d.counts.removed).toBe(0);
+  });
+});
+
+// The engine says the same thing for `stemma diff` (ModelDiff.cs, ADR-0031): both run these cases, so a
+// change to the wording on one side and not the other fails here or there.
+interface SharedCase {
+  name: string;
+  before: ArchModel | null;
+  after: ArchModel;
+  expected: { elements: { id: string; change: string; details: string[] }[]; links: { id: string; change: string; details: string[] }[] };
+}
+const shared = JSON.parse(readFileSync(resolve(__dirname, '../../../../tests/shared/model-diff.cases.json'), 'utf8')) as { cases: SharedCase[] };
+
+describe('diffModels, against the cases the engine runs too', () => {
+  it.each(shared.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    const d = diffModels(c.before, c.after);
+    expect(d.elements.map(({ id, change, details }) => ({ id, change, details }))).toEqual(c.expected.elements);
+    expect(d.links.map(({ id, change, details }) => ({ id, change, details }))).toEqual(c.expected.links);
   });
 });

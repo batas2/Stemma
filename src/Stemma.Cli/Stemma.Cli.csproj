@@ -51,6 +51,12 @@
   </Target>
 
   <ItemGroup>
+    <!-- What the model was at a revision, read from Git by the same code as the app's Compare
+         (ADR-0024, ADR-0031): one file, compiled into both, so the engine still runs no process. -->
+    <Compile Include="..\Stemma.Web\Services\GitHistory.cs" Link="Shared\GitHistory.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Stemma.Engine\Stemma.Engine.csproj" />
     <PackageReference Include="Microsoft.Playwright" Version="1.61.0" />
   </ItemGroup>

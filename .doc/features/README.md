@@ -42,6 +42,7 @@ Living feature records — one Markdown file per feature, created from
 | [F-024](./F-024-architecture-rules-as-code.md) | Architecture rules as code — `Rules/*.cs` ([ADR-0028](../architecture/decisions/0028-architecture-rules-as-code.md)) | Shipped | Next | Bartosz |
 | [F-025](./F-025-conformance-with-the-implementation.md) | Conformance with the implementation — elements mapped to projects, `stemma scan` ([ADR-0029](../architecture/decisions/0029-conformance-against-the-implementation.md)) | Shipped | Next | Bartosz |
 | [F-026](./F-026-stemma-for-claude-code.md) | Stemma for Claude Code — a plugin: skill, commands, a hook that validates ([ADR-0030](../architecture/decisions/0030-agents-reach-stemma-through-the-cli.md)) | Shipped | Next | Bartosz |
+| [F-027](./F-027-the-review-loop.md) | The review loop — `stemma comments`, `stemma diff`, `/stemma:respond`, open comments on the cards ([ADR-0031](../architecture/decisions/0031-the-review-loop-through-the-files.md)) | Shipped | Next | Bartosz |
 
 F-011 **blocked F-002** — the desktop shell's "backend failed to start" state needs a log file to
 point at, and now names `~/.stemma/logs/` in that surface.

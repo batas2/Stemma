@@ -1,7 +1,7 @@
 # Roadmap
 
 > Horizon framing, not date commitments. "Now" = built and in the product. "Next" = committed and
-> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-10-22**.
+> in flight. "Later" = directionally agreed, not scheduled. Last reviewed **2026-11-07**.
 
 ## Now — shipped and load-bearing
 
@@ -49,6 +49,14 @@ The engine and canvas are real and round-trip against non-trivial samples.
   ([F-026](../features/F-026-stemma-for-claude-code.md)); the audit's bugs B-021…B-026 first. Serves the
   **Architect's Agent** persona; the audit, research and decisions are in
   [`agent-architecture-workflow.md`](./agent-architecture-workflow.md).
+- **The review loop** (*built 2026-11-07*) — the architect comments on the cards, the agent works
+  through them from the command line (`stemma comments`, `/stemma:respond`) and answers where they were
+  left, the cards show where the open comments are, and `stemma diff` says what a branch changed in the
+  model's own words, for the pull request ([F-027](../features/F-027-the-review-loop.md),
+  [ADR-0031](../architecture/decisions/0031-the-review-loop-through-the-files.md)). With it, reversing or
+  reconnecting a relationship keeps the relationship: its ends move in place
+  ([B-028](../bugs/B-028-reversing-a-relationship-declares-a-new-one.md)). Next in this direction: an
+  overview of the open comments in the app, and comments on relationships in the inspector.
 - **Inspector & editor polish** — finishing the SSOT-era inspector redesign; accessibility pass (keyboard, focus, reduced-motion, contrast — see [`../ux/states-and-interactions.md`](../ux/states-and-interactions.md)).
 - **Release follow-ups** ([F-012](../features/F-012-first-release.md) §9, [B-017](../bugs/B-017-new-model-left-uncommitted-where-git-knows-nobody.md)) — the start screen shows nothing when the new model could not be made a repository (`gitInitialised`/`gitError` are returned and ignored); MSBuild loaded from the SDK (`ExcludeAssets="runtime"`) instead of shipped, which clears the NU1903 advisory; packages for macOS and Windows once someone can try the window there; AppImage only if asked for.
 - **Sample gallery** — curated demo workspaces (today `samples/AuroraRail` and `samples/StemmaArchitecture`) that exercise every feature as living documentation.
@@ -56,7 +64,7 @@ The engine and canvas are real and round-trip against non-trivial samples.
 
 ## Later — directional
 
-- **Additional projections** — Mermaid/PlantUML export, a code-preview pane.
+- **Additional projections** — PlantUML and Structurizr DSL export, a code-preview pane. (A view already exports as a Mermaid chart in a Markdown file, from the canvas.)
 - **Collaboration** — Git-backed sessions (session = branch; save = commit), conflict surfacing on external edits.
 - **Validation depth** — background compilation, richer architecture-rule checks surfaced inline.
 - ~~**Search & filter on the canvas**, deep-linkable views.~~ Built 2026-10-21: ⌘F lights what

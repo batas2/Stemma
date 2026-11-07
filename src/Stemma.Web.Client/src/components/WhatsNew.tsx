@@ -1,13 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { Network, Server, ShieldCheck, FolderGit2, Bot, X } from 'lucide-react';
+import { MessageSquare, ArrowLeftRight, GitCompare, Bot, X } from 'lucide-react';
 
 /**
- * What's new (the changelog's "Faster on the canvas, clearer in the room"), said inside the app with
+ * What's new (the changelog's "The review loop"), said inside the app with
  * the keys that do each thing. Never opened on its own — a sheet appearing on launch could appear in
  * the middle of a meeting — but offered once, quietly, in the status bar, and always from ⌘K.
  */
 
-export const WHATS_NEW_ID = '2026-10-22';
+export const WHATS_NEW_ID = '2026-11-07';
 const SEEN_KEY = 'stemma.whatsNewSeen';
 
 export function whatsNewSeen(): boolean {
@@ -20,29 +20,24 @@ export function markWhatsNewSeen(): void {
 
 const ITEMS = [
   {
-    icon: Network,
-    title: 'Diagrams lay themselves out',
-    body: <>A view nobody arranged is laid out in layers that follow its relationships, every arrow routed around the boxes. <strong>Layout &amp; arrange → Lay out in layers</strong> keeps it and turns it.</>,
-  },
-  {
-    icon: Server,
-    title: 'C4 views from a scope',
-    body: <>A <code>container</code> or <code>systemContext</code> view with a <code>Scope</code> draws the system's boundary and everything it talks to. Cards carry each container's technology and a description.</>,
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Rules the architecture keeps',
-    body: <>Write what must hold in <code>Rules/*.cs</code> — only, forbid, layers, require — and a break is marked on the cards and named under <strong>Validation</strong>, with its reason.</>,
-  },
-  {
-    icon: FolderGit2,
-    title: 'Checked against your code',
-    body: <><code>Code.Map</code> ties a container to its .NET projects; Stemma says where the diagram and the project references disagree.</>,
+    icon: MessageSquare,
+    title: 'The cards say where the review is',
+    body: <>A card with open comments shows how many. Press the count to select the card and open its comments — and see the answers Claude left there, as they arrive.</>,
   },
   {
     icon: Bot,
-    title: 'Stemma for Claude Code',
-    body: <><code>/plugin install stemma@stemma</code>, then ask for an architecture. Claude builds, checks and renders it; <code>stemma open</code> shows it here as it arrives.</>,
+    title: 'Claude answers the review',
+    body: <>Comment on the cards, then ask for <code>/stemma:respond</code>. Claude changes the model, replies on each card, signed as Claude, and resolves what it did.</>,
+  },
+  {
+    icon: GitCompare,
+    title: 'The change, in words',
+    body: <><code>stemma diff</code> says what a branch changed in the model — renamed, moved, a new technology, an arrow turned round — and which comments it resolved. <code>--markdown</code> is ready for the pull request.</>,
+  },
+  {
+    icon: ArrowLeftRight,
+    title: 'Reversing keeps the relationship',
+    body: <><strong>Reverse direction</strong> and dragging an end to another box now change the two ends and nothing else: same line, same id, its comments and its look. One undo puts it back.</>,
   },
 ];
 
@@ -71,7 +66,7 @@ export function WhatsNew({ open, onClose }: { open: boolean; onClose: () => void
         <div className="flex items-start gap-3 mb-4">
           <div className="flex-1">
             <h2 id="whats-new-title" className="text-lg font-semibold text-body">What's new in Stemma</h2>
-            <p className="text-sm text-muted">Faster on the canvas, clearer in the room.</p>
+            <p className="text-sm text-muted">Review the architecture where it is drawn.</p>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-1 rounded text-muted hover:text-body"><X className="w-4 h-4" /></button>
         </div>

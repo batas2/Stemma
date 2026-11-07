@@ -42,7 +42,7 @@ export interface WorkspaceModel {
 /** Architecture-model operations the canvas emits against `Architecture/Architecture.cs`. */
 export type OperationKind =
   | 'AddElement' | 'RenameElement' | 'RemoveElement' | 'SetElementContext' | 'SetElementAttribute'
-  | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute'
+  | 'AddLink' | 'RemoveLink' | 'SetLinkAttribute' | 'SetLinkEnds'
   | 'SetLifecycle' | 'SetOwnership';
 
 export type ArchElementKind =

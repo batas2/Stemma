@@ -112,6 +112,19 @@ export function appendReply(sidecar: CommentsSidecar, id: string, reply: Comment
   });
 }
 
+/**
+ * How many open comments each element or relationship has (F-027): what a card's badge says. Resolved
+ * comments, and comments on views and shapes, are not counted here.
+ */
+export function openCommentCounts(sidecar: CommentsSidecar): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const c of sidecar.comments) {
+    if (c.resolved || c.targetKind !== 'element' || !c.targetId) continue;
+    out[c.targetId] = (out[c.targetId] ?? 0) + 1;
+  }
+  return out;
+}
+
 export function commentsForTarget(sidecar: CommentsSidecar, kind: CommentEntry['targetKind'], targetId: string): CommentEntry[] {
   return sidecar.comments.filter((c) => c.targetKind === kind && c.targetId === targetId);
 }

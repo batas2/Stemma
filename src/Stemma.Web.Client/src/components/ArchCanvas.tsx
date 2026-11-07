@@ -241,7 +241,7 @@ function bcBoxes(nodes: Node[], excludeId?: string): Map<string, Box> {
 /** What an exported picture of the canvas leaves out: its controls, not its content. */
 function notCanvasChrome(node: HTMLElement): boolean {
   const cl = (node as Element).classList;
-  return !(cl && (cl.contains('react-flow__controls') || cl.contains('react-flow__minimap') || cl.contains('react-flow__attribution') || cl.contains('react-flow__panel')));
+  return !(cl && (cl.contains('react-flow__controls') || cl.contains('react-flow__minimap') || cl.contains('react-flow__attribution') || cl.contains('react-flow__panel') || cl.contains('stemma-canvas-chrome')));
 }
 
 /** The id of the BC whose box contains point `p`, or null. */
@@ -271,6 +271,7 @@ function CanvasInner() {
   const nodeStyles = useApp((s) => s.nodeStyles);
   const customProps = useApp((s) => s.customProps);
   const violations = useApp((s) => s.violations);
+  const openComments = useApp((s) => s.openComments);
   const select = useApp((s) => s.selectElement);
   const selectLink = useApp((s) => s.selectLink);
   const selectedLinkId = useApp((s) => s.selectedLinkId);
@@ -495,7 +496,9 @@ function CanvasInner() {
   // explicit choice (drawing / reconnecting) is persisted and always wins; otherwise an auto dock
   // is computed once per edge from geometry (see the effect below) so it never churns as boxes move.
   const [edgeHandles, setEdgeHandles] = useState<Record<string, EdgeHandlePair>>({});
-  const [autoDocks, setAutoDocks] = useState<Record<string, { source: DockId; target: DockId }>>({});
+  // Each auto dock remembers the ends it was chosen for: a relationship reversed or reconnected keeps its
+  // id (B-028), and the dots chosen for its old ends would put it on the wrong side of both boxes.
+  const [autoDocks, setAutoDocks] = useState<Record<string, { source: DockId; target: DockId; from: string; to: string }>>({});
   // Dots chosen while drawing/reconnecting, waiting for the engine-assigned link id to come back.
   const pendingDock = useRef<{ from: string; to: string; handles: EdgeHandlePair }[]>([]);
   useEffect(() => {
@@ -731,6 +734,16 @@ function CanvasInner() {
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
+  // A card's comment badge (F-027): the card, selected — on the canvas as in the inspector, as a click
+  // on the card would leave it — with its comments open. The camera stays where it is: the person is
+  // looking at the card already.
+  const handleOpenComments = useCallback((nodeId: string) => {
+    const st = useApp.getState();
+    setNodes((current) => current.map((n) => (n.selected === (n.id === nodeId) ? n : { ...n, selected: n.id === nodeId })));
+    st.selectElement(nodeId);
+    st.setInspectorTab('element.comments');
+  }, []);
+
   const handleNodeResize = useCallback((nodeId: string, w: number, h: number) => {
     const current = useApp.getState().nodeStyles[nodeId] ?? { borderWidth: 1, borderStyle: 'solid' as const };
     useApp.getState().setNodeStyleFor(nodeId, { ...current, width: w, height: h });
@@ -750,11 +763,11 @@ function CanvasInner() {
       let changed = false;
       const next = { ...prev };
       const consider = (id: string, from: string, to: string) => {
-        if (next[id] || edgeHandles[id]) return;
+        if ((next[id] && next[id].from === from && next[id].to === to) || edgeHandles[id]) return;
         const a = rectById.get(from);
         const b = rectById.get(to);
         if (!a || !b) return;
-        next[id] = autoDock(a, b);
+        next[id] = { ...autoDock(a, b), from, to };
         changed = true;
       };
       for (const l of filtered.links) consider(l.id, l.fromId, l.toId);
@@ -1120,6 +1133,9 @@ function CanvasInner() {
             nodeStyle: ns,
             customProps: customProps[e.id],
             violationSeverity: sevByElement.get(e.id),
+            // Where the review is (F-027) — but not in front of the room, nor in a captured page.
+            openComments: presenting || capturing ? undefined : openComments[e.id],
+            onOpenComments: handleOpenComments,
             resizable: !editing,
             onResize: handleNodeResize,
             editing,
@@ -1144,7 +1160,7 @@ function CanvasInner() {
         return existing && sameNode(existing, built) ? existing : built;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick, layeredHere, layeredGaveUp]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, openComments, presenting, capturing, handleOpenComments, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick, layeredHere, layeredGaveUp]);
 
   // Fit a view once, when it is first shown with its cards on the canvas and the committed positions
   // read: a fit taken before them frames where the cards are about to stop being, and a second fit
@@ -2081,10 +2097,9 @@ function CanvasInner() {
           id: 'reverse', label: 'Reverse direction', icon: ContextIcons.ArrowLeftRight, disabled: !link,
           onClick: async () => {
             if (!link) return;
-            const { id, error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
+            const { error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
             if (error) setToast({ kind: 'error', text: error });
             else setToast({ kind: 'success', text: 'Relationship reversed' });
-            selectLink(id);
           },
         },
         { id: 'sep', label: '', onClick: () => {}, separator: true },
@@ -2280,8 +2295,8 @@ function CanvasInner() {
   };
 
   // Drag a relationship endpoint to a new dot/box (draw.io-style). Same boxes, different dot →
-  // presentation only (re-anchor the persisted handle). Different box → a model change (the old
-  // link is removed and a new one added between the new endpoints).
+  // presentation only (re-anchor the persisted handle). Different box → a model change: the link's
+  // ends move in its declaration (SetLinkEnds), and it stays the same link.
   const onReconnect = useCallback(async (oldEdge: Edge, conn: Connection) => {
     if (oldEdge.id.startsWith('__about__') || !conn.source || !conn.target) return;
     const handles: EdgeHandlePair = { source: conn.sourceHandle ?? undefined, target: conn.targetHandle ?? undefined };
@@ -2290,12 +2305,11 @@ function CanvasInner() {
       setEdgeHandles((prev) => ({ ...prev, [oldEdge.id]: handles }));
       return;
     }
-    // The same relationship with a new end — its kind, label and look kept — not a new one of
-    // whichever kind the view usually draws.
+    // The same relationship with a new end — its id, kind, every argument and its look kept (B-028) —
+    // docked to the dots it was dropped on.
     const link = arch?.links.find((l) => l.id === oldEdge.id);
     if (!link) return;
-    pendingDock.current.push({ from: conn.source, to: conn.target, handles });
-    const { error } = await relink(link, conn.source, conn.target, 'Reconnect relationship');
+    const { error } = await relink(link, conn.source, conn.target, 'Reconnect relationship', { view: String(layoutKey), handles });
     if (error) setToast({ kind: 'error', text: error });
     else setToast({ kind: 'success', text: 'Relationship reconnected' });
   }, [arch, workspace, layoutKey, setToast]);

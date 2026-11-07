@@ -8,7 +8,7 @@
 
 import { history, setHistoryDriver, type HistoryStep, type PresentationChange } from './history';
 import { layoutUndo } from './layoutUndo';
-import { loadLayout, saveEdgeWaypoints, saveLayout, saveViewShapes, sidecarSet } from './layout';
+import { loadLayout, saveEdgeHandles, saveEdgeWaypoints, saveLayout, saveViewShapes, sidecarSet, type EdgeHandlePair } from './layout';
 import type { Shape } from './shapes';
 import { fetchUndoState, redoOperation, undoOperation } from './signalr';
 import { friendlyOpError } from './opError';
@@ -81,6 +81,9 @@ function applyPresentation(changes: PresentationChange[], which: 'before' | 'aft
     const value = which === 'before' ? c.before : c.after;
     if (c.section === 'waypoints') {
       saveEdgeWaypoints(root, c.view as ViewKind, c.id, Array.isArray(value) ? (value as { x: number; y: number }[]) : []);
+      window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: c.view } }));
+    } else if (c.section === 'handles') {
+      saveEdgeHandles(root, c.view as ViewKind, c.id, (value as EdgeHandlePair | undefined) ?? null);
       window.dispatchEvent(new CustomEvent('stemma:layout-changed', { detail: { viewKey: c.view } }));
     } else if (c.section === 'shapes') {
       const shapes = Array.isArray(value) ? (value as Shape[]) : [];

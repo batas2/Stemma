@@ -51,6 +51,8 @@ export function ArchInspector() {
   const linkId = useApp((s) => s.selectedLinkId);
   const tab = useApp((s) => s.inspectorTab);
   const setTab = useApp((s) => s.setInspectorTab);
+  // The selected card's open comments (F-027), said on the rail as well as on the card.
+  const openComments = useApp((s) => (elementId ? s.openComments[elementId] ?? 0 : 0));
 
   // Element icons are always available (clicking with nothing selected shows a "pick one" prompt);
   // they swap to relationship icons while a relationship is selected.
@@ -68,12 +70,12 @@ export function ArchInspector() {
   return (
     <div className="hidden lg:flex h-full">
       {panel}
-      <InspectorRail tabs={railTabs} active={tab} onPick={(id) => setTab(tab === id ? null : id)} />
+      <InspectorRail tabs={railTabs} active={tab} counts={{ 'element.comments': linkId ? 0 : openComments }} onPick={(id) => setTab(tab === id ? null : id)} />
     </div>
   );
 }
 
-function InspectorRail({ tabs, active, onPick }: { tabs: RailTab[]; active: string | null; onPick: (id: string) => void }) {
+function InspectorRail({ tabs, active, counts = {}, onPick }: { tabs: RailTab[]; active: string | null; counts?: Record<string, number>; onPick: (id: string) => void }) {
   // Expand mirrors the left sidebar's collapsed rail: a chevron pointing into the screen that
   // reopens the user's remembered panel for the current selection domain.
   function expand() {
@@ -91,17 +93,32 @@ function InspectorRail({ tabs, active, onPick }: { tabs: RailTab[]; active: stri
           <ChevronsLeft className="w-4 h-4" />
         </button>
       )}
-      {tabs.map((t) => (
-        <button
-          key={t.id} onClick={() => onPick(t.id)} title={t.label} aria-label={t.label} aria-pressed={active === t.id}
-          className={clsx('p-1.5 rounded transition-colors',
-            active === t.id
-              ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-500/30'
-              : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-body')}
-        >
-          {t.icon}
-        </button>
-      ))}
+      {tabs.map((t) => {
+        const count = counts[t.id] ?? 0;
+        // The name stays the tab's; the count is its description, so a screen reader hears
+        // "Comments, 2 open comments" and the button is still found by its name.
+        const described = count > 0 ? `rail-count-${t.id}` : undefined;
+        return (
+          <button
+            key={t.id} onClick={() => onPick(t.id)} title={count > 0 ? `${t.label} — ${count} open` : t.label}
+            aria-label={t.label} aria-describedby={described} aria-pressed={active === t.id}
+            className={clsx('relative p-1.5 rounded transition-colors',
+              active === t.id
+                ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-500/30'
+                : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 hover:text-body')}
+          >
+            {t.icon}
+            {count > 0 && (
+              <span id={described} className="sr-only">{count} open comment{count === 1 ? '' : 's'}</span>
+            )}
+            {count > 0 && (
+              <span aria-hidden="true" className="absolute -top-1 -right-1 h-3.5 min-w-3.5 px-0.5 rounded-full bg-indigo-600 text-white text-[9px] font-semibold leading-[14px] text-center tabular-nums ring-2 ring-zinc-50 dark:ring-zinc-950">
+                {count > 99 ? '99+' : count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -848,10 +865,9 @@ function LinkInspectorBody({ linkId }: { linkId: string }) {
   // Reverse the relationship in the model (swap source ↔ target): the same relationship, kept whole.
   async function reverseLink() {
     if (!link) return;
-    const { id, error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
+    const { error } = await relink(link, link.toId, link.fromId, 'Reverse relationship');
     if (error) setToast({ kind: 'error', text: error });
     else setToast({ kind: 'success', text: 'Relationship reversed' });
-    selectLink(id);
   }
 
   return (

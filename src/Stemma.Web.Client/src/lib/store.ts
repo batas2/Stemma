@@ -194,6 +194,8 @@ interface AppState {
   nodeStyles: Record<string, NodeStyle>;
   customProps: Record<string, CustomProps>;
   violations: Violation[];
+  /** Open comments per element id (F-027), for the cards' badges and the inspector's rail. */
+  openComments: Record<string, number>;
   violationsOpen: boolean;
   snapEnabled: boolean;
   toast: { kind: 'info' | 'error' | 'success'; text: string } | null;
@@ -284,6 +286,7 @@ interface AppState {
   removeCustomProp: (nodeId: string, key: string) => void;
   renameCustomProp: (nodeId: string, oldKey: string, newKey: string) => void;
   setViolations: (v: Violation[]) => void;
+  setOpenComments: (counts: Record<string, number>) => void;
   setViolationsOpen: (b: boolean) => void;
   toggleSnap: () => void;
   setToast: (t: AppState['toast']) => void;
@@ -478,6 +481,7 @@ export const useApp = create<AppState>((set, get) => ({
   nodeStyles: {},
   customProps: {},
   violations: [],
+  openComments: {},
   violationsOpen: false,
   snapEnabled: typeof window !== 'undefined' && localStorage.getItem('stemma.snap') === '1',
   toast: null,
@@ -794,6 +798,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ customProps: all });
   },
   setViolations: (v) => set({ violations: v }),
+  setOpenComments: (counts) => set((s) => (sameCounts(s.openComments, counts) ? {} : { openComments: counts })),
   setViolationsOpen: (b) => set({ violationsOpen: b }),
   toggleSnap: () => {
     const next = !get().snapEnabled;
@@ -958,3 +963,9 @@ export const useApp = create<AppState>((set, get) => ({
   },
   setCapturing: (b) => set({ capturing: b }),
 }));
+
+/** The same counts as before: kept, so a re-read that changed nothing redraws no card. */
+function sameCounts(a: Record<string, number>, b: Record<string, number>): boolean {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+}

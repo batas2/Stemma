@@ -23,7 +23,7 @@ public static class Architecture { public static Model Build() {
 	var cntWeb = new Container("cnt_web", "Web Shop",
 		"sys_shop", "spa");
 	var cntStore = new Container(Id: "cnt_store", Name: "Order Store", SystemId: "sys_shop"); // no kind
-	var flowBrowse = new DataFlow(@"flow_browse", "per_buyer", "cnt_web", "search terms", Direction: "twoway");
+	var flowBrowse = new DataFlow(@"flow_browse", ToId: "cnt_web", FromId: /* the shopper */ "per_buyer", Payload: "search terms", Direction: "twoway");
 	Tag.For(modCheckout, lifecycle: new Lifecycle("current", "fidelity-critical"));
 	return Model.Of(ctxOrdering, /* contexts first */ ctxBilling,
 		perBuyer, sysShop, cntWeb, cntStore, flowBrowse, // C4
