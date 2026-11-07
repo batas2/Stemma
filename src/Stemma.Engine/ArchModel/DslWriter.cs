@@ -105,14 +105,16 @@ public static class DslWriter
 
     /// <summary>
     /// Point the link declared with <paramref name="id"/> from <paramref name="fromId"/> to
-    /// <paramref name="toId"/>. Each end is the literal of its own argument, found by name or by
-    /// position, and only an end that changes is written: reconnecting one end leaves the other's bytes
-    /// alone, and reversing a named call swaps the two literals rather than the order of its arguments.
+    /// <paramref name="toId"/>; a null end is one that does not move, and is not looked at — it may be a
+    /// constant this syntax tree alone cannot read, which is no reason to refuse moving the other. Each
+    /// end is the literal of its own argument, found by name or by position, and only an end that
+    /// changes is written: reconnecting one end leaves the other's bytes alone, and reversing a named
+    /// call swaps the two literals rather than the order of its arguments.
     /// The declaration, its variable, its tag and its place in the file stay, which is the point — a
     /// link removed and added again lost its id and everything that named it (B-028). Returns
     /// <paramref name="root"/> itself when the link already runs that way.
     /// </summary>
-    public static SyntaxNode SetLinkEnds(SyntaxNode root, string id, string fromId, string toId)
+    public static SyntaxNode SetLinkEnds(SyntaxNode root, string id, string? fromId, string? toId)
     {
         var (stmt, _, creation) = FindDeclaration(root, id) ?? throw new InvalidOperationException($"No declaration with id {id}");
         var typeName = DslReader.ExtractTypeName(creation, stmt.Declaration.Type) ?? "";
@@ -125,6 +127,7 @@ public static class DslWriter
         var changed = false;
         foreach (var (end, value) in new[] { ("fromId", fromId), ("toId", toId) })
         {
+            if (value is null) continue;
             var arg = ArgumentFor(list, parameters, end) ?? throw new InvalidOperationException($"{id} has no {end} argument");
             if (DslReader.AlreadySays(arg.Expression, value, $"{(end == "fromId" ? "start" : "end")} of {id}")) continue;
             // By index into the list being built: the other end may already have been replaced in it.

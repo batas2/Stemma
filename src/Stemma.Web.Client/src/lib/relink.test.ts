@@ -111,4 +111,13 @@ describe('relink', () => {
     expect(error).toMatch(/still being written/);
     expect(sent).toHaveLength(0);
   });
+
+  it('sends nothing for a loop on one box, which reversed is the same relationship', async () => {
+    const loop: ArchLink = { id: 'rel_self', fromId: 'a', toId: 'a', kind: 'relation', attributes: {} };
+    const { id, error } = await relink(loop, 'a', 'a', 'Reverse relationship');
+
+    expect({ id, error }).toEqual({ id: 'rel_self', error: null });
+    expect(sent).toHaveLength(0);
+    expect(history.canUndo).toBe(false);
+  });
 });

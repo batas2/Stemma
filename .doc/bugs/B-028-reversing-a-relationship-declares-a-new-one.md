@@ -61,6 +61,11 @@ the sidecar's edge entries name.
   swaps the dots each end is docked to and reverses the bends, in every view, so the arrow stays
   where it was drawn and only its head moves. `SetLinkAttribute` no longer accepts `fromId` or `toId`,
   which it used to write without checking that the new end exists.
+- **Implementation note (from review):** an end that does not move is not looked at. The model reads a
+  link's ends with the compilation, so an end written as a constant declared in another file is in the
+  model, while the syntax tree alone cannot read it; checking it refused reconnecting the *other* end as
+  `NotALiteral`. The engine now passes only the ends that change
+  (`LinkEndsTests.One_end_moves_when_the_other_is_a_constant_only_the_compilation_can_read`).
 - **Affected files:** `src/Stemma.Engine/ArchModel/ArchOperations.cs`, `ArchModel/DslWriter.cs`,
   `Workspace/StemmaEngine.cs`, `Workspace/UndoStack.cs`, `Operations/Operations.cs`;
   `src/Stemma.Web.Client/src/lib/relink.ts`, `lib/layout.ts`, `lib/signalr.ts`, `lib/types.ts`,

@@ -103,6 +103,31 @@ public sealed class LinkEndsTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task One_end_moves_when_the_other_is_a_constant_only_the_compilation_can_read()
+    {
+        // The end is Ids.Api, declared in another file: the model reads it once the workspace is
+        // compiled, and the syntax tree alone cannot. Moving the start is no reason to look at the end.
+        var source = Source.Replace("new DataFlow(\"flow_orders\", \"cnt_web\", \"cnt_api\",", "new DataFlow(\"flow_orders\", \"cnt_web\", Ids.Api,");
+        var (root, file) = await CreateAsync(source);
+        Directory.CreateDirectory(Path.Combine(root, "Domain"));
+        await File.WriteAllTextAsync(Path.Combine(root, "Domain", "Ids.cs"), "public static class Ids\n{\n    public const string Api = \"cnt_api\";\n}\n");
+        try
+        {
+            await using var engine = await StemmaEngine.OpenAsync(root);
+            engine.StartWatching();
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            // Until then the link is left out: an end that cannot be read leaves nothing to connect.
+            while (DateTime.UtcNow < deadline && (await engine.ReadArchModelAsync())!.Links.FirstOrDefault(l => l.Id == "flow_orders")?.ToId != "cnt_api")
+                await Task.Delay(100);
+            (await engine.ReadArchModelAsync())!.Links.Single(l => l.Id == "flow_orders").ToId.Should().Be("cnt_api");
+
+            (await engine.ApplyAsync(new SetLinkEndsOp("op", "flow_orders", "cnt_store", "cnt_api"))).Should().BeOfType<OperationApplied>();
+            (await File.ReadAllTextAsync(file)).Should().Be(source.Replace("new DataFlow(\"flow_orders\", \"cnt_web\", Ids.Api,", "new DataFlow(\"flow_orders\", \"cnt_store\", Ids.Api,"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Theory]
     [InlineData("fromId")]
     [InlineData("toId")]

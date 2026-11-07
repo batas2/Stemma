@@ -36,6 +36,8 @@ export async function relink(
   description: string,
   docking?: Docking,
 ): Promise<{ id: string | null; error: string | null }> {
+  // Already so — a loop on one box reversed — is nothing to write, and not a failure to report.
+  if (fromId === link.fromId && toId === link.toId && !docking) return { id: link.id, error: null };
   if (!history.beginGroup(description)) return { id: null, error: 'Another change is still being written. Try again in a moment.' };
   try {
     const result = await applyOperation({ kind: 'SetLinkEnds', opId: opId(), linkId: link.id, fromId, toId });

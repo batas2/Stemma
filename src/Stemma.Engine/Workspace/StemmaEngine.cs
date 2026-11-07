@@ -1866,7 +1866,8 @@ public sealed class StemmaEngine : IAsyncDisposable
     {
         var current = await ReadArchModelAsync(ct);
         if (current is null) return new OperationFailed(op.OpId, "InvalidArch", "Build() not found");
-        if (!current.Links.Any(l => l.Id == op.LinkId)) return new OperationFailed(op.OpId, "LinkNotFound", op.LinkId);
+        var link = current.Links.FirstOrDefault(l => l.Id == op.LinkId);
+        if (link is null) return new OperationFailed(op.OpId, "LinkNotFound", op.LinkId);
         if (!current.Elements.Any(e => e.Id == op.FromId)) return new OperationFailed(op.OpId, "FromNotFound", op.FromId);
         if (!current.Elements.Any(e => e.Id == op.ToId)) return new OperationFailed(op.OpId, "ToNotFound", op.ToId);
 
@@ -1876,7 +1877,12 @@ public sealed class StemmaEngine : IAsyncDisposable
         if (root is null) return new OperationFailed(op.OpId, "ParseError", "Could not parse");
 
         SyntaxNode newRoot;
-        try { newRoot = DslWriter.SetLinkEnds(root, op.LinkId, op.FromId, op.ToId); }
+        // An end that stays is left out: the model read it with the compilation, and the syntax alone
+        // may not be able to — a constant declared in another file — which must not stop the other moving.
+        var from = op.FromId == link.FromId ? null : op.FromId;
+        var to = op.ToId == link.ToId ? null : op.ToId;
+        if (from is null && to is null) return new OperationFailed(op.OpId, "RewriteFailed", "The relationship already runs that way");
+        try { newRoot = DslWriter.SetLinkEnds(root, op.LinkId, from, to); }
         catch (DslEditRefusedException e) { return new OperationFailed(op.OpId, e.Reason, e.Message); }
         if (ReferenceEquals(newRoot, root)) return new OperationFailed(op.OpId, "RewriteFailed", "The relationship already runs that way");
 
