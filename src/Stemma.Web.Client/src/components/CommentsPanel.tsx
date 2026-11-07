@@ -4,7 +4,7 @@ import { AlertTriangle, Check, MessageSquare, Send, Trash2, Upload, X } from 'lu
 import {
   type CommentChange, type CommentEntry, type CommentsSidecar,
   CommentsRefused, addComment, appendReply, commentsForTarget, fetchAuthor, fetchComments,
-  newCommentId, packChanges, parseCommentPack, patchComments, removeComment, updateComment,
+  newCommentId, openCommentCounts, packChanges, parseCommentPack, patchComments, removeComment, updateComment,
 } from '@/lib/comments';
 import { useApp } from '@/lib/store';
 
@@ -33,14 +33,20 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // What the file says, here and on the cards' badges (F-027).
+  const show = useCallback((s: CommentsSidecar) => {
+    setSidecar(s);
+    useApp.getState().setOpenComments(openCommentCounts(s));
+  }, []);
+
   const load = useCallback(() => fetchComments()
-    .then((s) => { setSidecar(s); setUnreadable(null); })
+    .then((s) => { show(s); setUnreadable(null); })
     .catch((e) => {
       // What was shown is no longer what the file says, so it is not shown; it comes back when the
       // file can be read.
       if (e instanceof CommentsRefused) { setSidecar({ version: 1, comments: [] }); setUnreadable(e.message); }
       else reportFailure('Api', ClientEvent.RequestFailed, 'Loading comments')(e);
-    }), []);
+    }), [show]);
 
   useEffect(() => { fetchAuthor().then(setAuthor); }, []);
   useEffect(() => { load(); }, [targetKind, targetId, load]);
@@ -56,7 +62,7 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
     setSidecar(shown);
     setBusy(true);
     try {
-      setSidecar(await patchComments(changes));
+      show(await patchComments(changes));
     } catch (e) {
       // The edit did not land: say why, and show the file rather than an edit that is not in it.
       useApp.getState().setToast({ kind: 'error', text: (e as Error).message });
@@ -87,7 +93,7 @@ export function CommentsPanel({ targetKind, targetId, title }: Props) {
       const pack = parseCommentPack(await file.text());
       const { changes, added, repliesAdded } = packChanges(await fetchComments(), pack);
       if (changes.length === 0) { setToast({ kind: 'info', text: 'Pack already imported — nothing new.' }); return; }
-      setSidecar(await patchComments(changes));
+      show(await patchComments(changes));
       setToast({ kind: 'success', text: `Imported ${added} comment${added === 1 ? '' : 's'}${repliesAdded ? ` + ${repliesAdded} repl${repliesAdded === 1 ? 'y' : 'ies'}` : ''} from ${pack.author ?? 'pack'}` });
     } catch (e) {
       setToast({ kind: 'error', text: `Pack import failed: ${(e as Error).message}` });

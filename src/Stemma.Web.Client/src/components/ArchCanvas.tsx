@@ -241,7 +241,7 @@ function bcBoxes(nodes: Node[], excludeId?: string): Map<string, Box> {
 /** What an exported picture of the canvas leaves out: its controls, not its content. */
 function notCanvasChrome(node: HTMLElement): boolean {
   const cl = (node as Element).classList;
-  return !(cl && (cl.contains('react-flow__controls') || cl.contains('react-flow__minimap') || cl.contains('react-flow__attribution') || cl.contains('react-flow__panel')));
+  return !(cl && (cl.contains('react-flow__controls') || cl.contains('react-flow__minimap') || cl.contains('react-flow__attribution') || cl.contains('react-flow__panel') || cl.contains('stemma-canvas-chrome')));
 }
 
 /** The id of the BC whose box contains point `p`, or null. */
@@ -271,6 +271,7 @@ function CanvasInner() {
   const nodeStyles = useApp((s) => s.nodeStyles);
   const customProps = useApp((s) => s.customProps);
   const violations = useApp((s) => s.violations);
+  const openComments = useApp((s) => s.openComments);
   const select = useApp((s) => s.selectElement);
   const selectLink = useApp((s) => s.selectLink);
   const selectedLinkId = useApp((s) => s.selectedLinkId);
@@ -733,6 +734,16 @@ function CanvasInner() {
 
   const [nodes, setNodes] = useState<Node[]>([]);
 
+  // A card's comment badge (F-027): the card, selected — on the canvas as in the inspector, as a click
+  // on the card would leave it — with its comments open. The camera stays where it is: the person is
+  // looking at the card already.
+  const handleOpenComments = useCallback((nodeId: string) => {
+    const st = useApp.getState();
+    setNodes((current) => current.map((n) => (n.selected === (n.id === nodeId) ? n : { ...n, selected: n.id === nodeId })));
+    st.selectElement(nodeId);
+    st.setInspectorTab('element.comments');
+  }, []);
+
   const handleNodeResize = useCallback((nodeId: string, w: number, h: number) => {
     const current = useApp.getState().nodeStyles[nodeId] ?? { borderWidth: 1, borderStyle: 'solid' as const };
     useApp.getState().setNodeStyleFor(nodeId, { ...current, width: w, height: h });
@@ -1122,6 +1133,9 @@ function CanvasInner() {
             nodeStyle: ns,
             customProps: customProps[e.id],
             violationSeverity: sevByElement.get(e.id),
+            // Where the review is (F-027) — but not in front of the room, nor in a captured page.
+            openComments: presenting || capturing ? undefined : openComments[e.id],
+            onOpenComments: handleOpenComments,
             resizable: !editing,
             onResize: handleNodeResize,
             editing,
@@ -1146,7 +1160,7 @@ function CanvasInner() {
         return existing && sameNode(existing, built) ? existing : built;
       });
     });
-  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick, layeredHere, layeredGaveUp]);
+  }, [arch, view, workspace, filtered.elements, layoutKey, nodeStyles, customProps, violations, openComments, presenting, capturing, handleOpenComments, handleNodeResize, editingNodeId, notesEditingId, handleStartRename, handleChangeNotes, handleCommitNotes, handleCloseNotes, handleCommitName, handleCancelEdit, activeCustomView, focusSet, fanCounts, notesById, sidecarTick, layeredHere, layeredGaveUp]);
 
   // Fit a view once, when it is first shown with its cards on the canvas and the committed positions
   // read: a fit taken before them frames where the cards are about to stop being, and a second fit

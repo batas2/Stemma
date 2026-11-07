@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  openCommentCounts,
   addComment, appendReply, commentsForTarget, removeComment, updateComment,
   type CommentEntry, type CommentsSidecar,
 } from './comments';
@@ -55,5 +56,29 @@ describe('commentsForTarget filtering', () => {
   it('returns [] when nothing matches', () => {
     const s: CommentsSidecar = { version: 1, comments: [makeComment('c1', 'e1')] };
     expect(commentsForTarget(s, 'shape', 'e1')).toEqual([]);
+  });
+});
+
+// F-027: what a card's badge counts.
+describe('openCommentCounts', () => {
+  const c = (id: string, targetId: string, over: Partial<CommentEntry> = {}): CommentEntry => ({
+    id, targetKind: 'element', targetId, author: 'aria', createdAt: '', body: id, resolved: false, thread: [], ...over,
+  });
+
+  it('counts the open comments on each element and relationship, and nothing else', () => {
+    const counts = openCommentCounts({
+      version: 1,
+      comments: [
+        c('a', 'mod_pay'), c('b', 'mod_pay'), c('c', 'flow_save'),
+        c('d', 'mod_pay', { resolved: true }),
+        c('e', 'view_buy', { targetKind: 'view' }),
+        c('f', 'shape_1', { targetKind: 'shape' }),
+      ],
+    });
+    expect(counts).toEqual({ mod_pay: 2, flow_save: 1 });
+  });
+
+  it('is empty when every comment is resolved', () => {
+    expect(openCommentCounts({ version: 1, comments: [c('a', 'mod_pay', { resolved: true })] })).toEqual({});
   });
 });

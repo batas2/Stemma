@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
-import { Box, Circle, Cuboid, Layers, Package, User, Server, Target, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, AlertTriangle } from 'lucide-react';
+import { Box, Circle, Cuboid, Layers, Package, User, Server, Target, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, AlertTriangle, MessageSquare } from 'lucide-react';
 import clsx from 'clsx';
 import type { ArchElement, ArchElementKind, ArchTagInfo } from '@/lib/types';
 import { DEFAULT_VISIBLE_FIELDS, type NodeFieldKey } from '@/lib/nodeStyles';
@@ -59,6 +59,9 @@ export type ArchNodeData = {
   onCommitNotes?: (id: string, text: string) => void;
   onCloseNotes?: () => void;
   violationSeverity?: 'info' | 'warning' | 'error';
+  /** Open review comments on this element (F-027); not set while presenting or capturing. */
+  openComments?: number;
+  onOpenComments?: (id: string) => void;
   onResize?: (id: string, w: number, h: number) => void;
   resizable?: boolean;
   // Inline-edit support — when `editing` is true the name renders as an input.
@@ -380,6 +383,9 @@ export function ArchNodeView({ id, data, selected }: NodeProps<ArchFlowNode>) {
               </span>
             )}
           </div>
+        )}
+        {!!data.openComments && (
+          <CommentBadge count={data.openComments} onOpen={() => data.onOpenComments?.(id)} />
         )}
         {violationSeverity && (
           <span
@@ -736,5 +742,32 @@ function StatusBadge({ status, size = 'text-[9px]', tint }: { status: string; si
       {glyph && <span aria-hidden="true">{glyph}</span>}
       {status}
     </span>
+  );
+}
+
+/**
+ * Where the review is (F-027): how many comments on this card are still open. A button — pressing it
+ * selects the card and opens its comments — with a 24 px target around a smaller pill, on the top edge
+ * near the left: clear of the corner, where a selected card's resize handle is, of the docking dots a
+ * third of the way along, and of the validation dot (top right). `stemma-canvas-chrome` keeps it out of
+ * an exported image; the canvas leaves it off while presenting.
+ */
+function CommentBadge({ count, onOpen }: { count: number; onOpen: () => void }) {
+  const label = `Show ${count} open comment${count === 1 ? '' : 's'}`;
+  return (
+    <button
+      type="button"
+      className="stemma-canvas-chrome nodrag nopan absolute -top-3 left-2.5 z-10 h-6 min-w-6 px-0.5 flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+      aria-label={label}
+      title={label}
+      onPointerDown={(ev) => ev.stopPropagation()}
+      onDoubleClick={(ev) => ev.stopPropagation()}
+      onClick={(ev) => { ev.stopPropagation(); onOpen(); }}
+    >
+      <span className="h-[18px] min-w-[18px] px-1 inline-flex items-center gap-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-semibold leading-none tabular-nums shadow ring-2 ring-white dark:ring-zinc-900">
+        <MessageSquare className="w-2.5 h-2.5" aria-hidden="true" />
+        {count > 99 ? '99+' : count}
+      </span>
+    </button>
   );
 }

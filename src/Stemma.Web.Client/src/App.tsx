@@ -12,6 +12,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { StatusBar } from './components/StatusBar';
 import { EmptyState } from './components/EmptyState';
 import { useApp } from './lib/store';
+import { CommentsRefused, fetchComments, openCommentCounts } from './lib/comments';
 import { ensureConnection, onOperationApplied, onExternalChange, onSidecarChanged, onCommentsChanged, onReconnected, applyOperation, isOwnOperation } from './lib/signalr';
 import { modelRefresh, type RefreshScope } from './lib/modelRefresh';
 import { friendlyOpError } from './lib/opError';
@@ -108,6 +109,24 @@ export default function App() {
   // only the initial mount fetched these, so opening a workspace mid-session left the canvas
   // empty until a full page reload.
   const wsRoot = ws?.rootPath ?? null;
+
+  // Where the review is (F-027): the cards' comment badges, read with the workspace and again whenever
+  // the comments change — in this window, in another, or from the command line.
+  useEffect(() => {
+    const setOpen = useApp.getState().setOpenComments;
+    // A headless render is a picture of the model, and the review is not part of it.
+    if (!wsRoot || renderParams) { setOpen({}); return; }
+    const read = () => fetchComments()
+      .then((s) => setOpen(openCommentCounts(s)))
+      .catch((e) => {
+        // A file that cannot be read has no counts to show; the comments panel says why.
+        if (e instanceof CommentsRefused) setOpen({});
+        else reportFailure('Api', ClientEvent.RequestFailed, 'Reading the open comments')(e);
+      });
+    void read();
+    window.addEventListener('stemma:comments-changed', read);
+    return () => window.removeEventListener('stemma:comments-changed', read);
+  }, [wsRoot, renderParams]);
   // The last commit's model, for the count of uncommitted changes (F-017 AC6): read on open, and again
   // when the window comes back into focus — a commit is usually made from a terminal.
   // Another workspace: none of the steps in the undo history are about it (F-015).
